@@ -135,6 +135,14 @@ MiniCNN 也有自己的小型 CPU/NumPy autograd stack，位置在 `src/minicnn/
 
 這個 core 主要用於 framework-level 測試與小型教學範例。Torch backend 仍使用 PyTorch autograd；手寫 CUDA backend 仍使用明確寫在 CUDA/C++ 裡的 backward kernels。
 
+### 穩健性改善
+
+- **SGD**：gradient update 若因 shape 或 type 不符而失敗，會發出含參數名稱的 `RuntimeWarning`，不再靜默略過。
+- **`Tensor.__pow__` backward**：`base == 0` 搭配負指數時，gradient 現在回傳 `0` 而非 `NaN`，避免 NaN 在 compute graph 中傳播。
+- **`maxpool2d`**：forward 用 `sliding_window_view` 完全向量化，移除逐 spatial position 的 Python 迴圈。
+- **`flex/builder`**：每層 materialize 後會驗證推論出的 output shape 所有維度皆為正整數；kernel size 或 pooling stride 設定錯誤時立即拋出 `ValueError` 並附帶說明訊息。
+- **`BatchWorkspace.__del__`**：GPU memory cleanup 失敗時改為發出 `ResourceWarning`，不再靜默丟棄。
+
 ## Shared Config Contract
 
 同一份 config 包含：

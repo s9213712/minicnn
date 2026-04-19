@@ -74,3 +74,26 @@ Run the autograd tests with:
 ```bash
 PYTHONPATH=src python -m pytest -q tests/test_autograd.py tests/test_autograd_stack.py
 ```
+
+## Robustness notes
+
+### `Tensor.__pow__` and division by zero
+
+`x ** power` delegates to NumPy, so `0.0 ** -1` produces `inf` in the forward pass (expected). The backward pass, however, would compute `power * (0 ** (power - 1))` which yields `inf * 0 = NaN` for `power < 1`. This is now guarded with `np.where`:
+
+```python
+# base == 0 with negative power → treat gradient as 0 (not NaN)
+if power < 1.0:
+    base_grad = np.where(self.data != 0.0, power * (self.data ** (power - 1.0)), 0.0)
+```
+
+This means `Tensor.__truediv__` (which uses `other ** -1.0`) also benefits from this fix.
+
+### SGD silent failures
+
+Previously, any exception inside `SGD.step()` was caught and silently ignored. The guard now only catches `ValueError` and `TypeError` (shape and type mismatches that can legitimately arise for metadata-only parameters), and emits a `RuntimeWarning` that includes the parameter index and name. All other exceptions propagate normally.
+
+```python
+except (ValueError, TypeError) as exc:
+    warnings.warn(f"SGD.step(): skipped param {i} ({p.name!r}): {exc}", RuntimeWarning)
+```

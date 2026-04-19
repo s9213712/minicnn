@@ -135,6 +135,14 @@ MiniCNN also includes a small CPU/NumPy autograd stack in `src/minicnn/nn/tensor
 
 This core is useful for framework-level tests and small educational examples. The Torch backend still uses PyTorch autograd, and the handcrafted CUDA backend still uses its explicit CUDA backward kernels.
 
+### Robustness notes
+
+- **SGD**: parameter updates that fail with a shape or type mismatch emit a `RuntimeWarning` (including the parameter name) instead of silently skipping. Truly unexpected exceptions are no longer swallowed.
+- **`Tensor.__pow__` backward**: gradient computation at `base == 0` with a negative exponent now returns `0` instead of `NaN`, preventing silent NaN propagation through the compute graph.
+- **`maxpool2d`**: forward pass is fully vectorized with `sliding_window_view`; the loop over spatial output positions is gone.
+- **`flex/builder`**: after each layer is materialized, the inferred output shape is validated to have all-positive dimensions. A misconfigured kernel size or pooling stride raises `ValueError` immediately with a descriptive message.
+- **`BatchWorkspace.__del__`**: GPU memory cleanup failures now emit a `ResourceWarning` instead of being silently discarded.
+
 ## Shared config contract
 
 The same config file contains:

@@ -41,6 +41,8 @@ Processed local note files:
 | Tests | Added coverage for CLI exposure, autograd layers, optimizer updates, runtime utilities, compiler fusion annotation, and fused-op fallback semantics. |
 | Comment task list 01-30 | Completed. Native CUDA fixes include dead-code removal, layer norm shared-memory reductions and gradient correction, maxpool zeroing, release/debug kernel check split, warp-level softmax CE, shared cuBLAS checks, LeakyReLU kernel consolidation, maxpool NCHW geometry validation, GPU monitor shell removal, ConvLayer im2col cache, ReLU out-of-place forward, and RAII C++ layer outputs. Python fixes include SGD momentum, BatchNorm2d running stats, autograd train shuffling and seeded init, reusable CUDA eval workspace, vectorized CPU/NumPy conv and maxpool paths, fused cross-entropy backward, augmentation copy/flip contracts, seeded flex augmentation, and optimizer config mutation docs. |
 
+| Code review fixes | SGD.step() now emits `RuntimeWarning` (with param name) instead of silently swallowing exceptions; only `ValueError`/`TypeError` are caught. `Tensor.__pow__` backward guards against NaN when `base==0` with negative exponent. `flex/builder` validates that inferred output shapes are all-positive after each layer. `BatchWorkspace.__del__` emits `ResourceWarning` instead of silently discarding GPU cleanup failures. `maxpool2d` forward vectorized with `sliding_window_view`, removing the O(out_h×out_w) Python loop. `flex/trainer` zero_grad gets a `TypeError` fallback for older PyTorch. `tests/test_review_fixes.py` added with 14 targeted tests. |
+
 ## Deferred
 
 | Item | Reason |
