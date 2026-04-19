@@ -10,7 +10,7 @@ from . import components  # noqa: F401
 
 try:
     import torch.nn as nn
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     nn = None
 
 
@@ -137,7 +137,13 @@ def _materialize_layer(layer_cfg: dict[str, Any], tracer: ShapeTracer):
         cfg['in_features'] = tracer.flattened
     factory = _resolve_factory('layers', layer_type)
     module = factory(**cfg)
-    tracer.update(_infer_output_shape(layer_type, cfg, tracer))
+    new_shape = _infer_output_shape(layer_type, cfg, tracer)
+    if any(d <= 0 for d in new_shape):
+        raise ValueError(
+            f"Layer '{layer_type}' produces invalid output shape {new_shape}: all dimensions must be > 0. "
+            f"Check kernel_size, stride, and padding against input shape {tracer.shape}."
+        )
+    tracer.update(new_shape)
     return module
 
 

@@ -24,7 +24,12 @@ class SGD(Optimizer):
                 else:
                     p.data = p.data - self.lr * grad
                 updated += 1
-            except Exception:
-                # Keep optimizer layer non-fatal for metadata-only parameters.
+            except (ValueError, TypeError) as exc:
+                import warnings
+                warnings.warn(
+                    f"SGD.step(): skipped param {i} ({getattr(p, 'name', None)!r}): {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
                 continue
         return {'updated': updated, 'lr': self.lr, 'momentum': self.momentum, 'weight_decay': self.weight_decay}

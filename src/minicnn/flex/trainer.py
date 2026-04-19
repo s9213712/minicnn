@@ -136,7 +136,10 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
         for epoch in range(1, epochs + 1):
             epoch_t0 = time.perf_counter()
             model.train()
-            optimizer.zero_grad(set_to_none=True)
+            try:
+                optimizer.zero_grad(set_to_none=True)
+            except TypeError:
+                optimizer.zero_grad()
             running_loss = 0.0
             running_acc = 0.0
             seen = 0
@@ -155,7 +158,10 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
                 if step % grad_accum_steps == 0 or step == n_batches:
                     scaler.step(optimizer)
                     scaler.update()
-                    optimizer.zero_grad(set_to_none=True)
+                    try:
+                        optimizer.zero_grad(set_to_none=True)
+                    except TypeError:
+                        optimizer.zero_grad()
                 bs = xb.shape[0]
                 running_loss += float(loss.item()) * grad_accum_steps * bs
                 running_acc += _accuracy(logits, yb) * bs

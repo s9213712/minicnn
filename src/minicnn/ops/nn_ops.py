@@ -79,15 +79,10 @@ def maxpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None) -> Ten
     n, c, h, w = x.data.shape
     out_h = (h - kernel_size) // stride + 1
     out_w = (w - kernel_size) // stride + 1
-    out_data = np.zeros((n, c, out_h, out_w), dtype=np.float32)
-    max_indices: dict[tuple[int, int], np.ndarray] = {}
-    for i in range(out_h):
-        for j in range(out_w):
-            region = x.data[:, :, i * stride:i * stride + kernel_size, j * stride:j * stride + kernel_size]
-            flat = region.reshape(n, c, -1)
-            argmax = flat.argmax(axis=2)
-            max_indices[(i, j)] = argmax
-            out_data[:, :, i, j] = flat.max(axis=2)
+    windows = sliding_window_view(x.data, (kernel_size, kernel_size), axis=(2, 3))[:, :, ::stride, ::stride]
+    flat = windows.reshape(n, c, out_h, out_w, -1)
+    argmax = flat.argmax(axis=-1)  # (n, c, out_h, out_w)
+    out_data = flat.max(axis=-1).astype(np.float32)
     out = Tensor(out_data, requires_grad=_requires_grad(x))
     out._prev = {x}
     out._op = 'maxpool2d'
@@ -96,18 +91,15 @@ def maxpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None) -> Ten
         if out.grad is None:
             return
         dx = np.zeros_like(x.data, dtype=np.float32)
-        batch_idx = np.arange(n)[:, None]
-        chan_idx = np.arange(c)[None, :]
-        for i in range(out_h):
-            for j in range(out_w):
-                argmax = max_indices[(i, j)]
-                rows = argmax // kernel_size
-                cols = argmax % kernel_size
-                np.add.at(
-                    dx,
-                    (batch_idx, chan_idx, i * stride + rows, j * stride + cols),
-                    out.grad[:, :, i, j],
-                )
+        krows = argmax // kernel_size
+        kcols = argmax % kernel_size
+        i_base = (np.arange(out_h) * stride).reshape(1, 1, out_h, 1)
+        j_base = (np.arange(out_w) * stride).reshape(1, 1, 1, out_w)
+        src_r = (i_base + krows).ravel()
+        src_c = (j_base + kcols).ravel()
+        n_idx = np.broadcast_to(np.arange(n).reshape(n, 1, 1, 1), (n, c, out_h, out_w)).ravel()
+        c_idx = np.broadcast_to(np.arange(c).reshape(1, c, 1, 1), (n, c, out_h, out_w)).ravel()
+        np.add.at(dx, (n_idx, c_idx, src_r, src_c), out.grad.ravel())
         x._add_grad(dx)
 
     out._backward = _backward

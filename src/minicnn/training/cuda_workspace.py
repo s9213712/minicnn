@@ -102,5 +102,10 @@ class BatchWorkspace:
     def __del__(self):  # pragma: no cover - defensive cleanup only
         try:
             self.free()
-        except Exception:
-            pass
+        except Exception as exc:
+            import warnings
+            warnings.warn(
+                f"BatchWorkspace.__del__: GPU memory cleanup failed: {exc}",
+                ResourceWarning,
+                stacklevel=2,
+            )

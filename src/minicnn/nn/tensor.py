@@ -181,7 +181,12 @@ class Tensor:
 
         def _backward() -> None:
             if out.grad is not None:
-                self._add_grad(out.grad * power * (self.data ** (power - 1.0)))
+                if power < 1.0:
+                    # Avoid NaN at zero: treat gradient as 0 where base is 0.
+                    base_grad = np.where(self.data != 0.0, power * (self.data ** (power - 1.0)), 0.0)
+                else:
+                    base_grad = power * (self.data ** (power - 1.0))
+                self._add_grad(out.grad * base_grad)
 
         out._backward = _backward
         return out

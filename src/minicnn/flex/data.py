@@ -28,6 +28,7 @@ if TensorDataset is not None:
         def _generator(self, index: int):
             worker = torch.utils.data.get_worker_info()
             worker_id = 0 if worker is None else worker.id
+            # Large prime separates per-worker, per-sample seeds to avoid collisions.
             return torch.Generator().manual_seed(self.seed + worker_id * 1_000_003 + int(index))
 
         def __getitem__(self, index):
