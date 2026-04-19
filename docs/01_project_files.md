@@ -24,7 +24,11 @@ minicnn/
 │   │   ├── maxpool_store.cu
 │   │   ├── maxpool_backward_use_idx.cu
 │   │   └── ...
-│   └── libminimal_cuda_cnn.so
+│   ├── libminimal_cuda_cnn.so
+│   ├── libminimal_cuda_cnn_cublas.so
+│   └── libminimal_cuda_cnn_handmade.so
+├── python/
+│   └── best_models/
 ├── src/minicnn/
 │   ├── cli.py
 │   ├── core/
@@ -38,7 +42,7 @@ minicnn/
 └── docs/
 ```
 
-`data/cifar-10-batches-py/`、`cpp/libminimal_cuda_cnn.so`、checkpoint、`__pycache__/`、`.pytest_cache/` 與 runtime artifacts 都是本機檔案，不屬於 Git 版本內容。
+`data/cifar-10-batches-py/`、`cpp/*.so`、`python/best_models/*`、`__pycache__/`、`.pytest_cache/` 與 runtime artifacts 都是本機檔案，不屬於 Git 版本內容。
 
 ## include
 
@@ -75,8 +79,15 @@ minicnn/
 | 檔案 | 作用 |
 |---|---|
 | `src/minicnn/cli.py` | `minicnn` CLI entrypoint，提供 build、prepare-data、train-flex、train-dual、validate-dual-config 等命令。 |
-| `src/minicnn/core/` | native CUDA shared library build wrapper 與 ctypes binding。 |
+| `src/minicnn/core/build.py` | native CUDA shared library build/check wrapper，支援 default、cublas、handmade、both variants。 |
+| `src/minicnn/core/cuda_backend.py` | native CUDA library 的 lazy `ctypes` loader；非 CUDA 指令 import 時不會載入 `.so`。 |
 | `src/minicnn/data/` | CIFAR-10 準備與資料載入。 |
 | `src/minicnn/flex/` | PyTorch flexible config-driven model builder、registry、trainer。 |
 | `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 `torch` 或 `cuda_legacy` backend。 |
-| `src/minicnn/training/` | legacy CUDA/Torch trainer wrapper、artifact、callback、runtime helper。 |
+| `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 training loop 入口。 |
+| `src/minicnn/training/cuda_ops.py` | legacy loop 使用的 CUDA copy、layout、forward wrapper。 |
+| `src/minicnn/training/cuda_workspace.py` | batch GPU workspace，重用每 batch buffer 並保護 double-free。 |
+| `src/minicnn/training/evaluation.py` | CUDA evaluation forward path 與 accuracy helper。 |
+| `src/minicnn/training/checkpoints.py` | CUDA checkpoint save/reload 與 GPU pointer cleanup。 |
+| `src/minicnn/training/train_torch_baseline.py` | 對齊 CUDA update 規則的 PyTorch baseline。 |
+| `python/best_models/` | 最佳模型固定輸出位置；PyTorch 寫 `*.pt`，CUDA legacy 寫 `*.npz`。 |

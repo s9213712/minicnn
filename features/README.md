@@ -23,3 +23,13 @@ Recommended large-experiment workflow:
 ```bash
 git worktree add ../minicnn-feature-<name> -b feature/<name>
 ```
+
+## Example Feature
+
+`features/backend-smoke-matrix/` is a concrete example of an isolated feature folder. It contains:
+
+- a `README.md` with goal, boundary, commands, and promotion checklist
+- a prototype script that calls supported CLI commands through subprocess
+- no production imports from `features/`
+
+Use it as the pattern for future experiments.

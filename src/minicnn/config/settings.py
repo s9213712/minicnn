@@ -5,11 +5,35 @@ then calls `apply_experiment_config()` before importing the trainer implementati
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from .schema import ExperimentConfig
 
 _current_config: ExperimentConfig | None = None
+
+_ENV_OVERRIDES = {
+    "BATCH": ("MINICNN_BATCH", int),
+    "EPOCHS": ("MINICNN_EPOCHS", int),
+    "EVAL_MAX_BATCHES": ("MINICNN_EVAL_MAX_BATCHES", int),
+    "N_TRAIN": ("MINICNN_N_TRAIN", int),
+    "N_VAL": ("MINICNN_N_VAL", int),
+    "DATASET_SEED": ("MINICNN_DATASET_SEED", int),
+    "INIT_SEED": ("MINICNN_INIT_SEED", int),
+    "TRAIN_SEED": ("MINICNN_TRAIN_SEED", int),
+    "LR_CONV1": ("MINICNN_LR_CONV1", float),
+    "LR_CONV": ("MINICNN_LR_CONV", float),
+    "LR_FC": ("MINICNN_LR_FC", float),
+    "MOMENTUM": ("MINICNN_MOMENTUM", float),
+    "WEIGHT_DECAY": ("MINICNN_WEIGHT_DECAY", float),
+}
+
+
+def _apply_env_overrides(values: dict[str, Any]) -> None:
+    for key, (env_name, parser) in _ENV_OVERRIDES.items():
+        raw = os.environ.get(env_name)
+        if raw not in {None, ""}:
+            values[key] = parser(raw)
 
 
 def _compute_shape_fields(values: dict[str, Any]) -> dict[str, Any]:
@@ -74,6 +98,7 @@ def apply_experiment_config(cfg: ExperimentConfig) -> None:
         "KH": cfg.model.kh,
         "KW": cfg.model.kw,
     }
+    _apply_env_overrides(values)
     values.update(_compute_shape_fields(values))
     globals().update(values)
 

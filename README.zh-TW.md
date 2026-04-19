@@ -87,6 +87,19 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=handmade
 ```
 
+native library 會 lazy-load，所以 `--help`、`prepare-data`、`validate-dual-config`、torch backend 等非 CUDA 指令不需要先編好 `.so`。
+
+快速 debug 可直接使用 config override：
+
+```bash
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=cublas \
+  train.epochs=1 train.batch_size=32 \
+  dataset.num_samples=128 dataset.val_samples=32
+```
+
+legacy trainer 也支援常用環境變數覆蓋，例如 `MINICNN_EPOCHS`、`MINICNN_BATCH`、`MINICNN_N_TRAIN`、`MINICNN_N_VAL`。
+
 訓練產生的最佳模型檔固定寫入：
 
 ```text
@@ -106,6 +119,16 @@ PyTorch backend 會寫入 `*_best.pt`；CUDA legacy backend 會寫入 `*_best_mo
 | `cuda_legacy` | `handmade` | train_acc `12.50%`, val_acc `20.31%`, test_acc `14.00%`, epoch time `0.3s` |
 
 Smoke test 的模型檔會寫入 `python/best_models/`；若照 docs 的指令執行，run logs 會在 `/tmp/minicnn_backend_compare`。
+
+本次修改的最新快速驗證使用 `features/backend-smoke-matrix/run_smoke_matrix.py`，`128` 筆 train、`32` 筆 validation，batch size `32`，訓練 `1` epoch：
+
+| Backend | Native variant | Result |
+|---|---|---|
+| `torch` | PyTorch CUDA | train_acc `11.72%`, val_acc `3.12%` |
+| `cuda_legacy` | `cublas` | train_acc `7.03%`, val_acc `6.25%`, test_acc `12.97%`, epoch time `0.1s` |
+| `cuda_legacy` | `handmade` | train_acc `7.03%`, val_acc `6.25%`, test_acc `12.97%`, epoch time `0.2s` |
+
+驗證也包含 `pytest`（`15 passed`）、沒有 native `.so` 時的 CLI help、config validation、Python compile checks，以及 `minicnn build --legacy-make --variant both --check`。
 
 ## 為什麼有兩個 backend
 
@@ -217,25 +240,73 @@ minicnn train-dual --config configs/dual_backend_torch_custom.yaml
 ## 專案結構
 
 ```text
-configs/
-cpp/
-docs/
-examples/
-src/minicnn/
-  config/
-  core/
-  data/
-  engine/
-  flex/
-  framework/
-  nn/
-  optim/
-  runtime/
-  schedulers/
-  training/
-  unified/
-tests/
+minicnn/
+├── configs/
+│   ├── dual_backend_cnn.yaml          # 主要 CIFAR-10 config；在這切 torch/cuda_legacy
+│   ├── dual_backend_torch_custom.yaml # 自訂 dotted-path component 範例
+│   ├── flex_*.yaml                    # PyTorch flex trainer 範例
+│   ├── train_cuda.yaml                # legacy CUDA compatibility config
+│   └── train_torch.yaml               # Torch baseline compatibility config
+├── cpp/
+│   ├── Makefile                       # Linux native .so build，含 cublas/handmade variant
+│   ├── CMakeLists.txt                 # Linux/Windows helper 使用的 CMake build path
+│   ├── include/                       # native public headers
+│   └── src/                           # CUDA/C++ kernels 與 C API 實作
+├── docs/                              # 教學與 reference docs
+├── examples/                          # 自訂 PyTorch component 範例
+├── features/
+│   ├── README.md                      # 隔離 prototype 的規則
+│   └── backend-smoke-matrix/          # 比較 torch/cublas/handmade smoke runs 的範例 feature
+├── python/
+│   └── best_models/                   # checkpoint 固定輸出資料夾
+├── scripts/
+│   └── build_windows_native.ps1       # Windows CUDA DLL build helper
+├── src/minicnn/
+│   ├── cli.py                         # minicnn command entrypoint
+│   ├── config/                        # config schema、loader、legacy settings bridge
+│   ├── core/                          # native build helper 與 lazy ctypes CUDA binding
+│   ├── data/                          # CIFAR-10 準備/載入
+│   ├── flex/                          # config-driven PyTorch model builder 與 trainer
+│   ├── training/
+│   │   ├── train_cuda.py              # legacy CUDA CIFAR-10 training 入口
+│   │   ├── train_torch_baseline.py    # PyTorch baseline training 入口
+│   │   ├── cuda_ops.py                # CUDA copy/layout/forward helper wrapper
+│   │   ├── cuda_workspace.py          # 每個 batch 重用的 GPU workspace
+│   │   ├── evaluation.py              # CUDA eval forward/accuracy helper
+│   │   └── checkpoints.py             # CUDA checkpoint save/load/free helper
+│   └── unified/
+│       ├── config.py                  # shared default config 與 override merge
+│       ├── cuda_legacy.py             # 將 shared config 映射到 legacy CUDA settings
+│       └── trainer.py                 # 將 train-dual dispatch 到 torch 或 cuda_legacy
+└── tests/                             # config、import、framework wiring 的 unit/smoke tests
 ```
+
+主要資料夾與檔案用途：
+
+| Path | 用途 |
+|---|---|
+| `configs/` | torch、cuda_legacy、flex、自訂 component 訓練用 YAML config。 |
+| `cpp/` | 原生 CUDA/C++ source、header、Makefile、CMake build 檔。 |
+| `cpp/src/core.cu` | GEMM forward 路徑；用 `USE_CUBLAS` 切換 cuBLAS 或手寫 CUDA。 |
+| `cpp/src/conv_backward.cu` | convolution backward kernel 與 cuBLAS/handmade weight-gradient 路徑。 |
+| `docs/` | 編譯、C API、Python ctypes、C++ linking、layout/debug、Windows build 教學。 |
+| `examples/` | 最小自訂 PyTorch component 範例。 |
+| `features/` | 隔離原型區；正式 production code 預設不應 import 這裡，內含 `backend-smoke-matrix/` 作為範例 feature。 |
+| `python/best_models/` | 最佳模型 checkpoint 固定輸出位置；產生的模型檔不進 git。 |
+| `scripts/build_windows_native.ps1` | Windows CUDA DLL variant 的 PowerShell build helper。 |
+| `src/minicnn/cli.py` | 主要 CLI entrypoint。 |
+| `src/minicnn/core/build.py` | `minicnn build` 使用的 native build/check helper。 |
+| `src/minicnn/core/cuda_backend.py` | 原生 CUDA library 的 lazy ctypes loader 與 Python helper。 |
+| `src/minicnn/data/` | CIFAR-10 下載/載入與 random dataset helper。 |
+| `src/minicnn/flex/` | PyTorch config-driven model/loss/optimizer/scheduler builder 與 trainer。 |
+| `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 training loop 入口。 |
+| `src/minicnn/training/cuda_ops.py` | legacy training loop 使用的小型 CUDA operation wrapper。 |
+| `src/minicnn/training/cuda_workspace.py` | 可重用 batch GPU workspace，含 double-free 保護。 |
+| `src/minicnn/training/evaluation.py` | CUDA evaluation forward path 與 accuracy helper。 |
+| `src/minicnn/training/checkpoints.py` | CUDA checkpoint save/reload 與 GPU pointer cleanup。 |
+| `src/minicnn/training/train_torch_baseline.py` | 對齊手寫 CUDA update 規則的 PyTorch baseline。 |
+| `src/minicnn/unified/` | shared config compiler 與 `torch`/`cuda_legacy` dispatcher。 |
+| `tests/` | 不需 GPU 的 unit/smoke tests；真正 GPU 訓練用 CLI 指令另跑。 |
 
 Windows native build 說明在 [docs/07_windows_build.md](docs/07_windows_build.md)。
 

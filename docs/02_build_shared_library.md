@@ -91,6 +91,8 @@ MINICNN_CUDA_SO=cpp/libminimal_cuda_cnn_cublas.so \
   minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
 ```
 
+`.so` 使用 lazy-load。也就是說，`minicnn --help`、`minicnn prepare-data`、`validate-dual-config`、torch backend 訓練與一般 package import 不會因為 `.so` 尚未編譯而失敗。只有真正進入 CUDA helper 呼叫時，才會載入並 bind C API symbols。
+
 建置並檢查必要匯出符號：
 
 ```bash

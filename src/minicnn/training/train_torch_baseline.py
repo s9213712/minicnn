@@ -123,6 +123,8 @@ def init_velocity_buffers(model):
 
 
 def apply_momentum_update(model, velocity, lr_conv1, lr_conv, lr_fc):
+    # Match the CUDA trainer: conv/fc weights get weight decay and layer-specific clipping;
+    # bias only gets clipping, and optional spatial normalization keeps conv gradients comparable.
     updates = [
         (model.conv1.weight, lr_conv1, GRAD_CLIP_CONV, True, H1 * W1),
         (model.conv2.weight, lr_conv, GRAD_CLIP_CONV, True, H2 * W2),

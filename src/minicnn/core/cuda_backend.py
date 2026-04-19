@@ -83,49 +83,67 @@ def load_library(path: str | os.PathLike[str] | None = None):
         ) from exc
 
 
-lib = load_library()
+_lib: ctypes.CDLL | None = None
 
-lib.gpu_malloc.argtypes = [ctypes.c_size_t]
-lib.gpu_malloc.restype = c_void_p
-lib.gpu_free.argtypes = [c_void_p]
-lib.gpu_memcpy_h2d.argtypes = [c_void_p, c_void_p, ctypes.c_size_t]
-lib.gpu_memcpy_d2h.argtypes = [c_void_p, c_void_p, ctypes.c_size_t]
-lib.gpu_memset.argtypes = [c_void_p, c_int, ctypes.c_size_t]
-lib.im2col_forward.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int]
-lib.gemm_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
-lib.leaky_relu_forward.argtypes = [c_void_p, c_float, c_int]
-lib.leaky_relu_backward.argtypes = [c_void_p, c_void_p, c_float, c_int]
-lib.dense_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
-lib.dense_backward_full.argtypes = [
-    c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p,
-    c_int, c_int, c_int,
-]
-lib.softmax_xent_grad_loss_acc.argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_int, c_int,
-]
-lib.count_correct.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int]
-lib.apply_sgd_update.argtypes = [c_void_p, c_void_p, c_float, c_int]
-lib.apply_momentum_update.argtypes = [c_void_p, c_void_p, c_void_p, c_float, c_float, c_int]
-lib.conv_update_fused.argtypes = [
-    c_void_p, c_void_p, c_void_p,
-    c_float, c_float, c_float, c_float, c_float,
-    c_int,
-]
-lib.clip_inplace.argtypes = [c_void_p, c_float, c_int]
-lib.nchw_to_cnhw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
-lib.cnhw_to_nchw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
-lib.maxpool_forward_store.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
-lib.maxpool_backward_use_idx.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
-lib.conv_backward.argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
-]
-lib.conv_backward_precol.argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
-]
+
+def _bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
+    bound_lib.gpu_malloc.argtypes = [ctypes.c_size_t]
+    bound_lib.gpu_malloc.restype = c_void_p
+    bound_lib.gpu_free.argtypes = [c_void_p]
+    bound_lib.gpu_memcpy_h2d.argtypes = [c_void_p, c_void_p, ctypes.c_size_t]
+    bound_lib.gpu_memcpy_d2h.argtypes = [c_void_p, c_void_p, ctypes.c_size_t]
+    bound_lib.gpu_memset.argtypes = [c_void_p, c_int, ctypes.c_size_t]
+    bound_lib.im2col_forward.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int]
+    bound_lib.gemm_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
+    bound_lib.leaky_relu_forward.argtypes = [c_void_p, c_float, c_int]
+    bound_lib.leaky_relu_backward.argtypes = [c_void_p, c_void_p, c_float, c_int]
+    bound_lib.dense_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
+    bound_lib.dense_backward_full.argtypes = [
+        c_void_p, c_void_p, c_void_p,
+        c_void_p, c_void_p, c_void_p,
+        c_int, c_int, c_int,
+    ]
+    bound_lib.softmax_xent_grad_loss_acc.argtypes = [
+        c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+        c_int, c_int,
+    ]
+    bound_lib.count_correct.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int]
+    bound_lib.apply_sgd_update.argtypes = [c_void_p, c_void_p, c_float, c_int]
+    bound_lib.apply_momentum_update.argtypes = [c_void_p, c_void_p, c_void_p, c_float, c_float, c_int]
+    bound_lib.conv_update_fused.argtypes = [
+        c_void_p, c_void_p, c_void_p,
+        c_float, c_float, c_float, c_float, c_float,
+        c_int,
+    ]
+    bound_lib.clip_inplace.argtypes = [c_void_p, c_float, c_int]
+    bound_lib.nchw_to_cnhw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
+    bound_lib.cnhw_to_nchw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
+    bound_lib.maxpool_forward_store.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
+    bound_lib.maxpool_backward_use_idx.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
+    bound_lib.conv_backward.argtypes = [
+        c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+        c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
+    ]
+    bound_lib.conv_backward_precol.argtypes = [
+        c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+        c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
+    ]
+    return bound_lib
+
+
+def get_lib() -> ctypes.CDLL:
+    global _lib
+    if _lib is None:
+        _lib = _bind_symbols(load_library())
+    return _lib
+
+
+class LazyCudaLibrary:
+    def __getattr__(self, name: str):
+        return getattr(get_lib(), name)
+
+
+lib = LazyCudaLibrary()
 
 
 def g2h(ptr, size):

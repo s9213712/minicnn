@@ -22,6 +22,16 @@ from minicnn.core.cuda_backend import (
 from minicnn.training.evaluation import evaluate
 from minicnn.models.initialization import init_weights
 from minicnn.training.checkpoints import free_weights, init_velocity_buffers, reload_weights_from_checkpoint, save_checkpoint, upload_weights
+from minicnn.training.cuda_ops import (
+    cnhw_to_nchw_into,
+    conv_forward_into,
+    maxpool_forward_into,
+    nchw_to_cnhw_into,
+    upload_int_to,
+    upload_to,
+    zero_floats,
+)
+from minicnn.training.cuda_workspace import BatchWorkspace
 from minicnn.config.settings import (
     BATCH,
     BEST_MODEL_FILENAME,
@@ -93,100 +103,6 @@ def current_device_weights():
 
 def current_velocity_buffers():
     return d_v_conv1, d_v_conv2, d_v_conv3, d_v_conv4, d_v_fc_w, d_v_fc_b
-
-
-def malloc_floats(size):
-    return lib.gpu_malloc(size * 4)
-
-
-def upload_to(ptr, arr):
-    arr = np.ascontiguousarray(arr.astype(np.float32, copy=False))
-    lib.gpu_memcpy_h2d(ptr, arr.ctypes.data, arr.size * 4)
-
-
-def upload_int_to(ptr, arr):
-    arr = np.ascontiguousarray(arr.astype(np.int32, copy=False))
-    lib.gpu_memcpy_h2d(ptr, arr.ctypes.data, arr.size * 4)
-
-
-def zero_floats(ptr, size):
-    lib.gpu_memset(ptr, 0, size * 4)
-
-
-def conv_forward_into(d_input_nchw, d_weight, d_col, d_raw, n, in_c, in_h, in_w, out_c):
-    out_h, out_w = in_h - KH + 1, in_w - KW + 1
-    lib.im2col_forward(d_input_nchw, d_col, n, in_c, in_h, in_w, KH, KW, out_h, out_w)
-    lib.gemm_forward(d_weight, d_col, d_raw, out_c, n * out_h * out_w, in_c * KH * KW)
-    lib.leaky_relu_forward(d_raw, c_float(LEAKY_ALPHA), out_c * n * out_h * out_w)
-
-
-def maxpool_forward_into(d_input_cnhw, d_pool, d_max_idx, n, c, h, w):
-    lib.maxpool_forward_store(d_pool, d_input_cnhw, d_max_idx, n, c, h, w)
-
-
-def cnhw_to_nchw_into(d_cnhw, d_nchw, n, c, h, w):
-    lib.cnhw_to_nchw(d_cnhw, d_nchw, n, c, h, w)
-
-
-def nchw_to_cnhw_into(d_nchw, d_cnhw, n, c, h, w):
-    lib.nchw_to_cnhw(d_nchw, d_cnhw, n, c, h, w)
-
-
-class BatchWorkspace:
-    def __init__(self):
-        self.ptrs = []
-        self.d_x = self.alloc(C1_IN * BATCH * H * W)
-        self.d_col1 = self.alloc(C1_IN * KH * KW * BATCH * H1 * W1)
-        self.d_conv1_raw = self.alloc(C1_OUT * BATCH * H1 * W1)
-        self.d_conv1_nchw = self.alloc(BATCH * C1_OUT * H1 * W1)
-        self.d_col2 = self.alloc(C2_IN * KH * KW * BATCH * H2 * W2)
-        self.d_conv2_raw = self.alloc(C2_OUT * BATCH * H2 * W2)
-        self.d_pool1 = self.alloc(C2_OUT * BATCH * P1H * P1W)
-        self.d_max_idx1 = self.alloc(C2_OUT * BATCH * P1H * P1W)
-        self.d_pool1_nchw = self.alloc(BATCH * C2_OUT * P1H * P1W)
-        self.d_col3 = self.alloc(C3_IN * KH * KW * BATCH * H3 * W3)
-        self.d_conv3_raw = self.alloc(C3_OUT * BATCH * H3 * W3)
-        self.d_conv3_nchw = self.alloc(BATCH * C3_OUT * H3 * W3)
-        self.d_col4 = self.alloc(C4_IN * KH * KW * BATCH * H4 * W4)
-        self.d_conv4_raw = self.alloc(C4_OUT * BATCH * H4 * W4)
-        self.d_pool2 = self.alloc(C4_OUT * BATCH * P2H * P2W)
-        self.d_max_idx2 = self.alloc(C4_OUT * BATCH * P2H * P2W)
-        self.d_pool2_nchw = self.alloc(BATCH * C4_OUT * P2H * P2W)
-        self.d_fc_out = self.alloc(BATCH * 10)
-        self.d_y = self.alloc(BATCH)
-        self.d_probs = self.alloc(BATCH * 10)
-        self.d_grad_logits = self.alloc(BATCH * 10)
-        self.d_loss_sum = self.alloc(1)
-        self.d_correct = self.alloc(1)
-        self.d_pool2_grad_nchw = self.alloc(BATCH * FC_IN)
-        self.d_fc_grad_w = self.alloc(10 * FC_IN)
-        self.d_fc_grad_b = self.alloc(10)
-        self.d_pool2_grad = self.alloc(C4_OUT * BATCH * P2H * P2W)
-        self.d_conv4_grad_raw = self.alloc(C4_OUT * BATCH * H4 * W4)
-        self.d_w_conv4_grad = self.alloc(C4_OUT * C4_IN * KH * KW)
-        self.d_conv3_grad = self.alloc(C4_IN * BATCH * H3 * W3)
-        self.d_conv3_grad_raw = self.alloc(C3_OUT * BATCH * H3 * W3)
-        self.d_w_conv3_grad = self.alloc(C3_OUT * C3_IN * KH * KW)
-        self.d_pool1_grad = self.alloc(C3_IN * BATCH * P1H * P1W)
-        self.d_pool1_grad_cnhw = self.alloc(C2_OUT * BATCH * P1H * P1W)
-        self.d_conv2_grad_raw = self.alloc(C2_OUT * BATCH * H2 * W2)
-        self.d_w_conv2_grad = self.alloc(C2_OUT * C2_IN * KH * KW)
-        self.d_conv1_grad = self.alloc(C2_IN * BATCH * H1 * W1)
-        self.d_conv1_grad_raw = self.alloc(C1_OUT * BATCH * H1 * W1)
-        self.d_w_conv1_grad = self.alloc(C1_OUT * C1_IN * KH * KW)
-        self.d_x_grad = self.alloc(C1_IN * BATCH * H * W)
-
-    def alloc(self, size):
-        ptr = malloc_floats(size)
-        self.ptrs.append(ptr)
-        return ptr
-
-    def free(self):
-        for ptr in self.ptrs:
-            lib.gpu_free(ptr)
-        self.ptrs = []
-
-
 
 
 def main():

@@ -40,6 +40,24 @@ python/best_models/
 
 PyTorch backend 會寫入 `*_best.pt`，CUDA legacy backend 會寫入 `*_best_model_split.npz`。`artifacts/` 仍只保存 metrics 與 summary 等實驗紀錄。
 
+`cuda_legacy` 的 `.so` 會 lazy-load：`minicnn --help`、`validate-dual-config`、`prepare-data`、torch backend、以及純 import 測試不會因為 native library 不存在而失敗。只有第一次真正呼叫 CUDA helper 時才會載入 `.so`。
+
+Debug 時可直接用 config override 控制訓練參數：
+
+```bash
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=cublas \
+  train.epochs=1 train.batch_size=32 \
+  dataset.num_samples=128 dataset.val_samples=32
+```
+
+legacy trainer 也支援常用環境變數覆蓋：
+
+```bash
+MINICNN_EPOCHS=1 MINICNN_BATCH=32 MINICNN_N_TRAIN=128 MINICNN_N_VAL=32 \
+  minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
+```
+
 ## Backend smoke comparison
 
 2026-04-19 在 RTX 3050 Laptop GPU 上跑過以下 smoke tests：
@@ -68,6 +86,8 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
 | `torch` | PyTorch CUDA | train_acc `10.16%`, val_acc `12.50%` |
 | `cuda_legacy` | `cublas` | train_acc `12.50%`, val_acc `20.31%`, test_acc `14.00%`, epoch time `0.1s` |
 | `cuda_legacy` | `handmade` | train_acc `12.50%`, val_acc `20.31%`, test_acc `14.00%`, epoch time `0.3s` |
+
+本次修改另以 `features/backend-smoke-matrix/run_smoke_matrix.py` 跑過更小的快速矩陣：`128` train、`32` validation、batch size `32`、`1` epoch。結果為 torch CUDA train_acc `11.72%` / val_acc `3.12%`，cuda_legacy cublas train_acc `7.03%` / val_acc `6.25%` / test_acc `12.97%`，cuda_legacy handmade train_acc `7.03%` / val_acc `6.25%` / test_acc `12.97%`。
 
 從乾淨環境重現 CIFAR-10 實驗時，先執行：
 
