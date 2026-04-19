@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from minicnn.data.cifar10 import load_cifar10, normalize_cifar
+from minicnn.data.cifar10 import load_cifar10, load_cifar10_test, normalize_cifar
 
 try:
     import torch
@@ -66,3 +66,15 @@ def create_dataloaders(dataset_cfg: dict, train_cfg: dict):
     train_loader = _make_loader(x_train, y_train, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_loader = _make_loader(x_val, y_val, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     return train_loader, val_loader
+
+
+def create_test_dataloader(dataset_cfg: dict, train_cfg: dict):
+    if torch is None:
+        raise RuntimeError('PyTorch is required for train-flex')
+    if dataset_cfg.get('type', 'cifar10') != 'cifar10':
+        return None
+    data_root = dataset_cfg.get('data_root', 'data/cifar-10-batches-py')
+    x_test, y_test = load_cifar10_test(data_root=Path(data_root), download=bool(dataset_cfg.get('download', False)))
+    batch_size = int(train_cfg.get('batch_size', 64))
+    num_workers = int(train_cfg.get('num_workers', 0))
+    return _make_loader(normalize_cifar(x_test), y_test, batch_size=batch_size, shuffle=False, num_workers=num_workers)

@@ -112,21 +112,21 @@ PyTorch backend 會寫入 `*_best.pt`；CUDA legacy backend 會寫入 `*_best_mo
 
 2026-04-19 使用 RTX 3050 Laptop GPU 驗證，CIFAR-10 smoke split，`256` 筆 train、`64` 筆 validation，batch size `64`，訓練 `1` epoch：
 
-| Backend | Native variant | Result |
-|---|---|---|
-| `torch` | PyTorch CUDA | train_acc `10.16%`, val_acc `12.50%` |
-| `cuda_legacy` | `cublas` | train_acc `12.50%`, val_acc `20.31%`, test_acc `14.00%`, epoch time `0.1s` |
-| `cuda_legacy` | `handmade` | train_acc `12.50%`, val_acc `20.31%`, test_acc `14.00%`, epoch time `0.3s` |
+| Backend | Native variant | Train acc | Val acc | Test acc | Epoch time |
+|---|---|---:|---:|---:|---:|
+| `torch` | PyTorch CUDA | `10.16%` | `12.50%` | 此較早 run 未記錄 | 此較早 run 未記錄 |
+| `cuda_legacy` | `cublas` | `12.50%` | `20.31%` | `14.00%` | `0.1s` |
+| `cuda_legacy` | `handmade` | `12.50%` | `20.31%` | `14.00%` | `0.3s` |
 
 Smoke test 的模型檔會寫入 `src/minicnn/training/models/`；若照 docs 的指令執行，run logs 會在 `/tmp/minicnn_backend_compare`。
 
 本次修改的最新快速驗證使用 `features/backend-smoke-matrix/run_smoke_matrix.py`，`128` 筆 train、`32` 筆 validation，batch size `32`，訓練 `1` epoch：
 
-| Backend | Native variant | Result |
-|---|---|---|
-| `torch` | PyTorch CUDA | train_acc `11.72%`, val_acc `3.12%` |
-| `cuda_legacy` | `cublas` | train_acc `7.03%`, val_acc `6.25%`, test_acc `12.97%`, epoch time `0.1s` |
-| `cuda_legacy` | `handmade` | train_acc `7.03%`, val_acc `6.25%`, test_acc `12.97%`, epoch time `0.2s` |
+| Backend | Native variant | Train acc | Val acc | Test acc | Epoch time |
+|---|---|---:|---:|---:|---:|
+| `torch` | PyTorch CUDA | `6.25%` | `12.50%` | `9.72%` | `0.3s` |
+| `cuda_legacy` | `cublas` | `7.03%` | `6.25%` | `12.97%` | `0.1s` |
+| `cuda_legacy` | `handmade` | `7.03%` | `6.25%` | `12.97%` | `0.2s` |
 
 驗證也包含 `pytest`（`15 passed`）、沒有 native `.so` 時的 CLI help、config validation、Python compile checks，以及 `minicnn build --legacy-make --variant both --check`。
 

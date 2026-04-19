@@ -23,6 +23,7 @@ def test_train_from_random_config(tmp_path: Path):
     assert (BEST_MODELS_ROOT / f'{run_dir.name}_best.pt').exists()
     assert (run_dir / 'metrics.jsonl').exists()
     assert (run_dir / 'summary.json').exists()
+    assert 'epoch_time_s' in (run_dir / 'metrics.jsonl').read_text(encoding='utf-8')
 
 
 def test_optimizer_type_override_drops_stale_default_kwargs():

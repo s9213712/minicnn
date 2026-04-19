@@ -123,3 +123,9 @@ def load_cifar10(data_root, n_train=8000, n_val=2000, seed=None, train_batch_ids
         x_test,
         y_test,
     )
+
+
+def load_cifar10_test(data_root, download=True):
+    prepare_cifar10(data_root, download=download)
+    x_test, y_test = _load_batch(os.path.join(data_root, "test_batch"))
+    return x_test, y_test

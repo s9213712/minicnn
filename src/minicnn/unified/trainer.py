@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,8 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
 
     if backend == 'torch':
         run_dir = train_from_config(cfg)
+        torch_summary_path = run_dir / 'summary.json'
+        torch_summary = json.loads(torch_summary_path.read_text(encoding='utf-8')) if torch_summary_path.exists() else {}
         summary: dict[str, Any] = {
             'selected_backend': backend,
             'effective_backend': 'torch',
@@ -34,6 +37,9 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
             'best_model_path': str(BEST_MODELS_ROOT / f'{run_dir.name}_best.pt'),
             'config_backend_toggle_only': True,
         }
+        for key in ('test_loss', 'test_acc'):
+            if key in torch_summary:
+                summary[key] = torch_summary[key]
         dump_summary(run_dir, summary)
         return run_dir
 
