@@ -18,12 +18,36 @@ def test_train_from_random_config(tmp_path: Path):
         'loss': {'type': 'CrossEntropyLoss'},
         'optimizer': {'type': 'SGD', 'lr': 0.01, 'momentum': 0.0},
         'scheduler': {'enabled': False},
+        'runtime': {'save_every_n_epochs': 1},
     }
     run_dir = train_from_config(cfg)
     assert (BEST_MODELS_ROOT / f'{run_dir.name}_best.pt').exists()
+    assert (BEST_MODELS_ROOT / f'{run_dir.name}_epoch_1.pt').exists()
     assert (run_dir / 'metrics.jsonl').exists()
     assert (run_dir / 'summary.json').exists()
     assert 'epoch_time_s' in (run_dir / 'metrics.jsonl').read_text(encoding='utf-8')
+
+
+def test_optimizer_weight_decay_excludes_bias_and_norm_parameters():
+    import torch
+
+    from minicnn.flex.trainer import _optimizer_params
+
+    model = torch.nn.Sequential(
+        torch.nn.Linear(4, 4),
+        torch.nn.BatchNorm1d(4),
+        torch.nn.Linear(4, 2),
+    )
+    cfg = {'type': 'SGD', 'lr': 0.01, 'weight_decay': 0.1}
+
+    groups = _optimizer_params(model, cfg)
+
+    assert len(groups) == 2
+    assert groups[0]['weight_decay'] == 0.1
+    assert groups[1]['weight_decay'] == 0.0
+    assert len(groups[0]['params']) == 2
+    assert len(groups[1]['params']) == 4
+    assert 'weight_decay' not in cfg
 
 
 def test_optimizer_type_override_drops_stale_default_kwargs():

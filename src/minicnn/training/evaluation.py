@@ -146,4 +146,6 @@ def evaluate(x, y, device_weights, batch_size=BATCH, max_batches=EVAL_MAX_BATCHE
             break
         correct += count_correct_batch(x[idx_s:idx_e], y[idx_s:idx_e], device_weights)
         total += idx_e - idx_s
+    if total == 0:
+        return 0.0
     return correct / total * 100

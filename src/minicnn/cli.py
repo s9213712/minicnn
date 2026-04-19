@@ -14,6 +14,30 @@ from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED, summarize_legacy_
 from minicnn.unified.trainer import train_unified_from_config
 
 
+def _load_flex_config_or_exit(config_path: str, overrides: list[str]) -> dict:
+    try:
+        return load_flex_config(config_path, overrides)
+    except FileNotFoundError:
+        print(
+            f"Config file not found: {config_path}\n"
+            "Create a template with:\n"
+            "  minicnn config-template > configs/my_config.yaml"
+        )
+        raise SystemExit(2)
+
+
+def _load_unified_config_or_exit(config_path: str, overrides: list[str]) -> dict:
+    try:
+        return load_unified_config(config_path, overrides)
+    except FileNotFoundError:
+        print(
+            f"Config file not found: {config_path}\n"
+            "Create a template with:\n"
+            "  minicnn dual-config-template > configs/my_config.yaml"
+        )
+        raise SystemExit(2)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='minicnn', description='MiniCNN dual-backend CLI (pure handcrafted CUDA + PyTorch)')
     sub = parser.add_subparsers(dest='command', required=True)
@@ -109,13 +133,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == 'train-flex':
-        cfg = load_flex_config(args.config, args.overrides)
+        cfg = _load_flex_config_or_exit(args.config, args.overrides)
         run_dir = train_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
 
     if args.command == 'validate-dual-config':
-        cfg = load_unified_config(args.config, args.overrides)
+        cfg = _load_unified_config_or_exit(args.config, args.overrides)
         errors = validate_cuda_legacy_compatibility(cfg)
         if errors:
             print(json.dumps({'ok': False, 'errors': errors}, indent=2))
@@ -124,12 +148,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == 'show-cuda-mapping':
-        cfg = load_unified_config(args.config, args.overrides)
+        cfg = _load_unified_config_or_exit(args.config, args.overrides)
         print(json.dumps(summarize_legacy_mapping(cfg), indent=2))
         return 0
 
     if args.command == 'train-dual':
-        cfg = load_unified_config(args.config, args.overrides)
+        cfg = _load_unified_config_or_exit(args.config, args.overrides)
         run_dir = train_unified_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0

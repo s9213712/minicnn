@@ -84,7 +84,12 @@ optimizer:
   type: AdamW
   lr: 0.001
   weight_decay: 0.0001
+  exclude_bias_norm_weight_decay: true
 ```
+
+For torch flex training, `exclude_bias_norm_weight_decay: true` keeps weight
+decay off bias terms and normalization-layer parameters while preserving it for
+regular weights.
 
 ## Scheduler section
 
@@ -93,6 +98,26 @@ scheduler:
   type: CosineAnnealingLR
   T_max: 20
 ```
+
+## Training controls
+
+```yaml
+train:
+  epochs: 50
+  grad_accum_steps: 4
+  early_stop_patience: 8
+  min_delta: 0.001
+
+runtime:
+  save_every_n_epochs: 5
+```
+
+`train-flex` flushes the final partial gradient-accumulation window at the end
+of each epoch. When `early_stop_patience` is greater than zero, torch flex
+training stops after that many epochs without a `val_acc` improvement larger
+than `min_delta`. Periodic checkpoints are written to
+`src/minicnn/training/models/` as `*_epoch_<N>.pt`; best checkpoints still use
+`*_best.pt`.
 
 ## CLI overrides
 

@@ -110,8 +110,8 @@ def load_cifar10(data_root, n_train=8000, n_val=2000, seed=None, train_batch_ids
     if n_train + n_val > x_train_all.shape[0]:
         raise ValueError(f"n_train + n_val exceeds available samples: {n_train} + {n_val}")
 
-    rng = np.random.default_rng(seed) if seed is not None else None
-    indices = rng.permutation(x_train_all.shape[0]) if rng else np.random.permutation(x_train_all.shape[0])
+    rng = np.random.default_rng(seed)
+    indices = rng.permutation(x_train_all.shape[0])
     train_idx = indices[:n_train]
     val_idx = indices[n_train:n_train + n_val]
 

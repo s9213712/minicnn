@@ -6,6 +6,8 @@ from typing import Any
 
 import yaml
 
+from minicnn.config.parsing import parse_scalar
+
 
 DEFAULT_CONFIG: dict[str, Any] = {
     'project': {
@@ -37,10 +39,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
         'grad_accum_steps': 1,
         'num_workers': 0,
         'log_every': 10,
+        'early_stop_patience': 0,
+        'min_delta': 0.0,
     },
     'loss': {'type': 'CrossEntropyLoss'},
-    'optimizer': {'type': 'SGD', 'lr': 0.01, 'momentum': 0.9},
+    'optimizer': {'type': 'SGD', 'lr': 0.01, 'momentum': 0.9, 'exclude_bias_norm_weight_decay': True},
     'scheduler': {'enabled': False, 'type': 'StepLR', 'step_size': 10, 'gamma': 0.5},
+    'runtime': {'save_every_n_epochs': 0},
 }
 
 
@@ -61,32 +66,6 @@ def _deep_update(dst: dict[str, Any], src: dict[str, Any]) -> dict[str, Any]:
     return dst
 
 
-def _parse_scalar(text: str) -> Any:
-    low = text.lower()
-    if low in {'true', 'false'}:
-        return low == 'true'
-    if low in {'none', 'null'}:
-        return None
-    try:
-        if text.startswith('0') and text not in {'0', '0.0'} and not text.startswith('0.'):
-            raise ValueError
-        return int(text)
-    except ValueError:
-        pass
-    try:
-        return float(text)
-    except ValueError:
-        pass
-    if text.startswith('[') and text.endswith(']'):
-        try:
-            loaded = yaml.safe_load(text)
-        except yaml.YAMLError:
-            loaded = None
-        if isinstance(loaded, list):
-            return loaded
-    return text
-
-
 def load_flex_config(path: str | Path | None = None, overrides: list[str] | None = None) -> dict[str, Any]:
     data = copy.deepcopy(DEFAULT_CONFIG)
     if path:
@@ -100,7 +79,7 @@ def load_flex_config(path: str | Path | None = None, overrides: list[str] | None
             if '=' not in item:
                 raise ValueError(f'Override must look like key=value, got: {item}')
             key, raw = item.split('=', 1)
-            parsed_overrides.append((key.split('.'), _parse_scalar(raw)))
+            parsed_overrides.append((key.split('.'), parse_scalar(raw)))
 
         parsed_overrides.sort(key=lambda item: 0 if item[0][-1] == 'type' else 1)
         for parts, value in parsed_overrides:

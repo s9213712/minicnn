@@ -12,6 +12,10 @@ def malloc_floats(size):
     return lib.gpu_malloc(size * 4)
 
 
+def malloc_ints(size):
+    return lib.gpu_malloc(size * 4)
+
+
 def upload_to(ptr, arr):
     arr = np.ascontiguousarray(arr.astype(np.float32, copy=False))
     lib.gpu_memcpy_h2d(ptr, arr.ctypes.data, arr.size * 4)

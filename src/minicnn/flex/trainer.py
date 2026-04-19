@@ -52,6 +52,47 @@ def _best_model_path(run_dir: Path) -> Path:
     return BEST_MODELS_ROOT / f'{run_dir.name}_best.pt'
 
 
+def _checkpoint_path(run_dir: Path, epoch: int) -> Path:
+    BEST_MODELS_ROOT.mkdir(parents=True, exist_ok=True)
+    return BEST_MODELS_ROOT / f'{run_dir.name}_epoch_{epoch}.pt'
+
+
+def _optimizer_params(model, optimizer_cfg: dict[str, Any]):
+    weight_decay = float(optimizer_cfg.get('weight_decay', 0.0) or 0.0)
+    exclude_bias_norm = bool(optimizer_cfg.pop('exclude_bias_norm_weight_decay', True))
+    if weight_decay <= 0.0 or not exclude_bias_norm:
+        return model.parameters()
+
+    norm_types = (
+        torch.nn.BatchNorm1d,
+        torch.nn.BatchNorm2d,
+        torch.nn.BatchNorm3d,
+        torch.nn.GroupNorm,
+        torch.nn.InstanceNorm1d,
+        torch.nn.InstanceNorm2d,
+        torch.nn.InstanceNorm3d,
+        torch.nn.LayerNorm,
+    )
+    decay = []
+    no_decay = []
+    for module in model.modules():
+        for name, param in module.named_parameters(recurse=False):
+            if not param.requires_grad:
+                continue
+            if name == 'bias' or isinstance(module, norm_types):
+                no_decay.append(param)
+            else:
+                decay.append(param)
+
+    optimizer_cfg.pop('weight_decay', None)
+    groups = []
+    if decay:
+        groups.append({'params': decay, 'weight_decay': weight_decay})
+    if no_decay:
+        groups.append({'params': no_decay, 'weight_decay': 0.0})
+    return groups or model.parameters()
+
+
 def train_from_config(cfg: dict[str, Any]) -> Path:
     if torch is None:
         raise RuntimeError('PyTorch is required for train-flex')
@@ -66,7 +107,8 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
     input_shape = tuple(dataset_cfg.get('input_shape', [3, 32, 32]))
     model = build_model(model_cfg, input_shape=input_shape).to(device)
     criterion = build_loss(cfg.get('loss', {'type': 'CrossEntropyLoss'}))
-    optimizer = build_optimizer(model.parameters(), cfg.get('optimizer', {'type': 'SGD', 'lr': 0.01}))
+    optimizer_cfg = dict(cfg.get('optimizer', {'type': 'SGD', 'lr': 0.01}))
+    optimizer = build_optimizer(_optimizer_params(model, optimizer_cfg), optimizer_cfg)
     scheduler = build_scheduler(optimizer, cfg.get('scheduler'))
     amp_enabled = bool(train_cfg.get('amp', False) and device.type == 'cuda')
     if hasattr(torch, 'amp') and hasattr(torch.amp, 'GradScaler'):
@@ -79,6 +121,12 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
     metrics_path = run_dir / 'metrics.jsonl'
     grad_accum_steps = max(1, int(train_cfg.get('grad_accum_steps', 1)))
     epochs = int(train_cfg.get('epochs', 1))
+    early_stop_patience = int(train_cfg.get('early_stop_patience', 0) or 0)
+    min_delta = float(train_cfg.get('min_delta', 0.0) or 0.0)
+    epochs_no_improve = 0
+    runtime_cfg = cfg.get('runtime', {})
+    save_every_n_epochs = int(runtime_cfg.get('save_every_n_epochs', train_cfg.get('save_every_n_epochs', 0)) or 0)
+    periodic_checkpoints: list[str] = []
 
     with metrics_path.open('w', encoding='utf-8') as metrics_file:
         for epoch in range(1, epochs + 1):
@@ -128,9 +176,29 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
             }
             metrics_file.write(json.dumps(row) + '\n')
             metrics_file.flush()
-            if val_metrics['acc'] > best_val_acc:
+            if save_every_n_epochs > 0 and epoch % save_every_n_epochs == 0:
+                checkpoint_path = _checkpoint_path(run_dir, epoch)
+                torch.save({'epoch': epoch, 'model_state': model.state_dict(), 'config': cfg}, checkpoint_path)
+                periodic_checkpoints.append(str(checkpoint_path))
+            improved = val_metrics['acc'] > best_val_acc + min_delta
+            if improved:
                 best_val_acc = val_metrics['acc']
+                epochs_no_improve = 0
                 torch.save({'model_state': model.state_dict(), 'config': cfg}, best_model_path)
+                save_msg = ' saved_best'
+            else:
+                epochs_no_improve += 1
+                save_msg = ''
+            print(
+                f"Epoch {epoch}/{epochs}: loss={train_metrics['loss']:.4f}, "
+                f"train_acc={train_metrics['acc'] * 100:.2f}%, "
+                f"val_acc={val_metrics['acc'] * 100:.2f}%, "
+                f"lr={optimizer.param_groups[0]['lr']:.6g}, "
+                f"time={epoch_time_s:.1f}s{save_msg}"
+            )
+            if early_stop_patience > 0 and epochs_no_improve >= early_stop_patience:
+                print(f'Early stopping after {epoch} epochs; best val_acc={best_val_acc * 100:.2f}%.')
+                break
 
     test_metrics = None
     if test_loader is not None and best_model_path.exists():
@@ -151,6 +219,8 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
         'loss': cfg.get('loss', {}).get('type'),
         'scheduler': cfg.get('scheduler', {}).get('type') if cfg.get('scheduler', {}).get('enabled') else None,
     }
+    if periodic_checkpoints:
+        summary['periodic_checkpoints'] = periodic_checkpoints
     if test_metrics is not None:
         summary['test_loss'] = test_metrics['loss']
         summary['test_acc'] = test_metrics['acc']

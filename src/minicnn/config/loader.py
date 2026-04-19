@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from minicnn.config.parsing import parse_scalar
 from .schema import (
     BackendConfig,
     CallbackConfig,
@@ -45,30 +46,6 @@ def _deep_update(dst: dict[str, Any], src: dict[str, Any]) -> dict[str, Any]:
     return dst
 
 
-def _parse_scalar(text: str) -> Any:
-    low = text.lower()
-    if low in {"true", "false"}:
-        return low == "true"
-    if low in {"none", "null"}:
-        return None
-    try:
-        if text.startswith('0') and text != '0' and not text.startswith('0.'):
-            raise ValueError
-        return int(text)
-    except ValueError:
-        pass
-    try:
-        return float(text)
-    except ValueError:
-        pass
-    if text.startswith('[') and text.endswith(']'):
-        inner = text[1:-1].strip()
-        if not inner:
-            return []
-        return [_parse_scalar(x.strip()) for x in inner.split(',')]
-    return text
-
-
 def load_config(path: str | Path | None = None, overrides: list[str] | None = None) -> ExperimentConfig:
     data: dict[str, Any] = ExperimentConfig().to_dict()
     if path:
@@ -85,7 +62,7 @@ def load_config(path: str | Path | None = None, overrides: list[str] | None = No
             cur = data
             for p in parts[:-1]:
                 cur = cur.setdefault(p, {})
-            cur[parts[-1]] = _parse_scalar(raw)
+            cur[parts[-1]] = parse_scalar(raw)
     return dict_to_config(data)
 
 

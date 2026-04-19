@@ -164,6 +164,8 @@ def evaluate(model, x, y, device, batch_size=BATCH, max_batches=EVAL_MAX_BATCHES
             pred = torch.argmax(logits, dim=1).cpu().numpy()
             correct += np.sum(pred == y[idx_s:idx_e])
             total += idx_e - idx_s
+    if total == 0:
+        return 0.0
     return correct / total * 100
 
 

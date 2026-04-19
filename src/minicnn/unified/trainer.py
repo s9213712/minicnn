@@ -45,7 +45,7 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
         run_dir = train_from_config(cfg)
         torch_summary_path = run_dir / 'summary.json'
         torch_summary = json.loads(torch_summary_path.read_text(encoding='utf-8')) if torch_summary_path.exists() else {}
-        summary: dict[str, Any] = {
+        unified_summary: dict[str, Any] = {
             'selected_backend': backend,
             'effective_backend': 'torch',
             'run_dir': str(run_dir),
@@ -54,18 +54,18 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
         }
         for key in ('test_loss', 'test_acc'):
             if key in torch_summary:
-                summary[key] = torch_summary[key]
-        dump_summary(run_dir, summary)
+                unified_summary[key] = torch_summary[key]
+        dump_summary(run_dir, unified_summary)
         return run_dir
 
     if backend == 'cuda_legacy':
         run_dir = create_run_dir(cfg)
-        summary: dict[str, Any] = {
+        cuda_summary: dict[str, Any] = {
             'selected_backend': backend,
             'run_dir': str(run_dir),
             'config_backend_toggle_only': True,
         }
-        _configure_cuda_legacy_runtime(cfg, summary)
+        _configure_cuda_legacy_runtime(cfg, cuda_summary)
         exp = compile_to_legacy_experiment(cfg)
         os.environ['MINICNN_ARTIFACT_RUN_DIR'] = str(run_dir)
         from minicnn.config.settings import apply_experiment_config
@@ -73,10 +73,10 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
         _reload_legacy_modules_after_config()
         from minicnn.training.train_cuda import main as legacy_main
         legacy_main()
-        summary['effective_backend'] = 'cuda_legacy'
-        summary['best_model_path'] = str(legacy_main.__globals__.get('BEST_MODEL_PATH', ''))
-        summary['legacy_mapping'] = summarize_legacy_mapping(cfg)
-        dump_summary(run_dir, summary)
+        cuda_summary['effective_backend'] = 'cuda_legacy'
+        cuda_summary['best_model_path'] = str(legacy_main.__globals__.get('BEST_MODEL_PATH', ''))
+        cuda_summary['legacy_mapping'] = summarize_legacy_mapping(cfg)
+        dump_summary(run_dir, cuda_summary)
         return run_dir
 
     raise ValueError(f'Unknown engine.backend={backend!r}; expected torch or cuda_legacy')

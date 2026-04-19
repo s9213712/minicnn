@@ -114,7 +114,11 @@ def random_crop_batch(x, rng, padding):
     padded = np.pad(x, ((0, 0), (0, 0), (padding, padding), (padding, padding)), mode='reflect')
     tops = rng.integers(0, 2 * padding + 1, size=n)
     lefts = rng.integers(0, 2 * padding + 1, size=n)
-    return np.stack([padded[i, :, top:top + h, left:left + w] for i, (top, left) in enumerate(zip(tops, lefts))]).astype(np.float32)
+    batch_idx = np.arange(n)[:, None, None, None]
+    channel_idx = np.arange(x.shape[1])[None, :, None, None]
+    row_idx = tops[:, None, None, None] + np.arange(h)[None, None, :, None]
+    col_idx = lefts[:, None, None, None] + np.arange(w)[None, None, None, :]
+    return np.ascontiguousarray(padded[batch_idx, channel_idx, row_idx, col_idx].astype(np.float32, copy=False))
 
 
 def augment_batch(x, rng):
@@ -177,217 +181,219 @@ def main():
     workspace = BatchWorkspace()
     train_rng = np.random.default_rng(TRAIN_SEED)
 
-    for epoch in range(EPOCHS):
-        t0 = time.time()
-        total_loss = 0.0
-        correct = 0
-        total_seen = 0
-        indices = train_rng.permutation(x_train.shape[0])
+    try:
+        for epoch in range(EPOCHS):
+            t0 = time.time()
+            total_loss = 0.0
+            correct = 0
+            total_seen = 0
+            indices = train_rng.permutation(x_train.shape[0])
 
-        for batch_idx in range(NBATCHES):
-            log_grad = GRAD_DEBUG and batch_idx < GRAD_DEBUG_BATCHES
-            idx_s = batch_idx * BATCH
-            idx_e = min(idx_s + BATCH, x_train.shape[0])
-            n = idx_e - idx_s
-            if n <= 0:
-                continue
-            x = x_train[indices[idx_s:idx_e]]
-            y = y_train[indices[idx_s:idx_e]]
+            for batch_idx in range(NBATCHES):
+                log_grad = GRAD_DEBUG and batch_idx < GRAD_DEBUG_BATCHES
+                idx_s = batch_idx * BATCH
+                idx_e = min(idx_s + BATCH, x_train.shape[0])
+                n = idx_e - idx_s
+                if n <= 0:
+                    continue
+                x = x_train[indices[idx_s:idx_e]]
+                y = y_train[indices[idx_s:idx_e]]
 
-            x = augment_batch(x, train_rng)
+                x = augment_batch(x, train_rng)
 
-            # Forward, keeping intermediates needed for backward.
-            upload_to(workspace.d_x, x)
-            upload_int_to(workspace.d_y, y)
+                # Forward, keeping intermediates needed for backward.
+                upload_to(workspace.d_x, x)
+                upload_int_to(workspace.d_y, y)
 
-            conv_forward_into(workspace.d_x, d_w_conv1, workspace.d_col1, workspace.d_conv1_raw, n, C1_IN, H, W, C1_OUT)
-            cnhw_to_nchw_into(workspace.d_conv1_raw, workspace.d_conv1_nchw, n, C1_OUT, H1, W1)
+                conv_forward_into(workspace.d_x, d_w_conv1, workspace.d_col1, workspace.d_conv1_raw, n, C1_IN, H, W, C1_OUT)
+                cnhw_to_nchw_into(workspace.d_conv1_raw, workspace.d_conv1_nchw, n, C1_OUT, H1, W1)
 
-            conv_forward_into(workspace.d_conv1_nchw, d_w_conv2, workspace.d_col2, workspace.d_conv2_raw, n, C2_IN, H1, W1, C2_OUT)
-            maxpool_forward_into(workspace.d_conv2_raw, workspace.d_pool1, workspace.d_max_idx1, n, C2_OUT, H2, W2)
-            cnhw_to_nchw_into(workspace.d_pool1, workspace.d_pool1_nchw, n, C2_OUT, P1H, P1W)
+                conv_forward_into(workspace.d_conv1_nchw, d_w_conv2, workspace.d_col2, workspace.d_conv2_raw, n, C2_IN, H1, W1, C2_OUT)
+                maxpool_forward_into(workspace.d_conv2_raw, workspace.d_pool1, workspace.d_max_idx1, n, C2_OUT, H2, W2)
+                cnhw_to_nchw_into(workspace.d_pool1, workspace.d_pool1_nchw, n, C2_OUT, P1H, P1W)
 
-            conv_forward_into(workspace.d_pool1_nchw, d_w_conv3, workspace.d_col3, workspace.d_conv3_raw, n, C3_IN, P1H, P1W, C3_OUT)
-            cnhw_to_nchw_into(workspace.d_conv3_raw, workspace.d_conv3_nchw, n, C3_OUT, H3, W3)
+                conv_forward_into(workspace.d_pool1_nchw, d_w_conv3, workspace.d_col3, workspace.d_conv3_raw, n, C3_IN, P1H, P1W, C3_OUT)
+                cnhw_to_nchw_into(workspace.d_conv3_raw, workspace.d_conv3_nchw, n, C3_OUT, H3, W3)
 
-            conv_forward_into(workspace.d_conv3_nchw, d_w_conv4, workspace.d_col4, workspace.d_conv4_raw, n, C4_IN, H3, W3, C4_OUT)
-            maxpool_forward_into(workspace.d_conv4_raw, workspace.d_pool2, workspace.d_max_idx2, n, C4_OUT, H4, W4)
-            cnhw_to_nchw_into(workspace.d_pool2, workspace.d_pool2_nchw, n, C4_OUT, P2H, P2W)
+                conv_forward_into(workspace.d_conv3_nchw, d_w_conv4, workspace.d_col4, workspace.d_conv4_raw, n, C4_IN, H3, W3, C4_OUT)
+                maxpool_forward_into(workspace.d_conv4_raw, workspace.d_pool2, workspace.d_max_idx2, n, C4_OUT, H4, W4)
+                cnhw_to_nchw_into(workspace.d_pool2, workspace.d_pool2_nchw, n, C4_OUT, P2H, P2W)
 
-            lib.dense_forward(workspace.d_pool2_nchw, d_fc_w, d_fc_b, workspace.d_fc_out, n, FC_IN, 10)
-            lib.gpu_memset(workspace.d_loss_sum, 0, 4)
-            lib.gpu_memset(workspace.d_correct, 0, 4)
-            lib.softmax_xent_grad_loss_acc(
-                workspace.d_fc_out,
-                workspace.d_y,
-                workspace.d_probs,
-                workspace.d_grad_logits,
-                workspace.d_loss_sum,
-                workspace.d_correct,
-                n,
-                10,
-            )
-            batch_loss_sum = download_float_scalar(workspace.d_loss_sum)
-            batch_correct = download_int_scalar(workspace.d_correct)
-            total_loss += batch_loss_sum
-            correct += batch_correct
-            total_seen += n
-
-            lib.dense_backward_full(
-                workspace.d_grad_logits,
-                workspace.d_pool2_nchw,
-                d_fc_w,
-                workspace.d_pool2_grad_nchw,
-                workspace.d_fc_grad_w,
-                workspace.d_fc_grad_b,
-                n,
-                FC_IN,
-                10,
-            )
-            lib.conv_update_fused(
-                d_fc_w,
-                workspace.d_fc_grad_w,
-                d_v_fc_w,
-                c_float(current_lr_fc),
-                c_float(MOMENTUM),
-                c_float(WEIGHT_DECAY),
-                c_float(GRAD_CLIP_FC),
-                c_float(1.0),
-                10 * FC_IN,
-            )
-            lib.conv_update_fused(
-                d_fc_b,
-                workspace.d_fc_grad_b,
-                d_v_fc_b,
-                c_float(current_lr_fc),
-                c_float(MOMENTUM),
-                c_float(0.0),
-                c_float(GRAD_CLIP_BIAS),
-                c_float(1.0),
-                10,
-            )
-
-            # Conv4 backward.
-            lib.clip_inplace(workspace.d_pool2_grad_nchw, c_float(GRAD_POOL_CLIP), n * FC_IN)
-            nchw_to_cnhw_into(workspace.d_pool2_grad_nchw, workspace.d_pool2_grad, n, C4_OUT, P2H, P2W)
-            zero_floats(workspace.d_conv4_grad_raw, C4_OUT * n * H4 * W4)
-            lib.maxpool_backward_use_idx(workspace.d_pool2_grad, workspace.d_max_idx2, workspace.d_conv4_grad_raw, n, C4_OUT, H4, W4)
-            lib.leaky_relu_backward(workspace.d_conv4_raw, workspace.d_conv4_grad_raw, c_float(LEAKY_ALPHA), C4_OUT * n * H4 * W4)
-
-            lib.conv_backward_precol(
-                workspace.d_conv4_grad_raw, workspace.d_conv3_nchw, d_w_conv4, workspace.d_w_conv4_grad, workspace.d_conv3_grad,
-                workspace.d_col4,
-                n, C4_IN, H3, W3, KH, KW, H4, W4, C4_OUT,
-            )
-            update_conv(
-                d_w_conv4, workspace.d_w_conv4_grad, d_v_conv4, current_lr_conv, MOMENTUM, C4_OUT * C4_IN * KH * KW,
-                "conv4", WEIGHT_DECAY, GRAD_CLIP_CONV,
-                H4 * W4 if CONV_GRAD_SPATIAL_NORMALIZE else 1.0,
-                log_grad,
-            )
-
-            # Conv3 backward.
-            nchw_to_cnhw_into(workspace.d_conv3_grad, workspace.d_conv3_grad_raw, n, C3_OUT, H3, W3)
-            lib.leaky_relu_backward(workspace.d_conv3_raw, workspace.d_conv3_grad_raw, c_float(LEAKY_ALPHA), C3_OUT * n * H3 * W3)
-            lib.conv_backward_precol(
-                workspace.d_conv3_grad_raw, workspace.d_pool1_nchw, d_w_conv3, workspace.d_w_conv3_grad, workspace.d_pool1_grad,
-                workspace.d_col3,
-                n, C3_IN, P1H, P1W, KH, KW, H3, W3, C3_OUT,
-            )
-            update_conv(
-                d_w_conv3, workspace.d_w_conv3_grad, d_v_conv3, current_lr_conv, MOMENTUM, C3_OUT * C3_IN * KH * KW,
-                "conv3", WEIGHT_DECAY, GRAD_CLIP_CONV,
-                H3 * W3 if CONV_GRAD_SPATIAL_NORMALIZE else 1.0,
-                log_grad,
-            )
-
-            # Conv2 backward.
-            nchw_to_cnhw_into(workspace.d_pool1_grad, workspace.d_pool1_grad_cnhw, n, C2_OUT, P1H, P1W)
-            zero_floats(workspace.d_conv2_grad_raw, C2_OUT * n * H2 * W2)
-            lib.maxpool_backward_use_idx(workspace.d_pool1_grad_cnhw, workspace.d_max_idx1, workspace.d_conv2_grad_raw, n, C2_OUT, H2, W2)
-            lib.leaky_relu_backward(workspace.d_conv2_raw, workspace.d_conv2_grad_raw, c_float(LEAKY_ALPHA), C2_OUT * n * H2 * W2)
-            lib.conv_backward_precol(
-                workspace.d_conv2_grad_raw, workspace.d_conv1_nchw, d_w_conv2, workspace.d_w_conv2_grad, workspace.d_conv1_grad,
-                workspace.d_col2,
-                n, C2_IN, H1, W1, KH, KW, H2, W2, C2_OUT,
-            )
-            update_conv(
-                d_w_conv2, workspace.d_w_conv2_grad, d_v_conv2, current_lr_conv, MOMENTUM, C2_OUT * C2_IN * KH * KW,
-                "conv2", WEIGHT_DECAY, GRAD_CLIP_CONV,
-                H2 * W2 if CONV_GRAD_SPATIAL_NORMALIZE else 1.0,
-                log_grad,
-            )
-
-            # Conv1 backward.
-            nchw_to_cnhw_into(workspace.d_conv1_grad, workspace.d_conv1_grad_raw, n, C1_OUT, H1, W1)
-            lib.leaky_relu_backward(workspace.d_conv1_raw, workspace.d_conv1_grad_raw, c_float(LEAKY_ALPHA), C1_OUT * n * H1 * W1)
-            lib.conv_backward_precol(
-                workspace.d_conv1_grad_raw, workspace.d_x, d_w_conv1, workspace.d_w_conv1_grad, workspace.d_x_grad,
-                workspace.d_col1,
-                n, C1_IN, H, W, KH, KW, H1, W1, C1_OUT,
-            )
-            update_conv(
-                d_w_conv1, workspace.d_w_conv1_grad, d_v_conv1, current_lr_conv1, MOMENTUM, C1_OUT * C1_IN * KH * KW,
-                "conv1", WEIGHT_DECAY, GRAD_CLIP_CONV,
-                H1 * W1 if CONV_GRAD_SPATIAL_NORMALIZE else 1.0,
-                log_grad,
-            )
-
-            if (batch_idx + 1) % 100 == 0:
-                print(f"  Batch {batch_idx+1}/{NBATCHES}: loss={batch_loss_sum/n:.4f}, acc={correct/total_seen*100:.1f}%")
-
-        train_acc = correct / total_seen * 100
-        val_acc = evaluate(x_val, y_val, current_device_weights())
-        epoch_loss = total_loss / total_seen
-        elapsed = time.time() - t0
-        improved = val_acc > (best_val_acc + MIN_DELTA)
-
-        if improved:
-            best_val_acc = val_acc
-            best_epoch = epoch + 1
-            epochs_no_improve = 0
-            plateau_count = 0
-            save_checkpoint(
-                BEST_MODEL_PATH,
-                epoch + 1,
-                val_acc,
-                current_lr_conv1,
-                current_lr_conv,
-                current_lr_fc,
-                current_device_weights(),
-            )
-            save_msg = " [saved best]"
-        else:
-            epochs_no_improve += 1
-            plateau_count += 1
-            save_msg = ""
-
-        if plateau_count >= LR_PLATEAU_PATIENCE:
-            new_lr_conv1 = max(current_lr_conv1 * LR_REDUCE_FACTOR, MIN_LR)
-            new_lr_conv = max(current_lr_conv * LR_REDUCE_FACTOR, MIN_LR)
-            new_lr_fc = max(current_lr_fc * LR_REDUCE_FACTOR, MIN_LR)
-            if (new_lr_conv1, new_lr_conv, new_lr_fc) != (current_lr_conv1, current_lr_conv, current_lr_fc):
-                current_lr_conv1 = new_lr_conv1
-                current_lr_conv = new_lr_conv
-                current_lr_fc = new_lr_fc
-                print(
-                    f"  LR reduced -> conv1={current_lr_conv1:.6f}, "
-                    f"conv={current_lr_conv:.6f}, fc={current_lr_fc:.6f}"
+                lib.dense_forward(workspace.d_pool2_nchw, d_fc_w, d_fc_b, workspace.d_fc_out, n, FC_IN, 10)
+                lib.gpu_memset(workspace.d_loss_sum, 0, 4)
+                lib.gpu_memset(workspace.d_correct, 0, 4)
+                lib.softmax_xent_grad_loss_acc(
+                    workspace.d_fc_out,
+                    workspace.d_y,
+                    workspace.d_probs,
+                    workspace.d_grad_logits,
+                    workspace.d_loss_sum,
+                    workspace.d_correct,
+                    n,
+                    10,
                 )
-            plateau_count = 0
+                batch_loss_sum = download_float_scalar(workspace.d_loss_sum)
+                batch_correct = download_int_scalar(workspace.d_correct)
+                total_loss += batch_loss_sum
+                correct += batch_correct
+                total_seen += n
 
-        print(
-            f"Epoch {epoch+1}/{EPOCHS}: Loss={epoch_loss:.4f}, Train={train_acc:.2f}%, Val={val_acc:.2f}%, "
-            f"BestVal={best_val_acc:.2f}% @ {best_epoch}, "
-            f"LRs=({current_lr_conv1:.6f}, {current_lr_conv:.6f}, {current_lr_fc:.6f}), "
-            f"Time={elapsed:.1f}s{save_msg}"
-        )
+                lib.dense_backward_full(
+                    workspace.d_grad_logits,
+                    workspace.d_pool2_nchw,
+                    d_fc_w,
+                    workspace.d_pool2_grad_nchw,
+                    workspace.d_fc_grad_w,
+                    workspace.d_fc_grad_b,
+                    n,
+                    FC_IN,
+                    10,
+                )
+                lib.conv_update_fused(
+                    d_fc_w,
+                    workspace.d_fc_grad_w,
+                    d_v_fc_w,
+                    c_float(current_lr_fc),
+                    c_float(MOMENTUM),
+                    c_float(WEIGHT_DECAY),
+                    c_float(GRAD_CLIP_FC),
+                    c_float(1.0),
+                    10 * FC_IN,
+                )
+                lib.conv_update_fused(
+                    d_fc_b,
+                    workspace.d_fc_grad_b,
+                    d_v_fc_b,
+                    c_float(current_lr_fc),
+                    c_float(MOMENTUM),
+                    c_float(0.0),
+                    c_float(GRAD_CLIP_BIAS),
+                    c_float(1.0),
+                    10,
+                )
 
-        if epochs_no_improve >= EARLY_STOP_PATIENCE:
-            print(f"Early stopping after {epoch+1} epochs; best val {best_val_acc:.2f}% at epoch {best_epoch}.")
-            break
+                # Conv4 backward.
+                lib.clip_inplace(workspace.d_pool2_grad_nchw, c_float(GRAD_POOL_CLIP), n * FC_IN)
+                nchw_to_cnhw_into(workspace.d_pool2_grad_nchw, workspace.d_pool2_grad, n, C4_OUT, P2H, P2W)
+                zero_floats(workspace.d_conv4_grad_raw, C4_OUT * n * H4 * W4)
+                lib.maxpool_backward_use_idx(workspace.d_pool2_grad, workspace.d_max_idx2, workspace.d_conv4_grad_raw, n, C4_OUT, H4, W4)
+                lib.leaky_relu_backward(workspace.d_conv4_raw, workspace.d_conv4_grad_raw, c_float(LEAKY_ALPHA), C4_OUT * n * H4 * W4)
 
-    workspace.free()
+                lib.conv_backward_precol(
+                    workspace.d_conv4_grad_raw, workspace.d_conv3_nchw, d_w_conv4, workspace.d_w_conv4_grad, workspace.d_conv3_grad,
+                    workspace.d_col4,
+                    n, C4_IN, H3, W3, KH, KW, H4, W4, C4_OUT,
+                )
+                update_conv(
+                    d_w_conv4, workspace.d_w_conv4_grad, d_v_conv4, current_lr_conv, MOMENTUM, C4_OUT * C4_IN * KH * KW,
+                    "conv4", WEIGHT_DECAY, GRAD_CLIP_CONV,
+                    H4 * W4 if CONV_GRAD_SPATIAL_NORMALIZE else 1.0,
+                    log_grad,
+                )
+
+                # Conv3 backward.
+                nchw_to_cnhw_into(workspace.d_conv3_grad, workspace.d_conv3_grad_raw, n, C3_OUT, H3, W3)
+                lib.leaky_relu_backward(workspace.d_conv3_raw, workspace.d_conv3_grad_raw, c_float(LEAKY_ALPHA), C3_OUT * n * H3 * W3)
+                lib.conv_backward_precol(
+                    workspace.d_conv3_grad_raw, workspace.d_pool1_nchw, d_w_conv3, workspace.d_w_conv3_grad, workspace.d_pool1_grad,
+                    workspace.d_col3,
+                    n, C3_IN, P1H, P1W, KH, KW, H3, W3, C3_OUT,
+                )
+                update_conv(
+                    d_w_conv3, workspace.d_w_conv3_grad, d_v_conv3, current_lr_conv, MOMENTUM, C3_OUT * C3_IN * KH * KW,
+                    "conv3", WEIGHT_DECAY, GRAD_CLIP_CONV,
+                    H3 * W3 if CONV_GRAD_SPATIAL_NORMALIZE else 1.0,
+                    log_grad,
+                )
+
+                # Conv2 backward.
+                nchw_to_cnhw_into(workspace.d_pool1_grad, workspace.d_pool1_grad_cnhw, n, C2_OUT, P1H, P1W)
+                zero_floats(workspace.d_conv2_grad_raw, C2_OUT * n * H2 * W2)
+                lib.maxpool_backward_use_idx(workspace.d_pool1_grad_cnhw, workspace.d_max_idx1, workspace.d_conv2_grad_raw, n, C2_OUT, H2, W2)
+                lib.leaky_relu_backward(workspace.d_conv2_raw, workspace.d_conv2_grad_raw, c_float(LEAKY_ALPHA), C2_OUT * n * H2 * W2)
+                lib.conv_backward_precol(
+                    workspace.d_conv2_grad_raw, workspace.d_conv1_nchw, d_w_conv2, workspace.d_w_conv2_grad, workspace.d_conv1_grad,
+                    workspace.d_col2,
+                    n, C2_IN, H1, W1, KH, KW, H2, W2, C2_OUT,
+                )
+                update_conv(
+                    d_w_conv2, workspace.d_w_conv2_grad, d_v_conv2, current_lr_conv, MOMENTUM, C2_OUT * C2_IN * KH * KW,
+                    "conv2", WEIGHT_DECAY, GRAD_CLIP_CONV,
+                    H2 * W2 if CONV_GRAD_SPATIAL_NORMALIZE else 1.0,
+                    log_grad,
+                )
+
+                # Conv1 backward.
+                nchw_to_cnhw_into(workspace.d_conv1_grad, workspace.d_conv1_grad_raw, n, C1_OUT, H1, W1)
+                lib.leaky_relu_backward(workspace.d_conv1_raw, workspace.d_conv1_grad_raw, c_float(LEAKY_ALPHA), C1_OUT * n * H1 * W1)
+                lib.conv_backward_precol(
+                    workspace.d_conv1_grad_raw, workspace.d_x, d_w_conv1, workspace.d_w_conv1_grad, workspace.d_x_grad,
+                    workspace.d_col1,
+                    n, C1_IN, H, W, KH, KW, H1, W1, C1_OUT,
+                )
+                update_conv(
+                    d_w_conv1, workspace.d_w_conv1_grad, d_v_conv1, current_lr_conv1, MOMENTUM, C1_OUT * C1_IN * KH * KW,
+                    "conv1", WEIGHT_DECAY, GRAD_CLIP_CONV,
+                    H1 * W1 if CONV_GRAD_SPATIAL_NORMALIZE else 1.0,
+                    log_grad,
+                )
+
+                if (batch_idx + 1) % 100 == 0:
+                    print(f"  Batch {batch_idx+1}/{NBATCHES}: loss={batch_loss_sum/n:.4f}, acc={correct/total_seen*100:.1f}%")
+
+            train_acc = correct / total_seen * 100
+            val_acc = evaluate(x_val, y_val, current_device_weights())
+            epoch_loss = total_loss / total_seen
+            elapsed = time.time() - t0
+            improved = val_acc > (best_val_acc + MIN_DELTA)
+
+            if improved:
+                best_val_acc = val_acc
+                best_epoch = epoch + 1
+                epochs_no_improve = 0
+                plateau_count = 0
+                save_checkpoint(
+                    BEST_MODEL_PATH,
+                    epoch + 1,
+                    val_acc,
+                    current_lr_conv1,
+                    current_lr_conv,
+                    current_lr_fc,
+                    current_device_weights(),
+                )
+                save_msg = " [saved best]"
+            else:
+                epochs_no_improve += 1
+                plateau_count += 1
+                save_msg = ""
+
+            if plateau_count >= LR_PLATEAU_PATIENCE:
+                new_lr_conv1 = max(current_lr_conv1 * LR_REDUCE_FACTOR, MIN_LR)
+                new_lr_conv = max(current_lr_conv * LR_REDUCE_FACTOR, MIN_LR)
+                new_lr_fc = max(current_lr_fc * LR_REDUCE_FACTOR, MIN_LR)
+                if (new_lr_conv1, new_lr_conv, new_lr_fc) != (current_lr_conv1, current_lr_conv, current_lr_fc):
+                    current_lr_conv1 = new_lr_conv1
+                    current_lr_conv = new_lr_conv
+                    current_lr_fc = new_lr_fc
+                    print(
+                        f"  LR reduced -> conv1={current_lr_conv1:.6f}, "
+                        f"conv={current_lr_conv:.6f}, fc={current_lr_fc:.6f}"
+                    )
+                plateau_count = 0
+
+            print(
+                f"Epoch {epoch+1}/{EPOCHS}: Loss={epoch_loss:.4f}, Train={train_acc:.2f}%, Val={val_acc:.2f}%, "
+                f"BestVal={best_val_acc:.2f}% @ {best_epoch}, "
+                f"LRs=({current_lr_conv1:.6f}, {current_lr_conv:.6f}, {current_lr_fc:.6f}), "
+                f"Time={elapsed:.1f}s{save_msg}"
+            )
+
+            if epochs_no_improve >= EARLY_STOP_PATIENCE:
+                print(f"Early stopping after {epoch+1} epochs; best val {best_val_acc:.2f}% at epoch {best_epoch}.")
+                break
+
+    finally:
+        workspace.free()
 
     print("\n=== FINAL EVALUATION ON OFFICIAL TEST SET ===")
     free_weights(current_velocity_buffers())

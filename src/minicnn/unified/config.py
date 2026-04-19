@@ -6,18 +6,15 @@ from typing import Any
 
 import yaml
 
-from minicnn.flex.config import _deep_update, _parse_scalar, DEFAULT_CONFIG
+from minicnn.config.parsing import parse_scalar
+from minicnn.flex.config import _deep_update, DEFAULT_CONFIG
 
 UNIFIED_DEFAULT_CONFIG: dict[str, Any] = copy.deepcopy(DEFAULT_CONFIG)
-UNIFIED_DEFAULT_CONFIG.update({
-    'engine': {
-        'backend': 'torch',  # torch | cuda_legacy
-        'strict_backend_validation': True,
-    },
-    'runtime': {
-        'save_config': True,
-    },
-})
+UNIFIED_DEFAULT_CONFIG['engine'] = {
+    'backend': 'torch',  # torch | cuda_legacy
+    'strict_backend_validation': True,
+}
+UNIFIED_DEFAULT_CONFIG.setdefault('runtime', {}).update({'save_config': True})
 
 
 def load_unified_config(path: str | Path | None = None, overrides: list[str] | None = None) -> dict[str, Any]:
@@ -36,7 +33,7 @@ def load_unified_config(path: str | Path | None = None, overrides: list[str] | N
             cur = data
             for p in parts[:-1]:
                 cur = cur.setdefault(p, {})
-            cur[parts[-1]] = _parse_scalar(raw)
+            cur[parts[-1]] = parse_scalar(raw)
     return data
 
 

@@ -29,7 +29,7 @@ from minicnn.config.settings import (
     W4,
 )
 from minicnn.core.cuda_backend import lib
-from minicnn.training.cuda_ops import malloc_floats
+from minicnn.training.cuda_ops import malloc_floats, malloc_ints
 
 
 class BatchWorkspace:
@@ -43,7 +43,7 @@ class BatchWorkspace:
         self.d_col2 = self.alloc(C2_IN * KH * KW * BATCH * H2 * W2)
         self.d_conv2_raw = self.alloc(C2_OUT * BATCH * H2 * W2)
         self.d_pool1 = self.alloc(C2_OUT * BATCH * P1H * P1W)
-        self.d_max_idx1 = self.alloc(C2_OUT * BATCH * P1H * P1W)
+        self.d_max_idx1 = self.alloc_ints(C2_OUT * BATCH * P1H * P1W)
         self.d_pool1_nchw = self.alloc(BATCH * C2_OUT * P1H * P1W)
         self.d_col3 = self.alloc(C3_IN * KH * KW * BATCH * H3 * W3)
         self.d_conv3_raw = self.alloc(C3_OUT * BATCH * H3 * W3)
@@ -51,14 +51,14 @@ class BatchWorkspace:
         self.d_col4 = self.alloc(C4_IN * KH * KW * BATCH * H4 * W4)
         self.d_conv4_raw = self.alloc(C4_OUT * BATCH * H4 * W4)
         self.d_pool2 = self.alloc(C4_OUT * BATCH * P2H * P2W)
-        self.d_max_idx2 = self.alloc(C4_OUT * BATCH * P2H * P2W)
+        self.d_max_idx2 = self.alloc_ints(C4_OUT * BATCH * P2H * P2W)
         self.d_pool2_nchw = self.alloc(BATCH * C4_OUT * P2H * P2W)
         self.d_fc_out = self.alloc(BATCH * 10)
-        self.d_y = self.alloc(BATCH)
+        self.d_y = self.alloc_ints(BATCH)
         self.d_probs = self.alloc(BATCH * 10)
         self.d_grad_logits = self.alloc(BATCH * 10)
         self.d_loss_sum = self.alloc(1)
-        self.d_correct = self.alloc(1)
+        self.d_correct = self.alloc_ints(1)
         self.d_pool2_grad_nchw = self.alloc(BATCH * FC_IN)
         self.d_fc_grad_w = self.alloc(10 * FC_IN)
         self.d_fc_grad_b = self.alloc(10)
@@ -84,6 +84,13 @@ class BatchWorkspace:
         self.ptrs.append(ptr)
         return ptr
 
+    def alloc_ints(self, size):
+        if self._freed:
+            raise RuntimeError('Cannot allocate from a freed BatchWorkspace')
+        ptr = malloc_ints(size)
+        self.ptrs.append(ptr)
+        return ptr
+
     def free(self):
         if self._freed:
             return
@@ -91,3 +98,9 @@ class BatchWorkspace:
             lib.gpu_free(ptr)
         self.ptrs = []
         self._freed = True
+
+    def __del__(self):  # pragma: no cover - defensive cleanup only
+        try:
+            self.free()
+        except Exception:
+            pass
