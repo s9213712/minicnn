@@ -67,6 +67,7 @@ extern "C" {
         int out_w = w / 2;
         int size = n * c * out_h * out_w;
         int tpb = 256;
+        // Zero grad_input before scatter; kernel uses atomicAdd.
         CUDA_CHECK(cudaMemset(d_grad_input, 0, n * c * h * w * sizeof(float)));
         maxpool_backward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_grad_out, d_input, d_grad_input, n, c, h, w);
         CUDA_KERNEL_CHECK();

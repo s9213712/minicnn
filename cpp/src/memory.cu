@@ -24,4 +24,8 @@ extern "C" {
     void gpu_memset(void* dst, int value, size_t size) {
         CUDA_CHECK(cudaMemset(dst, value, size));
     }
+
+    void gpu_synchronize() {
+        CUDA_CHECK(cudaDeviceSynchronize());
+    }
 }

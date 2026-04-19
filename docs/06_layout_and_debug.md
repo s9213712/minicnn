@@ -79,6 +79,8 @@ CUDA_CHECK(cudaMalloc(...));
 CUDA_KERNEL_CHECK();
 ```
 
+Release build 的 `CUDA_KERNEL_CHECK()` 只檢查 launch error；`make -C cpp debug` 或 CMake Debug build 會定義 `MINICNN_DEBUG_SYNC`，讓 `CUDA_KERNEL_CHECK()` 額外呼叫 `cudaDeviceSynchronize()` 以便定位非同步 kernel 錯誤。
+
 若 CUDA kernel launch 或 runtime API 出錯，程式會印出類似：
 
 ```text

@@ -8,10 +8,11 @@ from minicnn.ops.nn_ops import batchnorm2d, conv2d, flatten, linear, maxpool2d, 
 
 
 class Linear(Module):
-    def __init__(self, in_features: int, out_features: int, bias: bool = True):
+    def __init__(self, in_features: int, out_features: int, bias: bool = True, rng: np.random.Generator | None = None):
         super().__init__()
+        rng = rng or np.random.default_rng()
         scale = np.sqrt(2.0 / max(in_features, 1))
-        self.weight = self.add_parameter('weight', Parameter(np.random.randn(in_features, out_features).astype(np.float32) * scale))
+        self.weight = self.add_parameter('weight', Parameter(rng.standard_normal((in_features, out_features)).astype(np.float32) * scale))
         self.bias = self.add_parameter('bias', Parameter(np.zeros(out_features, dtype=np.float32))) if bias else None
 
     def forward(self, x: Tensor) -> Tensor:
@@ -29,12 +30,22 @@ class Flatten(Module):
 
 
 class Conv2d(Module):
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: int = 3, stride: int = 1, padding: int = 0, bias: bool = True):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int = 3,
+        stride: int = 1,
+        padding: int = 0,
+        bias: bool = True,
+        rng: np.random.Generator | None = None,
+    ):
         super().__init__()
+        rng = rng or np.random.default_rng()
         scale = np.sqrt(2.0 / max(in_channels * kernel_size * kernel_size, 1))
         self.weight = self.add_parameter(
             'weight',
-            Parameter(np.random.randn(out_channels, in_channels, kernel_size, kernel_size).astype(np.float32) * scale),
+            Parameter(rng.standard_normal((out_channels, in_channels, kernel_size, kernel_size)).astype(np.float32) * scale),
         )
         self.bias = self.add_parameter('bias', Parameter(np.zeros(out_channels, dtype=np.float32))) if bias else None
         self.stride = stride
@@ -55,14 +66,26 @@ class MaxPool2d(Module):
 
 
 class BatchNorm2d(Module):
-    def __init__(self, num_features: int, eps: float = 1e-5):
+    def __init__(self, num_features: int, eps: float = 1e-5, momentum: float = 0.1):
         super().__init__()
         self.weight = self.add_parameter('weight', Parameter(np.ones(num_features, dtype=np.float32)))
         self.bias = self.add_parameter('bias', Parameter(np.zeros(num_features, dtype=np.float32)))
+        self.running_mean = np.zeros(num_features, dtype=np.float32)
+        self.running_var = np.ones(num_features, dtype=np.float32)
         self.eps = eps
+        self.momentum = momentum
 
     def forward(self, x: Tensor) -> Tensor:
-        return batchnorm2d(x, self.weight, self.bias, eps=self.eps)
+        return batchnorm2d(
+            x,
+            self.weight,
+            self.bias,
+            eps=self.eps,
+            running_mean=self.running_mean,
+            running_var=self.running_var,
+            training=self.training,
+            momentum=self.momentum,
+        )
 
 
 class ResidualBlock(Module):

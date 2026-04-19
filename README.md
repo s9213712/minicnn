@@ -302,9 +302,14 @@ Key folder and file responsibilities:
 | `configs/` | YAML configs for torch, cuda_legacy, flex, custom-component, AlexNet-like, and ResNet-like runs. |
 | `configs/autograd_tiny.yaml` | Small random-data config for the CPU/NumPy autograd trainer. |
 | `cpp/` | Native CUDA/C++ source, headers, Makefile, and CMake build files. |
+| `cpp/include/cuda_check.h` | CUDA runtime and kernel launch checking; debug builds define `MINICNN_DEBUG_SYNC` for synchronizing checks. |
+| `cpp/include/network.h` | C++ layer interface using RAII-owned `std::unique_ptr<CudaTensor>` forward outputs. |
 | `cpp/src/cublas_context.cu` | Shared cuBLAS handle used by forward and backward CUDA code. |
 | `cpp/src/core.cu` | GEMM forward path; switches between cuBLAS and handwritten CUDA with `USE_CUBLAS`. |
 | `cpp/src/conv_backward.cu` | Convolution backward kernels and cuBLAS/handmade weight-gradient path. |
+| `cpp/src/loss_layer.cu` | Softmax, fused softmax cross-entropy loss/gradient/accuracy, and GEMM backward helpers. |
+| `cpp/src/network.cu` | C++ layer forward implementations; ConvLayer reuses an im2col cache and ReLU writes out-of-place. |
+| `cpp/src/gpu_monitor.cu` | Lightweight GPU memory status helper using CUDA runtime APIs, without shelling out. |
 | `docs/` | Build, C API, Python ctypes, C++ linking, layout/debug, and Windows build guides. |
 | `examples/` | Minimal custom PyTorch component examples. |
 | `features/` | Isolated prototypes that production code must not import by default; includes `backend-smoke-matrix/` as an example feature. |

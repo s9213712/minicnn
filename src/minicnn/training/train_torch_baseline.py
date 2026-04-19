@@ -235,8 +235,10 @@ def main():
             x = x_train[indices[idx_s:idx_e]]
             y = y_train[indices[idx_s:idx_e]]
 
-            if train_rng.random() > 0.5:
-                x = x[:, :, :, ::-1].copy()
+            flip_mask = train_rng.random(len(x)) > 0.5
+            x = x.copy()
+            if flip_mask.any():
+                x[flip_mask] = x[flip_mask, :, :, ::-1]
 
             xb = torch.from_numpy(x).to(device)
             yb = torch.from_numpy(y.astype(np.int64, copy=False)).to(device)

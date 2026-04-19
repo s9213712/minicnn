@@ -2,6 +2,7 @@
 #include "tensor.h"
 #include "cuda_check.h"
 #include <cuda_runtime.h>
+#include <memory>
 
 __global__ void dense_forward_kernel(const float* input, const float* weights, const float* bias, float* output, int N, int in_f, int out_f) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -66,11 +67,11 @@ __global__ void dense_backward_bias_kernel(const float* d_out, float* d_bias, in
     d_bias[idx] = sum;
 }
 
-CudaTensor* DenseLayer::forward(CudaTensor* input) {
+std::unique_ptr<CudaTensor> DenseLayer::forward(CudaTensor* input) {
     int batch_size = input->n;
     int total_in = input->c * input->h * input->w;
 
-    CudaTensor* output = new CudaTensor(batch_size, out_features, 1, 1);
+    auto output = std::make_unique<CudaTensor>(batch_size, out_features, 1, 1);
 
     dim3 block(16, 16);
     dim3 grid((out_features + 15) / 16, (batch_size + 15) / 16);

@@ -43,7 +43,7 @@ __global__ void maxpool_forward_store_kernel(const float* input, float* output, 
     max_idx[out_idx] = max_linear_idx;
 }
 
-extern "C" void maxpool_forward_store(float* d_output, float* d_input, int* d_max_idx,
+extern "C" void maxpool_forward_store(float* d_output, const float* d_input, int* d_max_idx,
                                        int N, int C, int H, int W) {
     int out_h = H / 2;
     int out_w = W / 2;

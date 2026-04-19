@@ -1,11 +1,11 @@
-#include "tensor.h"
+#include "cuda_check.h"
+#include <cuda_runtime.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 extern "C" void check_gpu_status() {
-    // 呼叫 nvidia-smi 獲取即時狀態
-    int rc = system("nvidia-smi --query-gpu=utilization.gpu,utilization.memory --format=csv,noheader,nounits");
-    if (rc != 0) {
-        fprintf(stderr, "nvidia-smi query failed with status %d\n", rc);
-    }
+    size_t free_bytes = 0;
+    size_t total_bytes = 0;
+    CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes));
+    size_t used_bytes = total_bytes - free_bytes;
+    fprintf(stdout, "%zu,%zu\n", used_bytes, total_bytes);
 }

@@ -55,10 +55,10 @@ minicnn/
 
 | 檔案 | 作用 |
 |---|---|
-| `cuda_check.h` | CUDA 錯誤檢查工具。`CUDA_CHECK(expr)` 檢查 runtime API 回傳值；`CUDA_KERNEL_CHECK()` 檢查 kernel launch error 並同步 GPU。 |
+| `cuda_check.h` | CUDA 錯誤檢查工具。`CUDA_CHECK(expr)` 檢查 runtime API 回傳值；release 版 `CUDA_KERNEL_CHECK()` 只檢查 launch error，debug build 啟用 `MINICNN_DEBUG_SYNC` 後才同步 GPU。 |
 | `tensor.h` | `CudaTensor` C++ RAII 包裝，管理 GPU tensor 記憶體，提供 host/device copy。 |
-| `network.h` | C++ layer 介面與 `ConvLayer`、`ReLULayer`、`MaxPoolLayer` 宣告。 |
-| `dense_layer.h` | C++ `DenseLayer` 宣告。 |
+| `network.h` | C++ layer 介面與 `ConvLayer`、`ReLULayer`、`MaxPoolLayer` 宣告；forward output 以 `std::unique_ptr<CudaTensor>` 表示所有權。 |
+| `dense_layer.h` | C++ `DenseLayer` 宣告，forward output 以 RAII pointer 管理。 |
 
 ## src
 
@@ -70,7 +70,7 @@ minicnn/
 | `backward.cu` | ReLU backward 與不保存 index 的 NCHW maxpool backward。 |
 | `conv_backward.cu` | 卷積層 backward：`USE_CUBLAS=1` 時 weight gradient 使用 im2col + cuBLAS GEMM；`USE_CUBLAS=0` 時保留手寫 CUDA fallback。input gradient 仍使用直接 CUDA kernel。訓練主流程使用 `conv_backward_precol` 重用 forward im2col buffer。 |
 | `dense_layer.cu` | 全連接層 forward/backward：`dense_forward`、`dense_backward_full`。 |
-| `loss_layer.cu` | `softmax_forward`、`softmax_backward`、`softmax_xent_grad_loss_acc`、`count_correct`，另含 `im2col_backward`、`gemm_backward`。 |
+| `loss_layer.cu` | `softmax_forward`、`softmax_backward`、`softmax_xent_grad_loss_acc`、`count_correct` 與 `gemm_backward`。訓練主流程使用 fused softmax cross-entropy kernel，一次產生 loss sum、accuracy count、probabilities 與 logits gradient。 |
 | `optimizer.cu` | Optimizer kernel。`apply_sgd_update` 執行純 SGD；`apply_momentum_update` 執行 Momentum SGD；`conv_update_fused` 在 GPU 端合併 weight decay、gradient clipping、momentum update；`clip_inplace` 做 GPU in-place gradient clipping。 |
 | `layout_convert.cu` | `nchw_to_cnhw` 與 `cnhw_to_nchw`。部分 kernel 輸出以 CNHW 儲存，訓練時常需要轉換。 |
 | `reorganize.cu` / `reorganize_backward.cu` | 舊版 layout 重排 API。新程式建議優先用 `layout_convert.cu` 的明確 NCHW/CNHW 函式。 |
@@ -79,8 +79,8 @@ minicnn/
 | `maxpool_backward_nchw.cu` | NCHW maxpool backward 版本。 |
 | `leaky_relu.cu` | LeakyReLU forward/backward，含 CNHW 與 NCHW 命名版本。 |
 | `layer_norm.cu` | LayerNorm forward/backward。 |
-| `network.cu` | C++ layer 類別的 forward 實作，供 C++ 端使用。 |
-| `gpu_monitor.cu` | `check_gpu_status()`，呼叫 `nvidia-smi` 印出 GPU 使用率。 |
+| `network.cu` | C++ layer 類別的 forward 實作，供 C++ 端使用。`ConvLayer` 重用 im2col cache，ReLU 用 out-of-place kernel 避免 D2D copy。 |
+| `gpu_monitor.cu` | `check_gpu_status()`，透過 CUDA runtime `cudaMemGetInfo` 印出 `used_bytes,total_bytes`，不啟動 shell subprocess。 |
 
 ## Python package
 

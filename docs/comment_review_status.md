@@ -39,6 +39,7 @@ Processed local note files:
 | Example feature folder | Added `features/backend-smoke-matrix/` in earlier work for isolated smoke comparison. |
 | Docs | README, Traditional Chinese README, USAGE, project file guide, autograd guide, and this status report document current commands, folders, metrics, and capability boundaries. |
 | Tests | Added coverage for CLI exposure, autograd layers, optimizer updates, runtime utilities, compiler fusion annotation, and fused-op fallback semantics. |
+| Comment task list 01-30 | Completed. Native CUDA fixes include dead-code removal, layer norm shared-memory reductions and gradient correction, maxpool zeroing, release/debug kernel check split, warp-level softmax CE, shared cuBLAS checks, LeakyReLU kernel consolidation, maxpool NCHW geometry validation, GPU monitor shell removal, ConvLayer im2col cache, ReLU out-of-place forward, and RAII C++ layer outputs. Python fixes include SGD momentum, BatchNorm2d running stats, autograd train shuffling and seeded init, reusable CUDA eval workspace, vectorized CPU/NumPy conv and maxpool paths, fused cross-entropy backward, augmentation copy/flip contracts, seeded flex augmentation, and optimizer config mutation docs. |
 
 ## Deferred
 
@@ -58,12 +59,10 @@ Processed local note files:
 Run for this review:
 
 ```bash
-python3 -m compileall -q src
+PYTHONPATH=src python3 -m compileall -q src tests
 PYTHONPATH=src python3 -m pytest -q tests
-PYTHONPATH=src python3 -m minicnn.cli info
-PYTHONPATH=src python3 -m minicnn.cli doctor
-PYTHONPATH=src python3 -m minicnn.cli validate-config --config configs/dual_backend_cnn.yaml
-PYTHONPATH=src python3 -m minicnn.cli compile --config configs/autograd_tiny.yaml
-PYTHONPATH=src python3 -m minicnn.cli train-autograd --config configs/autograd_tiny.yaml train.epochs=1 dataset.num_samples=8 dataset.val_samples=4 train.batch_size=4
+PYTHONPATH=src python3 -m minicnn.cli build --legacy-make --variant both --check
+PYTHONPATH=src python3 -m minicnn.cli train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy runtime.cuda_variant=cublas train.epochs=1 dataset.num_samples=64 dataset.val_samples=16 train.batch_size=16
+PYTHONPATH=src python3 -m minicnn.cli train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy runtime.cuda_variant=handmade train.epochs=1 dataset.num_samples=64 dataset.val_samples=16 train.batch_size=16
 git diff --check
 ```

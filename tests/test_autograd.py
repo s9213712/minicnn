@@ -64,3 +64,28 @@ def test_parameter_and_sgd_step_without_torch():
 
     assert np.allclose(w.grad, [-8.0, -12.0])
     assert np.allclose(w.data, [1.8, 0.2])
+
+
+def test_sgd_momentum_accumulates_velocity():
+    w = Parameter([0.0], name='w')
+    opt = SGD([w], lr=0.1, momentum=0.9)
+
+    w.grad = np.array([1.0], dtype=np.float32)
+    opt.step()
+    assert np.allclose(w.data, [-0.1], atol=1e-6)
+
+    w.grad = np.array([1.0], dtype=np.float32)
+    opt.step()
+    assert np.allclose(w.data, [-0.29], atol=1e-6)
+
+
+def test_sgd_without_momentum_is_vanilla_gradient_descent():
+    w = Parameter([0.0], name='w')
+    opt = SGD([w], lr=0.1, momentum=0.0)
+
+    w.grad = np.array([1.0], dtype=np.float32)
+    opt.step()
+    w.grad = np.array([1.0], dtype=np.float32)
+    opt.step()
+
+    assert np.allclose(w.data, [-0.2], atol=1e-6)

@@ -128,8 +128,8 @@ __global__ void layer_norm_backward_kernel(float* grad_input, const float* grad_
     }
 }
 
-extern "C" void layer_norm_forward(float* d_output, float* d_input,
-                                    float* d_gamma, float* d_beta,
+extern "C" void layer_norm_forward(float* d_output, const float* d_input,
+                                    const float* d_gamma, const float* d_beta,
                                     int N, int C, int H, int W, float eps) {
     int hw = H * W;
     int tpb = hw < 256 ? hw : 256;
@@ -140,8 +140,8 @@ extern "C" void layer_norm_forward(float* d_output, float* d_input,
     CUDA_KERNEL_CHECK();
 }
 
-extern "C" void layer_norm_backward(float* d_grad_input, float* d_grad_output,
-                                      float* d_input, float* d_gamma,
+extern "C" void layer_norm_backward(float* d_grad_input, const float* d_grad_output,
+                                      const float* d_input, const float* d_gamma,
                                       int N, int C, int H, int W, float eps) {
     int hw = H * W;
     int tpb = hw < 256 ? hw : 256;

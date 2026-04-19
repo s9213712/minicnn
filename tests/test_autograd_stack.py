@@ -34,6 +34,26 @@ def test_conv_pool_batchnorm_residual_backward_shapes():
     assert all(p.grad is not None for p in block.parameters())
 
 
+def test_batchnorm2d_eval_uses_running_statistics():
+    bn = BatchNorm2d(2)
+    train_x = Tensor(np.array([[[[1.0, 3.0]], [[2.0, 6.0]]]], dtype=np.float32))
+
+    _ = bn(train_x)
+    running_mean = bn.running_mean.copy()
+    running_var = bn.running_var.copy()
+    bn.eval()
+
+    eval_x = Tensor(np.array([[[[100.0, 120.0]], [[-50.0, -10.0]]]], dtype=np.float32))
+    y = bn(eval_x)
+    expected = (eval_x.data - running_mean.reshape(1, -1, 1, 1)) / np.sqrt(
+        running_var.reshape(1, -1, 1, 1) + bn.eps
+    )
+
+    assert np.allclose(y.data, expected, atol=1e-6)
+    assert np.array_equal(bn.running_mean, running_mean)
+    assert np.array_equal(bn.running_var, running_var)
+
+
 def test_no_grad_and_adam_step():
     w = Linear(2, 1)
     x = Tensor([[1.0, 2.0]], requires_grad=True)

@@ -302,9 +302,14 @@ minicnn/
 | `configs/` | torch、cuda_legacy、flex、自訂 component、AlexNet-like、ResNet-like 訓練用 YAML config。 |
 | `configs/autograd_tiny.yaml` | CPU/NumPy autograd trainer 的小型 random-data config。 |
 | `cpp/` | 原生 CUDA/C++ source、header、Makefile、CMake build 檔。 |
+| `cpp/include/cuda_check.h` | CUDA runtime 與 kernel launch 檢查；debug build 會定義 `MINICNN_DEBUG_SYNC` 進行同步檢查。 |
+| `cpp/include/network.h` | C++ layer 介面，forward output 用 RAII `std::unique_ptr<CudaTensor>` 表示所有權。 |
 | `cpp/src/cublas_context.cu` | forward/backward CUDA code 共用的 cuBLAS handle。 |
 | `cpp/src/core.cu` | GEMM forward 路徑；用 `USE_CUBLAS` 切換 cuBLAS 或手寫 CUDA。 |
 | `cpp/src/conv_backward.cu` | convolution backward kernel 與 cuBLAS/handmade weight-gradient 路徑。 |
+| `cpp/src/loss_layer.cu` | Softmax、fused softmax cross-entropy loss/gradient/accuracy 與 GEMM backward helper。 |
+| `cpp/src/network.cu` | C++ layer forward 實作；ConvLayer 重用 im2col cache，ReLU 直接 out-of-place 寫入。 |
+| `cpp/src/gpu_monitor.cu` | 使用 CUDA runtime API 的輕量 GPU memory status helper，不啟動 shell。 |
 | `docs/` | 編譯、C API、Python ctypes、C++ linking、layout/debug、Windows build 教學。 |
 | `examples/` | 最小自訂 PyTorch component 範例。 |
 | `features/` | 隔離原型區；正式 production code 預設不應 import 這裡，內含 `backend-smoke-matrix/` 作為範例 feature。 |

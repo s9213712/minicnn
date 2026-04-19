@@ -3,6 +3,7 @@
 #include "network.h"
 #include "tensor.h"
 #include <cuda_runtime.h>
+#include <memory>
 #include <vector>
 #include <string>
 
@@ -19,5 +20,5 @@ public:
         CUDA_CHECK(cudaFree(d_weights));
         CUDA_CHECK(cudaFree(d_bias));
     }
-    CudaTensor* forward(CudaTensor* input) override;
+    std::unique_ptr<CudaTensor> forward(CudaTensor* input) override;
 };

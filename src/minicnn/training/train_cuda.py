@@ -219,6 +219,7 @@ def main():
                 )
                 batch_loss_sum = download_float_scalar(workspace.d_loss_sum)
                 batch_correct = download_int_scalar(workspace.d_correct)
+                # Kernel stores batch loss as a sum; divide by sample count for mean loss.
                 total_loss += batch_loss_sum
                 correct += batch_correct
                 total_seen += n
@@ -326,6 +327,8 @@ def main():
                 if (batch_idx + 1) % 100 == 0:
                     print(f"  Batch {batch_idx+1}/{NBATCHES}: loss={batch_loss_sum/n:.4f}, acc={correct/total_seen*100:.1f}%")
 
+            if hasattr(lib, 'gpu_synchronize'):
+                lib.gpu_synchronize()
             train_acc = correct / total_seen * 100
             val_acc = evaluate(x_val, y_val, current_device_weights())
             epoch_loss = total_loss / total_seen

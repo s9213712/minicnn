@@ -319,8 +319,22 @@ def cross_entropy(logits: Tensor, targets: Any) -> Tensor:
         raise ValueError(f'cross_entropy expects logits with shape (N, C), got {logits.data.shape}')
     if targets.shape != (logits.data.shape[0],):
         raise ValueError(f'cross_entropy targets must have shape ({logits.data.shape[0]},), got {targets.shape}')
-    log_probs = logits.log_softmax(axis=1)
     n = logits.data.shape[0]
-    one_hot = np.zeros_like(logits.data, dtype=np.float32)
-    one_hot[np.arange(n), targets] = 1.0
-    return -(log_probs * one_hot).sum() / float(n)
+    shifted = logits.data - np.max(logits.data, axis=1, keepdims=True)
+    exp = np.exp(shifted)
+    probs = exp / exp.sum(axis=1, keepdims=True)
+    loss_val = -np.log(probs[np.arange(n), targets] + 1e-10).sum() / float(n)
+    out = Tensor(loss_val, requires_grad=_requires_grad(logits))
+    out._prev = {logits}
+    out._op = 'cross_entropy'
+
+    def _backward() -> None:
+        if out.grad is None:
+            return
+        grad = probs.copy()
+        grad[np.arange(n), targets] -= 1.0
+        grad *= np.asarray(out.grad, dtype=np.float32) / float(n)
+        logits._add_grad(grad)
+
+    out._backward = _backward
+    return out

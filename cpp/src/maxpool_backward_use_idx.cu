@@ -19,7 +19,7 @@ __global__ void maxpool_backward_use_idx_kernel(const float* grad_out, const int
     atomicAdd(&grad_input[linear_idx], grad_out[idx]);
 }
 
-extern "C" void maxpool_backward_use_idx(float* d_grad_out, int* d_max_idx,
+extern "C" void maxpool_backward_use_idx(const float* d_grad_out, const int* d_max_idx,
                                           float* d_grad_input, int N, int C, int H, int W) {
     int poolH = H / 2;
     int poolW = W / 2;

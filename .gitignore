@@ -24,6 +24,7 @@ artifacts/
 outputs/
 logs/
 /data/
+/comments/
 /src/minicnn/training/models/*
 !/src/minicnn/training/models/.gitkeep
 

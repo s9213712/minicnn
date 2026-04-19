@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 
 from minicnn.nn.tensor import Parameter, Tensor, _requires_grad
 
@@ -38,11 +39,8 @@ def conv2d(
     x_pad = np.pad(x_data, ((0, 0), (0, 0), (padding, padding), (padding, padding)), mode='constant')
     out_h = (h + 2 * padding - kh) // stride + 1
     out_w = (w + 2 * padding - kw) // stride + 1
-    out_data = np.zeros((n, c_out, out_h, out_w), dtype=np.float32)
-    for i in range(out_h):
-        for j in range(out_w):
-            region = x_pad[:, :, i * stride:i * stride + kh, j * stride:j * stride + kw]
-            out_data[:, :, i, j] = np.tensordot(region, w_data, axes=([1, 2, 3], [1, 2, 3]))
+    windows = sliding_window_view(x_pad, (kh, kw), axis=(2, 3))[:, :, ::stride, ::stride, :, :]
+    out_data = np.einsum('ncijhw,ochw->noij', windows, w_data, optimize=True).astype(np.float32)
     if bias is not None:
         out_data += bias.data.reshape(1, c_out, 1, 1)
     out = Tensor(out_data, requires_grad=_requires_grad(x, weight, *(tuple() if bias is None else (bias,))))
@@ -54,23 +52,23 @@ def conv2d(
             return
         grad = out.grad
         dx_pad = np.zeros_like(x_pad, dtype=np.float32)
-        dw = np.zeros_like(w_data, dtype=np.float32)
-        db = np.zeros((c_out,), dtype=np.float32) if bias is not None else None
-        for i in range(out_h):
-            for j in range(out_w):
-                region = x_pad[:, :, i * stride:i * stride + kh, j * stride:j * stride + kw]
-                g = grad[:, :, i, j]
-                dw += np.tensordot(g, region, axes=([0], [0]))
-                dx_pad[:, :, i * stride:i * stride + kh, j * stride:j * stride + kw] += np.tensordot(g, w_data, axes=([1], [0]))
+        dw = np.einsum('noij,ncijhw->ochw', grad, windows, optimize=True).astype(np.float32)
+        for r in range(kh):
+            for s in range(kw):
+                dx_pad[:, :, r:r + stride * out_h:stride, s:s + stride * out_w:stride] += np.einsum(
+                    'noij,oc->ncij',
+                    grad,
+                    w_data[:, :, r, s],
+                    optimize=True,
+                )
         if padding > 0:
             dx = dx_pad[:, :, padding:-padding, padding:-padding]
         else:
             dx = dx_pad
         x._add_grad(dx)
         weight._add_grad(dw)
-        if bias is not None and db is not None:
-            db += grad.sum(axis=(0, 2, 3))
-            bias._add_grad(db)
+        if bias is not None:
+            bias._add_grad(grad.sum(axis=(0, 2, 3)))
 
     out._backward = _backward
     return out
@@ -98,14 +96,18 @@ def maxpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None) -> Ten
         if out.grad is None:
             return
         dx = np.zeros_like(x.data, dtype=np.float32)
+        batch_idx = np.arange(n)[:, None]
+        chan_idx = np.arange(c)[None, :]
         for i in range(out_h):
             for j in range(out_w):
                 argmax = max_indices[(i, j)]
                 rows = argmax // kernel_size
                 cols = argmax % kernel_size
-                for ni in range(n):
-                    for ci in range(c):
-                        dx[ni, ci, i * stride + rows[ni, ci], j * stride + cols[ni, ci]] += out.grad[ni, ci, i, j]
+                np.add.at(
+                    dx,
+                    (batch_idx, chan_idx, i * stride + rows, j * stride + cols),
+                    out.grad[:, :, i, j],
+                )
         x._add_grad(dx)
 
     out._backward = _backward
@@ -117,10 +119,24 @@ def batchnorm2d(
     weight: Parameter,
     bias: Parameter,
     eps: float = 1e-5,
+    running_mean: np.ndarray | None = None,
+    running_var: np.ndarray | None = None,
+    training: bool = True,
+    momentum: float = 0.1,
 ) -> Tensor:
     axes = (0, 2, 3)
-    mean = x.data.mean(axis=axes, keepdims=True)
-    var = x.data.var(axis=axes, keepdims=True)
+    if training:
+        mean = x.data.mean(axis=axes, keepdims=True)
+        var = x.data.var(axis=axes, keepdims=True)
+        if running_mean is not None:
+            running_mean[...] = (1.0 - momentum) * running_mean + momentum * mean.reshape(-1)
+        if running_var is not None:
+            running_var[...] = (1.0 - momentum) * running_var + momentum * var.reshape(-1)
+    else:
+        if running_mean is None or running_var is None:
+            raise ValueError('batchnorm2d evaluation requires running_mean and running_var')
+        mean = running_mean.reshape(1, -1, 1, 1)
+        var = running_var.reshape(1, -1, 1, 1)
     inv_std = 1.0 / np.sqrt(var + eps)
     x_hat = (x.data - mean) * inv_std
     out_data = x_hat * weight.data.reshape(1, -1, 1, 1) + bias.data.reshape(1, -1, 1, 1)
@@ -132,12 +148,15 @@ def batchnorm2d(
         if out.grad is None:
             return
         grad = out.grad
-        m = np.prod([x.data.shape[a] for a in axes])
         gamma = weight.data.reshape(1, -1, 1, 1)
-        dx_hat = grad * gamma
-        dvar = (dx_hat * (x.data - mean) * -0.5 * (var + eps) ** -1.5).sum(axis=axes, keepdims=True)
-        dmean = (dx_hat * -inv_std).sum(axis=axes, keepdims=True) + dvar * (-2.0 * (x.data - mean)).sum(axis=axes, keepdims=True) / m
-        dx = dx_hat * inv_std + dvar * 2.0 * (x.data - mean) / m + dmean / m
+        if training:
+            m = np.prod([x.data.shape[a] for a in axes])
+            dx_hat = grad * gamma
+            dvar = (dx_hat * (x.data - mean) * -0.5 * (var + eps) ** -1.5).sum(axis=axes, keepdims=True)
+            dmean = (dx_hat * -inv_std).sum(axis=axes, keepdims=True) + dvar * (-2.0 * (x.data - mean)).sum(axis=axes, keepdims=True) / m
+            dx = dx_hat * inv_std + dvar * 2.0 * (x.data - mean) / m + dmean / m
+        else:
+            dx = grad * gamma * inv_std
         x._add_grad(dx)
         weight._add_grad((grad * x_hat).sum(axis=axes))
         bias._add_grad(grad.sum(axis=axes))

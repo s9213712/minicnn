@@ -103,6 +103,9 @@ def _bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
     bound_lib.gpu_memcpy_h2d.argtypes = [c_void_p, c_void_p, ctypes.c_size_t]
     bound_lib.gpu_memcpy_d2h.argtypes = [c_void_p, c_void_p, ctypes.c_size_t]
     bound_lib.gpu_memset.argtypes = [c_void_p, c_int, ctypes.c_size_t]
+    if hasattr(bound_lib, 'gpu_synchronize'):
+        bound_lib.gpu_synchronize.argtypes = []
+        bound_lib.gpu_synchronize.restype = None
     bound_lib.im2col_forward.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int]
     bound_lib.gemm_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
     bound_lib.leaky_relu_forward.argtypes = [c_void_p, c_float, c_int]

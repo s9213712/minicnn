@@ -106,6 +106,7 @@ __global__ void softmax_xent_grad_loss_acc_kernel(
     __syncwarp();
 
     if (tid == 0) {
+        // Accumulate batch loss as a sum; Python divides by N when reporting mean loss.
         atomicAdd(loss_sum, -logf(prob_row[label] + 1e-10f));
         if (pred == label) {
             atomicAdd(correct_count, 1);
@@ -177,38 +178,6 @@ extern "C" {
 // ============== Dense/FC Layer ==============
 extern "C" {
     void dense_forward(float* d_input, float* d_weights, float* d_bias, float* d_output, int N, int in_f, int out_f);
-}
-
-// ============== im2col Backward (Gradient to Input) ==============
-__global__ void im2col_backward_kernel(float* grad_col, float* grad_input, int N, int C, int H, int W, int KH, int KW, int outH, int outW) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int total = C * KH * KW * N * outH * outW;
-    if (idx >= total) return;
-
-    int row = idx / (N * outH * outW);
-    int col = idx % (N * outH * outW);
-
-    int c = row / (KH * KW);
-    int kh = (row / KW) % KH;
-    int kw = row % KW;
-    int n = col / (outH * outW);
-    int ow = col % outW;
-    int oh = (col / outW) % outH;
-
-    int h_in = oh + kh;
-    int w_in = ow + kw;
-
-    // Accumulate gradient to input
-    atomicAdd(&grad_input[((n * C + c) * H + h_in) * W + w_in], grad_col[idx]);
-}
-
-extern "C" {
-    void im2col_backward(float* d_grad_col, float* d_grad_input, int N, int C, int H, int W, int KH, int KW, int outH, int outW) {
-        int total = C * KH * KW * N * outH * outW;
-        int tpb = 256;
-        im2col_backward_kernel<<<(total + tpb - 1) / tpb, tpb>>>(d_grad_col, d_grad_input, N, C, H, W, KH, KW, outH, outW);
-        CUDA_KERNEL_CHECK();
-    }
 }
 
 // ============== GEMM Backward (for FC gradient to weights) ==============

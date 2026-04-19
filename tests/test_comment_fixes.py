@@ -217,8 +217,12 @@ def test_native_cuda_comment_tasks_are_reflected_in_source():
     leaky_relu = (cpp / 'src' / 'leaky_relu.cu').read_text()
     maxpool_nchw = (cpp / 'src' / 'maxpool_backward_nchw.cu').read_text()
     dense_layer = (cpp / 'src' / 'dense_layer.cu').read_text()
+    gpu_monitor = (cpp / 'src' / 'gpu_monitor.cu').read_text()
+    network = (cpp / 'src' / 'network.cu').read_text()
+    network_header = (cpp / 'include' / 'network.h').read_text()
 
     assert 'softmax_cross_entropy' not in loss_layer
+    assert 'im2col_backward' not in loss_layer
     assert 'softmax_xent_grad_loss_acc_kernel<<<N, 32>>>' in loss_layer
     assert '__shfl_down_sync' in loss_layer
 
@@ -239,5 +243,47 @@ def test_native_cuda_comment_tasks_are_reflected_in_source():
     assert 'leaky_relu_forward_nchw_kernel' not in leaky_relu
     assert 'leaky_relu_backward_nchw_kernel' not in leaky_relu
     assert 'int N, int C, int in_h, int in_w, int out_h, int out_w' in maxpool_nchw
-    assert 'out_h * 2' not in maxpool_nchw
+    assert 'assert(in_h == out_h * 2 && in_w == out_w * 2)' in maxpool_nchw
     assert 'dense_backward_weights_atomic_kernel' not in dense_layer
+
+    assert 'system(' not in gpu_monitor
+    assert 'cudaMemGetInfo' in gpu_monitor
+    assert 'std::unique_ptr<CudaTensor>' in network_header
+    assert 'd_col_cache' in network_header
+    assert 'std::make_unique<CudaTensor>' in network
+    assert 'relu_forward_copy_kernel' in network
+    assert 'cudaMemcpy(d_output, d_input' not in network
+
+
+def test_python_comment_tasks_are_reflected_in_source():
+    src = REPO_ROOT / 'src' / 'minicnn'
+    sgd = (src / 'optim' / 'sgd.py').read_text()
+    nn_ops = (src / 'ops' / 'nn_ops.py').read_text()
+    layers = (src / 'nn' / 'layers.py').read_text()
+    tensor = (src / 'nn' / 'tensor.py').read_text()
+    train_autograd = (src / 'training' / 'train_autograd.py').read_text()
+    cuda_epoch = (src / 'training' / 'cuda_epoch.py').read_text()
+    torch_baseline = (src / 'training' / 'train_torch_baseline.py').read_text()
+    flex_data = (src / 'flex' / 'data.py').read_text()
+    flex_trainer = (src / 'flex' / 'trainer.py').read_text()
+    evaluation = (src / 'training' / 'evaluation.py').read_text()
+
+    assert 'self.velocities' in sgd
+    assert 'self.momentum * self.velocities[i] - self.lr * grad' in sgd
+    assert 'running_mean' in layers
+    assert 'training=self.training' in layers
+    assert 'running_mean[...]' in nn_ops
+    assert 'sliding_window_view' in nn_ops
+    assert 'np.einsum' in nn_ops
+    assert 'np.add.at' in nn_ops
+    assert 'one_hot' not in tensor
+    assert 'train_rng.permutation' in train_autograd
+    assert 'rng=init_rng' in train_autograd
+    assert 'Always returns a new array' in cuda_epoch
+    assert 'x = x.copy()' in cuda_epoch
+    assert 'flip_mask = train_rng.random(len(x)) > 0.5' in torch_baseline
+    assert 'seed + worker_id * 1_000_003 + int(index)' in flex_data
+    assert 'generator=generator' in flex_data
+    assert 'Modifies `optimizer_cfg` in-place' in flex_trainer
+    assert 'class EvalWorkspace' in evaluation
+    assert 'count_correct_batch_with_workspace' in evaluation

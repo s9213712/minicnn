@@ -60,7 +60,14 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
     train_cfg = cfg.get('train', {})
     model_cfg = cfg.get('model', {})
     x_train, y_train, x_val, y_val, x_test, y_test = _random_dataset(dataset_cfg)
-    model, final_shape = build_model_from_config(model_cfg, input_shape=dataset_cfg.get('input_shape', [1, 4, 4]))
+    train_rng = np.random.default_rng(int(train_cfg.get('seed', 0)))
+    init_seed = int(train_cfg.get('init_seed', dataset_cfg.get('seed', 42)))
+    init_rng = np.random.default_rng(init_seed)
+    model, final_shape = build_model_from_config(
+        model_cfg,
+        input_shape=dataset_cfg.get('input_shape', [1, 4, 4]),
+        rng=init_rng,
+    )
     optimizer = _make_optimizer(model.parameters(), cfg.get('optimizer', {'type': 'SGD', 'lr': 0.01}))
     batch_size = int(train_cfg.get('batch_size', 8))
     epochs = int(train_cfg.get('epochs', 1))
@@ -74,7 +81,7 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
     with metrics_path.open('w', encoding='utf-8') as metrics_file:
         for epoch in range(1, epochs + 1):
             epoch_start = time.perf_counter()
-            indices = np.arange(x_train.shape[0])
+            indices = train_rng.permutation(x_train.shape[0])
             total_loss = 0.0
             total = 0
             for start in range(0, indices.shape[0], batch_size):

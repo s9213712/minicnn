@@ -58,6 +58,10 @@ def _checkpoint_path(run_dir: Path, epoch: int) -> Path:
 
 
 def _optimizer_params(model, optimizer_cfg: dict[str, Any]):
+    """Modifies `optimizer_cfg` in-place by removing weight-decay helper keys.
+
+    The caller must pass a copy when the original config dict must be preserved.
+    """
     weight_decay = float(optimizer_cfg.get('weight_decay', 0.0) or 0.0)
     exclude_bias_norm = bool(optimizer_cfg.pop('exclude_bias_norm_weight_decay', True))
     if weight_decay <= 0.0 or not exclude_bias_norm:

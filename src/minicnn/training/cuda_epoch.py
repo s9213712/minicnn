@@ -26,10 +26,11 @@ def augment_batch(
     random_crop_padding: int,
     horizontal_flip: bool,
 ) -> np.ndarray:
+    """Always returns a new array; does not alias the input."""
     x = random_crop_batch(x, rng, random_crop_padding)
+    x = x.copy()
     if horizontal_flip:
         flip_mask = rng.random(x.shape[0]) > 0.5
         if flip_mask.any():
-            x = x.copy()
             x[flip_mask] = x[flip_mask, :, :, ::-1]
     return x

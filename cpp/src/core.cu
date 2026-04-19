@@ -125,9 +125,9 @@ extern "C" {
 
     // Forward declarations for functions implemented in other .cu files
     void reorganize_forward(float* d_input, float* d_output, int N, int C, int H, int W);
-    void reorganize_backward(float* d_grad_output, float* d_grad_input, int N, int C, int H, int W);
-    void layer_norm_forward(float* d_output, float* d_input, float* d_gamma, float* d_beta, int N, int C, int H, int W, float eps);
-    void layer_norm_backward(float* d_grad_input, float* d_grad_output, float* d_input, float* d_gamma, int N, int C, int H, int W, float eps);
-    void maxpool_forward_store(float* d_output, float* d_input, int* d_max_idx, int N, int C, int H, int W);
-    void maxpool_backward_use_idx(float* d_grad_out, int* d_max_idx, float* d_grad_input, int N, int C, int H, int W);
+    void reorganize_backward(const float* d_grad_output, float* d_grad_input, int N, int C, int H, int W);
+    void layer_norm_forward(float* d_output, const float* d_input, const float* d_gamma, const float* d_beta, int N, int C, int H, int W, float eps);
+    void layer_norm_backward(float* d_grad_input, const float* d_grad_output, const float* d_input, const float* d_gamma, int N, int C, int H, int W, float eps);
+    void maxpool_forward_store(float* d_output, const float* d_input, int* d_max_idx, int N, int C, int H, int W);
+    void maxpool_backward_use_idx(const float* d_grad_out, const int* d_max_idx, float* d_grad_input, int N, int C, int H, int W);
 }
