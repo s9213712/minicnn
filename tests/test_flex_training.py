@@ -33,3 +33,22 @@ def test_optimizer_type_override_drops_stale_default_kwargs():
     assert cfg['optimizer'] == {'type': 'Adam', 'lr': 0.001}
     param = torch.nn.Parameter(torch.zeros(1))
     build_optimizer([param], cfg['optimizer'])
+
+
+def test_optimizer_ignores_cuda_legacy_lr_fields_for_torch():
+    from minicnn.flex.builder import build_optimizer
+    import torch
+
+    cfg = {
+        'type': 'SGD',
+        'lr': 0.01,
+        'lr_conv1': 0.02,
+        'lr_conv': 0.03,
+        'lr_fc': 0.04,
+        'momentum': 0.0,
+    }
+    param = torch.nn.Parameter(torch.zeros(1))
+
+    optimizer = build_optimizer([param], cfg)
+
+    assert optimizer.param_groups[0]['lr'] == 0.01

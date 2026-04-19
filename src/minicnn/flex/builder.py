@@ -14,6 +14,9 @@ except Exception:  # pragma: no cover
     nn = None
 
 
+CUDA_LEGACY_OPTIMIZER_KEYS = {'lr_conv1', 'lr_conv', 'lr_fc'}
+
+
 class ConfigurableSequential(nn.Sequential):
     def __init__(self, *modules: nn.Module, input_shape: tuple[int, ...] | None = None, inferred_shapes: list[tuple[int, ...]] | None = None):
         super().__init__(*modules)
@@ -141,6 +144,8 @@ def build_loss(loss_cfg: dict[str, Any]):
 def build_optimizer(params, optim_cfg: dict[str, Any]):
     cfg = deepcopy(optim_cfg)
     type_name = cfg.pop('type')
+    for key in CUDA_LEGACY_OPTIMIZER_KEYS:
+        cfg.pop(key, None)
     factory = _resolve_factory('optimizers', type_name)
     return factory(params, **cfg)
 
