@@ -47,11 +47,13 @@ __device__ float warp_reduce_sum(float val) {
 }
 
 __device__ void warp_reduce_max_with_index(float& val, int& index) {
+    // Tree reduction: each lane already holds the min-index max within its own elements.
+    // On tie, keep the smaller index so the global minimum-index argmax is preserved.
     for (int offset = 16; offset > 0; offset >>= 1) {
-        float other_val = __shfl_down_sync(0xffffffff, val, offset);
-        int other_index = __shfl_down_sync(0xffffffff, index, offset);
+        float other_val   = __shfl_down_sync(0xffffffff, val,   offset);
+        int   other_index = __shfl_down_sync(0xffffffff, index, offset);
         if (other_val > val || (other_val == val && other_index < index)) {
-            val = other_val;
+            val   = other_val;
             index = other_index;
         }
     }
@@ -77,10 +79,11 @@ __global__ void softmax_xent_grad_loss_acc_kernel(
     int label = labels[n];
 
     float thread_max = -1e38f;
-    int thread_pred = features;
+    int thread_pred = features;  // sentinel: no valid prediction yet
     for (int j = tid; j < features; j += 32) {
         float v = row[j];
-        if (v > thread_max) {
+        // Keep first (smallest-index) occurrence among equal maxima.
+        if (v > thread_max || (v == thread_max && j < thread_pred)) {
             thread_max = v;
             thread_pred = j;
         }

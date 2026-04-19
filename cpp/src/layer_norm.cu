@@ -4,21 +4,31 @@
 // Input: (N, C, H, W) -> normalize over (H*W)
 // Output: (N, C, H, W)
 
+// Warp-level sum using __shfl_down_sync (no bank conflicts).
+__device__ float warp_reduce_sum_ln(float val) {
+    for (int offset = 16; offset > 0; offset >>= 1)
+        val += __shfl_down_sync(0xffffffff, val, offset);
+    return val;
+}
+
+// Block-level sum: warp shuffle for intra-warp, shared[] for inter-warp stage.
+// shared[] must have at least ceil(blockDim.x / 32) elements.
 __device__ float block_reduce_sum(float value, float* shared) {
-    int tid = threadIdx.x;
-    shared[tid] = value;
+    int tid    = threadIdx.x;
+    int lane   = tid & 31;
+    int warp_id = tid >> 5;
+    int nwarps = (blockDim.x + 31) >> 5;
+
+    value = warp_reduce_sum_ln(value);
+
+    if (lane == 0) shared[warp_id] = value;
     __syncthreads();
 
-    int active = blockDim.x;
-    while (active > 1) {
-        int half = (active + 1) >> 1;
-        if (tid < active - half) {
-            shared[tid] += shared[tid + half];
-        }
-        active = half;
-        __syncthreads();
-    }
-    return shared[0];
+    // First warp reduces the per-warp results.
+    value = (tid < nwarps) ? shared[tid] : 0.0f;
+    if (warp_id == 0) value = warp_reduce_sum_ln(value);
+
+    return value;
 }
 
 __global__ void layer_norm_forward_kernel(float* output, const float* input,
@@ -146,7 +156,11 @@ extern "C" void layer_norm_backward(float* d_grad_input, const float* d_grad_out
     int hw = H * W;
     int tpb = hw < 256 ? hw : 256;
     if (tpb < 1) tpb = 1;
-    layer_norm_backward_kernel<<<N * C, tpb, tpb * sizeof(float)>>>(
+    // extern __shared__ is used only for inter-warp reduction: needs ceil(tpb/32) floats.
+    // Allocate tpb floats so the buffer is always sufficient regardless of tpb.
+    int nwarps = (tpb + 31) / 32;
+    size_t shared_bytes = (size_t)(nwarps < tpb ? tpb : nwarps) * sizeof(float);
+    layer_norm_backward_kernel<<<N * C, tpb, shared_bytes>>>(
         d_grad_input, d_grad_output, d_input, d_gamma, N, C, H, W, eps
     );
     CUDA_KERNEL_CHECK();

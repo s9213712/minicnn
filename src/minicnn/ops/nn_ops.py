@@ -53,14 +53,19 @@ def conv2d(
         grad = out.grad
         dx_pad = np.zeros_like(x_pad, dtype=np.float32)
         dw = np.einsum('noij,ncijhw->ochw', grad, windows, optimize=True).astype(np.float32)
-        for r in range(kh):
-            for s in range(kw):
-                dx_pad[:, :, r:r + stride * out_h:stride, s:s + stride * out_w:stride] += np.einsum(
-                    'noij,oc->ncij',
-                    grad,
-                    w_data[:, :, r, s],
-                    optimize=True,
-                )
+        dwindows = np.einsum('noij,ochw->ncijhw', grad, w_data, optimize=True).astype(np.float32)
+        _shape = (n, c_in, out_h, out_w, kh, kw)
+        _n = np.broadcast_to(np.arange(n)[:, None, None, None, None, None], _shape).ravel()
+        _c = np.broadcast_to(np.arange(c_in)[None, :, None, None, None, None], _shape).ravel()
+        _h = np.broadcast_to(
+            np.arange(out_h)[None, None, :, None, None, None] * stride + np.arange(kh)[None, None, None, None, :, None],
+            _shape,
+        ).ravel()
+        _w = np.broadcast_to(
+            np.arange(out_w)[None, None, None, :, None, None] * stride + np.arange(kw)[None, None, None, None, None, :],
+            _shape,
+        ).ravel()
+        np.add.at(dx_pad, (_n, _c, _h, _w), dwindows.ravel())
         if padding > 0:
             dx = dx_pad[:, :, padding:-padding, padding:-padding]
         else:

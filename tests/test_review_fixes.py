@@ -168,6 +168,73 @@ def test_maxpool2d_backward_scatter_overlap():
     assert x.grad[0, 0, 0, 0] == 1.0
 
 
+# ---------------------------------------------------------------------------
+# R05: conv2d backward dx now fully vectorized (no kh*kw Python loop)
+# ---------------------------------------------------------------------------
+
+def _conv2d_f64(x64, w64, padding=0, stride=1):
+    """Pure float64 convolution for use in finite-difference tests."""
+    from numpy.lib.stride_tricks import sliding_window_view
+    n, c_in, h, w = x64.shape
+    c_out, _, kh, kw = w64.shape
+    x_pad = np.pad(x64, ((0,0),(0,0),(padding,padding),(padding,padding)))
+    windows = sliding_window_view(x_pad, (kh, kw), axis=(2,3))[:,:,::stride,::stride]
+    return np.einsum('ncijhw,ochw->noij', windows, w64, optimize=True)
+
+
+def test_conv2d_backward_dx_correctness():
+    """dx from conv2d backward must match float64 finite-difference gradient."""
+    rng = np.random.default_rng(7)
+    x_data = rng.normal(size=(2, 1, 5, 5)).astype(np.float32)
+    w_data = rng.normal(size=(3, 1, 3, 3)).astype(np.float32)
+
+    from minicnn.ops.nn_ops import conv2d
+
+    x = Tensor(x_data, requires_grad=True)
+    w = Tensor(w_data, requires_grad=True)
+    out = conv2d(x, w, padding=1)
+    out.backward(np.ones_like(out.data))
+
+    x64 = x_data.astype(np.float64)
+    w64 = w_data.astype(np.float64)
+    eps = 1e-5
+    dx_fd = np.zeros_like(x64)
+    for idx in np.ndindex(*x64.shape):
+        xp, xm = x64.copy(), x64.copy()
+        xp[idx] += eps
+        xm[idx] -= eps
+        dx_fd[idx] = (_conv2d_f64(xp, w64, padding=1).sum() - _conv2d_f64(xm, w64, padding=1).sum()) / (2 * eps)
+
+    assert np.allclose(x.grad, dx_fd, atol=1e-3), \
+        f"max error: {np.abs(x.grad - dx_fd).max()}"
+
+
+def test_conv2d_backward_dw_correctness():
+    rng = np.random.default_rng(11)
+    x_data = rng.normal(size=(1, 2, 4, 4)).astype(np.float32)
+    w_data = rng.normal(size=(2, 2, 2, 2)).astype(np.float32)
+
+    from minicnn.ops.nn_ops import conv2d
+
+    x = Tensor(x_data, requires_grad=True)
+    w = Tensor(w_data, requires_grad=True)
+    out = conv2d(x, w, stride=1, padding=0)
+    out.backward(np.ones_like(out.data))
+
+    eps = 1e-4
+    dw_fd = np.zeros_like(w_data)
+    for idx in np.ndindex(*w_data.shape):
+        wp, wm = w_data.copy(), w_data.copy()
+        wp[idx] += eps
+        wm[idx] -= eps
+        op = conv2d(Tensor(x_data), Tensor(wp)).data.sum()
+        om = conv2d(Tensor(x_data), Tensor(wm)).data.sum()
+        dw_fd[idx] = (op - om) / (2 * eps)
+
+    assert np.allclose(w.grad, dw_fd, atol=1e-2), \
+        f"max error: {np.abs(w.grad - dw_fd).max()}"
+
+
 def test_maxpool2d_batch_multichannel():
     rng = np.random.default_rng(42)
     x_data = rng.normal(size=(2, 3, 8, 8)).astype(np.float32)
