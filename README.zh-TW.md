@@ -114,6 +114,19 @@ src/minicnn/training/models/
 
 PyTorch backend 會寫入 `*_best.pt`；CUDA legacy backend 會寫入 `*_best_model_split.npz`。每次實驗的 metrics 與 summary 仍保留在 `artifacts/`。
 
+## 架構範本
+
+可直接修改的 YAML 範本放在 `templates/`：
+
+```bash
+minicnn train-flex --config templates/mnist/lenet_like.yaml
+minicnn train-flex --config templates/mnist/mlp.yaml
+minicnn train-flex --config templates/cifar10/vgg_mini.yaml
+minicnn train-dual --config templates/cifar10/vgg_mini_cuda.yaml engine.backend=cuda_legacy
+```
+
+MNIST 範本使用 `dataset.type: mnist`，第一次執行可自動下載 IDX gzip 檔到 `data/mnist/`。CIFAR-10 範本預設要先跑 `minicnn prepare-data`，除非把 `dataset.download` 設為 `true`。完整架構與 backend 相容性請看 `templates/README.md`。
+
 ## 本機 Smoke Test 結果
 
 2026-04-19 使用 RTX 3050 Laptop GPU 驗證。本次最新快速驗證使用 `features/backend-smoke-matrix/run_smoke_matrix.py`，`128` 筆 train、`32` 筆 validation，batch size `32`，訓練 `1` epoch：

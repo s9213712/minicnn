@@ -30,5 +30,6 @@ logs/
 
 # OS / editors
 .DS_Store
+*:Zone.Identifier
 .vscode/
 .idea/

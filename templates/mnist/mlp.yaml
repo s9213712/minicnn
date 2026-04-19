@@ -1,0 +1,62 @@
+# MNIST  MLP baseline  (Torch backend)
+#
+# Architecture: Flatten → Linear(256) → GELU → Dropout(0.1) → Linear(128) → ReLU → Linear(10)
+# Input: 1×28×28 → 784  |  Classes: 10
+#
+# Run:
+#   minicnn train-flex --config templates/mnist/mlp.yaml
+
+project:
+  name: minicnn
+  run_name: mnist-mlp
+  artifacts_root: artifacts
+
+engine:
+  backend: torch
+  strict_backend_validation: false
+
+dataset:
+  type: mnist
+  data_root: data/mnist
+  download: true           # downloads ~11 MB on first run; set false afterwards
+  num_samples: 60000
+  val_samples: 10000
+  num_classes: 10
+  input_shape: [1, 28, 28]
+  seed: 42
+
+model:
+  layers:
+    - type: Flatten
+    - type: Linear
+      out_features: 256
+    - type: GELU
+    - type: Dropout
+      p: 0.1
+    - type: Linear
+      out_features: 128
+    - type: ReLU
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 20
+  batch_size: 64
+  device: auto
+  amp: false
+  grad_accum_steps: 1
+  num_workers: 0
+  log_every: 100
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: Adam
+  lr: 0.001
+  weight_decay: 0.0001
+
+scheduler:
+  enabled: true
+  type: CosineAnnealingLR
+  T_max: 20

@@ -1,0 +1,99 @@
+# CIFAR-10  VGG-mini  (Torch + CUDA dual-backend compatible)
+#
+# Architecture: 3→32→32→Pool→64→64→Pool→FC(10)
+# Input: 3×32×32  |  Classes: 10
+#
+# Run with Torch backend:
+#   minicnn train-flex --config templates/cifar10/vgg_mini.yaml
+#   minicnn train-dual --config templates/cifar10/vgg_mini.yaml engine.backend=torch
+#
+# Run with handcrafted CUDA backend (use vgg_mini_cuda.yaml for the native path):
+#   minicnn train-dual --config templates/cifar10/vgg_mini.yaml engine.backend=cuda_legacy
+
+project:
+  name: minicnn
+  run_name: cifar10-vgg-mini
+  artifacts_root: artifacts
+
+engine:
+  backend: torch           # switch to cuda_legacy to use the handcrafted CUDA path
+
+dataset:
+  type: cifar10
+  data_root: data/cifar-10-batches-py
+  download: false          # set to true to auto-download on first run
+  num_samples: 45000
+  val_samples: 5000
+  num_classes: 10
+  input_shape: [3, 32, 32]
+  seed: 42
+  random_crop_padding: 4
+  horizontal_flip: true
+
+model:
+  layers:
+    # Block 1 ──────────────────────────────────────────────
+    - type: Conv2d
+      out_channels: 32
+      kernel_size: 3
+      stride: 1
+      padding: 0
+    - type: LeakyReLU
+      negative_slope: 0.1
+    - type: Conv2d
+      out_channels: 32
+      kernel_size: 3
+      stride: 1
+      padding: 0
+    - type: LeakyReLU
+      negative_slope: 0.1
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    # Block 2 ──────────────────────────────────────────────
+    - type: Conv2d
+      out_channels: 64
+      kernel_size: 3
+      stride: 1
+      padding: 0
+    - type: LeakyReLU
+      negative_slope: 0.1
+    - type: Conv2d
+      out_channels: 64
+      kernel_size: 3
+      stride: 1
+      padding: 0
+    - type: LeakyReLU
+      negative_slope: 0.1
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    # Classifier ───────────────────────────────────────────
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 50
+  batch_size: 64
+  device: auto
+  amp: false
+  grad_accum_steps: 1
+  num_workers: 0
+  log_every: 50
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: SGD
+  lr: 0.005
+  momentum: 0.9
+  weight_decay: 0.0005
+
+scheduler:
+  enabled: true
+  type: ReduceLROnPlateau
+  factor: 0.5
+  patience: 3
+  min_lr: 1.0e-5

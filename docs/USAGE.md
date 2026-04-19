@@ -15,9 +15,18 @@
 
 目前專案中的 CIFAR-10 dual-backend 訓練入口是 `minicnn train-dual`。同一份 config 可以用 `engine.backend=torch` 跑 PyTorch 路徑，或用 `engine.backend=cuda_legacy` 跑手寫 CUDA `.so` 路徑。
 
+可直接修改的架構範本放在 `templates/`。MNIST 範本走 `train-flex` 並使用 `dataset.type: mnist`，可在第一次執行時下載 IDX gzip 檔；CIFAR-10 範本包含 PyTorch-only 與 CUDA legacy compatible 版本：
+
+```bash
+minicnn train-flex --config templates/mnist/lenet_like.yaml
+minicnn train-flex --config templates/mnist/mlp.yaml
+minicnn train-flex --config templates/cifar10/vgg_mini.yaml
+minicnn train-dual --config templates/cifar10/vgg_mini_cuda.yaml engine.backend=cuda_legacy
+```
+
 MiniCNN 另有自己的小型 CPU/NumPy autograd stack，位於 `src/minicnn/nn/tensor.py`、`src/minicnn/ops/` 與 `src/minicnn/nn/layers.py`。它適合不依賴 torch 的 framework 測試與小型教學範例；正式 torch backend 仍使用 PyTorch autograd，CUDA legacy backend 仍使用 CUDA/C++ backward kernels。
 
-CIFAR-10 trainer 目前使用 `conv_backward_precol`、`conv_update_fused` 與 `BatchWorkspace`。`USE_CUBLAS=1` 時 `gemm_forward` 與 conv weight gradient 走 cuBLAS 快速路徑；`USE_CUBLAS=0` 時走手寫 CUDA fallback。MNIST 教學仍偏向最小可讀範例；若要追求速度，請參考 CIFAR trainer 的 workspace 重用與 precol backward 寫法。
+CIFAR-10 trainer 目前使用 `conv_backward_precol`、`conv_update_fused` 與 `BatchWorkspace`。`USE_CUBLAS=1` 時 `gemm_forward` 與 conv weight gradient 走 cuBLAS 快速路徑；`USE_CUBLAS=0` 時走手寫 CUDA fallback。MNIST 教學的最小版本是 `docs/train_mnist_so.py`；較乾淨的重構版本是 `docs/train_mnist_so_full_cnn_frame.py`，它把 CUDA orchestration 拆成 `ConvBlock`、`DenseLayer`、dataclass cache、shape helper 與獨立 `SgdOptimizer`。
 
 若要同時編譯兩種 native backend：
 

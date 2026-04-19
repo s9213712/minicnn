@@ -114,6 +114,19 @@ src/minicnn/training/models/
 
 PyTorch writes `*_best.pt`; CUDA legacy writes `*_best_model_split.npz`. Per-run metrics and summaries stay under `artifacts/`.
 
+## Architecture Templates
+
+Ready-to-edit YAML examples live under `templates/`:
+
+```bash
+minicnn train-flex --config templates/mnist/lenet_like.yaml
+minicnn train-flex --config templates/mnist/mlp.yaml
+minicnn train-flex --config templates/cifar10/vgg_mini.yaml
+minicnn train-dual --config templates/cifar10/vgg_mini_cuda.yaml engine.backend=cuda_legacy
+```
+
+MNIST templates use `dataset.type: mnist` and can download the IDX gzip files into `data/mnist/` on first run. CIFAR-10 templates expect `minicnn prepare-data` unless `dataset.download: true` is enabled. See `templates/README.md` for the architecture list and backend compatibility.
+
 ## Local Smoke Test Results
 
 Validated on 2026-04-19 with an RTX 3050 Laptop GPU. The latest quick verification used `features/backend-smoke-matrix/run_smoke_matrix.py` with `128` train samples, `32` validation samples, batch size `32`, and `1` epoch:

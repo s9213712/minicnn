@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from minicnn.data.cifar10 import load_cifar10, load_cifar10_test, normalize_cifar
+from minicnn.data.mnist import load_mnist, load_mnist_test, normalize_mnist
 
 try:
     import torch
@@ -107,6 +108,21 @@ def _cifar_dataset(cfg: dict, train_cfg: dict):
     return normalize_cifar(x_train), y_train, normalize_cifar(x_val), y_val
 
 
+def _mnist_dataset(cfg: dict, train_cfg: dict):
+    data_root = cfg.get('data_root', 'data/mnist')
+    n_train = int(cfg.get('num_samples', 60000))
+    n_val = int(cfg.get('val_samples', 10000))
+    seed = int(cfg.get('seed', 42))
+    x_train, y_train, x_val, y_val, _x_test, _y_test = load_mnist(
+        data_root=Path(data_root),
+        n_train=n_train,
+        n_val=n_val,
+        seed=seed,
+        download=bool(cfg.get('download', False)),
+    )
+    return normalize_mnist(x_train), y_train, normalize_mnist(x_val), y_val
+
+
 def create_dataloaders(dataset_cfg: dict, train_cfg: dict):
     if torch is None:
         raise RuntimeError('PyTorch is required for train-flex')
@@ -115,6 +131,8 @@ def create_dataloaders(dataset_cfg: dict, train_cfg: dict):
         x_train, y_train, x_val, y_val = _random_dataset(dataset_cfg, train_cfg)
     elif dtype == 'cifar10':
         x_train, y_train, x_val, y_val = _cifar_dataset(dataset_cfg, train_cfg)
+    elif dtype == 'mnist':
+        x_train, y_train, x_val, y_val = _mnist_dataset(dataset_cfg, train_cfg)
     else:
         raise ValueError(f'Unsupported dataset.type: {dtype}')
     batch_size = int(train_cfg.get('batch_size', 64))
@@ -139,11 +157,16 @@ def create_dataloaders(dataset_cfg: dict, train_cfg: dict):
 def create_test_dataloader(dataset_cfg: dict, train_cfg: dict):
     if torch is None:
         raise RuntimeError('PyTorch is required for train-flex')
-    if dataset_cfg.get('type', 'cifar10') != 'cifar10':
-        return None
-    data_root = dataset_cfg.get('data_root', 'data/cifar-10-batches-py')
-    x_test, y_test = load_cifar10_test(data_root=Path(data_root), download=bool(dataset_cfg.get('download', False)))
+    dtype = dataset_cfg.get('type', 'cifar10')
     batch_size = int(train_cfg.get('batch_size', 64))
     num_workers = int(train_cfg.get('num_workers', 0))
     seed = int(train_cfg.get('seed', dataset_cfg.get('seed', 42)))
-    return _make_loader(normalize_cifar(x_test), y_test, batch_size=batch_size, shuffle=False, num_workers=num_workers, seed=seed + 20_000)
+    if dtype == 'cifar10':
+        data_root = dataset_cfg.get('data_root', 'data/cifar-10-batches-py')
+        x_test, y_test = load_cifar10_test(data_root=Path(data_root), download=bool(dataset_cfg.get('download', False)))
+        return _make_loader(normalize_cifar(x_test), y_test, batch_size=batch_size, shuffle=False, num_workers=num_workers, seed=seed + 20_000)
+    if dtype == 'mnist':
+        data_root = dataset_cfg.get('data_root', 'data/mnist')
+        x_test, y_test = load_mnist_test(data_root=Path(data_root), download=bool(dataset_cfg.get('download', False)))
+        return _make_loader(normalize_mnist(x_test), y_test, batch_size=batch_size, shuffle=False, num_workers=num_workers, seed=seed + 20_000)
+    return None

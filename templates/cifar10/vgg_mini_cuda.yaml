@@ -1,0 +1,77 @@
+# CIFAR-10  VGG-mini  — handcrafted CUDA backend (conv_layers format)
+#
+# Architecture: 3→32→32→Pool→64→64→Pool→FC(10)
+# Input: 3×32×32  |  Classes: 10
+#
+# This config uses model.conv_layers instead of model.layers.
+# CudaNetGeometry derives all buffer sizes automatically; no Python change needed
+# when adding or widening layers.
+#
+# Run:
+#   minicnn train-cuda --config templates/cifar10/vgg_mini_cuda.yaml
+#   minicnn train-dual --config templates/cifar10/vgg_mini_cuda.yaml engine.backend=cuda_legacy
+#
+# Validate before training:
+#   minicnn validate-dual-config --config templates/cifar10/vgg_mini_cuda.yaml
+
+project:
+  run_name: cifar10-vgg-mini-cuda
+backend:
+  type: cuda
+  legacy_entrypoint: true
+
+dataset:
+  type: cifar10
+  data_root: data/cifar-10-batches-py
+  download: false
+  num_samples: 45000
+  val_samples: 5000
+  num_classes: 10
+  input_shape: [3, 32, 32]
+  seed: 42
+
+model:
+  c_in: 3
+  h: 32
+  w: 32
+  kh: 3
+  kw: 3
+  fc_out: 10
+  conv_layers:
+    # Each entry: out_c = output channels, pool = insert MaxPool2d(2×2) after this conv
+    - {out_c: 32, pool: false}   # conv1: 3→32,  32×32 → 30×30
+    - {out_c: 32, pool: true}    # conv2: 32→32, 30×30 → 28×28 → Pool → 14×14
+    - {out_c: 64, pool: false}   # conv3: 32→64, 14×14 → 12×12
+    - {out_c: 64, pool: true}    # conv4: 64→64, 12×12 → 10×10 → Pool → 5×5
+    # FC input = 64 × 5 × 5 = 1600 → 10 classes (derived automatically)
+
+train:
+  batch_size: 64
+  epochs: 50
+  grad_accum_steps: 1
+
+optim:
+  lr_conv1: 0.005
+  lr_conv: 0.005
+  lr_fc: 0.005
+  momentum: 0.9
+  weight_decay: 0.0005
+
+scheduler:
+  type: plateau
+  enabled: true
+  factor: 0.5
+  patience: 3
+  min_lr: 1.0e-5
+
+runtime:
+  amp: false
+  profile: true
+
+logging:
+  console: true
+  jsonl: true
+
+callbacks:
+  checkpoint: true
+  summary: true

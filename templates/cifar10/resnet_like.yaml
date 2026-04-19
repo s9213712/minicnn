@@ -1,0 +1,84 @@
+# CIFAR-10  ResNet-like  (Torch backend only)
+#
+# Architecture: Conv64/BN/ReLU → 2×ResBlock(64) → 2×ResBlock(128,stride=2) → GAP → FC10
+# Input: 3×32×32  |  Classes: 10
+# Uses MiniCNN's ResidualBlock and GlobalAvgPool2d (torch flex components).
+# Not compatible with cuda_legacy backend.
+#
+# Run:
+#   minicnn train-flex --config templates/cifar10/resnet_like.yaml
+
+project:
+  name: minicnn
+  run_name: cifar10-resnet-like
+  artifacts_root: artifacts
+
+engine:
+  backend: torch
+  strict_backend_validation: true
+
+dataset:
+  type: cifar10
+  data_root: data/cifar-10-batches-py
+  download: false
+  num_samples: 45000
+  val_samples: 5000
+  num_classes: 10
+  input_shape: [3, 32, 32]
+  seed: 42
+  random_crop_padding: 4
+  horizontal_flip: true
+
+model:
+  layers:
+    # Stem ─────────────────────────────────────────────────
+    - type: Conv2d
+      out_channels: 64
+      kernel_size: 3
+      stride: 1
+      padding: 1
+      bias: false
+    - type: BatchNorm2d
+    - type: ReLU
+    # Stage 1: 64 channels, 32×32 ──────────────────────────
+    - type: ResidualBlock
+      channels: 64
+      stride: 1
+    - type: ResidualBlock
+      channels: 64
+      stride: 1
+    # Stage 2: 128 channels, 16×16 (stride=2 downsample) ───
+    - type: ResidualBlock
+      channels: 128
+      stride: 2
+    - type: ResidualBlock
+      channels: 128
+      stride: 1
+    # Classifier ───────────────────────────────────────────
+    - type: GlobalAvgPool2d
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 50
+  batch_size: 64
+  device: auto
+  amp: false
+  grad_accum_steps: 1
+  num_workers: 0
+  log_every: 50
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: SGD
+  lr: 0.1
+  momentum: 0.9
+  weight_decay: 0.0001
+
+scheduler:
+  enabled: true
+  type: CosineAnnealingLR
+  T_max: 50

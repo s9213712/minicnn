@@ -160,6 +160,14 @@ lib.conv_update_fused(
 docs/train_mnist_so.py
 ```
 
+較完整、較接近 framework 結構的重構版：
+
+```text
+docs/train_mnist_so_full_cnn_frame.py
+```
+
+重構版把重複的 Python orchestration 收斂到 `ConvBlock`、`DenseLayer`、dataclass cache、shape helper 與獨立 `SgdOptimizer`，保留同一組 `.so` C API。
+
 執行：
 
 ```bash

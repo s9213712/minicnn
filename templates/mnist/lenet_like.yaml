@@ -1,0 +1,83 @@
+# MNIST  LeNet-like CNN  (Torch backend)
+#
+# Architecture: Conv(1→8)→Pool→Conv(8→16)→Pool→FC(400→10)
+# Input: 1×28×28  |  Classes: 10
+#
+# First run — download dataset automatically:
+#   minicnn train-flex --config templates/mnist/lenet_like.yaml
+#   (dataset.download: true is set below; flip to false after first run)
+#
+# Shape trace:
+#   1×28×28 → Conv(8,3×3) → 8×26×26 → Pool(2) → 8×13×13
+#           → Conv(16,3×3) → 16×11×11 → Pool(2) → 16×5×5
+#           → Flatten → 400 → Linear(10)
+
+project:
+  name: minicnn
+  run_name: mnist-lenet-like
+  artifacts_root: artifacts
+
+engine:
+  backend: torch
+  strict_backend_validation: false
+
+dataset:
+  type: mnist
+  data_root: data/mnist
+  download: true           # downloads ~11 MB on first run; set false afterwards
+  num_samples: 60000
+  val_samples: 10000
+  num_classes: 10
+  input_shape: [1, 28, 28]
+  seed: 42
+
+model:
+  layers:
+    # Block 1 ──────────────────────────────────────────────
+    - type: Conv2d
+      out_channels: 8
+      kernel_size: 3
+      stride: 1
+      padding: 0
+    - type: ReLU
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    # Block 2 ──────────────────────────────────────────────
+    - type: Conv2d
+      out_channels: 16
+      kernel_size: 3
+      stride: 1
+      padding: 0
+    - type: ReLU
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    # Classifier ───────────────────────────────────────────
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 15
+  batch_size: 64
+  device: auto
+  amp: false
+  grad_accum_steps: 1
+  num_workers: 0
+  log_every: 100
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: SGD
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.0001
+
+scheduler:
+  enabled: true
+  type: StepLR
+  step_size: 5
+  gamma: 0.5

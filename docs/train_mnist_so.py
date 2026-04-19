@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MNIST CNN example using cpp/libminimal_cuda_cnn.so through ctypes.
+"""MNIST CNN example using cpp/libminimal_cuda_cnn.so through ctypes
 
 Network:
 Input NCHW 1x28x28
@@ -26,7 +26,7 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_LIB = ROOT / "cpp" / "libminimal_cuda_cnn.so"
+DEFAULT_LIB = ROOT / "cpp" / "libminimal_cuda_cnn_handmade.so"
 DEFAULT_DATA = ROOT / "data" / "mnist"
 MNIST_URL = "https://storage.googleapis.com/cvdf-datasets/mnist"
 MNIST_FILES = {
@@ -333,7 +333,7 @@ def main():
     parser.add_argument("--lib", type=Path, default=DEFAULT_LIB)
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA)
     parser.add_argument("--download", action="store_true")
-    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=BATCH)
     parser.add_argument("--val-size", type=int, default=5000)
     parser.add_argument("--train-limit", type=int, default=2048)
