@@ -164,7 +164,6 @@ def evaluate(model, x, y, device, batch_size=BATCH, max_batches=EVAL_MAX_BATCHES
             pred = torch.argmax(logits, dim=1).cpu().numpy()
             correct += np.sum(pred == y[idx_s:idx_e])
             total += idx_e - idx_s
-    model.train()
     return correct / total * 100
 
 
@@ -220,6 +219,7 @@ def main():
 
     for epoch in range(EPOCHS):
         t0 = time.time()
+        model.train()
         total_loss = 0.0
         correct = 0
         total_seen = 0

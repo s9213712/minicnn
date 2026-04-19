@@ -137,6 +137,12 @@ This repo intentionally supports two workflows:
 - **Torch backend**: broad layer coverage, fast experimentation, custom components via dotted-path imports
 - **CUDA backend**: your hand-rolled CUDA CNN path for low-level control and backend ownership
 
+## MiniCNN autograd core
+
+MiniCNN also includes a small CPU/NumPy autograd core in `src/minicnn/nn/tensor.py`. It supports `Tensor.backward()` with topological reverse-mode autodiff for scalar/tensor arithmetic, broadcasting, matrix multiply, reductions, reshape, ReLU, `log_softmax`, `cross_entropy`, trainable `Parameter`, and the lightweight `SGD` optimizer.
+
+This core is useful for framework-level tests and small educational examples. The Torch backend still uses PyTorch autograd, and the handcrafted CUDA backend still uses its explicit CUDA backward kernels.
+
 ## Shared config contract
 
 The same config file contains:
@@ -265,6 +271,7 @@ minicnn/
 │   ├── core/                          # native build helpers and lazy ctypes CUDA binding
 │   ├── data/                          # CIFAR-10 preparation/loading
 │   ├── flex/                          # config-driven PyTorch model builder and trainer
+│   ├── nn/                            # MiniCNN Tensor, Parameter, and CPU/NumPy autograd core
 │   ├── training/
 │   │   ├── train_cuda.py              # legacy CUDA CIFAR-10 training entrypoint
 │   │   ├── train_torch_baseline.py    # PyTorch baseline training entrypoint
@@ -298,6 +305,9 @@ Key folder and file responsibilities:
 | `src/minicnn/core/cuda_backend.py` | Lazy ctypes loader and Python helpers for the native CUDA library. |
 | `src/minicnn/data/` | CIFAR-10 download/loading and random dataset helpers. |
 | `src/minicnn/flex/` | PyTorch config-driven model/loss/optimizer/scheduler builder and trainer; includes torch-only `ResidualBlock` and `GlobalAvgPool2d`. |
+| `src/minicnn/nn/` | MiniCNN framework layer: `Module`, `Sequential`, `Tensor`, `Parameter`, and the CPU/NumPy autograd functions. |
+| `src/minicnn/nn/tensor.py` | Reverse-mode autograd engine for scalar/tensor ops, broadcasting, matmul, reductions, ReLU, `log_softmax`, and `cross_entropy`. |
+| `src/minicnn/optim/` | Lightweight optimizer interfaces; `SGD` updates MiniCNN `Parameter` objects without requiring torch. |
 | `src/minicnn/training/train_cuda.py` | Legacy CUDA CIFAR-10 training loop entrypoint. |
 | `src/minicnn/training/models/` | Fixed output folder for best model checkpoints; generated `*.pt` and `*.npz` files are git-ignored. |
 | `src/minicnn/training/cuda_ops.py` | Small CUDA operation wrappers used by the legacy training loop. |

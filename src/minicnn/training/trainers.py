@@ -4,7 +4,7 @@ from minicnn.config.schema import ExperimentConfig
 from minicnn.engine.backends import CudaLegacyBackend, TorchLegacyBackend
 from minicnn.framework import GLOBAL_REGISTRY
 from minicnn.nn import Module
-from minicnn.nn.tensor import Tensor
+from minicnn.nn.tensor import Parameter
 from minicnn.training.base_trainer import BaseTrainer
 from minicnn.training.callbacks import (
     CheckpointManifestCallback,
@@ -18,7 +18,7 @@ from minicnn.training.callbacks import (
 class DummyModel(Module):
     def __init__(self):
         super().__init__()
-        self.add_parameter('weight', Tensor(data=1.0, requires_grad=True, name='weight'))
+        self.add_parameter('weight', Parameter(data=1.0, name='weight'))
 
 
 def build_callbacks(config: ExperimentConfig):

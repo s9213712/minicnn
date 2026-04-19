@@ -35,3 +35,20 @@ def test_build_residual_block_with_global_avg_pool():
     assert model.inferred_shapes[-4] == (32, 16, 16)
     assert model.inferred_shapes[-3] == (32, 1, 1)
     assert model[-1].in_features == 32
+
+
+def test_shape_inference_treats_common_activations_as_passthrough():
+    cfg = {
+        'layers': [
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 8},
+            {'type': 'Sigmoid'},
+            {'type': 'Mish'},
+            {'type': 'Linear', 'out_features': 2},
+        ]
+    }
+
+    model = build_model(cfg, input_shape=(1, 4, 4))
+
+    assert model.inferred_shapes[-3] == (8,)
+    assert model[-1].in_features == 8

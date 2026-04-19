@@ -17,23 +17,26 @@ except Exception:  # pragma: no cover
     TensorDataset = None
 
 
-class AugmentedTensorDataset(TensorDataset if TensorDataset is not None else object):
-    def __init__(self, x, y, random_crop_padding: int = 0, horizontal_flip: bool = False):
-        super().__init__(x, y)
-        self.random_crop_padding = int(random_crop_padding)
-        self.horizontal_flip = bool(horizontal_flip)
+if TensorDataset is not None:
+    class AugmentedTensorDataset(TensorDataset):
+        def __init__(self, x, y, random_crop_padding: int = 0, horizontal_flip: bool = False):
+            super().__init__(x, y)
+            self.random_crop_padding = int(random_crop_padding)
+            self.horizontal_flip = bool(horizontal_flip)
 
-    def __getitem__(self, index):
-        x, y = super().__getitem__(index)
-        if self.random_crop_padding > 0:
-            pad = self.random_crop_padding
-            padded = F.pad(x.unsqueeze(0), (pad, pad, pad, pad), mode='reflect').squeeze(0)
-            top = int(torch.randint(0, 2 * pad + 1, (1,)).item())
-            left = int(torch.randint(0, 2 * pad + 1, (1,)).item())
-            x = padded[:, top:top + x.shape[-2], left:left + x.shape[-1]]
-        if self.horizontal_flip and bool(torch.randint(0, 2, (1,)).item()):
-            x = torch.flip(x, dims=[-1])
-        return x, y
+        def __getitem__(self, index):
+            x, y = super().__getitem__(index)
+            if self.random_crop_padding > 0:
+                pad = self.random_crop_padding
+                padded = F.pad(x.unsqueeze(0), (pad, pad, pad, pad), mode='reflect').squeeze(0)
+                top = int(torch.randint(0, 2 * pad + 1, (1,)).item())
+                left = int(torch.randint(0, 2 * pad + 1, (1,)).item())
+                x = padded[:, top:top + x.shape[-2], left:left + x.shape[-1]]
+            if self.horizontal_flip and bool(torch.randint(0, 2, (1,)).item()):
+                x = torch.flip(x, dims=[-1])
+            return x, y
+else:  # pragma: no cover
+    AugmentedTensorDataset = None
 
 
 def _make_loader(
@@ -45,6 +48,8 @@ def _make_loader(
     random_crop_padding: int = 0,
     horizontal_flip: bool = False,
 ):
+    if torch is None or DataLoader is None or AugmentedTensorDataset is None:
+        raise RuntimeError('PyTorch is required for train-flex')
     tx = torch.from_numpy(x.astype(np.float32))
     ty = torch.from_numpy(y.astype(np.int64))
     dataset = AugmentedTensorDataset(tx, ty, random_crop_padding=random_crop_padding, horizontal_flip=horizontal_flip)

@@ -88,6 +88,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
             running_loss = 0.0
             running_acc = 0.0
             seen = 0
+            n_batches = len(train_loader)
             for step, (xb, yb) in enumerate(train_loader, start=1):
                 xb = xb.to(device)
                 yb = yb.to(device)
@@ -99,7 +100,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
                     logits = model(xb)
                     loss = criterion(logits, yb) / grad_accum_steps
                 scaler.scale(loss).backward()
-                if step % grad_accum_steps == 0:
+                if step % grad_accum_steps == 0 or step == n_batches:
                     scaler.step(optimizer)
                     scaler.update()
                     optimizer.zero_grad(set_to_none=True)
@@ -111,7 +112,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
             train_metrics = {'loss': running_loss / max(seen, 1), 'acc': running_acc / max(seen, 1)}
             val_metrics = _eval(model, val_loader, criterion, device)
             if scheduler is not None:
-                if scheduler.__class__.__name__ == 'ReduceLROnPlateau':
+                if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                     scheduler.step(val_metrics['loss'])
                 else:
                     scheduler.step()

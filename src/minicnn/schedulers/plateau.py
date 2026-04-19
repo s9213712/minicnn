@@ -21,7 +21,7 @@ class ReduceLROnPlateau(LRScheduler):
             self.bad_epochs = 0
         else:
             self.bad_epochs += 1
-            if self.bad_epochs > self.patience:
+            if self.bad_epochs >= self.patience:
                 self.optimizer.lr = max(self.min_lr, self.optimizer.lr * self.factor)
                 self.bad_epochs = 0
         return self.get_last_lr()

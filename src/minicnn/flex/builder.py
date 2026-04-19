@@ -15,6 +15,25 @@ except Exception:  # pragma: no cover
 
 
 CUDA_LEGACY_OPTIMIZER_KEYS = {'lr_conv1', 'lr_conv', 'lr_fc'}
+_PASSTHROUGH_LAYERS = {
+    'BatchNorm2d',
+    'Dropout',
+    'Dropout2d',
+    'ELU',
+    'GELU',
+    'Hardtanh',
+    'Hardswish',
+    'Identity',
+    'LeakyReLU',
+    'Mish',
+    'ReLU',
+    'ReLU6',
+    'Sigmoid',
+    'SiLU',
+    'Softplus',
+    'Softsign',
+    'Tanh',
+}
 
 
 class ConfigurableSequential(nn.Sequential):
@@ -84,18 +103,12 @@ def _infer_output_shape(layer_type: str, kwargs: dict[str, Any], tracer: ShapeTr
         out_c = int(kwargs.get('out_channels', kwargs.get('channels', c)))
         st = int(kwargs.get('stride', 1))
         return (out_c, math.floor((h - 1) / st + 1), math.floor((w - 1) / st + 1))
-    if layer_type == 'BatchNorm2d':
-        return shape
-    if layer_type == 'Dropout':
-        return shape
-    if layer_type == 'Identity':
+    if layer_type in _PASSTHROUGH_LAYERS:
         return shape
     if layer_type == 'Flatten':
         return (tracer.flattened,)
     if layer_type == 'Linear':
         return (int(kwargs['out_features']),)
-    if layer_type in {'ReLU', 'LeakyReLU', 'GELU', 'SiLU', 'Tanh'}:
-        return shape
     return shape
 
 

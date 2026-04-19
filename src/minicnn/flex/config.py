@@ -78,10 +78,12 @@ def _parse_scalar(text: str) -> Any:
     except ValueError:
         pass
     if text.startswith('[') and text.endswith(']'):
-        inner = text[1:-1].strip()
-        if not inner:
-            return []
-        return [_parse_scalar(x.strip()) for x in inner.split(',')]
+        try:
+            loaded = yaml.safe_load(text)
+        except yaml.YAMLError:
+            loaded = None
+        if isinstance(loaded, list):
+            return loaded
     return text
 
 

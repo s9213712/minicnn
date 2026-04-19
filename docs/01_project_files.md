@@ -34,6 +34,8 @@ minicnn/
 │   ├── data/
 │   ├── flex/
 │   ├── framework/
+│   ├── nn/
+│   ├── optim/
 │   ├── training/
 │   │   └── models/
 │   └── unified/
@@ -84,6 +86,9 @@ minicnn/
 | `src/minicnn/core/cuda_backend.py` | native CUDA library 的 lazy `ctypes` loader；非 CUDA 指令 import 時不會載入 `.so`。 |
 | `src/minicnn/data/` | CIFAR-10 準備與資料載入。 |
 | `src/minicnn/flex/` | PyTorch flexible config-driven model builder、registry、trainer。 |
+| `src/minicnn/nn/` | MiniCNN framework layer，包含 `Module`、`Sequential`、`Tensor`、`Parameter` 與 CPU/NumPy autograd functions。 |
+| `src/minicnn/nn/tensor.py` | reverse-mode autograd engine；支援 arithmetic、broadcasting、matmul、reductions、reshape、ReLU、`log_softmax`、`cross_entropy` 與 `Tensor.backward()`。 |
+| `src/minicnn/optim/` | 輕量 optimizer 介面；`SGD` 可在不依賴 torch 的情況下更新 MiniCNN `Parameter`。 |
 | `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 `torch` 或 `cuda_legacy` backend。 |
 | `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 training loop 入口。 |
 | `src/minicnn/training/cuda_ops.py` | legacy loop 使用的 CUDA copy、layout、forward wrapper。 |

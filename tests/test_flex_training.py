@@ -37,6 +37,14 @@ def test_optimizer_type_override_drops_stale_default_kwargs():
     build_optimizer([param], cfg['optimizer'])
 
 
+def test_override_parser_handles_nested_lists():
+    from minicnn.flex.config import load_flex_config
+
+    cfg = load_flex_config(None, ['dataset.patch_sizes=[3, [5, 7], wide value]'])
+
+    assert cfg['dataset']['patch_sizes'] == [3, [5, 7], 'wide value']
+
+
 def test_optimizer_ignores_cuda_legacy_lr_fields_for_torch():
     from minicnn.flex.builder import build_optimizer
     import torch
@@ -76,3 +84,37 @@ def test_train_loader_supports_cifar_style_augmentation():
 
     assert tuple(xb.shape) == (4, 3, 8, 8)
     assert tuple(yb.shape) == (4,)
+
+
+def test_grad_accumulation_flushes_final_partial_window(tmp_path: Path, monkeypatch):
+    import torch
+    import minicnn.flex.trainer as trainer
+
+    steps = []
+
+    class CountingSGD(torch.optim.SGD):
+        def step(self, *args, **kwargs):
+            steps.append(1)
+            return super().step(*args, **kwargs)
+
+    monkeypatch.setattr(
+        trainer,
+        'build_optimizer',
+        lambda params, _cfg: CountingSGD(params, lr=0.01, momentum=0.0),
+    )
+    cfg = {
+        'project': {'name': 'test', 'run_name': 'pytest-flush', 'artifacts_root': str(tmp_path)},
+        'dataset': {'type': 'random', 'input_shape': [1, 4, 4], 'num_classes': 2, 'num_samples': 5, 'val_samples': 2, 'seed': 1},
+        'model': {'layers': [
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ]},
+        'train': {'epochs': 1, 'batch_size': 2, 'device': 'cpu', 'amp': False, 'grad_accum_steps': 4, 'num_workers': 0},
+        'loss': {'type': 'CrossEntropyLoss'},
+        'optimizer': {'type': 'SGD', 'lr': 0.01, 'momentum': 0.0},
+        'scheduler': {'enabled': False},
+    }
+
+    train_from_config(cfg)
+
+    assert len(steps) == 1
