@@ -12,6 +12,11 @@ from .schema import ExperimentConfig
 
 _current_config: ExperimentConfig | None = None
 
+
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 _ENV_OVERRIDES = {
     "BATCH": ("MINICNN_BATCH", int),
     "EPOCHS": ("MINICNN_EPOCHS", int),
@@ -21,6 +26,8 @@ _ENV_OVERRIDES = {
     "DATASET_SEED": ("MINICNN_DATASET_SEED", int),
     "INIT_SEED": ("MINICNN_INIT_SEED", int),
     "TRAIN_SEED": ("MINICNN_TRAIN_SEED", int),
+    "RANDOM_CROP_PADDING": ("MINICNN_RANDOM_CROP_PADDING", int),
+    "HORIZONTAL_FLIP": ("MINICNN_HORIZONTAL_FLIP", _parse_bool),
     "LR_CONV1": ("MINICNN_LR_CONV1", float),
     "LR_CONV": ("MINICNN_LR_CONV", float),
     "LR_FC": ("MINICNN_LR_FC", float),
@@ -91,6 +98,8 @@ def apply_experiment_config(cfg: ExperimentConfig) -> None:
         "DATASET_SEED": cfg.train.dataset_seed,
         "INIT_SEED": cfg.train.init_seed,
         "TRAIN_SEED": cfg.train.train_seed,
+        "RANDOM_CROP_PADDING": cfg.train.random_crop_padding,
+        "HORIZONTAL_FLIP": cfg.train.horizontal_flip,
         "EARLY_STOP_PATIENCE": cfg.train.early_stop_patience,
         "MIN_DELTA": cfg.train.min_delta,
         "LR_CONV1": cfg.optim.lr_conv1,

@@ -16,6 +16,8 @@ dataset:
   num_classes: 10
   input_shape: [3, 32, 32]
   seed: 42
+  random_crop_padding: 4
+  horizontal_flip: true
 
 model:
   layers:

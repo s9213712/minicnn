@@ -28,6 +28,8 @@ class TrainConfig:
     dataset_seed: int = 42
     init_seed: int = 42
     train_seed: int = 42
+    random_crop_padding: int = 0
+    horizontal_flip: bool = True
     early_stop_patience: int = 8
     min_delta: float = 0.05
     grad_accum_steps: int = 1

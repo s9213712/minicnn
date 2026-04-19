@@ -60,13 +60,19 @@ def test_settings_shape_fields_match_model_geometry():
 def test_settings_env_overrides(monkeypatch):
     monkeypatch.setenv('MINICNN_BATCH', '7')
     monkeypatch.setenv('MINICNN_EPOCHS', '3')
+    monkeypatch.setenv('MINICNN_RANDOM_CROP_PADDING', '4')
+    monkeypatch.setenv('MINICNN_HORIZONTAL_FLIP', 'false')
     from minicnn.config import settings
 
     importlib.reload(settings)
 
     assert settings.BATCH == 7
     assert settings.EPOCHS == 3
+    assert settings.RANDOM_CROP_PADDING == 4
+    assert settings.HORIZONTAL_FLIP is False
 
     monkeypatch.delenv('MINICNN_BATCH')
     monkeypatch.delenv('MINICNN_EPOCHS')
+    monkeypatch.delenv('MINICNN_RANDOM_CROP_PADDING')
+    monkeypatch.delenv('MINICNN_HORIZONTAL_FLIP')
     importlib.reload(settings)

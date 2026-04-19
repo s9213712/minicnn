@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import importlib
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,19 @@ def _configure_cuda_legacy_runtime(cfg: dict[str, Any], summary: dict[str, Any])
     if cuda_so is not None:
         os.environ['MINICNN_CUDA_SO'] = str(cuda_so)
         summary['cuda_so'] = str(cuda_so)
+
+
+def _reload_legacy_modules_after_config() -> None:
+    for name in (
+        'minicnn.training.evaluation',
+        'minicnn.training.cuda_ops',
+        'minicnn.training.cuda_workspace',
+        'minicnn.training.checkpoints',
+        'minicnn.training.train_cuda',
+    ):
+        module = sys.modules.get(name)
+        if module is not None:
+            importlib.reload(module)
 
 
 def train_unified_from_config(cfg: dict[str, Any]) -> Path:
@@ -55,6 +70,7 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
         os.environ['MINICNN_ARTIFACT_RUN_DIR'] = str(run_dir)
         from minicnn.config.settings import apply_experiment_config
         apply_experiment_config(exp)
+        _reload_legacy_modules_after_config()
         from minicnn.training.train_cuda import main as legacy_main
         legacy_main()
         summary['effective_backend'] = 'cuda_legacy'

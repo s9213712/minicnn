@@ -77,6 +77,8 @@ from minicnn.config.settings import (
     P1W,
     P2H,
     P2W,
+    RANDOM_CROP_PADDING,
+    HORIZONTAL_FLIP,
     TRAIN_BATCH_IDS,
     TRAIN_SEED,
     W,
@@ -103,6 +105,26 @@ def current_device_weights():
 
 def current_velocity_buffers():
     return d_v_conv1, d_v_conv2, d_v_conv3, d_v_conv4, d_v_fc_w, d_v_fc_b
+
+
+def random_crop_batch(x, rng, padding):
+    if padding <= 0:
+        return x
+    n, _c, h, w = x.shape
+    padded = np.pad(x, ((0, 0), (0, 0), (padding, padding), (padding, padding)), mode='reflect')
+    tops = rng.integers(0, 2 * padding + 1, size=n)
+    lefts = rng.integers(0, 2 * padding + 1, size=n)
+    return np.stack([padded[i, :, top:top + h, left:left + w] for i, (top, left) in enumerate(zip(tops, lefts))]).astype(np.float32)
+
+
+def augment_batch(x, rng):
+    x = random_crop_batch(x, rng, RANDOM_CROP_PADDING)
+    if HORIZONTAL_FLIP:
+        flip_mask = rng.random(x.shape[0]) > 0.5
+        if flip_mask.any():
+            x = x.copy()
+            x[flip_mask] = x[flip_mask, :, :, ::-1]
+    return x
 
 
 def main():
@@ -172,8 +194,7 @@ def main():
             x = x_train[indices[idx_s:idx_e]]
             y = y_train[indices[idx_s:idx_e]]
 
-            if train_rng.random() > 0.5:
-                x = x[:, :, :, ::-1].copy()
+            x = augment_batch(x, train_rng)
 
             # Forward, keeping intermediates needed for backward.
             upload_to(workspace.d_x, x)

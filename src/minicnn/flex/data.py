@@ -8,17 +8,47 @@ from minicnn.data.cifar10 import load_cifar10, load_cifar10_test, normalize_cifa
 
 try:
     import torch
+    import torch.nn.functional as F
     from torch.utils.data import DataLoader, TensorDataset
 except Exception:  # pragma: no cover
     torch = None
+    F = None
     DataLoader = None
     TensorDataset = None
 
 
-def _make_loader(x: np.ndarray, y: np.ndarray, batch_size: int, shuffle: bool, num_workers: int = 0):
+class AugmentedTensorDataset(TensorDataset if TensorDataset is not None else object):
+    def __init__(self, x, y, random_crop_padding: int = 0, horizontal_flip: bool = False):
+        super().__init__(x, y)
+        self.random_crop_padding = int(random_crop_padding)
+        self.horizontal_flip = bool(horizontal_flip)
+
+    def __getitem__(self, index):
+        x, y = super().__getitem__(index)
+        if self.random_crop_padding > 0:
+            pad = self.random_crop_padding
+            padded = F.pad(x.unsqueeze(0), (pad, pad, pad, pad), mode='reflect').squeeze(0)
+            top = int(torch.randint(0, 2 * pad + 1, (1,)).item())
+            left = int(torch.randint(0, 2 * pad + 1, (1,)).item())
+            x = padded[:, top:top + x.shape[-2], left:left + x.shape[-1]]
+        if self.horizontal_flip and bool(torch.randint(0, 2, (1,)).item()):
+            x = torch.flip(x, dims=[-1])
+        return x, y
+
+
+def _make_loader(
+    x: np.ndarray,
+    y: np.ndarray,
+    batch_size: int,
+    shuffle: bool,
+    num_workers: int = 0,
+    random_crop_padding: int = 0,
+    horizontal_flip: bool = False,
+):
     tx = torch.from_numpy(x.astype(np.float32))
     ty = torch.from_numpy(y.astype(np.int64))
-    return DataLoader(TensorDataset(tx, ty), batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+    dataset = AugmentedTensorDataset(tx, ty, random_crop_padding=random_crop_padding, horizontal_flip=horizontal_flip)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
 
 
 def _random_dataset(cfg: dict, train_cfg: dict):
@@ -63,7 +93,17 @@ def create_dataloaders(dataset_cfg: dict, train_cfg: dict):
         raise ValueError(f'Unsupported dataset.type: {dtype}')
     batch_size = int(train_cfg.get('batch_size', 64))
     num_workers = int(train_cfg.get('num_workers', 0))
-    train_loader = _make_loader(x_train, y_train, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    random_crop_padding = int(dataset_cfg.get('random_crop_padding', train_cfg.get('random_crop_padding', 0)))
+    horizontal_flip = bool(dataset_cfg.get('horizontal_flip', train_cfg.get('horizontal_flip', False)))
+    train_loader = _make_loader(
+        x_train,
+        y_train,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        random_crop_padding=random_crop_padding,
+        horizontal_flip=horizontal_flip,
+    )
     val_loader = _make_loader(x_val, y_val, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     return train_loader, val_loader
 

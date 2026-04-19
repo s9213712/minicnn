@@ -24,6 +24,13 @@ conv raw / activation / maxpool：CNHW
 進 dense 前：CNHW -> NCHW -> flatten
 ```
 
+## 已知效能限制
+
+- CUDA legacy 訓練路徑仍在 NCHW 與 CNHW 間轉換多次。這是正確性優先的保守設計；若要再壓榨效能，下一步是統一 kernel layout 或減少轉換點。
+- Evaluation path 目前用 `try/finally` 保證例外時釋放 GPU pointer，但仍是每個 batch 分配暫存 buffer。若 evaluation 變成瓶頸，可再加 `EvalWorkspace` 重用 buffer。
+- Evaluation 的 host-to-device upload 仍是同步流程，尚未使用 CUDA streams 做 prefetch/overlap。
+- `USE_CUBLAS=1` 時 convolution weight gradient 走 cuBLAS GEMM；`USE_CUBLAS=0` 的手寫 fallback 仍是簡單 kernel，主要用作無 cuBLAS fallback，而不是最快路徑。
+
 ## 常見錯誤
 
 ### buffer 大小用錯

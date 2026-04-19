@@ -54,3 +54,25 @@ def test_optimizer_ignores_cuda_legacy_lr_fields_for_torch():
     optimizer = build_optimizer([param], cfg)
 
     assert optimizer.param_groups[0]['lr'] == 0.01
+
+
+def test_train_loader_supports_cifar_style_augmentation():
+    from minicnn.flex.data import create_dataloaders
+
+    dataset_cfg = {
+        'type': 'random',
+        'input_shape': [3, 8, 8],
+        'num_classes': 3,
+        'num_samples': 8,
+        'val_samples': 4,
+        'seed': 1,
+        'random_crop_padding': 2,
+        'horizontal_flip': True,
+    }
+    train_cfg = {'batch_size': 4, 'num_workers': 0}
+
+    train_loader, _ = create_dataloaders(dataset_cfg, train_cfg)
+    xb, yb = next(iter(train_loader))
+
+    assert tuple(xb.shape) == (4, 3, 8, 8)
+    assert tuple(yb.shape) == (4,)

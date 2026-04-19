@@ -12,6 +12,24 @@ Typical top-level sections are:
 - `scheduler`
 - `train`
 
+## Dataset augmentation
+
+CIFAR-10 torch flex configs may enable standard lightweight augmentation from
+YAML:
+
+```yaml
+dataset:
+  random_crop_padding: 4
+  horizontal_flip: true
+```
+
+The legacy CUDA trainer exposes the same knobs through its compiled
+experiment config and environment overrides:
+
+```bash
+MINICNN_RANDOM_CROP_PADDING=4 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
+```
+
 ## Model section
 
 ```yaml
