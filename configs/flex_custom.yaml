@@ -1,0 +1,38 @@
+project:
+  name: minicnn-flex
+  run_name: flex-custom
+  artifacts_root: artifacts
+
+dataset:
+  type: random
+  input_shape: [3, 32, 32]
+  num_classes: 10
+  num_samples: 256
+  val_samples: 64
+
+model:
+  layers:
+    - type: Conv2d
+      out_channels: 16
+      kernel_size: 3
+      padding: 1
+    - type: minicnn.extensions.custom_components.Swish
+    - type: AdaptiveAvgPool2d
+      output_size: [1, 1]
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 1
+  batch_size: 64
+
+loss:
+  type: torch.nn.CrossEntropyLoss
+
+optimizer:
+  type: torch.optim.AdamW
+  lr: 0.001
+
+scheduler:
+  enabled: false

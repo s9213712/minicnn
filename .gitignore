@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.dll
+*.dylib
+*.egg-info/
+.venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build
+build/
+dist/
+cmake-build-*/
+cpp/build/
+
+# Runtime outputs
+artifacts/
+outputs/
+logs/
+/data/
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/

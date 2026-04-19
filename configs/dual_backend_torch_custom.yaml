@@ -1,0 +1,55 @@
+project:
+  name: minicnn
+  run_name: dual-torch-custom
+  artifacts_root: artifacts
+
+engine:
+  backend: torch
+
+dataset:
+  type: random
+  num_samples: 256
+  val_samples: 64
+  num_classes: 10
+  input_shape: [3, 32, 32]
+  seed: 7
+
+model:
+  layers:
+    - type: Conv2d
+      out_channels: 16
+      kernel_size: 3
+      padding: 1
+    - type: BatchNorm2d
+    - type: ReLU
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    - type: Conv2d
+      out_channels: 32
+      kernel_size: 3
+      padding: 1
+    - type: ReLU
+    - type: AdaptiveAvgPool2d
+      output_size: 1
+    - type: Flatten
+    - type: examples.custom_block.CustomHead
+      in_features: 32
+      out_features: 10
+
+train:
+  epochs: 2
+  batch_size: 32
+  device: cpu
+  amp: false
+  grad_accum_steps: 1
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: Adam
+  lr: 0.001
+
+scheduler:
+  enabled: false

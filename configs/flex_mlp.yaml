@@ -1,0 +1,41 @@
+project:
+  name: minicnn-flex
+  run_name: flex-mlp
+  artifacts_root: artifacts
+
+dataset:
+  type: random
+  input_shape: [1, 28, 28]
+  num_classes: 10
+  num_samples: 512
+  val_samples: 128
+  seed: 7
+
+model:
+  layers:
+    - type: Flatten
+    - type: Linear
+      out_features: 256
+    - type: GELU
+    - type: Dropout
+      p: 0.1
+    - type: Linear
+      out_features: 128
+    - type: ReLU
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 2
+  batch_size: 64
+  device: auto
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: Adam
+  lr: 0.001
+
+scheduler:
+  enabled: false

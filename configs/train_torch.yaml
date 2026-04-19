@@ -1,0 +1,29 @@
+project:
+  run_name: torch_v5
+backend:
+  type: torch
+  legacy_entrypoint: true
+train:
+  batch_size: 64
+  epochs: 50
+  grad_accum_steps: 1
+runtime:
+  amp: false
+  profile: true
+logging:
+  console: true
+  jsonl: true
+callbacks:
+  checkpoint: true
+  summary: true
+framework:
+  module_system: true
+  optimizer_registry: true
+  scheduler_registry: true
+  healthcheck_on_info: true
+scheduler:
+  type: plateau
+  enabled: true
+  factor: 0.5
+  patience: 3
+  min_lr: 1.0e-5

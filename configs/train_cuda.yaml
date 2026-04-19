@@ -1,0 +1,33 @@
+project:
+  run_name: cuda_v5
+backend:
+  type: cuda
+  legacy_entrypoint: true
+train:
+  batch_size: 64
+  epochs: 50
+  grad_accum_steps: 1
+optim:
+  lr_conv1: 0.005
+  lr_conv: 0.005
+  lr_fc: 0.005
+runtime:
+  amp: false
+  profile: true
+logging:
+  console: true
+  jsonl: true
+callbacks:
+  checkpoint: true
+  summary: true
+framework:
+  module_system: true
+  optimizer_registry: true
+  scheduler_registry: true
+  healthcheck_on_info: true
+scheduler:
+  type: plateau
+  enabled: true
+  factor: 0.5
+  patience: 3
+  min_lr: 1.0e-5

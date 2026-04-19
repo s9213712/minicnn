@@ -1,0 +1,1 @@
+"""minicnn package."""

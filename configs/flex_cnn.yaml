@@ -1,0 +1,57 @@
+project:
+  name: minicnn-flex
+  run_name: flex-cnn
+  artifacts_root: artifacts
+
+dataset:
+  type: random
+  input_shape: [3, 32, 32]
+  num_classes: 10
+  num_samples: 512
+  val_samples: 128
+  seed: 42
+
+model:
+  layers:
+    - type: Conv2d
+      out_channels: 32
+      kernel_size: 3
+      padding: 1
+    - type: BatchNorm2d
+    - type: ReLU
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    - type: Conv2d
+      out_channels: 64
+      kernel_size: 3
+      padding: 1
+    - type: ReLU
+    - type: AdaptiveAvgPool2d
+      output_size: [1, 1]
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 2
+  batch_size: 64
+  device: auto
+  amp: false
+  grad_accum_steps: 1
+  num_workers: 0
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: SGD
+  lr: 0.02
+  momentum: 0.9
+  weight_decay: 0.0005
+
+scheduler:
+  enabled: true
+  type: StepLR
+  step_size: 1
+  gamma: 0.8
