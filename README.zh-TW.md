@@ -63,6 +63,12 @@ minicnn build --check
 
 ## 使用同一份 config 切換 backend
 
+> **開始訓練前**：請先下載 CIFAR-10 資料集。
+>
+> ```bash
+> minicnn prepare-data
+> ```
+
 ### 1. PyTorch backend
 
 ```bash
@@ -207,6 +213,57 @@ model:
 - classes：`10`
 
 如果 config 超出這個 subset，`validate-dual-config` 會說明原因。
+
+## 修改網路架構
+
+兩種 backend 使用不同的 config key 定義架構。
+
+### CUDA backend（`train-cuda` / `cuda_legacy`）
+
+編輯 `configs/train_cuda.yaml` 裡的 `model.conv_layers`。每個 entry 是一個 `{out_c, pool}` 物件，所有形狀由 `CudaNetGeometry` 自動推算，**不需要修改任何 Python 檔案**。
+
+```yaml
+model:
+  c_in: 3
+  h: 32
+  w: 32
+  kh: 3
+  kw: 3
+  fc_out: 10
+  conv_layers:
+    - {out_c: 32, pool: false}   # conv1
+    - {out_c: 32, pool: true}    # conv2 + pool
+    - {out_c: 64, pool: false}   # conv3
+    - {out_c: 64, pool: true}    # conv4 + pool
+```
+
+注意事項：
+- `pool: true` 會在該 stage 的 conv 後加上 2×2 max-pool。
+- 第一個 stage 的 `in_c` 必須等於 `c_in`；後續 stage 的 `in_c` 自動繼承前一個 stage 的 `out_c`。
+- CUDA kernel 僅支援 `kh == kw == 3`，input 尺寸需可被 pooling stride 整除。
+- 修改後可用 `minicnn validate-dual-config --config configs/train_cuda.yaml` 驗證 config。
+
+### Flex / Torch backend（`train-flex` / `torch`）
+
+編輯 `configs/dual_backend_cnn.yaml`（或你自己的 flex config）裡的 `model.layers`，可以自由增減或調整 layer 順序。`in_channels` / `in_features` 會自動推算。
+
+```yaml
+model:
+  layers:
+    - type: Conv2d
+      out_channels: 32
+      kernel_size: 3
+    - type: LeakyReLU
+      negative_slope: 0.1
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+```
+
+兩種 backend 都不需要修改 Python 程式碼，只要改 YAML 即可。
 
 ## 常用指令
 

@@ -63,6 +63,12 @@ minicnn build --check
 
 ## Shared-config training
 
+> **Before training**: download the CIFAR-10 dataset first.
+>
+> ```bash
+> minicnn prepare-data
+> ```
+
 ### 1) PyTorch backend
 
 ```bash
@@ -207,6 +213,57 @@ The handcrafted CUDA route currently supports the subset compiled by `src/minicn
 - classes: `10`
 
 If a config goes outside this subset, `validate-dual-config` explains why.
+
+## Changing network architecture
+
+The two backends use separate config keys for architecture.
+
+### CUDA backend (`train-cuda` / `cuda_legacy`)
+
+Edit `model.conv_layers` in `configs/train_cuda.yaml`. Each entry is a `{out_c, pool}` pair. All shapes are derived automatically by `CudaNetGeometry` — no other file needs to change.
+
+```yaml
+model:
+  c_in: 3
+  h: 32
+  w: 32
+  kh: 3
+  kw: 3
+  fc_out: 10
+  conv_layers:
+    - {out_c: 32, pool: false}   # conv1
+    - {out_c: 32, pool: true}    # conv2 + pool
+    - {out_c: 64, pool: false}   # conv3
+    - {out_c: 64, pool: true}    # conv4 + pool
+```
+
+Rules:
+- `pool: true` inserts a 2×2 max-pool after the convolution at that stage.
+- The first stage must have `in_c == c_in`; subsequent stages infer `in_c` from the previous stage's `out_c`.
+- The CUDA kernel only supports `kh == kw == 3` and input sizes divisible by pooling strides.
+- Run `minicnn validate-dual-config --config configs/train_cuda.yaml` to check your config before training.
+
+### Flex / Torch backend (`train-flex` / `torch`)
+
+Edit `model.layers` in `configs/dual_backend_cnn.yaml` (or your own flex config). Add, remove, or rearrange layer entries freely. `in_channels` / `in_features` are inferred automatically.
+
+```yaml
+model:
+  layers:
+    - type: Conv2d
+      out_channels: 32
+      kernel_size: 3
+    - type: LeakyReLU
+      negative_slope: 0.1
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+```
+
+No Python changes are needed for either backend — only the YAML file.
 
 ## Useful commands
 

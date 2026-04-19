@@ -32,6 +32,8 @@ MINICNN_RANDOM_CROP_PADDING=4 minicnn train-dual --config configs/dual_backend_c
 
 ## Model section
 
+### Flex / Torch backend
+
 ```yaml
 model:
   input_shape: [3, 32, 32]
@@ -76,6 +78,32 @@ model:
 `ResidualBlock`, `BatchNorm2d`, and `GlobalAvgPool2d` are currently torch flex
 components. The `cuda_legacy` backend still accepts only the supported CNN
 subset reported by `minicnn validate-dual-config`.
+
+### CUDA backend (`train-cuda` / `cuda_legacy`)
+
+The handcrafted CUDA path uses `model.conv_layers` instead of `model.layers`.
+Each entry specifies `out_c` (output channels) and `pool` (whether a 2×2
+max-pool follows the convolution). All spatial shapes and buffer sizes are
+derived automatically by `CudaNetGeometry` — no Python changes needed.
+
+```yaml
+model:
+  c_in: 3
+  h: 32
+  w: 32
+  kh: 3
+  kw: 3
+  fc_out: 10
+  conv_layers:
+    - {out_c: 32, pool: false}   # conv1
+    - {out_c: 32, pool: true}    # conv2 + pool
+    - {out_c: 64, pool: false}   # conv3
+    - {out_c: 64, pool: true}    # conv4 + pool
+```
+
+To add a stage, append an entry. To widen a stage, increase its `out_c`. Run
+`minicnn validate-dual-config --config configs/train_cuda.yaml` after editing
+to confirm the config is within the supported kernel subset.
 
 ## Optimizer section
 

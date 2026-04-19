@@ -1,5 +1,6 @@
-CUDA_HOME ?= /usr/local/cuda
-NVCC ?= $(CUDA_HOME)/bin/nvcc
+NVCC      ?= nvcc
+CUDA_HOME ?= $(dir $(shell which $(NVCC) 2>/dev/null))..
+
 USE_CUBLAS ?= 1
 OUTPUT ?= libminimal_cuda_cnn.so
 CFLAGS = -O3 -Xcompiler -fPIC -arch=sm_86 -DUSE_CUBLAS=$(USE_CUBLAS)
