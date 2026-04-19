@@ -33,10 +33,13 @@ SRCS = \
 	src/layout_convert.cu
 INCS = -Iinclude
 
-.PHONY: all cublas handmade variants clean check check-cublas check-handmade check-variants
+.PHONY: all debug cublas handmade variants clean check check-cublas check-handmade check-variants
 
 all:
 	$(NVCC) $(CFLAGS) $(INCS) $(SRCS) $(LDFLAGS) $(CUBLAS_LDFLAGS) $(EXTRA_LDFLAGS)
+
+debug:
+	$(MAKE) CFLAGS="$(CFLAGS) -g -G -DMINICNN_DEBUG_SYNC" OUTPUT=libminimal_cuda_cnn_debug.so all
 
 cublas:
 	$(MAKE) USE_CUBLAS=1 OUTPUT=libminimal_cuda_cnn_cublas.so all

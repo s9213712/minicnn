@@ -15,8 +15,15 @@ inline void cuda_check(cudaError_t err, const char* expr, const char* file, int 
 
 #define CUDA_CHECK(expr) cuda_check((expr), #expr, __FILE__, __LINE__)
 
-#define CUDA_KERNEL_CHECK()       \
-    do {                          \
-        CUDA_CHECK(cudaGetLastError());       \
-        CUDA_CHECK(cudaDeviceSynchronize());  \
+#ifdef MINICNN_DEBUG_SYNC
+#define CUDA_KERNEL_CHECK()                  \
+    do {                                     \
+        CUDA_CHECK(cudaGetLastError());      \
+        CUDA_CHECK(cudaDeviceSynchronize()); \
     } while (0)
+#else
+#define CUDA_KERNEL_CHECK()             \
+    do {                                \
+        CUDA_CHECK(cudaGetLastError()); \
+    } while (0)
+#endif

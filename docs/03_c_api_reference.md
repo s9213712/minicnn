@@ -156,9 +156,6 @@ dense_forward input: row-major (N, features)
 ## Softmax loss
 
 ```c
-float softmax_cross_entropy(float* input, float* labels, float* probs, float* loss,
-                            int N, int features);
-
 void softmax_xent_grad_loss_acc(float* logits, int* labels,
                                 float* probs, float* grad_logits,
                                 float* loss_sum, int* correct_count,
@@ -167,8 +164,6 @@ void softmax_xent_grad_loss_acc(float* logits, int* labels,
 void count_correct(float* logits, int* labels, int* correct_count,
                    int N, int features);
 ```
-
-`labels` 是 one-hot label。此函式會計算 softmax 與 loss，不會修改 label buffer。若 `loss` 非 null，會把 scalar loss 寫到 device pointer。
 
 `softmax_xent_grad_loss_acc` 是目前 CIFAR trainer 使用的 fused loss helper：
 

@@ -14,6 +14,7 @@ file(GLOB MINICNN_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cu
 add_library(minimal_cuda_cnn SHARED ${MINICNN_SOURCES})
 target_include_directories(minimal_cuda_cnn PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(minimal_cuda_cnn PUBLIC CUDA::cudart)
+target_compile_definitions(minimal_cuda_cnn PRIVATE $<$<CONFIG:Debug>:MINICNN_DEBUG_SYNC>)
 
 if(USE_CUBLAS)
   target_compile_definitions(minimal_cuda_cnn PRIVATE USE_CUBLAS=1)

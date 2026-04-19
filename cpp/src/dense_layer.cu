@@ -54,25 +54,6 @@ __global__ void dense_backward_weights_kernel(const float* d_out, const float* i
     d_weights[idx] = sum;
 }
 
-// FC Backward: dL/dweights with atomicAdd for safe accumulation across thread blocks
-// (Used when launching multiple thread blocks that may write to same weight)
-__global__ void dense_backward_weights_atomic_kernel(const float* d_out, const float* input, float* d_weights,
-                                                      int N, int in_f, int out_f) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int total = out_f * in_f;
-    if (idx >= total) return;
-
-    int col = idx / in_f;  // output feature
-    int i = idx % in_f;    // input feature
-
-    float sum = 0.0f;
-    for (int n = 0; n < N; n++) {
-        sum += input[n * in_f + i] * d_out[n * out_f + col];
-    }
-    // Normalize by batch and use atomicAdd for thread safety
-    atomicAdd(&d_weights[idx], sum / (float)N);
-}
-
 // FC Backward: dL/dbias = sum over N of dL/dout
 __global__ void dense_backward_bias_kernel(const float* d_out, float* d_bias, int N, int out_f) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;

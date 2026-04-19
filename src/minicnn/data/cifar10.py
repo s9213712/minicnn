@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import pickle
 import tarfile
 import urllib.request
@@ -26,12 +25,16 @@ CIFAR_MEAN = np.array([0.4914, 0.4822, 0.4465], dtype=np.float32).reshape(1, 3, 
 CIFAR_STD = np.array([0.2470, 0.2435, 0.2616], dtype=np.float32).reshape(1, 3, 1, 1)
 
 
+def _normalize_data_root(data_root) -> Path:
+    return Path(data_root).expanduser()
+
+
 def normalize_cifar(x):
     return ((x - CIFAR_MEAN) / CIFAR_STD).astype(np.float32)
 
 
 def cifar10_ready(data_root):
-    root = Path(data_root)
+    root = _normalize_data_root(data_root)
     return all((root / name).exists() for name in REQUIRED_FILES)
 
 
@@ -45,7 +48,7 @@ def _safe_extract(tar, path):
 
 
 def prepare_cifar10(data_root, download=True):
-    data_root = Path(data_root)
+    data_root = _normalize_data_root(data_root)
     if cifar10_ready(data_root):
         return data_root
 
@@ -56,7 +59,9 @@ def prepare_cifar10(data_root, download=True):
             f"  data_root={data_root}\n"
             f"  missing={missing}\n\n"
             "Prepare the dataset with:\n"
-            "  python3 python/prepare_cifar10.py\n"
+            "  minicnn prepare-data\n"
+            "or pass an alternate path with:\n"
+            "  minicnn train-dual --data-dir /path/to/cifar-10-batches-py ...\n"
             "or manually place the extracted cifar-10-batches-py directory under data/."
         )
 
@@ -81,6 +86,9 @@ def prepare_cifar10(data_root, download=True):
 
 
 def _load_batch(path):
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"CIFAR-10 batch file not found: {path}")
     with open(path, "rb") as f:
         batch = pickle.load(f, encoding="bytes")
     x = (batch[b"data"].astype(np.float32) / 255.0).reshape(-1, 3, 32, 32)
@@ -89,22 +97,23 @@ def _load_batch(path):
 
 
 def _load_training_batches(data_root, batch_ids):
+    data_root = _normalize_data_root(data_root)
     x_parts = []
     y_parts = []
     for i in batch_ids:
-        x_batch, y_batch = _load_batch(os.path.join(data_root, f"data_batch_{i}"))
+        x_batch, y_batch = _load_batch(data_root / f"data_batch_{i}")
         x_parts.append(x_batch)
         y_parts.append(y_batch)
     return np.concatenate(x_parts, axis=0), np.concatenate(y_parts, axis=0)
 
 
 def load_cifar10(data_root, n_train=8000, n_val=2000, seed=None, train_batch_ids=(1,), download=True):
-    prepare_cifar10(data_root, download=download)
+    data_root = prepare_cifar10(data_root, download=download)
     print(f"Loading CIFAR-10 training batches: {train_batch_ids}")
     x_train_all, y_train_all = _load_training_batches(data_root, train_batch_ids)
     print(f"Training samples: {x_train_all.shape[0]}")
 
-    x_test, y_test = _load_batch(os.path.join(data_root, "test_batch"))
+    x_test, y_test = _load_batch(data_root / "test_batch")
     print(f"Test samples: {x_test.shape[0]}")
 
     if n_train + n_val > x_train_all.shape[0]:
@@ -126,6 +135,6 @@ def load_cifar10(data_root, n_train=8000, n_val=2000, seed=None, train_batch_ids
 
 
 def load_cifar10_test(data_root, download=True):
-    prepare_cifar10(data_root, download=download)
-    x_test, y_test = _load_batch(os.path.join(data_root, "test_batch"))
+    data_root = prepare_cifar10(data_root, download=download)
+    x_test, y_test = _load_batch(data_root / "test_batch")
     return x_test, y_test

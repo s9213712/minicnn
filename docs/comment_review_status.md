@@ -33,6 +33,8 @@ Processed local note files:
 | Runtime utilities | Added graph executor, backend protocol, memory pool, and profiler utilities. |
 | Compiler skeleton | Added IR, config tracer, Conv2d+BatchNorm2d+ReLU fusion annotation pass, optimizer, scheduler, and lowering boundary. |
 | Fused op semantics | Added a NumPy reference helper for Conv2d + BatchNorm2d + ReLU fusion semantics and tests against the unfused path. |
+| Data path handling | `src/minicnn/data/cifar10.py` now normalizes data roots through `Path`, reports missing batch files explicitly, and points users to `minicnn prepare-data` or `--data-dir`. |
+| Builder validation | `src/minicnn/models/builder.py` now validates layer mappings, required `type`, rank assumptions, and non-positive inferred shapes with clear errors. |
 | Windows build support | Added PowerShell/CMake Windows native build documentation and helper in earlier work; Windows artifacts cannot be tested on this Linux host. |
 | Example feature folder | Added `features/backend-smoke-matrix/` in earlier work for isolated smoke comparison. |
 | Docs | README, Traditional Chinese README, USAGE, project file guide, autograd guide, and this status report document current commands, folders, metrics, and capability boundaries. |

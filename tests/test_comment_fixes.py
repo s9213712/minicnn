@@ -1,4 +1,8 @@
 import numpy as np
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_plateau_scheduler_reduces_after_configured_patience():
@@ -200,3 +204,40 @@ def test_workspace_uses_int_allocators_for_index_and_label_buffers(monkeypatch):
     assert int_allocs
     workspace.free()
     assert len(freed) == len(float_allocs) + len(int_allocs)
+
+
+def test_native_cuda_comment_tasks_are_reflected_in_source():
+    cpp = REPO_ROOT / 'cpp'
+    loss_layer = (cpp / 'src' / 'loss_layer.cu').read_text()
+    layer_norm = (cpp / 'src' / 'layer_norm.cu').read_text()
+    backward = (cpp / 'src' / 'backward.cu').read_text()
+    cuda_check = (cpp / 'include' / 'cuda_check.h').read_text()
+    core = (cpp / 'src' / 'core.cu').read_text()
+    conv_backward = (cpp / 'src' / 'conv_backward.cu').read_text()
+    leaky_relu = (cpp / 'src' / 'leaky_relu.cu').read_text()
+    maxpool_nchw = (cpp / 'src' / 'maxpool_backward_nchw.cu').read_text()
+    dense_layer = (cpp / 'src' / 'dense_layer.cu').read_text()
+
+    assert 'softmax_cross_entropy' not in loss_layer
+    assert 'softmax_xent_grad_loss_acc_kernel<<<N, 32>>>' in loss_layer
+    assert '__shfl_down_sync' in loss_layer
+
+    assert 'MINICNN_DEBUG_SYNC' in cuda_check
+    assert 'cudaDeviceSynchronize()' in cuda_check
+    assert 'target_compile_definitions(minimal_cuda_cnn PRIVATE $<$<CONFIG:Debug>:MINICNN_DEBUG_SYNC>)' in (
+        cpp / 'CMakeLists.txt'
+    ).read_text()
+
+    assert (cpp / 'include' / 'cublas_check.h').exists()
+    assert 'static void cublas_check' not in core
+    assert 'static void cublas_check' not in conv_backward
+
+    assert 'layer_norm_forward_kernel<<<N * C, tpb, tpb * sizeof(float)>>>' in layer_norm
+    assert 'dy - mean_dy - x_hat * mean_dy_xhat' in layer_norm
+
+    assert 'cudaMemset(d_grad_input, 0, n * c * h * w * sizeof(float))' in backward
+    assert 'leaky_relu_forward_nchw_kernel' not in leaky_relu
+    assert 'leaky_relu_backward_nchw_kernel' not in leaky_relu
+    assert 'int N, int C, int in_h, int in_w, int out_h, int out_w' in maxpool_nchw
+    assert 'out_h * 2' not in maxpool_nchw
+    assert 'dense_backward_weights_atomic_kernel' not in dense_layer

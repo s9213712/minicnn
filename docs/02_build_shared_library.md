@@ -137,7 +137,7 @@ conv_backward, conv_backward_precol, dense_backward_full
 maxpool_forward_store, maxpool_backward_use_idx
 nchw_to_cnhw, cnhw_to_nchw
 leaky_relu_forward, leaky_relu_backward
-softmax_forward, softmax_cross_entropy, softmax_backward
+softmax_forward, softmax_backward
 softmax_xent_grad_loss_acc, count_correct
 apply_sgd_update, apply_momentum_update, conv_update_fused, clip_inplace
 ```

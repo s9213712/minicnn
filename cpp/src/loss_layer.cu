@@ -1,6 +1,5 @@
 #include <cuda_runtime.h>
 #include <cmath>
-#include <cstdlib>
 #include "cuda_check.h"
 
 // ============== Softmax CrossEntropy ==============
@@ -40,6 +39,24 @@ __global__ void cross_entropy_backward_kernel(float* grad_out, float* probs, int
     grad_out[idx] = (probs[idx] - grad_out[idx]);  // label[j=target] = 1, else 0
 }
 
+__device__ float warp_reduce_sum(float val) {
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        val += __shfl_down_sync(0xffffffff, val, offset);
+    }
+    return val;
+}
+
+__device__ void warp_reduce_max_with_index(float& val, int& index) {
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        float other_val = __shfl_down_sync(0xffffffff, val, offset);
+        int other_index = __shfl_down_sync(0xffffffff, index, offset);
+        if (other_val > val || (other_val == val && other_index < index)) {
+            val = other_val;
+            index = other_index;
+        }
+    }
+}
+
 __global__ void softmax_xent_grad_loss_acc_kernel(
     const float* logits,
     const int* labels,
@@ -51,40 +68,48 @@ __global__ void softmax_xent_grad_loss_acc_kernel(
     int features
 ) {
     int n = blockIdx.x;
-    if (n >= N || threadIdx.x != 0) return;
+    int tid = threadIdx.x;
+    if (n >= N || tid >= 32) return;
 
     const float* row = logits + n * features;
     float* prob_row = probs + n * features;
     float* grad_row = grad_logits + n * features;
     int label = labels[n];
 
-    float max_val = -1e38f;
-    int pred = 0;
-    for (int j = 0; j < features; ++j) {
+    float thread_max = -1e38f;
+    int thread_pred = features;
+    for (int j = tid; j < features; j += 32) {
         float v = row[j];
-        if (v > max_val) {
-            max_val = v;
-            pred = j;
+        if (v > thread_max) {
+            thread_max = v;
+            thread_pred = j;
         }
     }
+    warp_reduce_max_with_index(thread_max, thread_pred);
+    float max_val = __shfl_sync(0xffffffff, thread_max, 0);
+    int pred = __shfl_sync(0xffffffff, thread_pred, 0);
 
-    float sum = 0.0f;
-    for (int j = 0; j < features; ++j) {
+    float thread_sum = 0.0f;
+    for (int j = tid; j < features; j += 32) {
         float p = expf(row[j] - max_val);
         prob_row[j] = p;
-        sum += p;
+        thread_sum += p;
     }
+    float sum = __shfl_sync(0xffffffff, warp_reduce_sum(thread_sum), 0);
 
-    for (int j = 0; j < features; ++j) {
+    for (int j = tid; j < features; j += 32) {
         float p = prob_row[j] / sum;
         prob_row[j] = p;
         float target = (j == label) ? 1.0f : 0.0f;
         grad_row[j] = (p - target) / static_cast<float>(N);
     }
+    __syncwarp();
 
-    atomicAdd(loss_sum, -logf(prob_row[label] + 1e-10f));
-    if (pred == label) {
-        atomicAdd(correct_count, 1);
+    if (tid == 0) {
+        atomicAdd(loss_sum, -logf(prob_row[label] + 1e-10f));
+        if (pred == label) {
+            atomicAdd(correct_count, 1);
+        }
     }
 }
 
@@ -120,35 +145,6 @@ extern "C" {
         CUDA_KERNEL_CHECK();
     }
 
-    float softmax_cross_entropy(float* d_input, float* d_labels, float* d_probs, float* d_loss, int N, int features) {
-        // Forward: softmax
-        softmax_forward(d_input, d_probs, N, features);
-
-        // Copy to host for loss computation
-        float* h_probs = (float*)malloc(N * features * sizeof(float));
-        float* h_labels = (float*)malloc(N * features * sizeof(float));
-        CUDA_CHECK(cudaMemcpy(h_probs, d_probs, N * features * sizeof(float), cudaMemcpyDeviceToHost));
-        CUDA_CHECK(cudaMemcpy(h_labels, d_labels, N * features * sizeof(float), cudaMemcpyDeviceToHost));
-
-        float loss = 0.0f;
-        for (int i = 0; i < N; i++) {
-            for (int j = 0; j < features; j++) {
-                int idx = i * features + j;
-                if (h_labels[idx] > 0.5f) {  // one-hot label
-                    loss -= logf(h_probs[idx] + 1e-10f);
-                }
-            }
-        }
-
-        free(h_probs);
-        free(h_labels);
-        loss /= N;
-        if (d_loss != nullptr) {
-            CUDA_CHECK(cudaMemcpy(d_loss, &loss, sizeof(float), cudaMemcpyHostToDevice));
-        }
-        return loss;
-    }
-
     void softmax_backward(float* d_grad_out, float* d_probs, int N, int features) {
         dim3 block(256);
         dim3 grid((N * features + 255) / 256);
@@ -166,7 +162,7 @@ extern "C" {
         int N,
         int features
     ) {
-        softmax_xent_grad_loss_acc_kernel<<<N, 1>>>(
+        softmax_xent_grad_loss_acc_kernel<<<N, 32>>>(
             d_logits, d_labels, d_probs, d_grad_logits, d_loss_sum, d_correct_count, N, features
         );
         CUDA_KERNEL_CHECK();

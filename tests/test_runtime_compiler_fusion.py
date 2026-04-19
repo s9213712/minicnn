@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from minicnn.compiler import optimize, trace_model_config
 from minicnn.compiler.passes import detect_conv_bn_relu
@@ -51,6 +52,17 @@ def test_fused_conv_bn_relu_matches_unfused_numpy_reference():
 
     assert meta['fused'] is True
     assert np.allclose(fused, expected, atol=1e-4, rtol=1e-4)
+
+
+def test_builder_and_fused_ops_raise_clear_validation_errors():
+    with pytest.raises(ValueError, match='add Flatten first'):
+        build_model_from_config({'input_shape': [1, 4, 4], 'layers': [{'type': 'Linear', 'out_features': 2}]})
+
+    x = np.zeros((1, 2, 5, 5), dtype=np.float32)
+    w = np.zeros((3, 1, 3, 3), dtype=np.float32)
+    c = np.zeros((3,), dtype=np.float32)
+    with pytest.raises(ValueError, match='Input channels'):
+        fused_conv_bn_relu(x, w, None, c, c + 1.0, c, c)
 
 
 def test_memory_pool_and_profiler():
