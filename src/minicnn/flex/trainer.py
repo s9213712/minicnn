@@ -74,7 +74,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
     else:  # pragma: no cover
         scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
 
-    best_val = float('inf')
+    best_val_acc = float('-inf')
     best_model_path = _best_model_path(run_dir)
     metrics_path = run_dir / 'metrics.jsonl'
     grad_accum_steps = max(1, int(train_cfg.get('grad_accum_steps', 1)))
@@ -127,8 +127,8 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
             }
             metrics_file.write(json.dumps(row) + '\n')
             metrics_file.flush()
-            if val_metrics['loss'] < best_val:
-                best_val = val_metrics['loss']
+            if val_metrics['acc'] > best_val_acc:
+                best_val_acc = val_metrics['acc']
                 torch.save({'model_state': model.state_dict(), 'config': cfg}, best_model_path)
 
     test_metrics = None

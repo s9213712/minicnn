@@ -23,3 +23,5 @@ minicnn train-flex --config configs/flex_cnn.yaml
 - `configs/flex_cnn.yaml`: CNN-style image pipeline
 - `configs/flex_mlp.yaml`: MLP baseline
 - `configs/flex_custom.yaml`: custom dotted-path components
+- `configs/alexnet_like.yaml`: torch AlexNet-like CIFAR-10 model
+- `configs/resnet_like.yaml`: torch ResNet-like CIFAR-10 model with residual blocks

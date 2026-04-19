@@ -15,6 +15,7 @@ minicnn/
 │   │   └── tensor.h
 │   ├── src/
 │   │   ├── core.cu
+│   │   ├── cublas_context.cu
 │   │   ├── memory.cu
 │   │   ├── loss_layer.cu
 │   │   ├── conv_backward.cu
@@ -58,6 +59,7 @@ minicnn/
 |---|---|
 | `memory.cu` | 匯出 `gpu_malloc`、`gpu_free`、`gpu_memcpy_h2d`、`gpu_memcpy_d2h`、`gpu_memset`，供 Python/C++ 管理 GPU 記憶體。 |
 | `core.cu` | 基礎 forward kernel：`im2col_forward`、`gemm_forward`、`apply_relu`、`apply_maxpool`。`USE_CUBLAS=1` 時 `gemm_forward` 使用 cuBLAS；`USE_CUBLAS=0` 時使用手寫 GEMM kernel。 |
+| `cublas_context.cu` | 集中建立並重用單一 cuBLAS handle，供 forward GEMM 與 convolution backward 共用。 |
 | `backward.cu` | ReLU backward 與不保存 index 的 NCHW maxpool backward。 |
 | `conv_backward.cu` | 卷積層 backward：`USE_CUBLAS=1` 時 weight gradient 使用 im2col + cuBLAS GEMM；`USE_CUBLAS=0` 時保留手寫 CUDA fallback。input gradient 仍使用直接 CUDA kernel。訓練主流程使用 `conv_backward_precol` 重用 forward im2col buffer。 |
 | `dense_layer.cu` | 全連接層 forward/backward：`dense_forward`、`dense_backward_full`。 |

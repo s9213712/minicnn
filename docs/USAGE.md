@@ -87,7 +87,7 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
 | `cuda_legacy` | `cublas` | `12.50%` | `20.31%` | `14.00%` | `0.1s` |
 | `cuda_legacy` | `handmade` | `12.50%` | `20.31%` | `14.00%` | `0.3s` |
 
-本次修改另以 `features/backend-smoke-matrix/run_smoke_matrix.py` 跑過更小的快速矩陣：`128` train、`32` validation、batch size `32`、`1` epoch。結果為 torch CUDA train_acc `6.25%` / val_acc `12.50%` / test_acc `9.72%` / epoch time `0.3s`，cuda_legacy cublas train_acc `7.03%` / val_acc `6.25%` / test_acc `12.97%` / epoch time `0.1s`，cuda_legacy handmade train_acc `7.03%` / val_acc `6.25%` / test_acc `12.97%` / epoch time `0.2s`。
+本次修改另以 `features/backend-smoke-matrix/run_smoke_matrix.py` 跑過更小的快速矩陣：`128` train、`32` validation、batch size `32`、`1` epoch。結果為 torch CUDA train_acc `11.72%` / val_acc `0.00%` / test_acc `10.36%` / epoch time `1.3s`，cuda_legacy cublas train_acc `7.03%` / val_acc `6.25%` / test_acc `12.97%` / epoch time `0.2s`，cuda_legacy handmade train_acc `7.03%` / val_acc `6.25%` / test_acc `12.97%` / epoch time `0.2s`。
 
 從乾淨環境重現 CIFAR-10 實驗時，先執行：
 

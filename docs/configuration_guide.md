@@ -31,6 +31,34 @@ model:
       out_features: 10
 ```
 
+The torch flex builder can infer `in_channels`, `num_features`, and
+`in_features` for common layers. It supports the sequential layer subset used
+by `configs/alexnet_like.yaml`, plus torch-only residual blocks in
+`configs/resnet_like.yaml`:
+
+```yaml
+model:
+  layers:
+    - type: Conv2d
+      out_channels: 64
+      kernel_size: 3
+      padding: 1
+      bias: false
+    - type: BatchNorm2d
+    - type: ReLU
+    - type: ResidualBlock
+      channels: 64
+      stride: 1
+    - type: GlobalAvgPool2d
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+```
+
+`ResidualBlock`, `BatchNorm2d`, and `GlobalAvgPool2d` are currently torch flex
+components. The `cuda_legacy` backend still accepts only the supported CNN
+subset reported by `minicnn validate-dual-config`.
+
 ## Optimizer section
 
 ```yaml

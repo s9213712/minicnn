@@ -6,10 +6,9 @@
 
 #if USE_CUBLAS
 #include <cublas_v2.h>
+#include "cublas_context.h"
 #include <cstdio>
 #include <cstdlib>
-
-static cublasHandle_t g_conv_cublas = nullptr;
 
 static void cublas_check(cublasStatus_t status, const char* expr, const char* file, int line) {
     if (status != CUBLAS_STATUS_SUCCESS) {
@@ -21,13 +20,6 @@ static void cublas_check(cublasStatus_t status, const char* expr, const char* fi
 }
 
 #define CUBLAS_CHECK(expr) cublas_check((expr), #expr, __FILE__, __LINE__)
-
-static cublasHandle_t get_conv_cublas() {
-    if (!g_conv_cublas) {
-        CUBLAS_CHECK(cublasCreate(&g_conv_cublas));
-    }
-    return g_conv_cublas;
-}
 #endif
 
 static void conv_backward_with_col(
@@ -162,7 +154,7 @@ static void conv_backward_with_col(
     int tpb = 256;
 
 #if USE_CUBLAS
-    cublasHandle_t handle = get_conv_cublas();
+    cublasHandle_t handle = minicnn_get_cublas_handle();
     const float alpha = 1.0f;
     const float beta = 0.0f;
     CUBLAS_CHECK(cublasSgemm(

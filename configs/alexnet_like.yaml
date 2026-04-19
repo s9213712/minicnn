@@ -1,0 +1,77 @@
+project:
+  name: minicnn
+  run_name: alexnet-like
+  artifacts_root: artifacts
+
+engine:
+  backend: torch
+  strict_backend_validation: true
+
+dataset:
+  type: cifar10
+  data_root: data/cifar-10-batches-py
+  download: false
+  num_samples: 45000
+  val_samples: 5000
+  num_classes: 10
+  input_shape: [3, 32, 32]
+  seed: 42
+
+model:
+  layers:
+    - type: Conv2d
+      out_channels: 64
+      kernel_size: 3
+      stride: 1
+      padding: 1
+    - type: ReLU
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    - type: Conv2d
+      out_channels: 128
+      kernel_size: 3
+      padding: 1
+    - type: ReLU
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    - type: Conv2d
+      out_channels: 256
+      kernel_size: 3
+      padding: 1
+    - type: ReLU
+    - type: Conv2d
+      out_channels: 256
+      kernel_size: 3
+      padding: 1
+    - type: ReLU
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    - type: Flatten
+    - type: Linear
+      out_features: 512
+    - type: ReLU
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 10
+  batch_size: 64
+  device: auto
+  amp: false
+  grad_accum_steps: 1
+  num_workers: 0
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: SGD
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.0005
+
+scheduler:
+  enabled: false

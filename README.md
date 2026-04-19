@@ -124,8 +124,8 @@ Latest quick verification for this change used `features/backend-smoke-matrix/ru
 
 | Backend | Native variant | Train acc | Val acc | Test acc | Epoch time |
 |---|---|---:|---:|---:|---:|
-| `torch` | PyTorch CUDA | `6.25%` | `12.50%` | `9.72%` | `0.3s` |
-| `cuda_legacy` | `cublas` | `7.03%` | `6.25%` | `12.97%` | `0.1s` |
+| `torch` | PyTorch CUDA | `11.72%` | `0.00%` | `10.36%` | `1.3s` |
+| `cuda_legacy` | `cublas` | `7.03%` | `6.25%` | `12.97%` | `0.2s` |
 | `cuda_legacy` | `handmade` | `7.03%` | `6.25%` | `12.97%` | `0.2s` |
 
 Verification also covered `pytest` (`15 passed`), CLI help without a native `.so`, config validation, Python compile checks, and `minicnn build --legacy-make --variant both --check`.
@@ -284,8 +284,9 @@ Key folder and file responsibilities:
 
 | Path | Purpose |
 |---|---|
-| `configs/` | YAML configs for torch, cuda_legacy, flex, and custom-component runs. |
+| `configs/` | YAML configs for torch, cuda_legacy, flex, custom-component, AlexNet-like, and ResNet-like runs. |
 | `cpp/` | Native CUDA/C++ source, headers, Makefile, and CMake build files. |
+| `cpp/src/cublas_context.cu` | Shared cuBLAS handle used by forward and backward CUDA code. |
 | `cpp/src/core.cu` | GEMM forward path; switches between cuBLAS and handwritten CUDA with `USE_CUBLAS`. |
 | `cpp/src/conv_backward.cu` | Convolution backward kernels and cuBLAS/handmade weight-gradient path. |
 | `docs/` | Build, C API, Python ctypes, C++ linking, layout/debug, and Windows build guides. |
@@ -296,7 +297,7 @@ Key folder and file responsibilities:
 | `src/minicnn/core/build.py` | Native build/check helper used by `minicnn build`. |
 | `src/minicnn/core/cuda_backend.py` | Lazy ctypes loader and Python helpers for the native CUDA library. |
 | `src/minicnn/data/` | CIFAR-10 download/loading and random dataset helpers. |
-| `src/minicnn/flex/` | PyTorch config-driven model/loss/optimizer/scheduler builder and trainer. |
+| `src/minicnn/flex/` | PyTorch config-driven model/loss/optimizer/scheduler builder and trainer; includes torch-only `ResidualBlock` and `GlobalAvgPool2d`. |
 | `src/minicnn/training/train_cuda.py` | Legacy CUDA CIFAR-10 training loop entrypoint. |
 | `src/minicnn/training/models/` | Fixed output folder for best model checkpoints; generated `*.pt` and `*.npz` files are git-ignored. |
 | `src/minicnn/training/cuda_ops.py` | Small CUDA operation wrappers used by the legacy training loop. |

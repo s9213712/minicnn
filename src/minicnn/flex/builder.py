@@ -77,6 +77,13 @@ def _infer_output_shape(layer_type: str, kwargs: dict[str, Any], tracer: ShapeTr
         if isinstance(out, int):
             out = (out, out)
         return (c, int(out[0]), int(out[1]))
+    if layer_type == 'GlobalAvgPool2d':
+        return (shape[0], 1, 1)
+    if layer_type == 'ResidualBlock':
+        c, h, w = shape
+        out_c = int(kwargs.get('out_channels', kwargs.get('channels', c)))
+        st = int(kwargs.get('stride', 1))
+        return (out_c, math.floor((h - 1) / st + 1), math.floor((w - 1) / st + 1))
     if layer_type == 'BatchNorm2d':
         return shape
     if layer_type == 'Dropout':
@@ -111,6 +118,8 @@ def _materialize_layer(layer_cfg: dict[str, Any], tracer: ShapeTracer):
         cfg['in_channels'] = tracer.channels
     if layer_type == 'BatchNorm2d' and 'num_features' not in cfg:
         cfg['num_features'] = tracer.channels
+    if layer_type == 'ResidualBlock' and 'in_channels' not in cfg:
+        cfg['in_channels'] = tracer.channels
     if layer_type == 'Linear' and 'in_features' not in cfg:
         cfg['in_features'] = tracer.flattened
     factory = _resolve_factory('layers', layer_type)

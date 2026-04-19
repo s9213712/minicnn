@@ -14,6 +14,7 @@ endif
 
 SRCS = \
 	src/core.cu \
+	src/cublas_context.cu \
 	src/gpu_monitor.cu \
 	src/network.cu \
 	src/dense_layer.cu \

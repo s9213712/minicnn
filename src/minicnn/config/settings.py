@@ -46,11 +46,36 @@ def _compute_shape_fields(values: dict[str, Any]) -> dict[str, Any]:
     H4, W4 = H3 - KH + 1, W3 - KW + 1
     P2H, P2W = H4 // 2, W4 // 2
     FC_IN = values["C4_OUT"] * P2H * P2W
+    shapes = {
+        "H1": H1, "W1": W1, "H2": H2, "W2": W2, "P1H": P1H, "P1W": P1W,
+        "H3": H3, "W3": W3, "H4": H4, "W4": W4, "P2H": P2H, "P2W": P2W,
+        "FC_IN": FC_IN,
+    }
+    invalid = {name: value for name, value in shapes.items() if value <= 0}
+    if invalid:
+        raise ValueError(f"Invalid legacy CUDA model geometry: {invalid}")
+    if H2 % 2 != 0 or W2 % 2 != 0 or H4 % 2 != 0 or W4 % 2 != 0:
+        raise ValueError("Legacy CUDA model geometry requires even H2/W2 and H4/W4 before pooling")
     return {
         "H1": H1, "W1": W1, "H2": H2, "W2": W2, "P1H": P1H, "P1W": P1W,
         "H3": H3, "W3": W3, "H4": H4, "W4": W4, "P2H": P2H, "P2W": P2W,
         "FC_IN": FC_IN,
     }
+
+
+def _validate_channel_links(values: dict[str, Any]) -> None:
+    expected = {
+        "C2_IN": values["C1_OUT"],
+        "C3_IN": values["C2_OUT"],
+        "C4_IN": values["C3_OUT"],
+    }
+    mismatches = {
+        name: (values[name], expected_value)
+        for name, expected_value in expected.items()
+        if values[name] != expected_value
+    }
+    if mismatches:
+        raise ValueError(f"Invalid legacy CUDA channel links: {mismatches}")
 
 
 def apply_experiment_config(cfg: ExperimentConfig) -> None:
@@ -99,6 +124,7 @@ def apply_experiment_config(cfg: ExperimentConfig) -> None:
         "KW": cfg.model.kw,
     }
     _apply_env_overrides(values)
+    _validate_channel_links(values)
     values.update(_compute_shape_fields(values))
     globals().update(values)
 

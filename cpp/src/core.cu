@@ -7,6 +7,7 @@
 
 #if USE_CUBLAS
 #include <cublas_v2.h>
+#include "cublas_context.h"
 #include <cstdio>
 #include <cstdlib>
 #endif
@@ -14,8 +15,6 @@
 #include <vector>
 
 #if USE_CUBLAS
-static cublasHandle_t g_cublas = nullptr;
-
 static void cublas_check(cublasStatus_t status, const char* expr, const char* file, int line) {
     if (status != CUBLAS_STATUS_SUCCESS) {
         std::fprintf(stderr, "cuBLAS error at %s:%d: %s failed with status %d\n",
@@ -26,13 +25,6 @@ static void cublas_check(cublasStatus_t status, const char* expr, const char* fi
 }
 
 #define CUBLAS_CHECK(expr) cublas_check((expr), #expr, __FILE__, __LINE__)
-
-static cublasHandle_t get_cublas() {
-    if (!g_cublas) {
-        CUBLAS_CHECK(cublasCreate(&g_cublas));
-    }
-    return g_cublas;
-}
 #endif
 
 // -----------------------------------------------------------------------------
@@ -73,6 +65,7 @@ __global__ void im2col_kernel(const float* input, float* output, int N, int C, i
     output[idx] = input[((n * C + c) * H + (oh + kh)) * W + (ow + kw)];
 }
 
+#if !USE_CUBLAS
 __global__ void gemm_kernel(const float* A, const float* B, float* C_out, int M, int N, int K) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -84,6 +77,7 @@ __global__ void gemm_kernel(const float* A, const float* B, float* C_out, int M,
         C_out[row * N + col] = sum;
     }
 }
+#endif
 
 extern "C" {
     void im2col_forward(float* d_input, float* d_output, int N, int C, int H, int W, int KH, int KW, int outH, int outW) {
@@ -95,7 +89,7 @@ extern "C" {
 
     void gemm_forward(float* d_A, float* d_B, float* d_C, int M, int N, int K) {
 #if USE_CUBLAS
-        cublasHandle_t handle = get_cublas();
+        cublasHandle_t handle = minicnn_get_cublas_handle();
         const float alpha = 1.0f;
         const float beta = 0.0f;
 

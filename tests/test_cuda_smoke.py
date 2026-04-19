@@ -52,6 +52,9 @@ def test_settings_shape_fields_match_model_geometry():
     from minicnn.config import settings
 
     assert settings.FC_IN == settings.C4_OUT * settings.P2H * settings.P2W
+    assert settings.C2_IN == settings.C1_OUT
+    assert settings.C3_IN == settings.C2_OUT
+    assert settings.C4_IN == settings.C3_OUT
 
 
 def test_settings_env_overrides(monkeypatch):
