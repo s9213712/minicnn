@@ -35,7 +35,7 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
 訓練產生的最佳模型檔固定寫入：
 
 ```text
-python/best_models/
+src/minicnn/training/models/
 ```
 
 PyTorch backend 會寫入 `*_best.pt`，CUDA legacy backend 會寫入 `*_best_model_split.npz`。`artifacts/` 仍只保存 metrics 與 summary 等實驗紀錄。

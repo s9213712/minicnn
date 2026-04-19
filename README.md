@@ -103,7 +103,7 @@ The legacy trainer also accepts environment overrides such as `MINICNN_EPOCHS`, 
 Best model files are always written under:
 
 ```text
-python/best_models/
+src/minicnn/training/models/
 ```
 
 PyTorch writes `*_best.pt`; CUDA legacy writes `*_best_model_split.npz`. Per-run metrics and summaries stay under `artifacts/`.
@@ -118,7 +118,7 @@ Validated on 2026-04-19 with an RTX 3050 Laptop GPU, CIFAR-10 smoke split, `256`
 | `cuda_legacy` | `cublas` | train_acc `12.50%`, val_acc `20.31%`, test_acc `14.00%`, epoch time `0.1s` |
 | `cuda_legacy` | `handmade` | train_acc `12.50%`, val_acc `20.31%`, test_acc `14.00%`, epoch time `0.3s` |
 
-The smoke run writes model files to `python/best_models/` and run logs to `/tmp/minicnn_backend_compare` when using the commands in the docs.
+The smoke run writes model files to `src/minicnn/training/models/` and run logs to `/tmp/minicnn_backend_compare` when using the commands in the docs.
 
 Latest quick verification for this change used `features/backend-smoke-matrix/run_smoke_matrix.py` with `128` train samples, `32` validation samples, batch size `32`, and `1` epoch:
 
@@ -257,8 +257,6 @@ minicnn/
 ├── features/
 │   ├── README.md                      # rules for isolated prototype work
 │   └── backend-smoke-matrix/          # example feature comparing torch/cublas/handmade smoke runs
-├── python/
-│   └── best_models/                   # fixed checkpoint output folder
 ├── scripts/
 │   └── build_windows_native.ps1       # Windows CUDA DLL build helper
 ├── src/minicnn/
@@ -270,6 +268,7 @@ minicnn/
 │   ├── training/
 │   │   ├── train_cuda.py              # legacy CUDA CIFAR-10 training entrypoint
 │   │   ├── train_torch_baseline.py    # PyTorch baseline training entrypoint
+│   │   ├── models/                    # fixed checkpoint output folder
 │   │   ├── cuda_ops.py                # CUDA copy/layout/forward helper wrappers
 │   │   ├── cuda_workspace.py          # reusable per-batch GPU workspace
 │   │   ├── evaluation.py              # CUDA eval forward/accuracy helpers
@@ -292,7 +291,6 @@ Key folder and file responsibilities:
 | `docs/` | Build, C API, Python ctypes, C++ linking, layout/debug, and Windows build guides. |
 | `examples/` | Minimal custom PyTorch component examples. |
 | `features/` | Isolated prototypes that production code must not import by default; includes `backend-smoke-matrix/` as an example feature. |
-| `python/best_models/` | Fixed output folder for best model checkpoints; generated model files are git-ignored. |
 | `scripts/build_windows_native.ps1` | PowerShell helper for building Windows CUDA DLL variants. |
 | `src/minicnn/cli.py` | Main CLI entrypoint. |
 | `src/minicnn/core/build.py` | Native build/check helper used by `minicnn build`. |
@@ -300,6 +298,7 @@ Key folder and file responsibilities:
 | `src/minicnn/data/` | CIFAR-10 download/loading and random dataset helpers. |
 | `src/minicnn/flex/` | PyTorch config-driven model/loss/optimizer/scheduler builder and trainer. |
 | `src/minicnn/training/train_cuda.py` | Legacy CUDA CIFAR-10 training loop entrypoint. |
+| `src/minicnn/training/models/` | Fixed output folder for best model checkpoints; generated `*.pt` and `*.npz` files are git-ignored. |
 | `src/minicnn/training/cuda_ops.py` | Small CUDA operation wrappers used by the legacy training loop. |
 | `src/minicnn/training/cuda_workspace.py` | Reusable per-batch GPU workspace with double-free protection. |
 | `src/minicnn/training/evaluation.py` | CUDA evaluation forward path and accuracy helpers. |

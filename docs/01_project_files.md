@@ -27,8 +27,6 @@ minicnn/
 │   ├── libminimal_cuda_cnn.so
 │   ├── libminimal_cuda_cnn_cublas.so
 │   └── libminimal_cuda_cnn_handmade.so
-├── python/
-│   └── best_models/
 ├── src/minicnn/
 │   ├── cli.py
 │   ├── core/
@@ -36,13 +34,14 @@ minicnn/
 │   ├── flex/
 │   ├── framework/
 │   ├── training/
+│   │   └── models/
 │   └── unified/
 ├── configs/
 ├── tests/
 └── docs/
 ```
 
-`data/cifar-10-batches-py/`、`cpp/*.so`、`python/best_models/*`、`__pycache__/`、`.pytest_cache/` 與 runtime artifacts 都是本機檔案，不屬於 Git 版本內容。
+`data/cifar-10-batches-py/`、`cpp/*.so`、`src/minicnn/training/models/*`、`__pycache__/`、`.pytest_cache/` 與 runtime artifacts 都是本機檔案，不屬於 Git 版本內容。
 
 ## include
 
@@ -90,4 +89,4 @@ minicnn/
 | `src/minicnn/training/evaluation.py` | CUDA evaluation forward path 與 accuracy helper。 |
 | `src/minicnn/training/checkpoints.py` | CUDA checkpoint save/reload 與 GPU pointer cleanup。 |
 | `src/minicnn/training/train_torch_baseline.py` | 對齊 CUDA update 規則的 PyTorch baseline。 |
-| `python/best_models/` | 最佳模型固定輸出位置；PyTorch 寫 `*.pt`，CUDA legacy 寫 `*.npz`。 |
+| `src/minicnn/training/models/` | 最佳模型固定輸出位置；PyTorch 寫 `*.pt`，CUDA legacy 寫 `*.npz`。 |

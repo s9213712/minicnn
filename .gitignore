@@ -24,8 +24,8 @@ artifacts/
 outputs/
 logs/
 /data/
-/python/best_models/*
-!/python/best_models/.gitkeep
+/src/minicnn/training/models/*
+!/src/minicnn/training/models/.gitkeep
 
 # OS / editors
 .DS_Store
