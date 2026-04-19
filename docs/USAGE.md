@@ -25,14 +25,27 @@ CIFAR-10 trainer 目前使用 `conv_backward_precol`、`conv_update_fused` 與 `
 minicnn build --legacy-make --variant both --check
 ```
 
+先檢查本機環境：
+
+```bash
+minicnn info
+minicnn doctor
+```
+
 然後用同一份 CIFAR-10 config 比較：
 
 ```bash
+minicnn train-torch --config configs/dual_backend_cnn.yaml train.epochs=1
+minicnn train-cuda --config configs/dual_backend_cnn.yaml train.epochs=1
+
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=cublas
 
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=handmade
+
+minicnn compare --config configs/dual_backend_cnn.yaml \
+  train.epochs=1 dataset.num_samples=128 dataset.val_samples=32 train.batch_size=32
 ```
 
 訓練產生的最佳模型檔固定寫入：

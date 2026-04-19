@@ -142,4 +142,45 @@ def current_config() -> ExperimentConfig | None:
     return _current_config
 
 
+def summarize() -> dict[str, Any]:
+    return {
+        "train": {
+            "batch_size": BATCH,
+            "epochs": EPOCHS,
+            "n_train": N_TRAIN,
+            "n_val": N_VAL,
+            "eval_max_batches": EVAL_MAX_BATCHES,
+            "dataset_seed": DATASET_SEED,
+            "init_seed": INIT_SEED,
+            "train_seed": TRAIN_SEED,
+        },
+        "optimizer": {
+            "lr_conv1": LR_CONV1,
+            "lr_conv": LR_CONV,
+            "lr_fc": LR_FC,
+            "momentum": MOMENTUM,
+            "weight_decay": WEIGHT_DECAY,
+        },
+        "model": {
+            "channels": {
+                "c1": [C1_IN, C1_OUT],
+                "c2": [C2_IN, C2_OUT],
+                "c3": [C3_IN, C3_OUT],
+                "c4": [C4_IN, C4_OUT],
+            },
+            "input_hw": [H, W],
+            "kernel_hw": [KH, KW],
+            "derived_hw": {
+                "conv1": [H1, W1],
+                "conv2": [H2, W2],
+                "pool1": [P1H, P1W],
+                "conv3": [H3, W3],
+                "conv4": [H4, W4],
+                "pool2": [P2H, P2W],
+            },
+            "fc_in": FC_IN,
+        },
+    }
+
+
 apply_experiment_config(ExperimentConfig())

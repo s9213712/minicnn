@@ -47,41 +47,47 @@ def _free_ptrs(ptrs):
             lib.gpu_free(ptr)
 
 
-def forward_batch(x, device_weights):
+def _forward_logits_ptr(x, device_weights, ptrs):
     d_w_conv1, d_w_conv2, d_w_conv3, d_w_conv4, d_fc_w, d_fc_b = device_weights
+    n = x.shape[0]
+    d_x = upload(x)
+    ptrs.append(d_x)
+
+    d_col1, d_conv1_raw, _, _ = conv_forward(d_x, d_w_conv1, n, C1_IN, H, W, C1_OUT)
+    ptrs.extend([d_col1, d_conv1_raw])
+    d_conv1_nchw = cnhw_to_nchw_alloc(d_conv1_raw, n, C1_OUT, H1, W1)
+    ptrs.append(d_conv1_nchw)
+
+    d_col2, d_conv2_raw, _, _ = conv_forward(d_conv1_nchw, d_w_conv2, n, C2_IN, H1, W1, C2_OUT)
+    ptrs.extend([d_col2, d_conv2_raw])
+    d_pool1, d_max_idx1, _, _ = maxpool_forward(d_conv2_raw, n, C2_OUT, H2, W2)
+    ptrs.extend([d_pool1, d_max_idx1])
+    d_pool1_nchw = cnhw_to_nchw_alloc(d_pool1, n, C2_OUT, P1H, P1W)
+    ptrs.append(d_pool1_nchw)
+
+    d_col3, d_conv3_raw, _, _ = conv_forward(d_pool1_nchw, d_w_conv3, n, C3_IN, P1H, P1W, C3_OUT)
+    ptrs.extend([d_col3, d_conv3_raw])
+    d_conv3_nchw = cnhw_to_nchw_alloc(d_conv3_raw, n, C3_OUT, H3, W3)
+    ptrs.append(d_conv3_nchw)
+
+    d_col4, d_conv4_raw, _, _ = conv_forward(d_conv3_nchw, d_w_conv4, n, C4_IN, H3, W3, C4_OUT)
+    ptrs.extend([d_col4, d_conv4_raw])
+    d_pool2, d_max_idx2, _, _ = maxpool_forward(d_conv4_raw, n, C4_OUT, H4, W4)
+    ptrs.extend([d_pool2, d_max_idx2])
+    d_pool2_nchw = cnhw_to_nchw_alloc(d_pool2, n, C4_OUT, P2H, P2W)
+    ptrs.append(d_pool2_nchw)
+
+    d_fc_out = lib.gpu_malloc(n * 10 * 4)
+    ptrs.append(d_fc_out)
+    lib.dense_forward(d_pool2_nchw, d_fc_w, d_fc_b, d_fc_out, n, FC_IN, 10)
+    return d_fc_out
+
+
+def forward_batch(x, device_weights):
     n = x.shape[0]
     ptrs = []
     try:
-        d_x = upload(x)
-        ptrs.append(d_x)
-
-        d_col1, d_conv1_raw, _, _ = conv_forward(d_x, d_w_conv1, n, C1_IN, H, W, C1_OUT)
-        ptrs.extend([d_col1, d_conv1_raw])
-        d_conv1_nchw = cnhw_to_nchw_alloc(d_conv1_raw, n, C1_OUT, H1, W1)
-        ptrs.append(d_conv1_nchw)
-
-        d_col2, d_conv2_raw, _, _ = conv_forward(d_conv1_nchw, d_w_conv2, n, C2_IN, H1, W1, C2_OUT)
-        ptrs.extend([d_col2, d_conv2_raw])
-        d_pool1, d_max_idx1, _, _ = maxpool_forward(d_conv2_raw, n, C2_OUT, H2, W2)
-        ptrs.extend([d_pool1, d_max_idx1])
-        d_pool1_nchw = cnhw_to_nchw_alloc(d_pool1, n, C2_OUT, P1H, P1W)
-        ptrs.append(d_pool1_nchw)
-
-        d_col3, d_conv3_raw, _, _ = conv_forward(d_pool1_nchw, d_w_conv3, n, C3_IN, P1H, P1W, C3_OUT)
-        ptrs.extend([d_col3, d_conv3_raw])
-        d_conv3_nchw = cnhw_to_nchw_alloc(d_conv3_raw, n, C3_OUT, H3, W3)
-        ptrs.append(d_conv3_nchw)
-
-        d_col4, d_conv4_raw, _, _ = conv_forward(d_conv3_nchw, d_w_conv4, n, C4_IN, H3, W3, C4_OUT)
-        ptrs.extend([d_col4, d_conv4_raw])
-        d_pool2, d_max_idx2, _, _ = maxpool_forward(d_conv4_raw, n, C4_OUT, H4, W4)
-        ptrs.extend([d_pool2, d_max_idx2])
-        d_pool2_nchw = cnhw_to_nchw_alloc(d_pool2, n, C4_OUT, P2H, P2W)
-        ptrs.append(d_pool2_nchw)
-
-        d_fc_out = lib.gpu_malloc(n * 10 * 4)
-        ptrs.append(d_fc_out)
-        lib.dense_forward(d_pool2_nchw, d_fc_w, d_fc_b, d_fc_out, n, FC_IN, 10)
+        d_fc_out = _forward_logits_ptr(x, device_weights, ptrs)
         h_out = np.zeros((n, 10), dtype=np.float32)
         lib.gpu_memcpy_d2h(h_out.ctypes.data, d_fc_out, n * 10 * 4)
         return h_out
@@ -90,42 +96,13 @@ def forward_batch(x, device_weights):
 
 
 def count_correct_batch(x, y, device_weights):
-    d_w_conv1, d_w_conv2, d_w_conv3, d_w_conv4, d_fc_w, d_fc_b = device_weights
     n = x.shape[0]
     ptrs = []
     try:
-        d_x = upload(x)
         d_y = upload_int(y)
         d_correct = lib.gpu_malloc(4)
-        ptrs.extend([d_x, d_y, d_correct])
-
-        d_col1, d_conv1_raw, _, _ = conv_forward(d_x, d_w_conv1, n, C1_IN, H, W, C1_OUT)
-        ptrs.extend([d_col1, d_conv1_raw])
-        d_conv1_nchw = cnhw_to_nchw_alloc(d_conv1_raw, n, C1_OUT, H1, W1)
-        ptrs.append(d_conv1_nchw)
-
-        d_col2, d_conv2_raw, _, _ = conv_forward(d_conv1_nchw, d_w_conv2, n, C2_IN, H1, W1, C2_OUT)
-        ptrs.extend([d_col2, d_conv2_raw])
-        d_pool1, d_max_idx1, _, _ = maxpool_forward(d_conv2_raw, n, C2_OUT, H2, W2)
-        ptrs.extend([d_pool1, d_max_idx1])
-        d_pool1_nchw = cnhw_to_nchw_alloc(d_pool1, n, C2_OUT, P1H, P1W)
-        ptrs.append(d_pool1_nchw)
-
-        d_col3, d_conv3_raw, _, _ = conv_forward(d_pool1_nchw, d_w_conv3, n, C3_IN, P1H, P1W, C3_OUT)
-        ptrs.extend([d_col3, d_conv3_raw])
-        d_conv3_nchw = cnhw_to_nchw_alloc(d_conv3_raw, n, C3_OUT, H3, W3)
-        ptrs.append(d_conv3_nchw)
-
-        d_col4, d_conv4_raw, _, _ = conv_forward(d_conv3_nchw, d_w_conv4, n, C4_IN, H3, W3, C4_OUT)
-        ptrs.extend([d_col4, d_conv4_raw])
-        d_pool2, d_max_idx2, _, _ = maxpool_forward(d_conv4_raw, n, C4_OUT, H4, W4)
-        ptrs.extend([d_pool2, d_max_idx2])
-        d_pool2_nchw = cnhw_to_nchw_alloc(d_pool2, n, C4_OUT, P2H, P2W)
-        ptrs.append(d_pool2_nchw)
-
-        d_fc_out = lib.gpu_malloc(n * 10 * 4)
-        ptrs.append(d_fc_out)
-        lib.dense_forward(d_pool2_nchw, d_fc_w, d_fc_b, d_fc_out, n, FC_IN, 10)
+        ptrs.extend([d_y, d_correct])
+        d_fc_out = _forward_logits_ptr(x, device_weights, ptrs)
         zero_bytes(d_correct, 4)
         lib.count_correct(d_fc_out, d_y, d_correct, n, 10)
         return download_int_scalar(d_correct)

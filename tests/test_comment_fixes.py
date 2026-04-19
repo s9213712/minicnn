@@ -86,8 +86,19 @@ def test_cli_reports_missing_train_flex_config_without_traceback():
         raise AssertionError('expected SystemExit for missing config')
 
 
+def test_cli_exposes_doctor_compare_and_backend_aliases():
+    from minicnn.cli import build_parser
+
+    help_text = build_parser().format_help()
+
+    assert 'doctor' in help_text
+    assert 'compare' in help_text
+    assert 'train-cuda' in help_text
+    assert 'train-torch' in help_text
+
+
 def test_random_crop_batch_matches_reference_crop():
-    from minicnn.training.train_cuda import random_crop_batch
+    from minicnn.training.cuda_epoch import random_crop_batch
 
     x = np.arange(2 * 3 * 4 * 4, dtype=np.float32).reshape(2, 3, 4, 4)
     seed = 123
@@ -105,6 +116,58 @@ def test_random_crop_batch_matches_reference_crop():
 
     assert np.array_equal(actual, expected)
     assert actual.flags.c_contiguous
+
+
+def test_checkpoint_reload_is_transactional(tmp_path, monkeypatch):
+    import minicnn.training.checkpoints as checkpoints
+
+    freed = []
+    uploaded = []
+    old_weights = checkpoints.DeviceWeights('old1', 'old2', 'old3', 'old4', 'old5', 'old6')
+    ckpt_path = tmp_path / 'weights.npz'
+    np.savez(
+        ckpt_path,
+        w_conv1=np.array([1], dtype=np.float32),
+        w_conv2=np.array([2], dtype=np.float32),
+        w_conv3=np.array([3], dtype=np.float32),
+        w_conv4=np.array([4], dtype=np.float32),
+        fc_w=np.array([5], dtype=np.float32),
+        fc_b=np.array([6], dtype=np.float32),
+    )
+
+    def failing_upload(arr):
+        if len(uploaded) == 2:
+            raise RuntimeError('upload failed')
+        ptr = f'new{len(uploaded)}'
+        uploaded.append(ptr)
+        return ptr
+
+    class Lib:
+        @staticmethod
+        def gpu_free(ptr):
+            freed.append(ptr)
+
+    monkeypatch.setattr(checkpoints, 'upload', failing_upload)
+    monkeypatch.setattr(checkpoints, 'lib', Lib())
+
+    try:
+        checkpoints.reload_weights_from_checkpoint(ckpt_path, old_weights)
+    except RuntimeError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError('expected upload failure')
+
+    assert freed == ['new0', 'new1']
+
+    freed.clear()
+    uploaded.clear()
+    monkeypatch.setattr(checkpoints, 'upload', lambda arr: uploaded.append(f'new{len(uploaded)}') or uploaded[-1])
+
+    _ckpt, _fc_w, _fc_b, new_weights = checkpoints.reload_weights_from_checkpoint(ckpt_path, old_weights)
+
+    assert isinstance(new_weights, checkpoints.DeviceWeights)
+    assert list(new_weights) == ['new0', 'new1', 'new2', 'new3', 'new4', 'new5']
+    assert freed == list(old_weights)
 
 
 def test_workspace_uses_int_allocators_for_index_and_label_buffers(monkeypatch):

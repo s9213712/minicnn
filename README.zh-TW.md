@@ -212,9 +212,13 @@ model:
 
 ```bash
 minicnn info
+minicnn doctor
 minicnn healthcheck
 minicnn list-flex-components
 minicnn list-dual-components
+minicnn train-torch --config configs/dual_backend_cnn.yaml train.epochs=1
+minicnn train-cuda --config configs/dual_backend_cnn.yaml train.epochs=1
+minicnn compare --config configs/dual_backend_cnn.yaml train.epochs=1 dataset.num_samples=128 dataset.val_samples=32
 minicnn dual-config-template
 minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml

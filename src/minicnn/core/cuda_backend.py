@@ -27,6 +27,16 @@ else:
         'nocublas': 'libminimal_cuda_cnn_handmade.so',
     }
 SO_PATH = str(CPP_ROOT / NATIVE_VARIANTS['default'])
+REQUIRED_SYMBOLS = (
+    'gpu_malloc',
+    'gpu_free',
+    'gpu_memcpy_h2d',
+    'gpu_memcpy_d2h',
+    'im2col_forward',
+    'gemm_forward',
+    'dense_forward',
+    'softmax_xent_grad_loss_acc',
+)
 
 
 def resolve_library_path(path: str | os.PathLike[str] | None = None) -> str:
@@ -136,6 +146,31 @@ def get_lib() -> ctypes.CDLL:
     if _lib is None:
         _lib = _bind_symbols(load_library())
     return _lib
+
+
+def check_cuda_ready(path: str | os.PathLike[str] | None = None) -> dict[str, object]:
+    resolved = resolve_library_path(path)
+    exists = os.path.exists(resolved)
+    result: dict[str, object] = {
+        'path': resolved,
+        'exists': exists,
+        'loadable': False,
+        'missing_symbols': [],
+        'error': None,
+    }
+    if not exists:
+        result['error'] = 'CUDA shared library does not exist'
+        return result
+    try:
+        candidate = _bind_symbols(load_library(resolved))
+        missing = [name for name in REQUIRED_SYMBOLS if not hasattr(candidate, name)]
+        result['missing_symbols'] = missing
+        result['loadable'] = not missing
+        if missing:
+            result['error'] = f'Missing required symbols: {missing}'
+    except Exception as exc:
+        result['error'] = str(exc)
+    return result
 
 
 class LazyCudaLibrary:

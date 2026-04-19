@@ -21,7 +21,15 @@ from minicnn.core.cuda_backend import (
 )
 from minicnn.training.evaluation import evaluate
 from minicnn.models.initialization import init_weights
-from minicnn.training.checkpoints import free_weights, init_velocity_buffers, reload_weights_from_checkpoint, save_checkpoint, upload_weights
+from minicnn.training.checkpoints import (
+    DeviceWeights,
+    VelocityBuffers,
+    free_weights,
+    init_velocity_buffers,
+    reload_weights_from_checkpoint,
+    save_checkpoint,
+    upload_weights,
+)
 from minicnn.training.cuda_ops import (
     cnhw_to_nchw_into,
     conv_forward_into,
@@ -31,6 +39,7 @@ from minicnn.training.cuda_ops import (
     upload_to,
     zero_floats,
 )
+from minicnn.training.cuda_epoch import augment_batch
 from minicnn.training.cuda_workspace import BatchWorkspace
 from minicnn.config.settings import (
     BATCH,
@@ -100,35 +109,11 @@ BEST_MODEL_PATH = str(BEST_MODELS_ROOT / f"{RUN_DIR.name}_{BEST_MODEL_FILENAME}"
 
 
 def current_device_weights():
-    return d_w_conv1, d_w_conv2, d_w_conv3, d_w_conv4, d_fc_w, d_fc_b
+    return DeviceWeights(d_w_conv1, d_w_conv2, d_w_conv3, d_w_conv4, d_fc_w, d_fc_b)
 
 
 def current_velocity_buffers():
-    return d_v_conv1, d_v_conv2, d_v_conv3, d_v_conv4, d_v_fc_w, d_v_fc_b
-
-
-def random_crop_batch(x, rng, padding):
-    if padding <= 0:
-        return x
-    n, _c, h, w = x.shape
-    padded = np.pad(x, ((0, 0), (0, 0), (padding, padding), (padding, padding)), mode='reflect')
-    tops = rng.integers(0, 2 * padding + 1, size=n)
-    lefts = rng.integers(0, 2 * padding + 1, size=n)
-    batch_idx = np.arange(n)[:, None, None, None]
-    channel_idx = np.arange(x.shape[1])[None, :, None, None]
-    row_idx = tops[:, None, None, None] + np.arange(h)[None, None, :, None]
-    col_idx = lefts[:, None, None, None] + np.arange(w)[None, None, None, :]
-    return np.ascontiguousarray(padded[batch_idx, channel_idx, row_idx, col_idx].astype(np.float32, copy=False))
-
-
-def augment_batch(x, rng):
-    x = random_crop_batch(x, rng, RANDOM_CROP_PADDING)
-    if HORIZONTAL_FLIP:
-        flip_mask = rng.random(x.shape[0]) > 0.5
-        if flip_mask.any():
-            x = x.copy()
-            x[flip_mask] = x[flip_mask, :, :, ::-1]
-    return x
+    return VelocityBuffers(d_v_conv1, d_v_conv2, d_v_conv3, d_v_conv4, d_v_fc_w, d_v_fc_b)
 
 
 def main():
@@ -199,7 +184,7 @@ def main():
                 x = x_train[indices[idx_s:idx_e]]
                 y = y_train[indices[idx_s:idx_e]]
 
-                x = augment_batch(x, train_rng)
+                x = augment_batch(x, train_rng, RANDOM_CROP_PADDING, HORIZONTAL_FLIP)
 
                 # Forward, keeping intermediates needed for backward.
                 upload_to(workspace.d_x, x)
