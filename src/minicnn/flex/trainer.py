@@ -7,6 +7,7 @@ from typing import Any
 from .builder import build_loss, build_model, build_optimizer, build_scheduler
 from .data import create_dataloaders
 from .runtime import create_run_dir, dump_summary
+from minicnn.paths import BEST_MODELS_ROOT
 
 try:
     import torch
@@ -45,6 +46,11 @@ def _eval(model, loader, criterion, device):
     return {'loss': loss_sum / max(count, 1), 'acc': acc_sum / max(count, 1)}
 
 
+def _best_model_path(run_dir: Path) -> Path:
+    BEST_MODELS_ROOT.mkdir(parents=True, exist_ok=True)
+    return BEST_MODELS_ROOT / f'{run_dir.name}_best.pt'
+
+
 def train_from_config(cfg: dict[str, Any]) -> Path:
     if torch is None:
         raise RuntimeError('PyTorch is required for train-flex')
@@ -67,6 +73,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
         scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
 
     best_val = float('inf')
+    best_model_path = _best_model_path(run_dir)
     metrics_path = run_dir / 'metrics.jsonl'
     grad_accum_steps = max(1, int(train_cfg.get('grad_accum_steps', 1)))
     epochs = int(train_cfg.get('epochs', 1))
@@ -117,11 +124,12 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
             metrics_file.flush()
             if val_metrics['loss'] < best_val:
                 best_val = val_metrics['loss']
-                torch.save({'model_state': model.state_dict(), 'config': cfg}, run_dir / 'best.pt')
+                torch.save({'model_state': model.state_dict(), 'config': cfg}, best_model_path)
 
     summary = {
         'device': str(device),
         'run_dir': str(run_dir),
+        'best_model_path': str(best_model_path),
         'input_shape': list(input_shape),
         'model_layers': [layer.get('type') for layer in model_cfg.get('layers', [])],
         'optimizer': cfg.get('optimizer', {}).get('type'),

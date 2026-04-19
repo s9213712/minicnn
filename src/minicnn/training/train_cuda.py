@@ -79,11 +79,12 @@ from minicnn.config.settings import (
 
 
 from pathlib import Path
-from minicnn.paths import DATA_ROOT, ARTIFACTS_ROOT
+from minicnn.paths import DATA_ROOT, ARTIFACTS_ROOT, BEST_MODELS_ROOT
 
 RUN_DIR = Path(os.environ.get('MINICNN_ARTIFACT_RUN_DIR', ARTIFACTS_ROOT / 'default'))
 RUN_DIR.mkdir(parents=True, exist_ok=True)
-BEST_MODEL_PATH = str(RUN_DIR / BEST_MODEL_FILENAME)
+BEST_MODELS_ROOT.mkdir(parents=True, exist_ok=True)
+BEST_MODEL_PATH = str(BEST_MODELS_ROOT / f"{RUN_DIR.name}_{BEST_MODEL_FILENAME}")
 
 
 def current_device_weights():
@@ -189,6 +190,9 @@ class BatchWorkspace:
 
 
 def main():
+    global d_w_conv1, d_w_conv2, d_w_conv3, d_w_conv4, d_fc_w, d_fc_b
+    global d_v_conv1, d_v_conv2, d_v_conv3, d_v_conv4, d_v_fc_w, d_v_fc_b
+
     data_root = str(DATA_ROOT)
     x_train, y_train, x_val, y_val, x_test_final, y_test_final = load_cifar10(
         data_root,

@@ -2,6 +2,7 @@
 
 import ctypes
 import os
+from pathlib import Path
 from ctypes import c_float, c_int, c_void_p
 
 import numpy as np
@@ -9,23 +10,68 @@ import numpy as np
 from minicnn.config.settings import KH, KW, LEAKY_ALPHA
 
 
-from minicnn.paths import CPP_ROOT
+from minicnn.paths import CPP_ROOT, PROJECT_ROOT
 
-SO_PATH = str(CPP_ROOT / 'libminimal_cuda_cnn.so')
+if os.name == 'nt':
+    NATIVE_VARIANTS = {
+        'default': 'minimal_cuda_cnn.dll',
+        'cublas': 'minimal_cuda_cnn_cublas.dll',
+        'handmade': 'minimal_cuda_cnn_handmade.dll',
+        'nocublas': 'minimal_cuda_cnn_handmade.dll',
+    }
+else:
+    NATIVE_VARIANTS = {
+        'default': 'libminimal_cuda_cnn.so',
+        'cublas': 'libminimal_cuda_cnn_cublas.so',
+        'handmade': 'libminimal_cuda_cnn_handmade.so',
+        'nocublas': 'libminimal_cuda_cnn_handmade.so',
+    }
+SO_PATH = str(CPP_ROOT / NATIVE_VARIANTS['default'])
 
 
-def load_library(path=SO_PATH):
+def resolve_library_path(path: str | os.PathLike[str] | None = None) -> str:
+    if path is None:
+        path = os.environ.get('MINICNN_CUDA_SO')
+    if path is not None:
+        raw = Path(path)
+        if raw.name == str(path) and raw.name in NATIVE_VARIANTS:
+            return str(CPP_ROOT / NATIVE_VARIANTS[raw.name])
+        if raw.is_absolute():
+            return str(raw)
+        if raw.parts and raw.parts[0] == 'cpp':
+            return str(PROJECT_ROOT / raw)
+        return str(CPP_ROOT / raw)
+
+    variant = os.environ.get('MINICNN_CUDA_VARIANT', 'default').lower()
+    if variant not in NATIVE_VARIANTS:
+        choices = ', '.join(sorted(NATIVE_VARIANTS))
+        raise RuntimeError(f"Unknown MINICNN_CUDA_VARIANT={variant!r}; expected one of: {choices}")
+    return str(CPP_ROOT / NATIVE_VARIANTS[variant])
+
+
+def load_library(path: str | os.PathLike[str] | None = None):
+    path = resolve_library_path(path)
     if not os.path.exists(path):
         raise RuntimeError(
             "CUDA shared library not found:\n"
             f"  {path}\n\n"
             "Build it from the repository root first:\n"
-            "  make -C cpp\n\n"
+            "  make -C cpp\n"
+            "  make -C cpp variants\n\n"
             "Optional backends:\n"
-            "  make -C cpp USE_CUBLAS=1  # fast default\n"
-            "  make -C cpp USE_CUBLAS=0  # handwritten CUDA fallback\n"
+            "  make -C cpp cublas    # cuBLAS GEMM path\n"
+            "  make -C cpp handmade  # handwritten CUDA fallback\n\n"
+            "Select at runtime with:\n"
+            "  MINICNN_CUDA_VARIANT=cublas\n"
+            "  MINICNN_CUDA_VARIANT=handmade\n"
+            "  MINICNN_CUDA_SO=cpp/libminimal_cuda_cnn_cublas.so\n"
         )
     try:
+        if os.name == 'nt' and hasattr(os, 'add_dll_directory'):
+            os.add_dll_directory(str(CPP_ROOT))
+            cuda_path = os.environ.get('CUDA_PATH')
+            if cuda_path:
+                os.add_dll_directory(str(Path(cuda_path) / 'bin'))
         return ctypes.CDLL(path)
     except OSError as exc:
         raise RuntimeError(

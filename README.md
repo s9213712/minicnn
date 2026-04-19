@@ -36,6 +36,25 @@ pytest
 minicnn build --legacy-make --check
 ```
 
+Build both native variants for comparison:
+
+```bash
+minicnn build --legacy-make --variant both --check
+```
+
+This writes:
+
+```text
+cpp/libminimal_cuda_cnn_cublas.so
+cpp/libminimal_cuda_cnn_handmade.so
+```
+
+On Windows, build native DLLs with PowerShell:
+
+```powershell
+.\scripts\build_windows_native.ps1 -Variant both
+```
+
 Or with the CMake path:
 
 ```bash
@@ -57,6 +76,36 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_le
 ```
 
 The only switch above is `engine.backend`.
+
+For the handcrafted CUDA backend, choose the native `.so` variant with:
+
+```bash
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=cublas
+
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=handmade
+```
+
+Best model files are always written under:
+
+```text
+python/best_models/
+```
+
+PyTorch writes `*_best.pt`; CUDA legacy writes `*_best_model_split.npz`. Per-run metrics and summaries stay under `artifacts/`.
+
+## Local Smoke Test Results
+
+Validated on 2026-04-19 with an RTX 3050 Laptop GPU, CIFAR-10 smoke split, `256` train samples, `64` validation samples, batch size `64`, and `1` epoch:
+
+| Backend | Native variant | Result |
+|---|---|---|
+| `torch` | PyTorch CUDA | train_acc `10.16%`, val_acc `12.50%` |
+| `cuda_legacy` | `cublas` | train_acc `12.50%`, val_acc `20.31%`, test_acc `14.00%`, epoch time `0.1s` |
+| `cuda_legacy` | `handmade` | train_acc `12.50%`, val_acc `20.31%`, test_acc `14.00%`, epoch time `0.3s` |
+
+The smoke run writes model files to `python/best_models/` and run logs to `/tmp/minicnn_backend_compare` when using the commands in the docs.
 
 ## Why two backends?
 
@@ -187,6 +236,8 @@ src/minicnn/
   unified/
 tests/
 ```
+
+Windows native build notes are in [docs/07_windows_build.md](docs/07_windows_build.md).
 
 ## Development
 

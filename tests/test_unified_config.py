@@ -12,6 +12,7 @@ def test_compile_supported_dual_config():
     cfg = {
         'project': {'name': 'x', 'run_name': 'y', 'artifacts_root': 'artifacts'},
         'engine': {'backend': 'cuda_legacy'},
+        'runtime': {'cuda_variant': 'handmade'},
         'dataset': {'type': 'cifar10', 'input_shape': [3, 32, 32], 'num_classes': 10, 'num_samples': 128, 'val_samples': 32, 'seed': 42},
         'model': {'layers': [
             {'type': 'Conv2d', 'out_channels': 32, 'kernel_size': 3, 'stride': 1, 'padding': 0},
@@ -36,3 +37,9 @@ def test_compile_supported_dual_config():
     assert exp.model.c1_out == 32
     assert exp.model.c4_out == 64
     assert exp.optim.lr_fc == 0.005
+
+
+def test_cuda_legacy_accepts_native_variant_runtime_option():
+    cfg = load_unified_config(None, ['engine.backend=cuda_legacy', 'runtime.cuda_variant=handmade'])
+    errors = validate_cuda_legacy_compatibility(cfg)
+    assert all('runtime.cuda_variant' not in err for err in errors)

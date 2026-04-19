@@ -36,6 +36,25 @@ pytest
 minicnn build --legacy-make --check
 ```
 
+若要同時編譯兩種 native variant 方便比較：
+
+```bash
+minicnn build --legacy-make --variant both --check
+```
+
+會產生：
+
+```text
+cpp/libminimal_cuda_cnn_cublas.so
+cpp/libminimal_cuda_cnn_handmade.so
+```
+
+Windows 可用 PowerShell 編譯 DLL：
+
+```powershell
+.\scripts\build_windows_native.ps1 -Variant both
+```
+
 也可以走 CMake path：
 
 ```bash
@@ -57,6 +76,36 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_le
 ```
 
 上面兩個指令唯一需要切換的是 `engine.backend`。
+
+手寫 CUDA backend 可以指定載入哪個 `.so` variant：
+
+```bash
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=cublas
+
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=handmade
+```
+
+訓練產生的最佳模型檔固定寫入：
+
+```text
+python/best_models/
+```
+
+PyTorch backend 會寫入 `*_best.pt`；CUDA legacy backend 會寫入 `*_best_model_split.npz`。每次實驗的 metrics 與 summary 仍保留在 `artifacts/`。
+
+## 本機 Smoke Test 結果
+
+2026-04-19 使用 RTX 3050 Laptop GPU 驗證，CIFAR-10 smoke split，`256` 筆 train、`64` 筆 validation，batch size `64`，訓練 `1` epoch：
+
+| Backend | Native variant | Result |
+|---|---|---|
+| `torch` | PyTorch CUDA | train_acc `10.16%`, val_acc `12.50%` |
+| `cuda_legacy` | `cublas` | train_acc `12.50%`, val_acc `20.31%`, test_acc `14.00%`, epoch time `0.1s` |
+| `cuda_legacy` | `handmade` | train_acc `12.50%`, val_acc `20.31%`, test_acc `14.00%`, epoch time `0.3s` |
+
+Smoke test 的模型檔會寫入 `python/best_models/`；若照 docs 的指令執行，run logs 會在 `/tmp/minicnn_backend_compare`。
 
 ## 為什麼有兩個 backend
 
@@ -187,6 +236,8 @@ src/minicnn/
   unified/
 tests/
 ```
+
+Windows native build 說明在 [docs/07_windows_build.md](docs/07_windows_build.md)。
 
 ## 開發
 

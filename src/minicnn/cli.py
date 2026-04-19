@@ -23,6 +23,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument('--check', action='store_true', help='Run symbol/export checks after build')
     p_build.add_argument('--generator', choices=['make', 'ninja'], default='make')
     p_build.add_argument('--legacy-make', action='store_true', help='Use original cpp/Makefile instead of CMake')
+    p_build.add_argument(
+        '--variant',
+        choices=['default', 'cublas', 'handmade', 'both'],
+        default='default',
+        help='Native library output variant to build',
+    )
 
     sub.add_parser('prepare-data', help='Download and extract CIFAR-10 Python batches')
     sub.add_parser('info', help='Show important project paths and summary')
@@ -55,9 +61,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == 'build':
-        build_native(use_cublas=not args.no_cublas, generator=args.generator, legacy_make=args.legacy_make)
+        build_native(
+            use_cublas=not args.no_cublas,
+            generator=args.generator,
+            legacy_make=args.legacy_make,
+            variant=args.variant,
+        )
         if args.check:
-            check_native()
+            check_native(args.variant)
         return 0
 
     if args.command == 'prepare-data':

@@ -1,8 +1,9 @@
 CUDA_HOME ?= /usr/local/cuda
 NVCC ?= $(CUDA_HOME)/bin/nvcc
 USE_CUBLAS ?= 1
+OUTPUT ?= libminimal_cuda_cnn.so
 CFLAGS = -O3 -Xcompiler -fPIC -arch=sm_86 -DUSE_CUBLAS=$(USE_CUBLAS)
-LDFLAGS = -shared -o libminimal_cuda_cnn.so -Xlinker -rpath,$(CUDA_HOME)/lib64
+LDFLAGS = -shared -o $(OUTPUT) -Xlinker -rpath,$(CUDA_HOME)/lib64
 EXTRA_LDFLAGS ?=
 
 ifeq ($(USE_CUBLAS),1)
@@ -31,18 +32,34 @@ SRCS = \
 	src/layout_convert.cu
 INCS = -Iinclude
 
-.PHONY: all clean check
+.PHONY: all cublas handmade variants clean check check-cublas check-handmade check-variants
 
 all:
 	$(NVCC) $(CFLAGS) $(INCS) $(SRCS) $(LDFLAGS) $(CUBLAS_LDFLAGS) $(EXTRA_LDFLAGS)
 
+cublas:
+	$(MAKE) USE_CUBLAS=1 OUTPUT=libminimal_cuda_cnn_cublas.so all
+
+handmade:
+	$(MAKE) USE_CUBLAS=0 OUTPUT=libminimal_cuda_cnn_handmade.so all
+
+variants: cublas handmade
+
 check: all
-	@test -f libminimal_cuda_cnn.so
-	@nm -D libminimal_cuda_cnn.so | grep -q ' gpu_malloc'
-	@nm -D libminimal_cuda_cnn.so | grep -q ' gemm_forward'
-	@nm -D libminimal_cuda_cnn.so | grep -q ' conv_backward_precol'
-	@nm -D libminimal_cuda_cnn.so | grep -q ' softmax_xent_grad_loss_acc'
-	@echo "libminimal_cuda_cnn.so build check passed (USE_CUBLAS=$(USE_CUBLAS))"
+	@test -f $(OUTPUT)
+	@nm -D $(OUTPUT) | grep -q ' gpu_malloc'
+	@nm -D $(OUTPUT) | grep -q ' gemm_forward'
+	@nm -D $(OUTPUT) | grep -q ' conv_backward_precol'
+	@nm -D $(OUTPUT) | grep -q ' softmax_xent_grad_loss_acc'
+	@echo "$(OUTPUT) build check passed (USE_CUBLAS=$(USE_CUBLAS))"
+
+check-cublas:
+	$(MAKE) USE_CUBLAS=1 OUTPUT=libminimal_cuda_cnn_cublas.so check
+
+check-handmade:
+	$(MAKE) USE_CUBLAS=0 OUTPUT=libminimal_cuda_cnn_handmade.so check
+
+check-variants: check-cublas check-handmade
 
 clean:
 	rm -f *.so src/*.o

@@ -6,7 +6,20 @@ from typing import Any
 
 from minicnn.flex.runtime import create_run_dir, dump_summary
 from minicnn.flex.trainer import train_from_config
+from minicnn.paths import BEST_MODELS_ROOT
 from minicnn.unified.cuda_legacy import compile_to_legacy_experiment, summarize_legacy_mapping
+
+
+def _configure_cuda_legacy_runtime(cfg: dict[str, Any], summary: dict[str, Any]) -> None:
+    runtime = cfg.get('runtime', {})
+    cuda_variant = runtime.get('cuda_variant')
+    cuda_so = runtime.get('cuda_so')
+    if cuda_variant is not None:
+        os.environ['MINICNN_CUDA_VARIANT'] = str(cuda_variant)
+        summary['cuda_variant'] = str(cuda_variant)
+    if cuda_so is not None:
+        os.environ['MINICNN_CUDA_SO'] = str(cuda_so)
+        summary['cuda_so'] = str(cuda_so)
 
 
 def train_unified_from_config(cfg: dict[str, Any]) -> Path:
@@ -18,6 +31,7 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
             'selected_backend': backend,
             'effective_backend': 'torch',
             'run_dir': str(run_dir),
+            'best_model_path': str(BEST_MODELS_ROOT / f'{run_dir.name}_best.pt'),
             'config_backend_toggle_only': True,
         }
         dump_summary(run_dir, summary)
@@ -30,6 +44,7 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
             'run_dir': str(run_dir),
             'config_backend_toggle_only': True,
         }
+        _configure_cuda_legacy_runtime(cfg, summary)
         exp = compile_to_legacy_experiment(cfg)
         os.environ['MINICNN_ARTIFACT_RUN_DIR'] = str(run_dir)
         from minicnn.config.settings import apply_experiment_config
@@ -37,6 +52,7 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
         from minicnn.training.train_cuda import main as legacy_main
         legacy_main()
         summary['effective_backend'] = 'cuda_legacy'
+        summary['best_model_path'] = str(legacy_main.__globals__.get('BEST_MODEL_PATH', ''))
         summary['legacy_mapping'] = summarize_legacy_mapping(cfg)
         dump_summary(run_dir, summary)
         return run_dir

@@ -68,6 +68,7 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
     optim = cfg.get('optimizer', {})
     loss = cfg.get('loss', {})
     train = cfg.get('train', {})
+    runtime = cfg.get('runtime', {})
 
     if str(dataset.get('type', 'cifar10')) not in CUDA_LEGACY_SUPPORTED['dataset']:
         errors.append('cuda_legacy only supports dataset.type=cifar10')
@@ -83,6 +84,9 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
         errors.append('cuda_legacy does not support grad_accum_steps != 1')
     if bool(train.get('amp', False)):
         errors.append('cuda_legacy does not support amp=true')
+    cuda_variant = runtime.get('cuda_variant')
+    if cuda_variant is not None and str(cuda_variant) not in {'default', 'cublas', 'handmade', 'nocublas'}:
+        errors.append('runtime.cuda_variant must be one of: default, cublas, handmade, nocublas')
 
     try:
         convs, activations, linear = _collect_conv_blocks(model)
@@ -198,5 +202,9 @@ def summarize_legacy_mapping(cfg: dict[str, Any]) -> dict[str, Any]:
             'epochs': data['train']['epochs'],
             'n_train': data['train']['n_train'],
             'n_val': data['train']['n_val'],
+        },
+        'runtime': {
+            'cuda_variant': cfg.get('runtime', {}).get('cuda_variant'),
+            'cuda_so': cfg.get('runtime', {}).get('cuda_so'),
         },
     }

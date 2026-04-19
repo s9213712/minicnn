@@ -7,6 +7,10 @@ engine:
   backend: torch  # switch to cuda_legacy to use handcrafted CUDA path
   strict_backend_validation: true
 
+runtime:
+  cuda_variant: cublas  # cublas | handmade | default; used only by cuda_legacy
+  cuda_so: null         # optional explicit .so path, overrides cuda_variant
+
 dataset:
   type: cifar10
   data_root: data/cifar-10-batches-py

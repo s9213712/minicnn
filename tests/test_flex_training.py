@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from minicnn.flex.trainer import train_from_config
+from minicnn.paths import BEST_MODELS_ROOT
 
 
 def test_train_from_random_config(tmp_path: Path):
@@ -19,7 +20,7 @@ def test_train_from_random_config(tmp_path: Path):
         'scheduler': {'enabled': False},
     }
     run_dir = train_from_config(cfg)
-    assert (run_dir / 'best.pt').exists()
+    assert (BEST_MODELS_ROOT / f'{run_dir.name}_best.pt').exists()
     assert (run_dir / 'metrics.jsonl').exists()
     assert (run_dir / 'summary.json').exists()
 

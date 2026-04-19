@@ -17,13 +17,15 @@ htmlcov/
 build/
 dist/
 cmake-build-*/
-cpp/build/
+cpp/build*/
 
 # Runtime outputs
 artifacts/
 outputs/
 logs/
 /data/
+/python/best_models/*
+!/python/best_models/.gitkeep
 
 # OS / editors
 .DS_Store

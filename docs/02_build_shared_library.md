@@ -1,6 +1,6 @@
 # 編譯 shared library
 
-本文說明如何從 `cpp/src/*.cu` 編譯出 `cpp/libminimal_cuda_cnn.so`。
+本文說明如何從 `cpp/src/*.cu` 編譯出 CUDA shared library。
 
 ## 基本編譯
 
@@ -17,14 +17,37 @@ minicnn build --legacy-make --check
 cpp/libminimal_cuda_cnn.so
 ```
 
+這是相容舊流程的預設檔名。若要同時保留 cuBLAS 與手寫 GEMM 兩種實作，使用下面的 variant build。
+
+## 編譯兩種 `.so`
+
+```bash
+minicnn build --legacy-make --variant both --check
+```
+
+成功後會同時產生：
+
+```text
+cpp/libminimal_cuda_cnn_cublas.so
+cpp/libminimal_cuda_cnn_handmade.so
+```
+
+也可以分開編：
+
+```bash
+minicnn build --legacy-make --variant cublas --check
+minicnn build --legacy-make --variant handmade --check
+```
+
 ## 預設 Makefile 設定
 
 ```makefile
 CUDA_HOME ?= /usr/local/cuda
 NVCC ?= $(CUDA_HOME)/bin/nvcc
 USE_CUBLAS ?= 1
+OUTPUT ?= libminimal_cuda_cnn.so
 CFLAGS = -O3 -Xcompiler -fPIC -arch=sm_86 -DUSE_CUBLAS=$(USE_CUBLAS)
-LDFLAGS = -shared -o libminimal_cuda_cnn.so -Xlinker -rpath,$(CUDA_HOME)/lib64
+LDFLAGS = -shared -o $(OUTPUT) -Xlinker -rpath,$(CUDA_HOME)/lib64
 ```
 
 `USE_CUBLAS=1` 是預設快速路徑，會額外 link `-lcublas`，讓 `gemm_forward` 與 `conv_backward` 的 weight gradient 使用 cuBLAS `cublasSgemm`。
@@ -39,6 +62,33 @@ minicnn build --legacy-make --no-cublas --check
 
 ```bash
 minicnn build --legacy-make --check
+```
+
+直接使用 Makefile 時：
+
+```bash
+make -C cpp cublas
+make -C cpp handmade
+make -C cpp check-variants
+```
+
+## 選擇 `.so`
+
+`cuda_legacy` 預設載入 `cpp/libminimal_cuda_cnn.so`。若要指定 variant：
+
+```bash
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=cublas
+
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=handmade
+```
+
+也可以用明確路徑覆蓋：
+
+```bash
+MINICNN_CUDA_SO=cpp/libminimal_cuda_cnn_cublas.so \
+  minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
 ```
 
 建置並檢查必要匯出符號：
@@ -111,6 +161,16 @@ clip_inplace
 make -C cpp clean
 make -C cpp
 ```
+
+## Windows DLL
+
+Windows native CUDA backend 使用 CMake 與 Visual Studio generator：
+
+```powershell
+.\scripts\build_windows_native.ps1 -Variant both
+```
+
+詳細需求與手動 CMake 指令請看 [07_windows_build.md](07_windows_build.md)。
 
 ## CUDA memory check
 
