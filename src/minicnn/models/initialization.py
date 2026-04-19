@@ -1,21 +1,36 @@
-"""Host-side model weight initialization shared by CUDA and PyTorch trainers."""
+"""Host-side weight initialisation for the CUDA and PyTorch trainers."""
+from __future__ import annotations
 
 import numpy as np
 
-from minicnn.config.settings import C1_IN, C1_OUT, C2_IN, C2_OUT, C3_IN, C3_OUT, C4_IN, C4_OUT, FC_IN, KH, KW
 
-
-def he_init(size, fan_in, rng=None):
+def he_init(size: int, fan_in: int, rng=None) -> np.ndarray:
     rng = rng or np.random.default_rng()
     return (rng.standard_normal(size).astype(np.float32) * np.sqrt(2.0 / fan_in)).astype(np.float32)
 
 
-def init_weights(seed):
+def init_weights(seed: int, geom=None):
+    """Return ``(*conv_arrays, fc_w, fc_b)`` initialised with He init.
+
+    ``geom`` is a :class:`CudaNetGeometry`.  When omitted the geometry is read
+    from the current global config via :func:`~minicnn.config.settings.get_arch`.
+
+    The return value is a flat tuple so callers can unpack with starred assignment::
+
+        *conv_arrs, fc_w, fc_b = init_weights(seed)
+
+    For a fixed 4-stage architecture the traditional 6-value unpack also works::
+
+        w1, w2, w3, w4, fc_w, fc_b = init_weights(seed)
+    """
+    if geom is None:
+        from minicnn.config.settings import get_arch
+        geom = get_arch()
     rng = np.random.default_rng(seed)
-    w_conv1 = he_init(C1_OUT * C1_IN * KH * KW, C1_IN * KH * KW, rng)
-    w_conv2 = he_init(C2_OUT * C2_IN * KH * KW, C2_IN * KH * KW, rng)
-    w_conv3 = he_init(C3_OUT * C3_IN * KH * KW, C3_IN * KH * KW, rng)
-    w_conv4 = he_init(C4_OUT * C4_IN * KH * KW, C4_IN * KH * KW, rng)
-    fc_w = he_init(10 * FC_IN, FC_IN, rng)
-    fc_b = np.zeros(10, dtype=np.float32)
-    return w_conv1, w_conv2, w_conv3, w_conv4, fc_w, fc_b
+    conv_arrays = [
+        he_init(s.weight_numel, s.in_c * s.kh * s.kw, rng)
+        for s in geom.conv_stages
+    ]
+    fc_w = he_init(geom.fc_out * geom.fc_in, geom.fc_in, rng)
+    fc_b = np.zeros(geom.fc_out, dtype=np.float32)
+    return (*conv_arrays, fc_w, fc_b)

@@ -3,6 +3,18 @@ project:
 backend:
   type: cuda
   legacy_entrypoint: true
+model:
+  c_in: 3
+  h: 32
+  w: 32
+  kh: 3
+  kw: 3
+  fc_out: 10
+  conv_layers:
+    - {out_c: 32, pool: false}   # conv1
+    - {out_c: 32, pool: true}    # conv2 + pool1
+    - {out_c: 64, pool: false}   # conv3
+    - {out_c: 64, pool: true}    # conv4 + pool2
 train:
   batch_size: 64
   epochs: 50

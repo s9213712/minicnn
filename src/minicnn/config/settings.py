@@ -2,6 +2,11 @@
 
 Legacy training code imports constants directly from this module. The CLI loads a YAML config,
 then calls `apply_experiment_config()` before importing the trainer implementation.
+
+Architecture constants are now derived from `CudaNetGeometry` in a loop, so changing
+`model.conv_layers` in the YAML is all that is required to adjust the network depth.
+Backward-compat aliases (C1_IN, C1_OUT, H1, W1, P1H …) are still generated for the
+first four stages so that `train_torch_baseline.py` continues to work unchanged.
 """
 from __future__ import annotations
 
@@ -11,6 +16,7 @@ from typing import Any
 from .schema import ExperimentConfig
 
 _current_config: ExperimentConfig | None = None
+_arch = None  # CudaNetGeometry, set by apply_experiment_config
 
 
 def _parse_bool(value: str) -> bool:
@@ -43,52 +49,22 @@ def _apply_env_overrides(values: dict[str, Any]) -> None:
             values[key] = parser(raw)
 
 
-def _compute_shape_fields(values: dict[str, Any]) -> dict[str, Any]:
-    H, W = values["H"], values["W"]
-    KH, KW = values["KH"], values["KW"]
-    H1, W1 = H - KH + 1, W - KW + 1
-    H2, W2 = H1 - KH + 1, W1 - KW + 1
-    P1H, P1W = H2 // 2, W2 // 2
-    H3, W3 = P1H - KH + 1, P1W - KW + 1
-    H4, W4 = H3 - KH + 1, W3 - KW + 1
-    P2H, P2W = H4 // 2, W4 // 2
-    FC_IN = values["C4_OUT"] * P2H * P2W
-    shapes = {
-        "H1": H1, "W1": W1, "H2": H2, "W2": W2, "P1H": P1H, "P1W": P1W,
-        "H3": H3, "W3": W3, "H4": H4, "W4": W4, "P2H": P2H, "P2W": P2W,
-        "FC_IN": FC_IN,
-    }
-    invalid = {name: value for name, value in shapes.items() if value <= 0}
-    if invalid:
-        raise ValueError(f"Invalid legacy CUDA model geometry: {invalid}")
-    if H2 % 2 != 0 or W2 % 2 != 0 or H4 % 2 != 0 or W4 % 2 != 0:
-        raise ValueError("Legacy CUDA model geometry requires even H2/W2 and H4/W4 before pooling")
-    return {
-        "H1": H1, "W1": W1, "H2": H2, "W2": W2, "P1H": P1H, "P1W": P1W,
-        "H3": H3, "W3": W3, "H4": H4, "W4": W4, "P2H": P2H, "P2W": P2W,
-        "FC_IN": FC_IN,
-    }
-
-
-def _validate_channel_links(values: dict[str, Any]) -> None:
-    expected = {
-        "C2_IN": values["C1_OUT"],
-        "C3_IN": values["C2_OUT"],
-        "C4_IN": values["C3_OUT"],
-    }
-    mismatches = {
-        name: (values[name], expected_value)
-        for name, expected_value in expected.items()
-        if values[name] != expected_value
-    }
-    if mismatches:
-        raise ValueError(f"Invalid legacy CUDA channel links: {mismatches}")
+def get_arch():
+    """Return the CudaNetGeometry built from the current config."""
+    if _arch is None:
+        raise RuntimeError("apply_experiment_config() has not been called yet")
+    return _arch
 
 
 def apply_experiment_config(cfg: ExperimentConfig) -> None:
-    global _current_config
+    global _current_config, _arch
     _current_config = cfg
-    values = {
+
+    from minicnn.training.cuda_arch import CudaNetGeometry
+    arch = CudaNetGeometry.from_config(cfg.model)
+    _arch = arch
+
+    values: dict[str, Any] = {
         "BATCH": cfg.train.batch_size,
         "EPOCHS": cfg.train.epochs,
         "EVAL_MAX_BATCHES": cfg.train.eval_max_batches,
@@ -119,22 +95,31 @@ def apply_experiment_config(cfg: ExperimentConfig) -> None:
         "GRAD_DEBUG": cfg.runtime.grad_debug,
         "GRAD_DEBUG_BATCHES": cfg.runtime.grad_debug_batches,
         "BEST_MODEL_FILENAME": cfg.runtime.best_model_filename,
-        "C1_IN": cfg.model.c1_in,
-        "C1_OUT": cfg.model.c1_out,
-        "C2_IN": cfg.model.c2_in,
-        "C2_OUT": cfg.model.c2_out,
-        "C3_IN": cfg.model.c3_in,
-        "C3_OUT": cfg.model.c3_out,
-        "C4_IN": cfg.model.c4_in,
-        "C4_OUT": cfg.model.c4_out,
         "H": cfg.model.h,
         "W": cfg.model.w,
         "KH": cfg.model.kh,
         "KW": cfg.model.kw,
+        "FC_IN": arch.fc_in,
+        "FC_OUT": arch.fc_out,
     }
     _apply_env_overrides(values)
-    _validate_channel_links(values)
-    values.update(_compute_shape_fields(values))
+
+    # Backward-compat per-stage aliases used by train_torch_baseline.py and others.
+    # Named aliases are generated for up to 4 stages; stage counting is 1-based.
+    _pool_num = 0
+    for i, s in enumerate(arch.conv_stages):
+        n = i + 1  # 1-based
+        values[f"C{n}_IN"] = s.in_c
+        values[f"C{n}_OUT"] = s.out_c
+        values[f"H{n}"] = s.h_out
+        values[f"W{n}"] = s.w_out
+        if s.pool:
+            _pool_num += 1
+            values[f"P{_pool_num}H"] = s.ph
+            values[f"P{_pool_num}W"] = s.pw
+        if n >= 4:
+            break  # only alias up to 4 stages for compat
+
     globals().update(values)
 
 
@@ -143,6 +128,7 @@ def current_config() -> ExperimentConfig | None:
 
 
 def summarize() -> dict[str, Any]:
+    arch = get_arch()
     return {
         "train": {
             "batch_size": BATCH,
@@ -162,23 +148,17 @@ def summarize() -> dict[str, Any]:
             "weight_decay": WEIGHT_DECAY,
         },
         "model": {
-            "channels": {
-                "c1": [C1_IN, C1_OUT],
-                "c2": [C2_IN, C2_OUT],
-                "c3": [C3_IN, C3_OUT],
-                "c4": [C4_IN, C4_OUT],
-            },
+            "stages": [
+                {
+                    "in_c": s.in_c, "out_c": s.out_c,
+                    "h_out": s.h_out, "w_out": s.w_out,
+                    "pool": s.pool, "ph": s.ph, "pw": s.pw,
+                }
+                for s in arch.conv_stages
+            ],
             "input_hw": [H, W],
             "kernel_hw": [KH, KW],
-            "derived_hw": {
-                "conv1": [H1, W1],
-                "conv2": [H2, W2],
-                "pool1": [P1H, P1W],
-                "conv3": [H3, W3],
-                "conv4": [H4, W4],
-                "pool2": [P2H, P2W],
-            },
-            "fc_in": FC_IN,
+            "fc_in": arch.fc_in,
         },
     }
 

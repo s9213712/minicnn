@@ -1,70 +1,72 @@
-"""Weight checkpointing and device pointer cleanup."""
+"""Weight checkpointing and device pointer management."""
+from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Iterator
 
 import numpy as np
 
 from minicnn.core.cuda_backend import g2h, gpu_zeros, lib, upload
-from minicnn.config.settings import C1_IN, C1_OUT, C2_IN, C2_OUT, C3_IN, C3_OUT, C4_IN, C4_OUT, FC_IN, KH, KW
+from minicnn.training.cuda_arch import CudaNetGeometry
 
 
-@dataclass(frozen=True)
 class DeviceWeights:
-    w_conv1: object
-    w_conv2: object
-    w_conv3: object
-    w_conv4: object
-    fc_w: object
-    fc_b: object
+    """GPU pointers for all trainable weights."""
 
-    def __iter__(self) -> Iterator[object]:
-        return iter((self.w_conv1, self.w_conv2, self.w_conv3, self.w_conv4, self.fc_w, self.fc_b))
+    def __init__(self, conv_weights: list, fc_w, fc_b) -> None:
+        self.conv_weights = list(conv_weights)
+        self.fc_w = fc_w
+        self.fc_b = fc_b
 
-    def as_tuple(self) -> tuple[object, object, object, object, object, object]:
-        return tuple(self)
+    def __iter__(self) -> Iterator:
+        yield from self.conv_weights
+        yield self.fc_w
+        yield self.fc_b
 
 
-@dataclass(frozen=True)
 class VelocityBuffers:
-    v_conv1: object
-    v_conv2: object
-    v_conv3: object
-    v_conv4: object
-    v_fc_w: object
-    v_fc_b: object
+    """GPU momentum velocity buffers matching DeviceWeights layout."""
 
-    def __iter__(self) -> Iterator[object]:
-        return iter((self.v_conv1, self.v_conv2, self.v_conv3, self.v_conv4, self.v_fc_w, self.v_fc_b))
+    def __init__(self, conv_velocities: list, fc_w_vel, fc_b_vel) -> None:
+        self.conv_velocities = list(conv_velocities)
+        self.fc_w_vel = fc_w_vel
+        self.fc_b_vel = fc_b_vel
 
-    def as_tuple(self) -> tuple[object, object, object, object, object, object]:
-        return tuple(self)
+    def __iter__(self) -> Iterator:
+        yield from self.conv_velocities
+        yield self.fc_w_vel
+        yield self.fc_b_vel
 
 
-def upload_weights(w_conv1, w_conv2, w_conv3, w_conv4, fc_w, fc_b):
+def upload_weights(conv_arrays: list[np.ndarray], fc_w: np.ndarray, fc_b: np.ndarray) -> DeviceWeights:
     return DeviceWeights(
-        w_conv1=upload(w_conv1),
-        w_conv2=upload(w_conv2),
-        w_conv3=upload(w_conv3),
-        w_conv4=upload(w_conv4),
+        conv_weights=[upload(w) for w in conv_arrays],
         fc_w=upload(fc_w),
         fc_b=upload(fc_b),
     )
 
 
-def init_velocity_buffers():
+def init_velocity_buffers(geom: CudaNetGeometry) -> VelocityBuffers:
     return VelocityBuffers(
-        v_conv1=gpu_zeros(C1_OUT * C1_IN * KH * KW),
-        v_conv2=gpu_zeros(C2_OUT * C2_IN * KH * KW),
-        v_conv3=gpu_zeros(C3_OUT * C3_IN * KH * KW),
-        v_conv4=gpu_zeros(C4_OUT * C4_IN * KH * KW),
-        v_fc_w=gpu_zeros(10 * FC_IN),
-        v_fc_b=gpu_zeros(10),
+        conv_velocities=[gpu_zeros(s.weight_numel) for s in geom.conv_stages],
+        fc_w_vel=gpu_zeros(geom.fc_out * geom.fc_in),
+        fc_b_vel=gpu_zeros(geom.fc_out),
     )
 
 
-def save_checkpoint(path, epoch, val_acc, lr_conv1, lr_conv, lr_fc, device_weights):
-    d_w_conv1, d_w_conv2, d_w_conv3, d_w_conv4, d_fc_w, d_fc_b = device_weights
+def save_checkpoint(
+    path: str,
+    epoch: int,
+    val_acc: float,
+    lr_conv1: float,
+    lr_conv: float,
+    lr_fc: float,
+    device_weights: DeviceWeights,
+    geom: CudaNetGeometry,
+) -> None:
+    conv_data = {
+        f'w_conv{i + 1}': g2h(dw, s.weight_numel)
+        for i, (dw, s) in enumerate(zip(device_weights.conv_weights, geom.conv_stages))
+    }
     np.savez(
         path,
         epoch=np.int32(epoch),
@@ -72,38 +74,35 @@ def save_checkpoint(path, epoch, val_acc, lr_conv1, lr_conv, lr_fc, device_weigh
         lr_conv1=np.float32(lr_conv1),
         lr_conv=np.float32(lr_conv),
         lr_fc=np.float32(lr_fc),
-        w_conv1=g2h(d_w_conv1, C1_OUT * C1_IN * KH * KW),
-        w_conv2=g2h(d_w_conv2, C2_OUT * C2_IN * KH * KW),
-        w_conv3=g2h(d_w_conv3, C3_OUT * C3_IN * KH * KW),
-        w_conv4=g2h(d_w_conv4, C4_OUT * C4_IN * KH * KW),
-        fc_w=g2h(d_fc_w, 10 * FC_IN),
-        fc_b=g2h(d_fc_b, 10),
+        n_conv=np.int32(geom.n_conv),
+        fc_w=g2h(device_weights.fc_w, geom.fc_out * geom.fc_in),
+        fc_b=g2h(device_weights.fc_b, geom.fc_out),
+        **conv_data,
     )
 
 
-def reload_weights_from_checkpoint(path, device_weights):
+def reload_weights_from_checkpoint(
+    path: str,
+    device_weights: DeviceWeights,
+    geom: CudaNetGeometry,
+) -> tuple:
     ckpt = np.load(path)
-    fc_w = ckpt["fc_w"].astype(np.float32)
-    fc_b = ckpt["fc_b"].astype(np.float32)
-    uploaded: list[object] = []
+    conv_arrays = [ckpt[f'w_conv{i + 1}'].astype(np.float32) for i in range(geom.n_conv)]
+    fc_w = ckpt['fc_w'].astype(np.float32)
+    fc_b = ckpt['fc_b'].astype(np.float32)
+    uploaded: list = []
     try:
-        for array in (
-            ckpt["w_conv1"].astype(np.float32),
-            ckpt["w_conv2"].astype(np.float32),
-            ckpt["w_conv3"].astype(np.float32),
-            ckpt["w_conv4"].astype(np.float32),
-            fc_w,
-            fc_b,
-        ):
-            uploaded.append(upload(array))
-        new_device_weights = DeviceWeights(*uploaded)
+        for arr in (*conv_arrays, fc_w, fc_b):
+            uploaded.append(upload(arr))
+        new_dw = DeviceWeights(uploaded[: geom.n_conv], uploaded[-2], uploaded[-1])
     except Exception:
         free_weights(uploaded)
         raise
     free_weights(device_weights)
-    return ckpt, fc_w, fc_b, new_device_weights
+    return ckpt, fc_w, fc_b, new_dw
 
 
-def free_weights(device_weights):
+def free_weights(device_weights) -> None:
+    """Free all GPU pointers in device_weights (accepts DeviceWeights or a plain list)."""
     for ptr in device_weights:
         lib.gpu_free(ptr)

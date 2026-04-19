@@ -56,18 +56,18 @@ class OptimConfig:
 
 @dataclass
 class ModelConfig:
-    c1_in: int = 3
-    c1_out: int = 32
-    c2_in: int = 32
-    c2_out: int = 32
-    c3_in: int = 32
-    c3_out: int = 64
-    c4_in: int = 64
-    c4_out: int = 64
+    c_in: int = 3          # input channels
     h: int = 32
     w: int = 32
     kh: int = 3
     kw: int = 3
+    fc_out: int = 10       # number of output classes
+    conv_layers: list = field(default_factory=lambda: [
+        {'out_c': 32, 'pool': False},
+        {'out_c': 32, 'pool': True},
+        {'out_c': 64, 'pool': False},
+        {'out_c': 64, 'pool': True},
+    ])
 
 
 @dataclass

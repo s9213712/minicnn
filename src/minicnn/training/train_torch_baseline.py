@@ -101,7 +101,8 @@ class TorchCifarCnn(nn.Module):
 
 
 def load_initial_weights(model, device):
-    w_conv1, w_conv2, w_conv3, w_conv4, fc_w, fc_b = init_weights(INIT_SEED)
+    *conv_arrs, fc_w, fc_b = init_weights(INIT_SEED)
+    w_conv1, w_conv2, w_conv3, w_conv4 = conv_arrs
     with torch.no_grad():
         model.conv1.weight.copy_(torch.from_numpy(w_conv1.reshape(C1_OUT, C1_IN, KH, KW)).to(device))
         model.conv2.weight.copy_(torch.from_numpy(w_conv2.reshape(C2_OUT, C2_IN, KH, KW)).to(device))

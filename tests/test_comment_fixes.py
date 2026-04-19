@@ -128,12 +128,18 @@ def test_random_crop_batch_matches_reference_crop():
 def test_checkpoint_reload_is_transactional(tmp_path, monkeypatch):
     import minicnn.training.checkpoints as checkpoints
 
+    from minicnn.config.settings import get_arch
+    geom = get_arch()
+
     freed = []
     uploaded = []
-    old_weights = checkpoints.DeviceWeights('old1', 'old2', 'old3', 'old4', 'old5', 'old6')
+    old_weights = checkpoints.DeviceWeights(
+        ['old1', 'old2', 'old3', 'old4'], 'old5', 'old6'
+    )
     ckpt_path = tmp_path / 'weights.npz'
     np.savez(
         ckpt_path,
+        n_conv=np.int32(4),
         w_conv1=np.array([1], dtype=np.float32),
         w_conv2=np.array([2], dtype=np.float32),
         w_conv3=np.array([3], dtype=np.float32),
@@ -158,7 +164,7 @@ def test_checkpoint_reload_is_transactional(tmp_path, monkeypatch):
     monkeypatch.setattr(checkpoints, 'lib', Lib())
 
     try:
-        checkpoints.reload_weights_from_checkpoint(ckpt_path, old_weights)
+        checkpoints.reload_weights_from_checkpoint(ckpt_path, old_weights, geom)
     except RuntimeError:
         pass
     else:  # pragma: no cover
@@ -170,7 +176,7 @@ def test_checkpoint_reload_is_transactional(tmp_path, monkeypatch):
     uploaded.clear()
     monkeypatch.setattr(checkpoints, 'upload', lambda arr: uploaded.append(f'new{len(uploaded)}') or uploaded[-1])
 
-    _ckpt, _fc_w, _fc_b, new_weights = checkpoints.reload_weights_from_checkpoint(ckpt_path, old_weights)
+    _ckpt, _fc_w, _fc_b, new_weights = checkpoints.reload_weights_from_checkpoint(ckpt_path, old_weights, geom)
 
     assert isinstance(new_weights, checkpoints.DeviceWeights)
     assert list(new_weights) == ['new0', 'new1', 'new2', 'new3', 'new4', 'new5']
@@ -196,8 +202,11 @@ def test_workspace_uses_int_allocators_for_index_and_label_buffers(monkeypatch):
 
     workspace = cuda_workspace.BatchWorkspace()
 
-    assert workspace.d_max_idx1[0] == 'int'
-    assert workspace.d_max_idx2[0] == 'int'
+    # Default arch has pool at stages 1 and 3 (0-indexed)
+    pool_stages = [i for i, ptr in enumerate(workspace.d_max_idx) if ptr is not None]
+    assert len(pool_stages) >= 2, "Expected at least 2 pool stages in default arch"
+    assert workspace.d_max_idx[pool_stages[0]][0] == 'int'
+    assert workspace.d_max_idx[pool_stages[1]][0] == 'int'
     assert workspace.d_y[0] == 'int'
     assert workspace.d_correct[0] == 'int'
     assert float_allocs
