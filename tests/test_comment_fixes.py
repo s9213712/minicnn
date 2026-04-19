@@ -95,6 +95,9 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'compare' in help_text
     assert 'train-cuda' in help_text
     assert 'train-torch' in help_text
+    assert 'train-autograd' in help_text
+    assert 'validate-config' in help_text
+    assert 'compile' in help_text
 
 
 def test_random_crop_batch_matches_reference_crop():

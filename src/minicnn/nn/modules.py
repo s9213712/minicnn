@@ -20,11 +20,26 @@ class Module:
         self._modules[name] = module
         return module
 
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
+
+    def forward(self, *args, **kwargs):
+        raise NotImplementedError(f'{self.__class__.__name__}.forward() is not implemented')
+
     def parameters(self) -> list[Tensor]:
         params = list(self._parameters.values())
         for module in self._modules.values():
             params.extend(module.parameters())
         return params
+
+    def children(self) -> list['Module']:
+        return list(self._modules.values())
+
+    def modules(self) -> list['Module']:
+        modules = [self]
+        for module in self._modules.values():
+            modules.extend(module.modules())
+        return modules
 
     def named_parameters(self, prefix: str = '') -> list[tuple[str, Tensor]]:
         items: list[tuple[str, Tensor]] = []
@@ -60,3 +75,11 @@ class Sequential(Module):
 
     def __iter__(self) -> Iterable[Module]:
         return iter(self._modules.values())
+
+    def __getitem__(self, index: int) -> Module:
+        return list(self._modules.values())[index]
+
+    def forward(self, x: Tensor) -> Tensor:
+        for module in self._modules.values():
+            x = module(x)
+        return x

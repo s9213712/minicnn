@@ -1,9 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from contextlib import contextmanager
+from typing import Any, Callable, Iterator
 
 import numpy as np
+
+_grad_enabled = True
+
+
+@contextmanager
+def no_grad() -> Iterator[None]:
+    global _grad_enabled
+    prev = _grad_enabled
+    _grad_enabled = False
+    try:
+        yield
+    finally:
+        _grad_enabled = prev
+
+
+def is_grad_enabled() -> bool:
+    return _grad_enabled
 
 
 def _array(data: Any) -> np.ndarray:
@@ -22,6 +40,10 @@ def _unbroadcast(grad: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
         if size == 1 and grad.shape[axis] != 1:
             grad = grad.sum(axis=axis, keepdims=True)
     return grad.reshape(shape)
+
+
+def _requires_grad(*tensors: 'Tensor') -> bool:
+    return is_grad_enabled() and any(t.requires_grad for t in tensors)
 
 
 @dataclass(eq=False)
@@ -93,7 +115,7 @@ class Tensor:
 
     def __add__(self, other: Any) -> 'Tensor':
         other = other if isinstance(other, Tensor) else Tensor(other)
-        out = Tensor(self.data + other.data, requires_grad=self.requires_grad or other.requires_grad)
+        out = Tensor(self.data + other.data, requires_grad=_requires_grad(self, other))
         out._prev = {self, other}
         out._op = 'add'
 
@@ -116,7 +138,7 @@ class Tensor:
         return other + (-self)
 
     def __neg__(self) -> 'Tensor':
-        out = Tensor(-self.data, requires_grad=self.requires_grad)
+        out = Tensor(-self.data, requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'neg'
 
@@ -129,7 +151,7 @@ class Tensor:
 
     def __mul__(self, other: Any) -> 'Tensor':
         other = other if isinstance(other, Tensor) else Tensor(other)
-        out = Tensor(self.data * other.data, requires_grad=self.requires_grad or other.requires_grad)
+        out = Tensor(self.data * other.data, requires_grad=_requires_grad(self, other))
         out._prev = {self, other}
         out._op = 'mul'
 
@@ -153,7 +175,7 @@ class Tensor:
         return other * (self ** -1.0)
 
     def __pow__(self, power: float) -> 'Tensor':
-        out = Tensor(self.data ** power, requires_grad=self.requires_grad)
+        out = Tensor(self.data ** power, requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'pow'
 
@@ -166,7 +188,7 @@ class Tensor:
 
     def __matmul__(self, other: Any) -> 'Tensor':
         other = other if isinstance(other, Tensor) else Tensor(other)
-        out = Tensor(self.data @ other.data, requires_grad=self.requires_grad or other.requires_grad)
+        out = Tensor(self.data @ other.data, requires_grad=_requires_grad(self, other))
         out._prev = {self, other}
         out._op = 'matmul'
 
@@ -180,7 +202,7 @@ class Tensor:
         return out
 
     def sum(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> 'Tensor':
-        out = Tensor(self.data.sum(axis=axis, keepdims=keepdims), requires_grad=self.requires_grad)
+        out = Tensor(self.data.sum(axis=axis, keepdims=keepdims), requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'sum'
 
@@ -211,7 +233,7 @@ class Tensor:
     def reshape(self, *shape: int | tuple[int, ...]) -> 'Tensor':
         if len(shape) == 1 and isinstance(shape[0], tuple):
             shape = shape[0]
-        out = Tensor(self.data.reshape(shape), requires_grad=self.requires_grad)
+        out = Tensor(self.data.reshape(shape), requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'reshape'
 
@@ -223,7 +245,7 @@ class Tensor:
         return out
 
     def relu(self) -> 'Tensor':
-        out = Tensor(np.maximum(self.data, 0.0), requires_grad=self.requires_grad)
+        out = Tensor(np.maximum(self.data, 0.0), requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'relu'
 
@@ -236,7 +258,7 @@ class Tensor:
 
     def exp(self) -> 'Tensor':
         out_data = np.exp(self.data)
-        out = Tensor(out_data, requires_grad=self.requires_grad)
+        out = Tensor(out_data, requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'exp'
 
@@ -248,7 +270,7 @@ class Tensor:
         return out
 
     def log(self) -> 'Tensor':
-        out = Tensor(np.log(self.data), requires_grad=self.requires_grad)
+        out = Tensor(np.log(self.data), requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'log'
 
@@ -263,7 +285,7 @@ class Tensor:
         shifted = self.data - np.max(self.data, axis=axis, keepdims=True)
         logsumexp = np.log(np.exp(shifted).sum(axis=axis, keepdims=True))
         out_data = shifted - logsumexp
-        out = Tensor(out_data, requires_grad=self.requires_grad)
+        out = Tensor(out_data, requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'log_softmax'
 

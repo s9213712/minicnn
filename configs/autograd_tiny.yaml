@@ -1,0 +1,33 @@
+project:
+  name: minicnn-autograd
+  run_name: autograd-tiny
+  artifacts_root: artifacts
+
+dataset:
+  type: random
+  input_shape: [1, 4, 4]
+  num_classes: 2
+  num_samples: 16
+  val_samples: 8
+  seed: 7
+
+model:
+  input_shape: [1, 4, 4]
+  layers:
+    - type: Flatten
+    - type: Linear
+      out_features: 8
+    - type: ReLU
+    - type: Linear
+      out_features: 2
+
+train:
+  epochs: 1
+  batch_size: 4
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: SGD
+  lr: 0.01

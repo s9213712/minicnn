@@ -41,7 +41,7 @@ REQUIRED_SYMBOLS = (
 
 def resolve_library_path(path: str | os.PathLike[str] | None = None) -> str:
     if path is None:
-        path = os.environ.get('MINICNN_CUDA_SO')
+        path = os.environ.get('MINICNN_CUDA_SO') or os.environ.get('MINICNN_SO_PATH')
     if path is not None:
         raw = Path(path)
         if raw.name == str(path) and raw.name in NATIVE_VARIANTS:

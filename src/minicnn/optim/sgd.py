@@ -10,14 +10,13 @@ class SGD(Optimizer):
         self.weight_decay = weight_decay
 
     def step(self):
-        # Lightweight placeholder optimizer for the framework layer.
-        # The handwritten CUDA path still performs legacy stepping inside the backend adapter.
         updated = 0
         for p in self.params:
             if p.grad is None:
                 continue
             try:
-                p.data = p.data - self.lr * p.grad
+                grad = p.grad + self.weight_decay * p.data if self.weight_decay else p.grad
+                p.data = p.data - self.lr * grad
                 updated += 1
             except Exception:
                 # Keep optimizer layer non-fatal for metadata-only parameters.

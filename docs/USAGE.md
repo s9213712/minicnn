@@ -11,11 +11,11 @@
 5. [05_cpp_linking.md](05_cpp_linking.md)：C++ 如何連結 `.so`，以及最小 inference 範例。
 6. [06_layout_and_debug.md](06_layout_and_debug.md)：NCHW/CNHW layout 規則、常見錯誤、`cuda-memcheck` 驗證流程。
 7. [07_windows_build.md](07_windows_build.md)：Windows `.dll` 編譯流程與 PowerShell helper。
-8. [08_autograd.md](08_autograd.md)：MiniCNN 自己的 CPU/NumPy `Tensor`、`Parameter`、`backward()` 與輕量 `SGD` 用法。
+8. [08_autograd.md](08_autograd.md)：MiniCNN 自己的 CPU/NumPy `Tensor`、`Parameter`、`backward()`、layers、`SGD`/`Adam` 與 `train-autograd` 用法。
 
 目前專案中的 CIFAR-10 dual-backend 訓練入口是 `minicnn train-dual`。同一份 config 可以用 `engine.backend=torch` 跑 PyTorch 路徑，或用 `engine.backend=cuda_legacy` 跑手寫 CUDA `.so` 路徑。
 
-MiniCNN 另有自己的小型 autograd core，位於 `src/minicnn/nn/tensor.py`。它適合不依賴 torch 的 framework 測試與小型教學範例；正式 torch backend 仍使用 PyTorch autograd，CUDA legacy backend 仍使用 CUDA/C++ backward kernels。
+MiniCNN 另有自己的小型 CPU/NumPy autograd stack，位於 `src/minicnn/nn/tensor.py`、`src/minicnn/ops/` 與 `src/minicnn/nn/layers.py`。它適合不依賴 torch 的 framework 測試與小型教學範例；正式 torch backend 仍使用 PyTorch autograd，CUDA legacy backend 仍使用 CUDA/C++ backward kernels。
 
 CIFAR-10 trainer 目前使用 `conv_backward_precol`、`conv_update_fused` 與 `BatchWorkspace`。`USE_CUBLAS=1` 時 `gemm_forward` 與 conv weight gradient 走 cuBLAS 快速路徑；`USE_CUBLAS=0` 時走手寫 CUDA fallback。MNIST 教學仍偏向最小可讀範例；若要追求速度，請參考 CIFAR trainer 的 workspace 重用與 precol backward 寫法。
 
@@ -37,6 +37,7 @@ minicnn doctor
 ```bash
 minicnn train-torch --config configs/dual_backend_cnn.yaml train.epochs=1
 minicnn train-cuda --config configs/dual_backend_cnn.yaml train.epochs=1
+minicnn train-autograd --config configs/autograd_tiny.yaml train.epochs=1
 
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=cublas
@@ -46,6 +47,9 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
 
 minicnn compare --config configs/dual_backend_cnn.yaml \
   train.epochs=1 dataset.num_samples=128 dataset.val_samples=32 train.batch_size=32
+
+minicnn validate-config --config configs/dual_backend_cnn.yaml
+minicnn compile --config configs/autograd_tiny.yaml
 ```
 
 訓練產生的最佳模型檔固定寫入：
@@ -54,7 +58,7 @@ minicnn compare --config configs/dual_backend_cnn.yaml \
 src/minicnn/training/models/
 ```
 
-PyTorch backend 會寫入 `*_best.pt`，CUDA legacy backend 會寫入 `*_best_model_split.npz`。`artifacts/` 仍只保存 metrics 與 summary 等實驗紀錄。
+PyTorch backend 會寫入 `*_best.pt`，CUDA legacy backend 會寫入 `*_best_model_split.npz`，CPU/NumPy autograd trainer 會寫入 `*_autograd_best.npz`。`artifacts/` 仍只保存 metrics 與 summary 等實驗紀錄。
 
 `cuda_legacy` 的 `.so` 會 lazy-load：`minicnn --help`、`validate-dual-config`、`prepare-data`、torch backend、以及純 import 測試不會因為 native library 不存在而失敗。只有第一次真正呼叫 CUDA helper 時才會載入 `.so`。
 
@@ -76,7 +80,15 @@ MINICNN_EPOCHS=1 MINICNN_BATCH=32 MINICNN_N_TRAIN=128 MINICNN_N_VAL=32 \
 
 ## Backend smoke comparison
 
-2026-04-19 在 RTX 3050 Laptop GPU 上跑過以下 smoke tests：
+2026-04-19 在 RTX 3050 Laptop GPU 上跑過以下 smoke tests。最新完整矩陣使用 `features/backend-smoke-matrix/run_smoke_matrix.py`，`128` train、`32` validation、batch size `32`、`1` epoch：
+
+| Backend | Native variant | Train acc | Val acc | Test acc | Epoch time |
+|---|---|---:|---:|---:|---:|
+| `torch` | PyTorch CUDA | `11.72%` | `0.00%` | `10.36%` | `1.3s` |
+| `cuda_legacy` | `cublas` | `7.03%` | `6.25%` | `12.97%` | `0.2s` |
+| `cuda_legacy` | `handmade` | `7.03%` | `6.25%` | `12.97%` | `0.2s` |
+
+較早的 `256` train、`64` validation 指令如下，若要重跑可直接使用：
 
 ```bash
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
@@ -94,16 +106,6 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
   train.epochs=1 dataset.num_samples=256 dataset.val_samples=64 train.batch_size=64 \
   project.artifacts_root=/tmp/minicnn_backend_compare project.run_name=cuda-handmade-smoke
 ```
-
-結果：
-
-| Backend | Native variant | Train acc | Val acc | Test acc | Epoch time |
-|---|---|---:|---:|---:|---:|
-| `torch` | PyTorch CUDA | `10.16%` | `12.50%` | 此較早 run 未記錄 | 此較早 run 未記錄 |
-| `cuda_legacy` | `cublas` | `12.50%` | `20.31%` | `14.00%` | `0.1s` |
-| `cuda_legacy` | `handmade` | `12.50%` | `20.31%` | `14.00%` | `0.3s` |
-
-本次修改另以 `features/backend-smoke-matrix/run_smoke_matrix.py` 跑過更小的快速矩陣：`128` train、`32` validation、batch size `32`、`1` epoch。結果為 torch CUDA train_acc `11.72%` / val_acc `0.00%` / test_acc `10.36%` / epoch time `1.3s`，cuda_legacy cublas train_acc `7.03%` / val_acc `6.25%` / test_acc `12.97%` / epoch time `0.2s`，cuda_legacy handmade train_acc `7.03%` / val_acc `6.25%` / test_acc `12.97%` / epoch time `0.2s`。
 
 從乾淨環境重現 CIFAR-10 實驗時，先執行：
 

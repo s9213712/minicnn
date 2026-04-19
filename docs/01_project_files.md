@@ -29,13 +29,18 @@ minicnn/
 │   ├── libminimal_cuda_cnn_cublas.so
 │   └── libminimal_cuda_cnn_handmade.so
 ├── src/minicnn/
+│   ├── autograd/
 │   ├── cli.py
+│   ├── compiler/
 │   ├── core/
 │   ├── data/
 │   ├── flex/
 │   ├── framework/
+│   ├── models/
 │   ├── nn/
+│   ├── ops/
 │   ├── optim/
+│   ├── runtime/
 │   ├── training/
 │   │   └── models/
 │   └── unified/
@@ -81,16 +86,24 @@ minicnn/
 
 | 檔案 | 作用 |
 |---|---|
-| `src/minicnn/cli.py` | `minicnn` CLI entrypoint，提供 build、prepare-data、train-flex、train-dual、validate-dual-config 等命令。 |
+| `src/minicnn/cli.py` | `minicnn` CLI entrypoint，提供 build、prepare-data、train-flex、train-dual、train-autograd、compare、validate-config、compile 等命令。 |
+| `src/minicnn/autograd/` | `Tensor`、`Parameter`、`Function`、`Context`、`no_grad` 與 `backward` compatibility namespace。 |
+| `src/minicnn/compiler/` | 輕量 MiniCNN IR、config tracer、fusion 標記 pass、scheduler 與明確的 lowering 邊界。 |
 | `src/minicnn/core/build.py` | native CUDA shared library build/check wrapper，支援 default、cublas、handmade、both variants。 |
 | `src/minicnn/core/cuda_backend.py` | native CUDA library 的 lazy `ctypes` loader；非 CUDA 指令 import 時不會載入 `.so`。 |
+| `src/minicnn/core/fused_ops.py` | Conv2d + BatchNorm2d + ReLU fusion 語意的 NumPy reference helper。 |
 | `src/minicnn/data/` | CIFAR-10 準備與資料載入。 |
 | `src/minicnn/flex/` | PyTorch flexible config-driven model builder、registry、trainer。 |
+| `src/minicnn/models/` | CPU/NumPy MiniCNN model registry、shape inference、config builder 與 graph helper。 |
 | `src/minicnn/nn/` | MiniCNN framework layer，包含 `Module`、`Sequential`、`Tensor`、`Parameter` 與 CPU/NumPy autograd functions。 |
 | `src/minicnn/nn/tensor.py` | reverse-mode autograd engine；支援 arithmetic、broadcasting、matmul、reductions、reshape、ReLU、`log_softmax`、`cross_entropy` 與 `Tensor.backward()`。 |
-| `src/minicnn/optim/` | 輕量 optimizer 介面；`SGD` 可在不依賴 torch 的情況下更新 MiniCNN `Parameter`。 |
+| `src/minicnn/nn/layers.py` | CPU/NumPy MiniCNN layers：`Linear`、`Conv2d`、`MaxPool2d`、`BatchNorm2d`、`Flatten`、`ReLU`、`ResidualBlock`。 |
+| `src/minicnn/ops/` | MiniCNN layers 使用的 differentiable NumPy ops。 |
+| `src/minicnn/optim/` | 輕量 optimizer 介面；`SGD` 與 `Adam` 可在不依賴 torch 的情況下更新 MiniCNN `Parameter`。 |
+| `src/minicnn/runtime/` | 小型 graph executor、backend protocol、tensor memory pool、profiler utilities。 |
 | `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 `torch` 或 `cuda_legacy` backend。 |
 | `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 training loop 入口。 |
+| `src/minicnn/training/train_autograd.py` | random-data CPU/NumPy autograd training loop，輸出 `*_autograd_best.npz`。 |
 | `src/minicnn/training/cuda_ops.py` | legacy loop 使用的 CUDA copy、layout、forward wrapper。 |
 | `src/minicnn/training/cuda_workspace.py` | batch GPU workspace，重用每 batch buffer 並保護 double-free。 |
 | `src/minicnn/training/evaluation.py` | CUDA evaluation forward path 與 accuracy helper。 |

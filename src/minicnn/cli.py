@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from pathlib import Path
 
 from minicnn.core.build import build_native, check_native
 from minicnn.flex.config import load_flex_config, dump_template
@@ -39,6 +40,55 @@ def _load_unified_config_or_exit(config_path: str, overrides: list[str]) -> dict
         raise SystemExit(2)
 
 
+def _add_common_train_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument('--epochs', type=int)
+    parser.add_argument('--batch', type=int)
+    parser.add_argument('--lr-conv1', type=float)
+    parser.add_argument('--lr-conv', type=float)
+    parser.add_argument('--lr-fc', type=float)
+    parser.add_argument('--momentum', type=float)
+    parser.add_argument('--weight-decay', type=float)
+    parser.add_argument('--dataset-seed', type=int)
+    parser.add_argument('--init-seed', type=int)
+    parser.add_argument('--train-seed', type=int)
+    parser.add_argument('--data-dir', type=str)
+    parser.add_argument('--checkpoint-path', type=str)
+    parser.add_argument('--eval-max-batches', type=int)
+    parser.add_argument('--log-interval', type=int)
+    parser.add_argument('--grad-debug', action='store_true')
+    parser.add_argument('--grad-debug-batches', type=int)
+
+
+def _common_train_overrides(args) -> list[str]:
+    mapping = {
+        'epochs': 'train.epochs',
+        'batch': 'train.batch_size',
+        'lr_conv1': 'optimizer.lr_conv1',
+        'lr_conv': 'optimizer.lr_conv',
+        'lr_fc': 'optimizer.lr_fc',
+        'momentum': 'optimizer.momentum',
+        'weight_decay': 'optimizer.weight_decay',
+        'dataset_seed': 'dataset.seed',
+        'train_seed': 'train.seed',
+        'data_dir': 'dataset.data_root',
+        'eval_max_batches': 'train.eval_max_batches',
+        'log_interval': 'train.log_every',
+        'grad_debug_batches': 'runtime.grad_debug_batches',
+    }
+    overrides = []
+    for attr, key in mapping.items():
+        value = getattr(args, attr, None)
+        if value is not None:
+            overrides.append(f'{key}={value}')
+    if getattr(args, 'init_seed', None) is not None:
+        overrides.append(f'dataset.seed={args.init_seed}')
+    if getattr(args, 'checkpoint_path', None) is not None:
+        overrides.append(f'runtime.best_model_filename={args.checkpoint_path}')
+    if getattr(args, 'grad_debug', False):
+        overrides.append('runtime.grad_debug=true')
+    return overrides
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='minicnn', description='MiniCNN dual-backend CLI (pure handcrafted CUDA + PyTorch)')
     sub = parser.add_subparsers(dest='command', required=True)
@@ -66,23 +116,40 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_flex = sub.add_parser('train-flex', help='Train a configurable PyTorch model from YAML')
     p_flex.add_argument('--config', type=str, default='configs/flex_cnn.yaml')
+    _add_common_train_args(p_flex)
     p_flex.add_argument('overrides', nargs='*', help='Overrides like train.epochs=2 optimizer.lr=0.001')
 
     p_dual = sub.add_parser('train-dual', help='Train with one shared model config and switch backend via engine.backend')
     p_dual.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
+    _add_common_train_args(p_dual)
     p_dual.add_argument('overrides', nargs='*', help='Overrides like engine.backend=cuda_legacy train.epochs=2')
+
+    p_train = sub.add_parser('train', help='Alias for train-dual')
+    p_train.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
+    _add_common_train_args(p_train)
+    p_train.add_argument('overrides', nargs='*')
 
     p_train_cuda = sub.add_parser('train-cuda', help='Alias for train-dual with engine.backend=cuda_legacy')
     p_train_cuda.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
+    _add_common_train_args(p_train_cuda)
     p_train_cuda.add_argument('overrides', nargs='*')
 
     p_train_torch = sub.add_parser('train-torch', help='Alias for train-dual with engine.backend=torch')
     p_train_torch.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
+    _add_common_train_args(p_train_torch)
     p_train_torch.add_argument('overrides', nargs='*')
+
+    p_train_autograd = sub.add_parser('train-autograd', help='Train the CPU/NumPy MiniCNN autograd path')
+    p_train_autograd.add_argument('--config', type=str, default='configs/autograd_tiny.yaml')
+    _add_common_train_args(p_train_autograd)
+    p_train_autograd.add_argument('overrides', nargs='*')
 
     p_compare = sub.add_parser('compare', help='Run backend comparison with one shared config')
     p_compare.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
-    p_compare.add_argument('--backends', nargs='+', default=['torch', 'cuda_legacy'], choices=['torch', 'cuda_legacy'])
+    p_compare.add_argument('--backends', nargs='+', default=None, choices=['torch', 'cuda_legacy', 'autograd'])
+    p_compare.add_argument('--backend-a', choices=['torch', 'cuda_legacy', 'autograd'])
+    p_compare.add_argument('--backend-b', choices=['torch', 'cuda_legacy', 'autograd'])
+    _add_common_train_args(p_compare)
     p_compare.add_argument('overrides', nargs='*')
 
     p_validate = sub.add_parser('validate-dual-config', help='Validate whether a config can run on cuda_legacy')
@@ -92,6 +159,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_map = sub.add_parser('show-cuda-mapping', help='Show how a unified config maps onto the handcrafted CUDA backend')
     p_map.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
     p_map.add_argument('overrides', nargs='*')
+
+    p_validate_any = sub.add_parser('validate-config', help='Validate shared config shape and backend compatibility')
+    p_validate_any.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
+    p_validate_any.add_argument('overrides', nargs='*')
+
+    p_compile = sub.add_parser('compile', help='Trace and optimize a model config into MiniCNN IR')
+    p_compile.add_argument('--config', type=str, default='configs/autograd_tiny.yaml')
+    p_compile.add_argument('overrides', nargs='*')
     return parser
 
 
@@ -118,11 +193,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == 'info':
         from minicnn.config import settings
         from minicnn.core.cuda_backend import resolve_library_path
+        cuda_library = resolve_library_path()
         print(f'PROJECT_ROOT={PROJECT_ROOT}')
         print(f'CPP_ROOT={CPP_ROOT}')
         print(f'DATA_ROOT={DATA_ROOT}')
-        print(f'CUDA_LIBRARY={resolve_library_path()}')
-        print(f'Native library present={check_native()}')
+        print(f'CUDA_LIBRARY={cuda_library}')
+        print(f'Native library present={Path(cuda_library).exists()}')
         print('Resolved legacy settings:')
         print(json.dumps(settings.summarize(), indent=2))
         print(f'Health={healthcheck()}')
@@ -157,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == 'train-flex':
-        cfg = _load_flex_config_or_exit(args.config, args.overrides)
+        cfg = _load_flex_config_or_exit(args.config, [*_common_train_overrides(args), *args.overrides])
         run_dir = train_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
@@ -176,25 +252,40 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(summarize_legacy_mapping(cfg), indent=2))
         return 0
 
-    if args.command == 'train-dual':
-        cfg = _load_unified_config_or_exit(args.config, args.overrides)
+    if args.command in {'train', 'train-dual'}:
+        cfg = _load_unified_config_or_exit(args.config, [*_common_train_overrides(args), *args.overrides])
         run_dir = train_unified_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
 
     if args.command in {'train-cuda', 'train-torch'}:
         backend = 'cuda_legacy' if args.command == 'train-cuda' else 'torch'
-        cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *args.overrides])
+        cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *_common_train_overrides(args), *args.overrides])
         run_dir = train_unified_from_config(cfg)
+        print(f'Artifacts written to: {run_dir}')
+        return 0
+
+    if args.command == 'train-autograd':
+        from minicnn.flex.config import load_flex_config
+        from minicnn.training.train_autograd import train_autograd_from_config
+        cfg = load_flex_config(args.config if args.config else None, [*_common_train_overrides(args), *args.overrides])
+        run_dir = train_autograd_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
 
     if args.command == 'compare':
         rows = []
-        for backend in args.backends:
+        backends = args.backends or [b for b in (args.backend_a, args.backend_b) if b] or ['torch', 'cuda_legacy']
+        for backend in backends:
             t0 = time.perf_counter()
-            cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *args.overrides])
-            run_dir = train_unified_from_config(cfg)
+            if backend == 'autograd':
+                from minicnn.flex.config import load_flex_config
+                from minicnn.training.train_autograd import train_autograd_from_config
+                cfg = load_flex_config(args.config if args.config else None, [*_common_train_overrides(args), *args.overrides])
+                run_dir = train_autograd_from_config(cfg)
+            else:
+                cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *_common_train_overrides(args), *args.overrides])
+                run_dir = train_unified_from_config(cfg)
             elapsed = time.perf_counter() - t0
             summary_path = run_dir / 'summary.json'
             summary = json.loads(summary_path.read_text(encoding='utf-8')) if summary_path.exists() else {}
@@ -206,6 +297,19 @@ def main(argv: list[str] | None = None) -> int:
                 'elapsed_s': round(elapsed, 3),
             })
         print(json.dumps({'runs': rows}, indent=2))
+        return 0
+
+    if args.command == 'validate-config':
+        cfg = _load_unified_config_or_exit(args.config, args.overrides)
+        errors = validate_cuda_legacy_compatibility(cfg) if cfg.get('engine', {}).get('backend') == 'cuda_legacy' else []
+        print(json.dumps({'ok': not errors, 'errors': errors, 'backend': cfg.get('engine', {}).get('backend')}, indent=2))
+        return 0 if not errors else 2
+
+    if args.command == 'compile':
+        from minicnn.compiler import optimize, trace_model_config
+        cfg = _load_flex_config_or_exit(args.config, args.overrides)
+        graph = optimize(trace_model_config(cfg.get('model', {})))
+        print(json.dumps(graph.summary(), indent=2))
         return 0
 
     parser.print_help()
