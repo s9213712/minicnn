@@ -23,21 +23,16 @@ minicnn build --legacy-make --variant both --check
 ```
 
 ```bash
-minicnn train-dual --config configs/dual_backend_cnn.yaml \
-  engine.backend=torch train.epochs=1 dataset.num_samples=1024 dataset.val_samples=256
+minicnn compare --config configs/dual_backend_cnn.yaml \
+  --backends torch cuda_legacy \
+  train.epochs=1 train.batch_size=64 \
+  dataset.num_samples=1024 dataset.val_samples=256 \
+  project.artifacts_root=/tmp/minicnn_bench
 ```
 
-```bash
-minicnn train-dual --config configs/dual_backend_cnn.yaml \
-  engine.backend=cuda_legacy runtime.cuda_variant=cublas \
-  train.epochs=1 dataset.num_samples=1024 dataset.val_samples=256
-```
-
-```bash
-minicnn train-dual --config configs/dual_backend_cnn.yaml \
-  engine.backend=cuda_legacy runtime.cuda_variant=handmade \
-  train.epochs=1 dataset.num_samples=1024 dataset.val_samples=256
-```
+The `compare` output includes `avg_epoch_time_s`, `last_epoch_time_s`, and
+`samples_per_sec`. For CUDA native variant comparisons, run the command once
+with `runtime.cuda_variant=cublas` and once with `runtime.cuda_variant=handmade`.
 
 ## Results
 

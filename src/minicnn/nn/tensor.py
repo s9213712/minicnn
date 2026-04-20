@@ -175,7 +175,9 @@ class Tensor:
         return other * (self ** -1.0)
 
     def __pow__(self, power: float) -> 'Tensor':
-        out = Tensor(self.data ** power, requires_grad=_requires_grad(self))
+        with np.errstate(divide='ignore', invalid='ignore'):
+            data = self.data ** power
+        out = Tensor(data, requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'pow'
 
@@ -183,9 +185,13 @@ class Tensor:
             if out.grad is not None:
                 if power < 1.0:
                     # Avoid NaN at zero: treat gradient as 0 where base is 0.
-                    base_grad = np.where(self.data != 0.0, power * (self.data ** (power - 1.0)), 0.0)
+                    base_grad = np.zeros_like(self.data, dtype=np.float32)
+                    mask = self.data != 0.0
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        base_grad[mask] = power * (self.data[mask] ** (power - 1.0))
                 else:
-                    base_grad = power * (self.data ** (power - 1.0))
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        base_grad = power * (self.data ** (power - 1.0))
                 self._add_grad(out.grad * base_grad)
 
         out._backward = _backward

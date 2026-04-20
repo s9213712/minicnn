@@ -81,9 +81,12 @@ def test_sgd_momentum_two_steps_matches_expected_velocity():
 
 def test_pow_negative_exponent_zero_base_no_nan_grad():
     x = Tensor(np.array([0.0, 1.0, 2.0], dtype=np.float32), requires_grad=True)
-    y = (x ** -1.0).sum()
-    y.backward()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        y = (x ** -1.0).sum()
+        y.backward()
 
+    assert not caught
     assert not np.any(np.isnan(x.grad)), \
         "Gradient should not contain NaN for 0**-1"
     assert np.allclose(x.grad[1:], [-1.0, -0.25], atol=1e-6)
@@ -91,8 +94,12 @@ def test_pow_negative_exponent_zero_base_no_nan_grad():
 
 def test_pow_negative_exponent_zero_base_grad_is_zero():
     x = Tensor(np.array([0.0], dtype=np.float32), requires_grad=True)
-    y = (x ** -2.0).sum()
-    y.backward()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        y = (x ** -2.0).sum()
+        y.backward()
+
+    assert not caught
     assert x.grad[0] == 0.0
 
 

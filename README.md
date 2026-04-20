@@ -176,7 +176,8 @@ See [docs/backend_capabilities.md](docs/backend_capabilities.md) for the
 backend-by-backend support matrix.
 
 Use [docs/benchmark_report_template.md](docs/benchmark_report_template.md) when
-recording backend performance results.
+recording backend performance results. `minicnn compare` reports elapsed time,
+epoch time, and samples/sec fields that map directly into the template.
 
 ## Interactive tutorial
 

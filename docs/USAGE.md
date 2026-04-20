@@ -77,6 +77,10 @@ minicnn validate-config --config configs/dual_backend_cnn.yaml
 minicnn compile --config configs/autograd_tiny.yaml
 ```
 
+`compare` 會輸出每個 backend 的 `elapsed_s`、`avg_epoch_time_s`、
+`last_epoch_time_s`、`samples_per_sec`、train/val sample 數與 batch size，
+可直接填入 `docs/benchmark_report_template.md`。
+
 訓練產生的最佳模型檔固定寫入：
 
 ```text

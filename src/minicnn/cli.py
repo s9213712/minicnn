@@ -4,6 +4,7 @@ import argparse
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 from minicnn.core.build import build_native, check_native
 from minicnn.flex.config import load_flex_config, dump_template
@@ -14,6 +15,9 @@ from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
 from minicnn.unified.config import load_unified_config, dump_unified_template
 from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED, summarize_legacy_mapping, validate_cuda_legacy_compatibility
 from minicnn.unified.trainer import train_unified_from_config
+
+
+_COMPARE_BACKENDS = {'torch', 'cuda_legacy', 'autograd'}
 
 
 def _load_flex_config_or_exit(config_path: str, overrides: list[str]) -> dict:
@@ -89,6 +93,89 @@ def _common_train_overrides(args) -> list[str]:
     return overrides
 
 
+def _read_metrics(run_dir: Path) -> list[dict[str, Any]]:
+    metrics_path = run_dir / 'metrics.jsonl'
+    if not metrics_path.exists():
+        return []
+    rows = []
+    for line in metrics_path.read_text(encoding='utf-8').splitlines():
+        line = line.strip()
+        if line:
+            rows.append(json.loads(line))
+    return rows
+
+
+def _effective_train_samples(cfg: dict[str, Any]) -> int:
+    dataset_cfg = cfg.get('dataset', {})
+    train_cfg = cfg.get('train', {})
+    num_samples = int(dataset_cfg.get('num_samples', 0) or 0)
+    batch_size = int(train_cfg.get('batch_size', 0) or 0)
+    max_steps = train_cfg.get('max_steps_per_epoch')
+    if max_steps is not None and batch_size > 0:
+        capped = int(max_steps) * batch_size
+        return min(num_samples, capped) if num_samples > 0 else capped
+    return num_samples
+
+
+def _round_or_none(value: float | None, digits: int = 3) -> float | None:
+    return round(value, digits) if value is not None else None
+
+
+def _benchmark_fields(backend: str, cfg: dict[str, Any], run_dir: Path, elapsed_s: float) -> dict[str, Any]:
+    train_cfg = cfg.get('train', {})
+    dataset_cfg = cfg.get('dataset', {})
+    runtime_cfg = cfg.get('runtime', {})
+    metrics = _read_metrics(run_dir)
+    epoch_times = [
+        float(row['epoch_time_s'])
+        for row in metrics
+        if row.get('epoch_time_s') is not None
+    ]
+    avg_epoch_time = sum(epoch_times) / len(epoch_times) if epoch_times else None
+    train_samples = _effective_train_samples(cfg)
+    throughput_window = avg_epoch_time if avg_epoch_time and avg_epoch_time > 0 else elapsed_s
+    samples_per_sec = (
+        train_samples / throughput_window
+        if train_samples > 0 and throughput_window > 0
+        else None
+    )
+    if backend == 'cuda_legacy':
+        variant = runtime_cfg.get('cuda_variant')
+    elif backend == 'torch':
+        variant = train_cfg.get('device')
+    else:
+        variant = ''
+    return {
+        'variant': variant or '',
+        'train_samples': train_samples,
+        'val_samples': int(dataset_cfg.get('val_samples', 0) or 0),
+        'batch_size': int(train_cfg.get('batch_size', 0) or 0),
+        'epochs_requested': int(train_cfg.get('epochs', 0) or 0),
+        'epochs_completed': len(metrics) if metrics else None,
+        'avg_epoch_time_s': _round_or_none(avg_epoch_time, digits=6),
+        'last_epoch_time_s': _round_or_none(epoch_times[-1] if epoch_times else None, digits=6),
+        'samples_per_sec': _round_or_none(samples_per_sec),
+        'elapsed_s': round(elapsed_s, 3),
+    }
+
+
+def _compare_backends_and_overrides(args) -> tuple[list[str], list[str]]:
+    if args.backends:
+        backends = []
+        extra_overrides = []
+        for token in args.backends:
+            if token in _COMPARE_BACKENDS and not extra_overrides:
+                backends.append(token)
+            elif '=' in token:
+                extra_overrides.append(token)
+            else:
+                expected = ', '.join(sorted(_COMPARE_BACKENDS))
+                raise ValueError(f"invalid compare backend {token!r}; expected one of: {expected}")
+        return backends, [*extra_overrides, *args.overrides]
+    backends = [b for b in (args.backend_a, args.backend_b) if b] or ['torch', 'cuda_legacy']
+    return backends, args.overrides
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='minicnn', description='MiniCNN dual-backend CLI (pure handcrafted CUDA + PyTorch)')
     sub = parser.add_subparsers(dest='command', required=True)
@@ -147,7 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_compare = sub.add_parser('compare', help='Run backend comparison with one shared config')
     p_compare.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
-    p_compare.add_argument('--backends', nargs='+', default=None, choices=['torch', 'cuda_legacy', 'autograd'])
+    p_compare.add_argument('--backends', nargs='+', default=None, metavar='BACKEND')
     p_compare.add_argument('--backend-a', choices=['torch', 'cuda_legacy', 'autograd'])
     p_compare.add_argument('--backend-b', choices=['torch', 'cuda_legacy', 'autograd'])
     _add_common_train_args(p_compare)
@@ -276,26 +363,30 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == 'compare':
         rows = []
-        backends = args.backends or [b for b in (args.backend_a, args.backend_b) if b] or ['torch', 'cuda_legacy']
+        try:
+            backends, compare_overrides = _compare_backends_and_overrides(args)
+        except ValueError as exc:
+            parser.error(str(exc))
         for backend in backends:
             t0 = time.perf_counter()
             if backend == 'autograd':
                 from minicnn.training.train_autograd import train_autograd_from_config
-                cfg = load_flex_config(args.config if args.config else None, [*_common_train_overrides(args), *args.overrides])
+                cfg = load_flex_config(args.config if args.config else None, [*_common_train_overrides(args), *compare_overrides])
                 run_dir = train_autograd_from_config(cfg)
             else:
-                cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *_common_train_overrides(args), *args.overrides])
+                cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *_common_train_overrides(args), *compare_overrides])
                 run_dir = train_unified_from_config(cfg)
             elapsed = time.perf_counter() - t0
             summary_path = run_dir / 'summary.json'
             summary = json.loads(summary_path.read_text(encoding='utf-8')) if summary_path.exists() else {}
-            rows.append({
+            row = {
                 'backend': backend,
                 'run_dir': str(run_dir),
                 'best_model_path': summary.get('best_model_path'),
                 'test_acc': summary.get('test_acc'),
-                'elapsed_s': round(elapsed, 3),
-            })
+            }
+            row.update(_benchmark_fields(backend, cfg, run_dir, elapsed))
+            rows.append(row)
         print(json.dumps({'runs': rows}, indent=2))
         return 0
 

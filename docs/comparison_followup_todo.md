@@ -22,6 +22,12 @@ Torch/flex, CPU/NumPy autograd, and CUDA legacy.
 - [x] Add PyTorch parity tests for small autograd and CUDA kernel cases.
 - [x] Add a benchmark report template for samples/sec, epoch time, and GPU
   memory.
+- [x] Add benchmark fields to `minicnn compare` so users can fill the report
+  template without hand-computing epoch time or samples/sec.
+- [x] Fix `minicnn compare --backends ... key=value` parsing so backend lists
+  and config overrides can be used in the same command.
+- [x] Clean up `Tensor.__pow__` zero-base negative-exponent warnings while
+  preserving the existing zero-gradient behavior.
 
 ## Later CUDA Work
 
