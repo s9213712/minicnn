@@ -11,6 +11,9 @@
 #   1×28×28 → Conv(8,3×3) → 8×26×26 → Pool(2) → 8×13×13
 #           → Conv(16,3×3) → 16×11×11 → Pool(2) → 16×5×5
 #           → Flatten → 400 → Linear(10)
+#
+# Best checkpoints are written to src/minicnn/training/models/.
+# See templates/README.md for the trainer file map.
 
 project:
   name: minicnn

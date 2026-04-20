@@ -113,6 +113,11 @@ g++ examples/mnist_infer_demo.cpp \
 6. Update：目前建議用 `conv_update_fused` 更新 weights/bias，讓 weight decay、gradient clipping、Momentum update 都留在 GPU。每個 trainable buffer 需要一個同長度 velocity buffer，訓練開始前清為 0 並跨 batch 保留。若只做最小測試，可用 `apply_sgd_update` 或 `apply_momentum_update`。
 7. 訓練結束後釋放 workspace、weights、velocity；不要每個 batch 反覆釋放固定 shape 的暫存 buffer。
 
+Python 端的 CIFAR-10 CUDA orchestration 已拆到
+`src/minicnn/training/cuda_batch.py`。若要對照 C++ 訓練流程，可從
+`train_cuda_batch()`、`forward_convs()`、`backward_convs_update()` 看每個 C
+API 的呼叫順序。
+
 Momentum update 的 C ABI prototype：
 
 ```cpp

@@ -105,6 +105,19 @@ To add a stage, append an entry. To widen a stage, increase its `out_c`. Run
 `minicnn validate-dual-config --config configs/train_cuda.yaml` after editing
 to confirm the config is within the supported kernel subset.
 
+The legacy CUDA implementation is split by responsibility:
+
+- `src/minicnn/training/train_cuda.py` handles orchestration: data loading,
+  epochs, validation, checkpointing, LR reduction, early stop, and final test
+  evaluation.
+- `src/minicnn/training/cuda_batch.py` handles one training batch: conv
+  forward, FC forward, fused loss/accuracy, FC update, and conv backward/update.
+- `src/minicnn/training/loop.py` holds shared metrics, LR state, best/plateau
+  state, timing, and summary formatting used by both CUDA and Torch legacy
+  trainers.
+- `src/minicnn/training/legacy_data.py` holds shared CIFAR-10
+  load/normalization for the legacy trainers.
+
 ## Optimizer section
 
 ```yaml

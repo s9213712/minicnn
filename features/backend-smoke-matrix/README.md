@@ -50,6 +50,11 @@ src/minicnn/training/models/
 
 Use this after changing CUDA kernels, ctypes bindings, trainer scheduling, or backend config mapping. The goal is to catch obvious backend regressions quickly before running longer training.
 
+The supported trainer code lives under `src/minicnn/training/`: CUDA
+orchestration in `train_cuda.py`, CUDA batch device work in `cuda_batch.py`,
+Torch baseline orchestration in `train_torch_baseline.py`, and shared loop
+state in `loop.py`.
+
 ## Promotion Checklist
 
 - The command is useful across multiple changes.

@@ -358,10 +358,13 @@ minicnn/
 │   ├── optim/                         # MiniCNN SGD 與 Adam optimizer
 │   ├── runtime/                       # graph executor、backend protocol、memory pool、profiler
 │   ├── training/
-│   │   ├── train_cuda.py              # legacy CUDA CIFAR-10 training 入口
-│   │   ├── train_torch_baseline.py    # PyTorch baseline training 入口
+│   │   ├── train_cuda.py              # legacy CUDA CIFAR-10 orchestration 入口
+│   │   ├── cuda_batch.py              # CUDA batch forward/loss/backward/update 步驟
+│   │   ├── train_torch_baseline.py    # PyTorch baseline orchestration 入口
 │   │   ├── train_autograd.py          # CPU/NumPy autograd training 入口
 │   │   ├── models/                    # checkpoint 固定輸出資料夾
+│   │   ├── loop.py                    # 共用 metrics/LR/early-stop/epoch summary helper
+│   │   ├── legacy_data.py             # legacy trainer 共用 CIFAR-10 載入/normalize helper
 │   │   ├── cuda_ops.py                # CUDA copy/layout/forward helper wrapper
 │   │   ├── cuda_workspace.py          # 每個 batch 重用的 GPU workspace
 │   │   ├── evaluation.py              # CUDA eval forward/accuracy helper
@@ -407,14 +410,17 @@ minicnn/
 | `src/minicnn/ops/` | MiniCNN layers 使用的 differentiable NumPy ops。 |
 | `src/minicnn/optim/` | 輕量 optimizer 介面；`SGD` 與 `Adam` 可更新 MiniCNN `Parameter`，不需要 torch。 |
 | `src/minicnn/runtime/` | 小型 graph executor、backend protocol、tensor memory pool、profiler utilities。 |
-| `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 training loop 入口。 |
+| `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 orchestration 入口：資料、epoch、validation、checkpoint、LR reduction、early stop、final test evaluation。 |
+| `src/minicnn/training/cuda_batch.py` | CUDA backend 的 batch 級步驟：conv forward、FC forward、fused loss/accuracy、FC update、conv backward/update。 |
 | `src/minicnn/training/train_autograd.py` | random-data CPU/NumPy autograd training loop，輸出 `*_autograd_best.npz`。 |
 | `src/minicnn/training/models/` | 最佳模型 checkpoint 固定輸出位置；產生的 `*.pt` 與 `*.npz` 檔不進 git。 |
+| `src/minicnn/training/loop.py` | 共用訓練迴圈狀態：running metrics、分層 LR 狀態、best/plateau/early-stop 狀態、epoch timing、LR reduction、epoch summary formatting。 |
+| `src/minicnn/training/legacy_data.py` | legacy CUDA 與 Torch baseline 共用的 CIFAR-10 load/normalize helper。 |
 | `src/minicnn/training/cuda_ops.py` | legacy training loop 使用的小型 CUDA operation wrapper。 |
 | `src/minicnn/training/cuda_workspace.py` | 可重用 batch GPU workspace，含 double-free 保護。 |
 | `src/minicnn/training/evaluation.py` | CUDA evaluation forward path 與 accuracy helper。 |
 | `src/minicnn/training/checkpoints.py` | CUDA checkpoint save/reload 與 GPU pointer cleanup。 |
-| `src/minicnn/training/train_torch_baseline.py` | 對齊手寫 CUDA update 規則的 PyTorch baseline。 |
+| `src/minicnn/training/train_torch_baseline.py` | 對齊手寫 CUDA update 規則的 PyTorch baseline orchestration 與 batch helper。 |
 | `src/minicnn/unified/` | shared config compiler 與 `torch`/`cuda_legacy` dispatcher。 |
 | `tests/` | 不需 GPU 的 unit/smoke tests；真正 GPU 訓練用 CLI 指令另跑。 |
 

@@ -20,5 +20,6 @@ List which files are experimental and which production modules may eventually re
 - Supported implementation moved into `src/minicnn/`.
 - Tests moved or added under `tests/`.
 - README/docs updated.
+- Template docs/comments updated when user-facing training commands or outputs change.
 - `python3 -m pytest -q` passes.
 - Fallback path on `main` remains clear.

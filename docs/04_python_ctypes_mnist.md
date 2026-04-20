@@ -152,7 +152,7 @@ lib.conv_update_fused(
 )
 ```
 
-若只想做最小化測試，也可以繼續使用 `apply_sgd_update`。目前 CIFAR-10 trainer 預設使用 `conv_update_fused`，並用 `BatchWorkspace` 重用固定大小的 batch buffer。
+若只想做最小化測試，也可以繼續使用 `apply_sgd_update`。目前 CIFAR-10 trainer 預設使用 `conv_update_fused`，並用 `BatchWorkspace` 重用固定大小的 batch buffer。CIFAR-10 的 CUDA batch orchestration 已集中在 `src/minicnn/training/cuda_batch.py`；`train_cuda.py` 只負責 epoch、validation、checkpoint 與 final evaluation。
 
 ## 完整範例檔
 

@@ -2,15 +2,23 @@
 """PyTorch baseline with the same CIFAR-10 split, architecture, and initial weights."""
 
 import os
-import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
 
-from minicnn.data.cifar10 import load_cifar10, normalize_cifar
 from minicnn.models.initialization import init_weights
+from minicnn.training.legacy_data import load_normalized_cifar10
+from minicnn.training.loop import (
+    EpochTimer,
+    FitState,
+    LrState,
+    RunningMetrics,
+    format_epoch_summary,
+    reduce_lr_on_plateau,
+)
 from minicnn.config.settings import (
     BATCH,
     C1_IN,
@@ -47,13 +55,10 @@ from minicnn.config.settings import (
     MIN_DELTA,
     MIN_LR,
     MOMENTUM,
-    N_TRAIN,
-    N_VAL,
     P1H,
     P1W,
     P2H,
     P2W,
-    TRAIN_BATCH_IDS,
     TRAIN_SEED,
     W1,
     W2,
@@ -63,11 +68,19 @@ from minicnn.config.settings import (
 )
 
 
-from minicnn.paths import DATA_ROOT, ARTIFACTS_ROOT
+from minicnn.paths import ARTIFACTS_ROOT
 
 RUN_DIR = Path(os.environ.get('MINICNN_ARTIFACT_RUN_DIR', ARTIFACTS_ROOT / 'default'))
 RUN_DIR.mkdir(parents=True, exist_ok=True)
 BEST_MODEL_PATH = str(RUN_DIR / 'best_model_split_torch.pt')
+
+
+@dataclass
+class TorchRuntimeState:
+    model: nn.Module
+    velocity: dict
+    criterion: nn.Module
+    device: torch.device
 
 
 def get_device():
@@ -170,40 +183,24 @@ def evaluate(model, x, y, device, batch_size=BATCH, max_batches=EVAL_MAX_BATCHES
     return correct / total * 100
 
 
-def main():
-    device = get_device()
+def init_torch_runtime(device: torch.device) -> TorchRuntimeState:
     torch.manual_seed(INIT_SEED)
     if device.type == "cuda":
         torch.cuda.manual_seed_all(INIT_SEED)
 
-    data_root = str(DATA_ROOT)
-    x_train, y_train, x_val, y_val, x_test_final, y_test_final = load_cifar10(
-        data_root,
-        n_train=N_TRAIN,
-        n_val=N_VAL,
-        seed=DATASET_SEED,
-        train_batch_ids=TRAIN_BATCH_IDS,
-    )
-    x_train = normalize_cifar(x_train)
-    x_val = normalize_cifar(x_val)
-    x_test_final = normalize_cifar(x_test_final)
-
     model = TorchCifarCnn().to(device)
     load_initial_weights(model, device)
-    velocity = init_velocity_buffers(model)
-    criterion = nn.CrossEntropyLoss()
+    return TorchRuntimeState(
+        model=model,
+        velocity=init_velocity_buffers(model),
+        criterion=nn.CrossEntropyLoss(),
+        device=device,
+    )
 
-    nbatches = (x_train.shape[0] + BATCH - 1) // BATCH
-    best_val_acc = -1.0
-    best_epoch = -1
-    epochs_no_improve = 0
-    plateau_count = 0
-    current_lr_conv1 = LR_CONV1
-    current_lr_conv = LR_CONV
-    current_lr_fc = LR_FC
 
+def print_training_header(device: torch.device, x_train: np.ndarray, x_val: np.ndarray, x_test: np.ndarray) -> None:
     print(f"Device: {device}")
-    print(f"Train: {x_train.shape[0]}, Val: {x_val.shape[0]}, Test(official): {x_test_final.shape[0]}")
+    print(f"Train: {x_train.shape[0]}, Val: {x_val.shape[0]}, Test(official): {x_test.shape[0]}")
     print(
         "Arch: Conv1(3->32)->Conv2(32->32)->Pool1"
         f"->Conv3(32->64)->Conv4(64->64)->Pool2->FC({FC_IN}->10)"
@@ -218,107 +215,151 @@ def main():
     )
     print(f"DATASET_SEED={DATASET_SEED}, INIT_SEED={INIT_SEED}, TRAIN_SEED={TRAIN_SEED}")
     print()
+
+
+def prepare_augmented_batch(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    indices: np.ndarray,
+    idx_s: int,
+    idx_e: int,
+    train_rng: np.random.Generator,
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    x = x_train[indices[idx_s:idx_e]]
+    y = y_train[indices[idx_s:idx_e]]
+
+    flip_mask = train_rng.random(len(x)) > 0.5
+    x = x.copy()
+    if flip_mask.any():
+        x[flip_mask] = x[flip_mask, :, :, ::-1]
+
+    xb = torch.from_numpy(x).to(device)
+    yb = torch.from_numpy(y.astype(np.int64, copy=False)).to(device)
+    return xb, yb
+
+
+def train_torch_batch(
+    runtime: TorchRuntimeState,
+    xb: torch.Tensor,
+    yb: torch.Tensor,
+    lr_state: LrState,
+    metrics: RunningMetrics,
+) -> float:
+    logits = runtime.model(xb, clamp_pool_grad=True)
+    loss = runtime.criterion(logits, yb)
+    loss.backward()
+    apply_momentum_update(runtime.model, runtime.velocity, lr_state.conv1, lr_state.conv, lr_state.fc)
+
+    pred = torch.argmax(logits.detach(), dim=1)
+    batch_loss = float(loss.detach().cpu().item())
+    metrics.update(
+        batch_loss * xb.shape[0],
+        int((pred == yb).sum().detach().cpu().item()),
+        xb.shape[0],
+    )
+    return batch_loss
+
+
+def run_torch_epoch(
+    runtime: TorchRuntimeState,
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    train_rng: np.random.Generator,
+    lr_state: LrState,
+) -> RunningMetrics:
+    runtime.model.train()
+    metrics = RunningMetrics()
+    indices = train_rng.permutation(x_train.shape[0])
+    nbatches = (x_train.shape[0] + BATCH - 1) // BATCH
+
+    for batch_idx in range(nbatches):
+        idx_s = batch_idx * BATCH
+        idx_e = min(idx_s + BATCH, x_train.shape[0])
+        if idx_s >= idx_e:
+            continue
+
+        xb, yb = prepare_augmented_batch(
+            x_train, y_train, indices, idx_s, idx_e, train_rng, runtime.device
+        )
+        batch_loss = train_torch_batch(runtime, xb, yb, lr_state, metrics)
+
+        if (batch_idx + 1) % 100 == 0:
+            print(
+                f"  Batch {batch_idx+1}/{nbatches}: "
+                f"loss={batch_loss:.4f}, "
+                f"acc={metrics.acc_percent:.1f}%"
+            )
+
+    return metrics
+
+
+def save_best_checkpoint(epoch: int, val_acc: float, lr_state: LrState, runtime: TorchRuntimeState) -> None:
+    torch.save(
+        {
+            "epoch": int(epoch),
+            "val_acc": float(val_acc),
+            "lr_conv1": float(lr_state.conv1),
+            "lr_conv": float(lr_state.conv),
+            "lr_fc": float(lr_state.fc),
+            "model_state": runtime.model.state_dict(),
+        },
+        BEST_MODEL_PATH,
+    )
+
+
+def reduce_lr_if_due(fit: FitState, lr_state: LrState) -> None:
+    if reduce_lr_on_plateau(fit, lr_state, LR_PLATEAU_PATIENCE, LR_REDUCE_FACTOR, MIN_LR):
+        print(
+            f"  LR reduced -> conv1={lr_state.conv1:.6f}, "
+            f"conv={lr_state.conv:.6f}, fc={lr_state.fc:.6f}"
+        )
+
+
+def run_final_evaluation(runtime: TorchRuntimeState, x_test: np.ndarray, y_test: np.ndarray) -> None:
+    print("\n=== FINAL EVALUATION ON OFFICIAL TEST SET ===")
+    if os.path.exists(BEST_MODEL_PATH):
+        ckpt = torch.load(BEST_MODEL_PATH, map_location=runtime.device)
+        runtime.model.load_state_dict(ckpt["model_state"])
+        print(f"Reloaded best checkpoint from epoch {int(ckpt['epoch'])} with Val={float(ckpt['val_acc']):.2f}%")
+    test_acc = evaluate(runtime.model, x_test, y_test, runtime.device)
+    print(f"Test Accuracy: {test_acc:.2f}%")
+
+
+def main():
+    device = get_device()
+    x_train, y_train, x_val, y_val, x_test_final, y_test_final = load_normalized_cifar10()
+    runtime = init_torch_runtime(device)
+    fit = FitState()
+    lr_state = LrState(LR_CONV1, LR_CONV, LR_FC)
+    print_training_header(device, x_train, x_val, x_test_final)
     train_rng = np.random.default_rng(TRAIN_SEED)
 
     for epoch in range(EPOCHS):
-        t0 = time.time()
-        model.train()
-        total_loss = 0.0
-        correct = 0
-        total_seen = 0
-        indices = train_rng.permutation(x_train.shape[0])
-
-        for batch_idx in range(nbatches):
-            idx_s = batch_idx * BATCH
-            idx_e = min(idx_s + BATCH, x_train.shape[0])
-            if idx_s >= idx_e:
-                continue
-            x = x_train[indices[idx_s:idx_e]]
-            y = y_train[indices[idx_s:idx_e]]
-
-            flip_mask = train_rng.random(len(x)) > 0.5
-            x = x.copy()
-            if flip_mask.any():
-                x[flip_mask] = x[flip_mask, :, :, ::-1]
-
-            xb = torch.from_numpy(x).to(device)
-            yb = torch.from_numpy(y.astype(np.int64, copy=False)).to(device)
-
-            logits = model(xb, clamp_pool_grad=True)
-            loss = criterion(logits, yb)
-            loss.backward()
-            apply_momentum_update(model, velocity, current_lr_conv1, current_lr_conv, current_lr_fc)
-
-            n = idx_e - idx_s
-            total_loss += float(loss.detach().cpu().item()) * n
-            pred = torch.argmax(logits.detach(), dim=1)
-            correct += int((pred == yb).sum().detach().cpu().item())
-            total_seen += n
-
-            if (batch_idx + 1) % 100 == 0:
-                acc = correct / total_seen * 100
-                print(f"  Batch {batch_idx+1}/{nbatches}: loss={float(loss.detach().cpu().item()):.4f}, acc={acc:.1f}%")
-
-        train_acc = correct / total_seen * 100
-        val_acc = evaluate(model, x_val, y_val, device)
-        epoch_loss = total_loss / total_seen
-        elapsed = time.time() - t0
-        improved = val_acc > (best_val_acc + MIN_DELTA)
+        with EpochTimer() as timer:
+            metrics = run_torch_epoch(runtime, x_train, y_train, train_rng, lr_state)
+            val_acc = evaluate(runtime.model, x_val, y_val, runtime.device)
+            improved = fit.observe(epoch + 1, val_acc, MIN_DELTA)
 
         if improved:
-            best_val_acc = val_acc
-            best_epoch = epoch + 1
-            epochs_no_improve = 0
-            plateau_count = 0
-            torch.save(
-                {
-                    "epoch": int(epoch + 1),
-                    "val_acc": float(val_acc),
-                    "lr_conv1": float(current_lr_conv1),
-                    "lr_conv": float(current_lr_conv),
-                    "lr_fc": float(current_lr_fc),
-                    "model_state": model.state_dict(),
-                },
-                BEST_MODEL_PATH,
-            )
+            save_best_checkpoint(epoch + 1, val_acc, lr_state, runtime)
             save_msg = " [saved best]"
         else:
-            epochs_no_improve += 1
-            plateau_count += 1
             save_msg = ""
 
-        if plateau_count >= LR_PLATEAU_PATIENCE:
-            new_lr_conv1 = max(current_lr_conv1 * LR_REDUCE_FACTOR, MIN_LR)
-            new_lr_conv = max(current_lr_conv * LR_REDUCE_FACTOR, MIN_LR)
-            new_lr_fc = max(current_lr_fc * LR_REDUCE_FACTOR, MIN_LR)
-            if (new_lr_conv1, new_lr_conv, new_lr_fc) != (current_lr_conv1, current_lr_conv, current_lr_fc):
-                current_lr_conv1 = new_lr_conv1
-                current_lr_conv = new_lr_conv
-                current_lr_fc = new_lr_fc
-                print(
-                    f"  LR reduced -> conv1={current_lr_conv1:.6f}, "
-                    f"conv={current_lr_conv:.6f}, fc={current_lr_fc:.6f}"
-                )
-            plateau_count = 0
+        reduce_lr_if_due(fit, lr_state)
+        print(format_epoch_summary(
+            epoch + 1, EPOCHS, metrics, val_acc, fit, lr_state, timer.elapsed, save_msg
+        ))
 
-        print(
-            f"Epoch {epoch+1}/{EPOCHS}: Loss={epoch_loss:.4f}, Train={train_acc:.2f}%, Val={val_acc:.2f}%, "
-            f"BestVal={best_val_acc:.2f}% @ {best_epoch}, "
-            f"LRs=({current_lr_conv1:.6f}, {current_lr_conv:.6f}, {current_lr_fc:.6f}), "
-            f"Time={elapsed:.1f}s{save_msg}"
-        )
-
-        if epochs_no_improve >= EARLY_STOP_PATIENCE:
-            print(f"Early stopping after {epoch+1} epochs; best val {best_val_acc:.2f}% at epoch {best_epoch}.")
+        if fit.should_stop(EARLY_STOP_PATIENCE):
+            print(
+                f"Early stopping after {epoch+1} epochs; "
+                f"best val {fit.best_val_acc:.2f}% at epoch {fit.best_epoch}."
+            )
             break
 
-    print("\n=== FINAL EVALUATION ON OFFICIAL TEST SET ===")
-    if os.path.exists(BEST_MODEL_PATH):
-        ckpt = torch.load(BEST_MODEL_PATH, map_location=device)
-        model.load_state_dict(ckpt["model_state"])
-        print(f"Reloaded best checkpoint from epoch {int(ckpt['epoch'])} with Val={float(ckpt['val_acc']):.2f}%")
-    test_acc = evaluate(model, x_test_final, y_test_final, device)
-    print(f"Test Accuracy: {test_acc:.2f}%")
+    run_final_evaluation(runtime, x_test_final, y_test_final)
     print("\nDone!")
 
 

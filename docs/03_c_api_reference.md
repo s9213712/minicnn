@@ -165,7 +165,9 @@ void count_correct(float* logits, int* labels, int* correct_count,
                    int N, int features);
 ```
 
-`softmax_xent_grad_loss_acc` 是目前 CIFAR trainer 使用的 fused loss helper：
+`softmax_xent_grad_loss_acc` 是目前 CIFAR trainer 使用的 fused loss helper。
+Python orchestration 位於 `src/minicnn/training/cuda_batch.py` 的
+`compute_loss_and_metrics()`，而 `train_cuda.py` 只負責高層 epoch 流程：
 
 ```text
 probs = softmax(logits)

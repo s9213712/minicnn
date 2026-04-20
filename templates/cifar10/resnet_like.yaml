@@ -7,6 +7,9 @@
 #
 # Run:
 #   minicnn train-flex --config templates/cifar10/resnet_like.yaml
+#
+# Best checkpoints are written to src/minicnn/training/models/.
+# See templates/README.md for the trainer file map.
 
 project:
   name: minicnn

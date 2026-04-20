@@ -36,6 +36,20 @@ minicnn prepare-data
 
 MNIST 的範本設有 `dataset.download: true`，第一次執行時會自動下載（約 11 MB）。
 
+## 訓練程式位置
+
+範本只需要改 YAML；訓練程式已拆成固定模組：
+
+| 路徑 | 用途 |
+|---|---|
+| `src/minicnn/training/train_cuda.py` | CUDA legacy orchestration：資料、epoch、validation、checkpoint、LR reduction、early stop、final test。 |
+| `src/minicnn/training/cuda_batch.py` | CUDA batch 級 forward/loss/backward/update。 |
+| `src/minicnn/training/train_torch_baseline.py` | 對齊 CUDA update 規則的 Torch baseline orchestration 與 batch helper。 |
+| `src/minicnn/training/loop.py` | CUDA legacy 與 Torch baseline 共用的 metrics、LR、best/plateau/early-stop、epoch summary helper。 |
+| `src/minicnn/training/legacy_data.py` | CUDA legacy 與 Torch baseline 共用的 CIFAR-10 載入與 normalize helper。 |
+
+最佳模型一律輸出到 `src/minicnn/training/models/`；template 的 `project.artifacts_root` 只影響 metrics、summary 與 run artifacts。
+
 ---
 
 ## CIFAR-10 範本

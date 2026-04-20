@@ -26,7 +26,11 @@ minicnn train-dual --config templates/cifar10/vgg_mini_cuda.yaml engine.backend=
 
 MiniCNN 另有自己的小型 CPU/NumPy autograd stack，位於 `src/minicnn/nn/tensor.py`、`src/minicnn/ops/` 與 `src/minicnn/nn/layers.py`。它適合不依賴 torch 的 framework 測試與小型教學範例；正式 torch backend 仍使用 PyTorch autograd，CUDA legacy backend 仍使用 CUDA/C++ backward kernels。
 
-CIFAR-10 trainer 目前使用 `conv_backward_precol`、`conv_update_fused` 與 `BatchWorkspace`。`USE_CUBLAS=1` 時 `gemm_forward` 與 conv weight gradient 走 cuBLAS 快速路徑；`USE_CUBLAS=0` 時走手寫 CUDA fallback。MNIST 教學的最小版本是 `docs/train_mnist_so.py`；較乾淨的重構版本是 `docs/train_mnist_so_full_cnn_frame.py`，它把 CUDA orchestration 拆成 `ConvBlock`、`DenseLayer`、dataclass cache、shape helper 與獨立 `SgdOptimizer`。
+CIFAR-10 legacy trainer 已拆成明確模組。`src/minicnn/training/train_cuda.py` 只負責資料、epoch、validation、checkpoint、LR reduction、early stop 與 final test evaluation；CUDA batch 級的 conv forward、FC forward、fused loss/accuracy、FC update、conv backward/update 放在 `src/minicnn/training/cuda_batch.py`。Torch baseline 的 batch 準備、單步訓練與 epoch loop 在 `src/minicnn/training/train_torch_baseline.py` 中分成 `prepare_augmented_batch()`、`train_torch_batch()` 與 `run_torch_epoch()`。
+
+兩個 legacy trainer 共用 `src/minicnn/training/legacy_data.py` 載入/normalize CIFAR-10，並共用 `src/minicnn/training/loop.py` 的 `RunningMetrics`、`LrState`、`FitState`、`EpochTimer`、plateau LR reduction 與 epoch summary formatter。CUDA 路徑仍使用 `conv_backward_precol`、`conv_update_fused` 與 `BatchWorkspace`；`USE_CUBLAS=1` 時 `gemm_forward` 與 conv weight gradient 走 cuBLAS 快速路徑，`USE_CUBLAS=0` 時走手寫 CUDA fallback。
+
+MNIST 教學的最小版本是 `docs/train_mnist_so.py`；較乾淨的重構版本是 `docs/train_mnist_so_full_cnn_frame.py`，它把 CUDA orchestration 拆成 `ConvBlock`、`DenseLayer`、dataclass cache、shape helper 與獨立 `SgdOptimizer`。
 
 若要同時編譯兩種 native backend：
 

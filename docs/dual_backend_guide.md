@@ -24,6 +24,23 @@ minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 ```
 
+## Training implementation layout
+
+The public command stays `minicnn train-dual`, but the legacy trainers are split
+internally:
+
+- `src/minicnn/training/train_cuda.py`: CUDA legacy orchestration for data,
+  epochs, validation, checkpointing, LR reduction, early stop, and final test.
+- `src/minicnn/training/cuda_batch.py`: one CUDA batch of conv forward, FC
+  forward, fused loss/accuracy, FC update, and conv backward/update.
+- `src/minicnn/training/train_torch_baseline.py`: Torch baseline runtime,
+  batch preparation, one-step training, epoch loop, checkpointing, and final
+  evaluation.
+- `src/minicnn/training/loop.py`: shared metrics, LR state, best/plateau state,
+  epoch timing, LR plateau reduction, and epoch summary formatting.
+- `src/minicnn/training/legacy_data.py`: shared CIFAR-10 load/normalize helper
+  for CUDA legacy and Torch baseline.
+
 ## Changing network architecture
 
 The two backends use separate config keys — no Python file changes are needed for either.

@@ -42,6 +42,11 @@ minicnn/
 │   ├── optim/
 │   ├── runtime/
 │   ├── training/
+│   │   ├── cuda_batch.py
+│   │   ├── legacy_data.py
+│   │   ├── loop.py
+│   │   ├── train_cuda.py
+│   │   ├── train_torch_baseline.py
 │   │   └── models/
 │   └── unified/
 ├── configs/
@@ -102,11 +107,14 @@ minicnn/
 | `src/minicnn/optim/` | 輕量 optimizer 介面；`SGD` 與 `Adam` 可在不依賴 torch 的情況下更新 MiniCNN `Parameter`。 |
 | `src/minicnn/runtime/` | 小型 graph executor、backend protocol、tensor memory pool、profiler utilities。 |
 | `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 `torch` 或 `cuda_legacy` backend。 |
-| `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 training loop 入口。 |
+| `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 orchestration 入口：資料、epoch、validation、checkpoint、LR reduction、early stop、final test evaluation。 |
+| `src/minicnn/training/cuda_batch.py` | CUDA batch 級 forward/loss/backward/update 步驟。`train_cuda.py` 呼叫這裡，避免訓練控制流程混入 kernel orchestration 細節。 |
 | `src/minicnn/training/train_autograd.py` | random-data CPU/NumPy autograd training loop，輸出 `*_autograd_best.npz`。 |
+| `src/minicnn/training/loop.py` | 共用訓練狀態與格式化 helper：`RunningMetrics`、`LrState`、`FitState`、`EpochTimer`、LR plateau reduction、epoch summary。 |
+| `src/minicnn/training/legacy_data.py` | legacy CUDA 與 Torch baseline 共用的 CIFAR-10 load/normalize helper。 |
 | `src/minicnn/training/cuda_ops.py` | legacy loop 使用的 CUDA copy、layout、forward wrapper。 |
 | `src/minicnn/training/cuda_workspace.py` | batch GPU workspace，重用每 batch buffer 並保護 double-free。 |
 | `src/minicnn/training/evaluation.py` | CUDA evaluation forward path 與 accuracy helper。 |
 | `src/minicnn/training/checkpoints.py` | CUDA checkpoint save/reload 與 GPU pointer cleanup。 |
-| `src/minicnn/training/train_torch_baseline.py` | 對齊 CUDA update 規則的 PyTorch baseline。 |
+| `src/minicnn/training/train_torch_baseline.py` | 對齊 CUDA update 規則的 PyTorch baseline orchestration 與 batch helper。 |
 | `src/minicnn/training/models/` | 最佳模型固定輸出位置；PyTorch 寫 `*.pt`，CUDA legacy 寫 `*.npz`。 |

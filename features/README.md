@@ -9,6 +9,9 @@ Rules:
 - Do not make production CLI commands import from `features/` by default.
 - If an experiment fails, delete or archive only that feature folder and keep `main` stable.
 - If an experiment succeeds, move the supported code into `src/minicnn/`, move tests into `tests/`, and update README/docs.
+- If the experiment changes training behavior, also update `templates/README.md`
+  and any affected template YAML comments so users can find the right trainer
+  entrypoint and checkpoint location.
 - Use a Git branch for every feature. For large rewrites, prefer `git worktree`.
 
 Recommended branch workflow:

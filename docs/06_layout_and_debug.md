@@ -155,6 +155,6 @@ cuda-memcheck python3 -u your_script.py
 1. 只跑 FC baseline，確認 loss 會下降。
 2. 加 Conv + ReLU，不加 Pool。
 3. 再加 Pool。
-4. 每一步都檢查 gradient scale。`conv_backward`/`conv_backward_precol` 的 weight gradient 會累加傳入的 `grad_out`，目前 CIFAR trainer 會先在 logits gradient 做 batch mean，再交給後續 backward。
+4. 每一步都檢查 gradient scale。`conv_backward`/`conv_backward_precol` 的 weight gradient 會累加傳入的 `grad_out`，目前 CIFAR trainer 會先在 logits gradient 做 batch mean，再交給後續 backward。CUDA batch 呼叫順序集中在 `src/minicnn/training/cuda_batch.py`，可從 `train_cuda_batch()` 往下追。
 5. 使用 Momentum SGD 時，velocity buffer 不能每個 batch 重設；它必須從訓練開始保留到訓練結束。
 6. 若改到 loss，優先檢查 `softmax_xent_grad_loss_acc` 是否輸出合理的 loss scalar、correct count 與 `(probs - one_hot) / N`。

@@ -358,10 +358,13 @@ minicnn/
 │   ├── optim/                         # MiniCNN SGD and Adam optimizers
 │   ├── runtime/                       # graph executor, backend protocol, memory pool, profiler
 │   ├── training/
-│   │   ├── train_cuda.py              # legacy CUDA CIFAR-10 training entrypoint
-│   │   ├── train_torch_baseline.py    # PyTorch baseline training entrypoint
+│   │   ├── train_cuda.py              # legacy CUDA CIFAR-10 orchestration entrypoint
+│   │   ├── cuda_batch.py              # CUDA batch forward/loss/backward/update steps
+│   │   ├── train_torch_baseline.py    # PyTorch baseline orchestration entrypoint
 │   │   ├── train_autograd.py          # CPU/NumPy autograd training entrypoint
 │   │   ├── models/                    # fixed checkpoint output folder
+│   │   ├── loop.py                    # shared metrics/LR/early-stop/epoch summary helpers
+│   │   ├── legacy_data.py             # shared CIFAR-10 loading/normalization for legacy trainers
 │   │   ├── cuda_ops.py                # CUDA copy/layout/forward helper wrappers
 │   │   ├── cuda_workspace.py          # reusable per-batch GPU workspace
 │   │   ├── evaluation.py              # CUDA eval forward/accuracy helpers
@@ -407,14 +410,17 @@ Key folder and file responsibilities:
 | `src/minicnn/ops/` | Differentiable NumPy ops used by MiniCNN layers. |
 | `src/minicnn/optim/` | Lightweight optimizer interfaces; `SGD` and `Adam` update MiniCNN `Parameter` objects without requiring torch. |
 | `src/minicnn/runtime/` | Small graph executor, backend protocol, tensor memory pool, and profiler utilities. |
-| `src/minicnn/training/train_cuda.py` | Legacy CUDA CIFAR-10 training loop entrypoint. |
+| `src/minicnn/training/train_cuda.py` | Legacy CUDA CIFAR-10 orchestration entrypoint: data, epochs, validation, checkpointing, LR reduction, early stop, and final test evaluation. |
+| `src/minicnn/training/cuda_batch.py` | Backend-specific CUDA batch steps: conv forward, FC forward, fused loss/accuracy, FC update, conv backward/update. |
 | `src/minicnn/training/train_autograd.py` | Random-data CPU/NumPy autograd training loop that writes `*_autograd_best.npz`. |
 | `src/minicnn/training/models/` | Fixed output folder for best model checkpoints; generated `*.pt` and `*.npz` files are git-ignored. |
+| `src/minicnn/training/loop.py` | Shared training-loop state: running metrics, per-layer-group LR state, best/plateau/early-stop state, epoch timing, LR reduction, and epoch summary formatting. |
+| `src/minicnn/training/legacy_data.py` | Shared CIFAR-10 load/normalize helper used by legacy CUDA and Torch baseline trainers. |
 | `src/minicnn/training/cuda_ops.py` | Small CUDA operation wrappers used by the legacy training loop. |
 | `src/minicnn/training/cuda_workspace.py` | Reusable per-batch GPU workspace with double-free protection. |
 | `src/minicnn/training/evaluation.py` | CUDA evaluation forward path and accuracy helpers. |
 | `src/minicnn/training/checkpoints.py` | CUDA checkpoint save/reload and GPU pointer cleanup. |
-| `src/minicnn/training/train_torch_baseline.py` | PyTorch baseline mirroring the handcrafted CUDA update rules. |
+| `src/minicnn/training/train_torch_baseline.py` | PyTorch baseline orchestration and batch helpers mirroring the handcrafted CUDA update rules. |
 | `src/minicnn/unified/` | Shared-config compiler and dispatcher for `torch` vs `cuda_legacy`. |
 | `tests/` | Unit and smoke tests that avoid requiring GPU unless explicitly run through training commands. |
 

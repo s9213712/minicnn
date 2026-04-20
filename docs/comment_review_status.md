@@ -22,7 +22,9 @@ Processed local note files:
 | Unified train alias | Added `minicnn train` as an alias for `train-dual`. |
 | Package hygiene | `.gitignore` covers caches, artifacts, native libs, data, model checkpoints, and `comments/`. Generated smoke checkpoints are kept out of git. |
 | Fixed checkpoint location | Best model outputs are fixed under `src/minicnn/training/models/` for torch, CUDA legacy, and CPU/NumPy autograd paths. |
-| CUDA training split | Existing `cuda_workspace.py` and `cuda_ops.py` are retained; `cuda_epoch.py` hosts lower-risk epoch helpers while preserving the legacy training loop behavior. |
+| CUDA training split | `train_cuda.py` now owns orchestration only; `cuda_batch.py` owns batch-level conv forward, FC forward, fused loss/accuracy, FC update, and conv backward/update. Existing `cuda_workspace.py`, `cuda_ops.py`, and `cuda_epoch.py` remain focused helpers. |
+| Shared legacy train loop helpers | Added `loop.py` for `RunningMetrics`, `LrState`, `FitState`, `EpochTimer`, plateau LR reduction, and epoch summary formatting shared by CUDA legacy and Torch baseline. |
+| Shared legacy data loading | Added `legacy_data.py` so CUDA legacy and Torch baseline use one CIFAR-10 load/normalize path. |
 | Explicit device state | Added `DeviceWeights` and `VelocityBuffers` dataclasses while keeping tuple iteration compatibility for legacy call sites. |
 | Duplicated eval forward path | Centralized CUDA evaluation forward flow through `_forward_logits_ptr()`. |
 | Checkpoint reload safety | `reload_weights_from_checkpoint()` uploads replacement weights before freeing existing runtime weights. |
@@ -38,18 +40,18 @@ Processed local note files:
 | Builder validation | `src/minicnn/models/builder.py` now validates layer mappings, required `type`, rank assumptions, and non-positive inferred shapes with clear errors. |
 | Windows build support | Added PowerShell/CMake Windows native build documentation and helper in earlier work; Windows artifacts cannot be tested on this Linux host. |
 | Example feature folder | Added `features/backend-smoke-matrix/` in earlier work for isolated smoke comparison. |
-| Docs | README, Traditional Chinese README, USAGE, project file guide, autograd guide, and this status report document current commands, folders, metrics, and capability boundaries. |
+| Docs | README, Traditional Chinese README, USAGE, project file guide, dual-backend guide, configuration guide, templates README, autograd guide, and this status report document current commands, folders, metrics, modular trainer layout, and capability boundaries. |
 | Tests | Added coverage for CLI exposure, autograd layers, optimizer updates, runtime utilities, compiler fusion annotation, and fused-op fallback semantics. |
 | Comment task list 01-30 | Completed. Native CUDA fixes include dead-code removal, layer norm shared-memory reductions and gradient correction, maxpool zeroing, release/debug kernel check split, warp-level softmax CE, shared cuBLAS checks, LeakyReLU kernel consolidation, maxpool NCHW geometry validation, GPU monitor shell removal, ConvLayer im2col cache, ReLU out-of-place forward, and RAII C++ layer outputs. Python fixes include SGD momentum, BatchNorm2d running stats, autograd train shuffling and seeded init, reusable CUDA eval workspace, vectorized CPU/NumPy conv and maxpool paths, fused cross-entropy backward, augmentation copy/flip contracts, seeded flex augmentation, and optimizer config mutation docs. |
 | Code review fixes | SGD.step() now emits `RuntimeWarning` (with param name) instead of silently swallowing exceptions; only `ValueError`/`TypeError` are caught. `Tensor.__pow__` backward guards against NaN when `base==0` with negative exponent. `flex/builder` validates that inferred output shapes are all-positive after each layer. `BatchWorkspace.__del__` emits `ResourceWarning` instead of silently discarding GPU cleanup failures. `maxpool2d` forward vectorized with `sliding_window_view`, removing the O(out_h×out_w) Python loop. `flex/trainer` zero_grad gets a `TypeError` fallback for older PyTorch. `tests/test_review_fixes.py` added with 14 targeted tests. |
 | MNIST `.so` orchestration refactor | `docs/train_mnist_so_full_cnn_frame.py` now follows the ordered Python cleanup guidance: reusable `ConvBlock`, reusable `DenseLayer`, dataclass caches instead of tuple-position coupling, programmatic shape helpers, and a separate `SgdOptimizer` that applies `ParamGrad` updates after backward. `tests/test_mnist_templates.py` covers MNIST IDX loading, flex MNIST dataloaders, template materialization, and the optimizer/layer separation contract. |
+| Legacy CIFAR trainer modularization | Completed. CUDA batch device work moved to `cuda_batch.py`; CUDA and Torch legacy trainers share `legacy_data.py` and `loop.py`; `tests/test_training_loop.py` locks the shared state helpers and source-level modularization contract. |
 
 ## Deferred
 
 | Item | Reason |
 |---|---|
 | Full class-based CUDA trainer rewrite | The current legacy trainer is safer and more modular, but a complete behavior-preserving rewrite needs longer GPU regression coverage. |
-| Full `train_one_epoch()` extraction | The inner CUDA forward/backward/update loop is still in `train_cuda.py` to avoid untested device-state transfer bugs; safer helpers were extracted first. |
 | Native CUDA autograd bridge | Mapping MiniCNN `Function` graphs to existing CUDA kernels needs a separate design pass and GPU validation. The implemented autograd stack is CPU/NumPy. |
 | Production native fused Conv+BN+ReLU kernel | Implemented as NumPy semantic reference and compiler annotation only. A real CUDA fused kernel requires C++/CUDA API work and benchmark validation. |
 | Full compiler lowering to native execution | The compiler currently traces configs, annotates simple fusion patterns, schedules nodes, and marks unsupported CUDA direct lowering explicitly. It does not emit runnable CUDA kernels. |
@@ -64,8 +66,7 @@ Run for this review:
 ```bash
 PYTHONPATH=src python3 -m compileall -q src tests
 PYTHONPATH=src python3 -m pytest -q tests
-PYTHONPATH=src python3 -m minicnn.cli build --legacy-make --variant both --check
-PYTHONPATH=src python3 -m minicnn.cli train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy runtime.cuda_variant=cublas train.epochs=1 dataset.num_samples=64 dataset.val_samples=16 train.batch_size=16
-PYTHONPATH=src python3 -m minicnn.cli train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy runtime.cuda_variant=handmade train.epochs=1 dataset.num_samples=64 dataset.val_samples=16 train.batch_size=16
+PYTHONPATH=src python3 -m pytest -q tests/test_training_loop.py tests/test_comment_fixes.py tests/test_cuda_smoke.py
+# synthetic smoke runs were used for legacy torch and CUDA paths when CIFAR data was not present
 git diff --check
 ```
