@@ -3,12 +3,14 @@ from __future__ import annotations
 
 from ctypes import c_float
 from dataclasses import dataclass
+import math
 
 import numpy as np
 
 from minicnn.core.cuda_backend import (
     download_float_scalar,
     download_int_scalar,
+    g2h,
     lib,
     update_conv,
 )
@@ -17,6 +19,7 @@ from minicnn.config.settings import (
     GRAD_CLIP_BIAS,
     GRAD_CLIP_CONV,
     GRAD_CLIP_FC,
+    GRAD_CLIP_GLOBAL,
     GRAD_POOL_CLIP,
     LEAKY_ALPHA,
     MOMENTUM,
@@ -44,13 +47,42 @@ _C_GRAD_CLIP_BIAS = c_float(GRAD_CLIP_BIAS)
 _C_GRAD_POOL_CLIP = c_float(GRAD_POOL_CLIP)
 _C_LEAKY_ALPHA   = c_float(LEAKY_ALPHA)
 _C_ZERO          = c_float(0.0)
-_C_ONE           = c_float(1.0)
 
 
 @dataclass
 class CudaRuntimeState:
     weights: DeviceWeights
     velocities: VelocityBuffers
+
+
+def global_clip_scale(total_grad_sq: float, max_norm: float, eps: float = 1e-12) -> float:
+    """Return the gradient scale for global-norm clipping.
+
+    A non-positive max_norm disables global clipping. The returned value is in
+    (0, 1], so existing CUDA update kernels can apply it by increasing their
+    gradient normalizer.
+    """
+    if max_norm <= 0.0:
+        return 1.0
+    norm = math.sqrt(max(float(total_grad_sq), 0.0))
+    if norm <= max_norm:
+        return 1.0
+    return float(max_norm / (norm + eps))
+
+
+def scaled_normalizer(base_normalizer: float, scale: float) -> float:
+    if scale <= 0.0:
+        return float('inf')
+    return float(base_normalizer) / float(scale)
+
+
+def device_grad_sq(d_grad, size: int, normalizer: float = 1.0) -> float:
+    if size <= 0:
+        return 0.0
+    grad = g2h(d_grad, size).astype(np.float64, copy=False).reshape(-1)
+    if normalizer != 1.0:
+        grad = grad / float(normalizer)
+    return float(np.dot(grad, grad))
 
 
 def synchronize_if_available() -> None:
@@ -167,13 +199,12 @@ def compute_loss_and_metrics(
     )
 
 
-def backward_fc_update(
+def backward_fc(
     runtime: CudaRuntimeState,
     workspace: BatchWorkspace,
     arch: CudaNetGeometry,
     fc_input,
     batch_size: int,
-    lr_state: LrState,
 ) -> None:
     lib.dense_backward_full(
         workspace.d_grad_logits,
@@ -186,6 +217,16 @@ def backward_fc_update(
         arch.fc_in,
         arch.fc_out,
     )
+
+
+def update_fc(
+    runtime: CudaRuntimeState,
+    workspace: BatchWorkspace,
+    arch: CudaNetGeometry,
+    lr_state: LrState,
+    grad_scale: float = 1.0,
+) -> None:
+    normalizer = c_float(scaled_normalizer(1.0, grad_scale))
     lib.conv_update_fused(
         runtime.weights.fc_w,
         workspace.d_fc_grad_w,
@@ -194,7 +235,7 @@ def backward_fc_update(
         _C_MOMENTUM,
         _C_WEIGHT_DECAY,
         _C_GRAD_CLIP_FC,
-        _C_ONE,
+        normalizer,
         arch.fc_out * arch.fc_in,
     )
     lib.conv_update_fused(
@@ -205,18 +246,23 @@ def backward_fc_update(
         _C_MOMENTUM,
         _C_ZERO,
         _C_GRAD_CLIP_BIAS,
-        _C_ONE,
+        normalizer,
         arch.fc_out,
     )
 
 
-def backward_convs_update(
+def conv_grad_normalizers(arch: CudaNetGeometry) -> list[float]:
+    normalizers = []
+    for stage in arch.conv_stages:
+        normalizers.append(float(stage.h_out * stage.w_out if CONV_GRAD_SPATIAL_NORMALIZE else 1.0))
+    return normalizers
+
+
+def backward_convs(
     runtime: CudaRuntimeState,
     workspace: BatchWorkspace,
     arch: CudaNetGeometry,
     batch_size: int,
-    lr_state: LrState,
-    log_grad: bool,
 ) -> None:
     lib.clip_inplace(workspace.d_pre_fc_grad_nchw, _C_GRAD_POOL_CLIP, batch_size * arch.fc_in)
     grad_nchw = workspace.d_pre_fc_grad_nchw
@@ -277,8 +323,32 @@ def backward_convs_update(
             stage.out_c,
         )
 
+        grad_nchw = workspace.d_input_nchw_grad[i]
+
+
+def cuda_global_grad_scale(workspace: BatchWorkspace, arch: CudaNetGeometry, max_norm: float) -> float:
+    if max_norm <= 0.0:
+        return 1.0
+    total_sq = device_grad_sq(workspace.d_fc_grad_w, arch.fc_out * arch.fc_in)
+    total_sq += device_grad_sq(workspace.d_fc_grad_b, arch.fc_out)
+    normalizers = conv_grad_normalizers(arch)
+    for i, stage in enumerate(arch.conv_stages):
+        total_sq += device_grad_sq(workspace.d_w_grad[i], stage.weight_numel, normalizers[i])
+    return global_clip_scale(total_sq, max_norm)
+
+
+def update_convs(
+    runtime: CudaRuntimeState,
+    workspace: BatchWorkspace,
+    arch: CudaNetGeometry,
+    lr_state: LrState,
+    grad_scale: float,
+    log_grad: bool,
+) -> None:
+    normalizers = conv_grad_normalizers(arch)
+    for i, stage in enumerate(arch.conv_stages):
         lr = lr_state.conv1 if i == 0 else lr_state.conv
-        spatial_norm = stage.h_out * stage.w_out if CONV_GRAD_SPATIAL_NORMALIZE else 1.0
+        spatial_norm = scaled_normalizer(normalizers[i], grad_scale)
         update_conv(
             runtime.weights.conv_weights[i],
             workspace.d_w_grad[i],
@@ -292,8 +362,6 @@ def backward_convs_update(
             spatial_norm,
             log_grad,
         )
-
-        grad_nchw = workspace.d_input_nchw_grad[i]
 
 
 def train_cuda_batch(
@@ -311,5 +379,8 @@ def train_cuda_batch(
     fc_input = forward_convs(runtime, workspace, arch, batch_size)
     forward_fc(runtime, workspace, arch, fc_input, batch_size)
     compute_loss_and_metrics(workspace, arch, metrics, batch_size)
-    backward_fc_update(runtime, workspace, arch, fc_input, batch_size, lr_state)
-    backward_convs_update(runtime, workspace, arch, batch_size, lr_state, log_grad)
+    backward_fc(runtime, workspace, arch, fc_input, batch_size)
+    backward_convs(runtime, workspace, arch, batch_size)
+    grad_scale = cuda_global_grad_scale(workspace, arch, GRAD_CLIP_GLOBAL)
+    update_fc(runtime, workspace, arch, lr_state, grad_scale)
+    update_convs(runtime, workspace, arch, lr_state, grad_scale, log_grad)

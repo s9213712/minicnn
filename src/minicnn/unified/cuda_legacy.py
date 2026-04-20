@@ -62,6 +62,11 @@ def _collect_conv_blocks(model_cfg: dict[str, Any]) -> tuple[list[dict[str, Any]
     expected = CUDA_LEGACY_SUPPORTED['layer_pattern']
     for layer in layers:
         name = _normalize_layer_name(layer)
+        if name == 'BatchNorm2d':
+            raise ValueError(
+                'cuda_legacy does not yet support BatchNorm2d in the training graph; '
+                'use engine.backend=torch or remove BatchNorm2d for cuda_legacy'
+            )
         if expected_idx >= len(expected):
             raise ValueError('Too many layers for cuda_legacy backend')
         allowed = expected[expected_idx]
@@ -130,6 +135,7 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
         ('optimizer.lr_fc', optim.get('lr_fc', optim.get('lr', 0.0))),
         ('optimizer.momentum', optim.get('momentum', 0.0)),
         ('optimizer.weight_decay', optim.get('weight_decay', 0.0)),
+        ('optimizer.grad_clip_global', optim.get('grad_clip_global', 0.0)),
     ):
         _coerce_float(value, label, errors)
     cuda_variant = runtime.get('cuda_variant')
@@ -227,6 +233,7 @@ def compile_to_legacy_experiment(cfg: dict[str, Any]) -> ExperimentConfig:
     exp.optim.lr_fc = float(optim.get('lr_fc', optim.get('lr', exp.optim.lr_fc)))
     exp.optim.momentum = float(optim.get('momentum', exp.optim.momentum))
     exp.optim.weight_decay = float(optim.get('weight_decay', exp.optim.weight_decay))
+    exp.optim.grad_clip_global = float(optim.get('grad_clip_global', exp.optim.grad_clip_global))
     exp.optim.leaky_alpha = negative_slope
 
     input_shape = dataset.get('input_shape', [3, 32, 32])
@@ -260,6 +267,7 @@ def summarize_legacy_mapping(cfg: dict[str, Any]) -> dict[str, Any]:
             'lr_fc': data['optim']['lr_fc'],
             'momentum': data['optim']['momentum'],
             'weight_decay': data['optim']['weight_decay'],
+            'grad_clip_global': data['optim']['grad_clip_global'],
             'leaky_alpha': data['optim']['leaky_alpha'],
         },
         'train': {

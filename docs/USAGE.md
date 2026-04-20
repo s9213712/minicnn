@@ -105,7 +105,8 @@ Debug 時可直接用 config override 控制訓練參數：
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=cublas \
   train.epochs=1 train.batch_size=32 \
-  dataset.num_samples=128 dataset.val_samples=32
+  dataset.num_samples=128 dataset.val_samples=32 \
+  optimizer.grad_clip_global=2.0
 ```
 
 legacy trainer 也支援常用環境變數覆蓋：

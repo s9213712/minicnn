@@ -123,8 +123,8 @@ g++ examples/mnist_infer_demo.cpp \
 
 Python 端的 CIFAR-10 CUDA orchestration 已拆到
 `src/minicnn/training/cuda_batch.py`。若要對照 C++ 訓練流程，可從
-`train_cuda_batch()`、`forward_convs()`、`backward_convs_update()` 看每個 C
-API 的呼叫順序。
+`train_cuda_batch()`、`forward_convs()`、`backward_convs()`、`update_convs()`
+看每個 C API 的呼叫順序。
 
 Momentum update 的 C ABI prototype：
 

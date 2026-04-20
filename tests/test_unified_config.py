@@ -70,6 +70,18 @@ def test_compile_cuda_legacy_maps_distinct_dataset_init_and_train_seeds():
     assert exp.train.train_seed == 333
 
 
+def test_compile_cuda_legacy_maps_global_grad_clip():
+    cfg = load_unified_config(Path(__file__).resolve().parents[1] / 'configs' / 'dual_backend_cnn.yaml', [
+        'engine.backend=cuda_legacy',
+        'optimizer.grad_clip_global=2.5',
+    ])
+
+    assert validate_cuda_legacy_compatibility(cfg) == []
+    exp = compile_to_legacy_experiment(cfg)
+
+    assert exp.optim.grad_clip_global == 2.5
+
+
 def test_cuda_legacy_accepts_native_variant_runtime_option():
     cfg = load_unified_config(None, ['engine.backend=cuda_legacy', 'runtime.cuda_variant=handmade'])
     errors = validate_cuda_legacy_compatibility(cfg)

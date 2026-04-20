@@ -173,7 +173,9 @@ for the backend-scoped completion report, and
 current follow-up TODO list.
 
 See [docs/backend_capabilities.md](docs/backend_capabilities.md) for the
-backend-by-backend support matrix.
+backend-by-backend support matrix. See
+[docs/cuda_batchnorm2d_evaluation.md](docs/cuda_batchnorm2d_evaluation.md) for
+the CUDA legacy BatchNorm2d integration assessment.
 
 Use [docs/benchmark_report_template.md](docs/benchmark_report_template.md) when
 recording backend performance results. `minicnn compare` reports elapsed time,

@@ -28,12 +28,14 @@ Torch/flex, CPU/NumPy autograd, and CUDA legacy.
   and config overrides can be used in the same command.
 - [x] Clean up `Tensor.__pow__` zero-base negative-exponent warnings while
   preserving the existing zero-gradient behavior.
+- [x] Add global gradient norm clipping for CUDA legacy.
+- [x] Evaluate CUDA legacy BatchNorm2d forward/backward integration and record
+  the required kernel, state, workspace, checkpoint, and test work.
 
 ## Later CUDA Work
 
 - [ ] Add CUDA Adam or AdamW optimizer state and update kernels.
 - [ ] Add CUDA BatchNorm2d forward/backward and config/runtime support.
-- [ ] Add global gradient norm clipping for CUDA legacy.
 - [ ] Add CUDA residual/skip add support after the legacy model compiler can
   represent it cleanly.
 

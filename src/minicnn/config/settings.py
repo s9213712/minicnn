@@ -40,6 +40,7 @@ _ENV_OVERRIDES = {
     "LR_FC": ("MINICNN_LR_FC", float),
     "MOMENTUM": ("MINICNN_MOMENTUM", float),
     "WEIGHT_DECAY": ("MINICNN_WEIGHT_DECAY", float),
+    "GRAD_CLIP_GLOBAL": ("MINICNN_GRAD_CLIP_GLOBAL", float),
 }
 
 
@@ -92,6 +93,7 @@ def apply_experiment_config(cfg: ExperimentConfig) -> None:
         "GRAD_CLIP_FC": cfg.optim.grad_clip_fc,
         "GRAD_CLIP_BIAS": cfg.optim.grad_clip_bias,
         "GRAD_POOL_CLIP": cfg.optim.grad_pool_clip,
+        "GRAD_CLIP_GLOBAL": cfg.optim.grad_clip_global,
         "CONV_GRAD_SPATIAL_NORMALIZE": cfg.optim.conv_grad_spatial_normalize,
         "GRAD_DEBUG": cfg.runtime.grad_debug,
         "GRAD_DEBUG_BATCHES": cfg.runtime.grad_debug_batches,
@@ -147,6 +149,7 @@ def summarize() -> dict[str, Any]:
             "lr_fc": LR_FC,
             "momentum": MOMENTUM,
             "weight_decay": WEIGHT_DECAY,
+            "grad_clip_global": GRAD_CLIP_GLOBAL,
         },
         "model": {
             "stages": [

@@ -15,7 +15,7 @@ not as one global project-level checklist.
 | Conv2d | Yes | Yes | Yes |
 | Linear | Yes | Yes | Yes |
 | MaxPool2d | Yes | Yes | Yes |
-| BatchNorm2d | Yes | Yes | No |
+| BatchNorm2d | Yes | Yes | No; see `docs/cuda_batchnorm2d_evaluation.md` |
 | LayerNorm | Via PyTorch custom config | No built-in layer | Native kernel exists and is covered by NumPy/PyTorch parity tests, but is not wired into training |
 | ResidualBlock | Yes | Same-channel block | No |
 | ReLU / LeakyReLU | Yes | ReLU built in | Yes |
@@ -31,6 +31,7 @@ not as one global project-level checklist.
 | AMP / mixed precision | Yes on CUDA | No | No |
 | Gradient accumulation | Yes | No | No |
 | Per-parameter norm clipping | Via PyTorch config or optimizer code | Yes | No |
+| Global gradient norm clipping | Via PyTorch utilities if configured | No | Yes |
 | Elementwise gradient clipping | Via custom code | No | Yes |
 | Native CUDA kernels | PyTorch-managed | No | Yes |
 | cuBLAS path | PyTorch-managed | No | Yes |
@@ -56,7 +57,8 @@ updates. The current roadmap is to make this backend more credible before
 chasing production-scale features:
 
 - CUDA Adam or AdamW
-- CUDA BatchNorm2d
+- CUDA BatchNorm2d, after the native kernel/state/workspace plan in
+  `docs/cuda_batchnorm2d_evaluation.md`
 - LayerNorm training integration or explicit experimental status
 - PyTorch parity tests
 - benchmark reports

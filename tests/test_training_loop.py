@@ -96,7 +96,8 @@ def test_legacy_trainers_are_split_into_backend_steps():
 
     assert 'def train_cuda_batch' in cuda_batch
     assert 'def forward_convs' in cuda_batch
-    assert 'def backward_convs_update' in cuda_batch
+    assert 'def backward_convs' in cuda_batch
+    assert 'def update_convs' in cuda_batch
     assert '_d_weights' not in train_cuda
     assert 'train_cuda_batch(' in train_cuda
 
