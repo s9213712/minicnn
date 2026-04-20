@@ -31,7 +31,7 @@ from ctypes import c_float, c_int, c_void_p
 import numpy as np
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LIB = ROOT / "cpp" / "libminimal_cuda_cnn_handmade.so"
 DEFAULT_DATA = ROOT / "data" / "mnist"
 DEFAULT_RUNS = ROOT / "runs" / "mnist_so"

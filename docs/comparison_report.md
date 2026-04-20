@@ -1,5 +1,11 @@
 # MiniCNN vs llm.c / tiny-cuda-nn / neural-network-cuda 完成度報告
 
+> Update: this report is the original comparison draft. For the corrected
+> backend-scoped version, see `docs/comparison_completion_report.md`. In
+> particular, MSE/BCE, BatchNorm2d, ResidualBlock, and Adam are already present
+> in some MiniCNN paths; the remaining gaps are mostly specific to
+> `cuda_legacy`.
+
 ## 先定位各自的賽道
 
 | 專案 | 定位 | 目標讀者 |

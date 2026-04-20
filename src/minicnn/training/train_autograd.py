@@ -10,7 +10,7 @@ import numpy as np
 
 from minicnn.flex.runtime import create_run_dir, dump_summary
 from minicnn.models import build_model_from_config
-from minicnn.nn import Tensor, cross_entropy, no_grad
+from minicnn.nn import Tensor, bce_with_logits_loss, cross_entropy, mse_loss, no_grad
 from minicnn.optim import Adam, SGD
 from minicnn.paths import BEST_MODELS_ROOT, DATA_ROOT
 
@@ -98,6 +98,32 @@ def _make_optimizer(params, cfg: dict[str, Any]):
     return SGD(params, lr=lr, momentum=float(cfg.get('momentum', 0.0)), weight_decay=weight_decay, grad_clip=grad_clip)
 
 
+def _dense_targets(labels: np.ndarray, logits_shape: tuple[int, ...], loss_type: str) -> np.ndarray:
+    if len(logits_shape) != 2:
+        raise ValueError(f'{loss_type} expects 2D logits in train-autograd, got shape {logits_shape}')
+    batch, outputs = logits_shape
+    if labels.shape[0] != batch:
+        raise ValueError(f'target batch size {labels.shape[0]} does not match logits batch size {batch}')
+    if outputs == 1:
+        return labels.reshape(batch, 1).astype(np.float32)
+    dense = np.zeros((batch, outputs), dtype=np.float32)
+    dense[np.arange(batch), labels.astype(np.int64)] = 1.0
+    return dense
+
+
+def _make_loss(loss_cfg: dict[str, Any]):
+    loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
+    if loss_type == 'CrossEntropyLoss':
+        return lambda logits, labels: cross_entropy(logits, labels)
+    if loss_type == 'MSELoss':
+        return lambda logits, labels: mse_loss(logits, _dense_targets(labels, logits.data.shape, loss_type))
+    if loss_type == 'BCEWithLogitsLoss':
+        return lambda logits, labels: bce_with_logits_loss(logits, _dense_targets(labels, logits.data.shape, loss_type))
+    raise ValueError(
+        "train-autograd supports loss.type values: CrossEntropyLoss, MSELoss, BCEWithLogitsLoss"
+    )
+
+
 def _accuracy(model, x, y, batch_size: int) -> float:
     correct = 0
     total = 0
@@ -128,6 +154,7 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
     )
     optim_cfg = cfg.get('optimizer', {'type': 'SGD', 'lr': 0.01})
     optimizer = _make_optimizer(model.parameters(), optim_cfg)
+    loss_fn = _make_loss(cfg.get('loss', {'type': 'CrossEntropyLoss'}))
     batch_size = int(train_cfg.get('batch_size', 8))
     epochs = int(train_cfg.get('epochs', 1))
 
@@ -158,7 +185,7 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
                 yb = y_train[idx]
                 optimizer.zero_grad()
                 logits = model(xb)
-                loss = cross_entropy(logits, yb)
+                loss = loss_fn(logits, yb)
                 loss.backward()
                 optimizer.step()
                 total_loss += float(loss.data) * len(idx)

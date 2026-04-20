@@ -1,6 +1,6 @@
 import numpy as np
 
-from minicnn.nn import Parameter, Tensor, cross_entropy
+from minicnn.nn import Parameter, Tensor, bce_with_logits_loss, cross_entropy, mse_loss
 from minicnn.optim.sgd import SGD
 
 
@@ -52,6 +52,47 @@ def test_cross_entropy_backward_matches_softmax_gradient():
 
     assert loss.data.shape == ()
     assert np.allclose(logits.grad, expected, atol=1e-6)
+
+
+def test_mse_loss_backward_matches_mean_squared_error_gradient():
+    predictions = Tensor([[1.0, -2.0], [0.5, 3.0]], requires_grad=True)
+    targets = np.array([[0.0, -1.0], [1.5, 1.0]], dtype=np.float32)
+
+    loss = mse_loss(predictions, targets)
+    loss.backward()
+
+    expected_loss = np.mean((predictions.data - targets) ** 2)
+    expected_grad = 2.0 * (predictions.data - targets) / predictions.data.size
+
+    assert np.allclose(loss.data, expected_loss)
+    assert np.allclose(predictions.grad, expected_grad)
+
+
+def test_bce_with_logits_loss_backward_matches_sigmoid_gradient():
+    logits = Tensor([[0.0, 2.0], [-1.0, 4.0]], requires_grad=True)
+    targets = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float32)
+
+    loss = bce_with_logits_loss(logits, targets)
+    loss.backward()
+
+    expected_loss = np.mean(np.maximum(logits.data, 0.0) - logits.data * targets + np.log1p(np.exp(-np.abs(logits.data))))
+    sigmoid_vals = 1.0 / (1.0 + np.exp(-logits.data))
+    expected_grad = (sigmoid_vals - targets) / logits.data.size
+
+    assert np.allclose(loss.data, expected_loss)
+    assert np.allclose(logits.grad, expected_grad)
+
+
+def test_bce_with_logits_loss_handles_large_logits_without_overflow():
+    logits = Tensor([[1000.0, -1000.0]], requires_grad=True)
+    targets = np.array([[1.0, 0.0]], dtype=np.float32)
+
+    with np.errstate(over='raise', invalid='raise'):
+        loss = bce_with_logits_loss(logits, targets)
+        loss.backward()
+
+    assert np.isfinite(loss.data)
+    assert np.allclose(logits.grad, [[0.0, 0.0]], atol=1e-6)
 
 
 def test_parameter_and_sgd_step_without_torch():

@@ -11,7 +11,7 @@ It supports:
 - broadcasting-aware gradients
 - matrix multiply with `@`
 - `sum`, `mean`, and `reshape`
-- `relu`, `log_softmax`, and `cross_entropy`
+- `relu`, `log_softmax`, `cross_entropy`, `mse_loss`, and `bce_with_logits_loss`
 - trainable `Parameter`
 - `no_grad()` and `Tensor.detach()`
 - lightweight `SGD` and `Adam` optimizers with optional `grad_clip` and `weight_decay`
@@ -37,6 +37,23 @@ loss = cross_entropy(logits, target)
 loss.backward()
 
 SGD([w], lr=0.1).step()
+```
+
+`train-autograd` supports these loss config values:
+
+```yaml
+loss:
+  type: CrossEntropyLoss      # class-index targets
+```
+
+```yaml
+loss:
+  type: MSELoss               # labels are converted to dense targets
+```
+
+```yaml
+loss:
+  type: BCEWithLogitsLoss     # labels are converted to dense binary targets
 ```
 
 ## Tiny training run (random data)

@@ -377,3 +377,43 @@ def cross_entropy(logits: Tensor, targets: Any) -> Tensor:
 
     out._backward = _backward
     return out
+
+
+def mse_loss(predictions: Tensor, targets: Any) -> Tensor:
+    targets = targets if isinstance(targets, Tensor) else Tensor(targets)
+    if predictions.data.shape != targets.data.shape:
+        raise ValueError(
+            f'mse_loss target shape {targets.data.shape} does not match predictions shape {predictions.data.shape}'
+        )
+    return ((predictions - targets) ** 2).mean()
+
+
+def bce_with_logits_loss(logits: Tensor, targets: Any) -> Tensor:
+    targets = targets if isinstance(targets, Tensor) else Tensor(targets)
+    if logits.data.shape != targets.data.shape:
+        raise ValueError(
+            f'bce_with_logits_loss target shape {targets.data.shape} does not match logits shape {logits.data.shape}'
+        )
+
+    logits_data = logits.data.astype(np.float32)
+    target_data = targets.data.astype(np.float32)
+    loss_terms = np.maximum(logits_data, 0.0) - logits_data * target_data + np.log1p(np.exp(-np.abs(logits_data)))
+    loss_val = loss_terms.mean()
+    out = Tensor(loss_val, requires_grad=_requires_grad(logits, targets))
+    out._prev = {logits, targets}
+    out._op = 'bce_with_logits_loss'
+
+    def _backward() -> None:
+        if out.grad is None:
+            return
+        scale = np.asarray(out.grad, dtype=np.float32) / float(logits_data.size)
+        sigmoid_vals = np.empty_like(logits_data, dtype=np.float32)
+        pos = logits_data >= 0.0
+        sigmoid_vals[pos] = 1.0 / (1.0 + np.exp(-logits_data[pos]))
+        exp_vals = np.exp(logits_data[~pos])
+        sigmoid_vals[~pos] = exp_vals / (1.0 + exp_vals)
+        logits._add_grad((sigmoid_vals - target_data) * scale)
+        targets._add_grad((-logits_data) * scale)
+
+    out._backward = _backward
+    return out

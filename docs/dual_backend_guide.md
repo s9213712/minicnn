@@ -124,6 +124,12 @@ Native CUDA backward files by operation:
 | Softmax / cross-entropy backward | `cpp/src/loss_layer.cu` | `src/minicnn/training/cuda_batch.py` |
 | LayerNorm backward | `cpp/src/layer_norm.cu` | Add a Python call site only if LayerNorm becomes part of CUDA legacy training. |
 
+`cpp/src/layer_norm.cu` is currently a tested native kernel asset, not a
+supported `cuda_legacy` training layer. `tests/test_layer_norm.py` mirrors the
+kernel math in NumPy and checks it against PyTorch. Wiring it into training
+would still require config validation, ctypes bindings, workspace buffers, and
+call-site integration.
+
 Rule of thumb:
 
 - If the change can be expressed with current `model.layers` or

@@ -101,7 +101,7 @@ def test_repository_templates_materialize_supported_torch_models():
 
 
 def test_refactored_mnist_so_example_keeps_optimizer_separate_from_layers():
-    source = (Path(__file__).resolve().parents[1] / 'docs' / 'train_mnist_so_full_cnn_frame.py').read_text()
+    source = (Path(__file__).resolve().parents[1] / 'examples' / 'mnist_ctypes' / 'train_mnist_so_full_cnn_frame.py').read_text()
 
     assert 'class ConvBlock' in source
     assert 'class DenseLayer' in source

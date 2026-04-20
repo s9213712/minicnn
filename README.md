@@ -162,6 +162,22 @@ See [docs/architecture.md](docs/architecture.md) for:
 - A full module map
 - Instructions for adding new layers and custom differentiable ops
 
+## Comparison and roadmap
+
+See [docs/comparison_report.md](docs/comparison_report.md) for the original
+comparison with `llm.c`, `tiny-cuda-nn`, and `neural-network-cuda`.
+
+See [docs/comparison_completion_report.md](docs/comparison_completion_report.md)
+for the backend-scoped completion report, and
+[docs/comparison_followup_todo.md](docs/comparison_followup_todo.md) for the
+current follow-up TODO list.
+
+See [docs/backend_capabilities.md](docs/backend_capabilities.md) for the
+backend-by-backend support matrix.
+
+Use [docs/benchmark_report_template.md](docs/benchmark_report_template.md) when
+recording backend performance results.
+
 ## Interactive tutorial
 
 `notebooks/01_autograd_from_scratch.ipynb` walks through the autograd engine from first principles:
