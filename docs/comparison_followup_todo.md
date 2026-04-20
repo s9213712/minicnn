@@ -4,6 +4,8 @@ This file tracks follow-up work from `docs/comparison_completion_report.md`.
 It keeps the roadmap scoped by backend so feature gaps are not confused across
 Torch/flex, CPU/NumPy autograd, and CUDA legacy.
 
+For the latest uploaded progress snapshot, see `docs/optimization_progress.md`.
+
 ## In Progress
 
 - [x] Link comparison follow-up docs from the main README so the report is not

@@ -170,7 +170,9 @@ comparison with `llm.c`, `tiny-cuda-nn`, and `neural-network-cuda`.
 See [docs/comparison_completion_report.md](docs/comparison_completion_report.md)
 for the backend-scoped completion report, and
 [docs/comparison_followup_todo.md](docs/comparison_followup_todo.md) for the
-current follow-up TODO list.
+current follow-up TODO list. See
+[docs/optimization_progress.md](docs/optimization_progress.md) for the current
+optimization progress snapshot.
 
 See [docs/backend_capabilities.md](docs/backend_capabilities.md) for the
 backend-by-backend support matrix. See
