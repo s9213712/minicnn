@@ -230,6 +230,10 @@ model:
 ## 修改網路架構
 
 兩種 backend 使用不同的 config key 定義架構。
+若要判斷「只改 YAML」或「需要改 Torch registry / native CUDA backward」，
+請看
+[docs/dual_backend_guide.md](docs/dual_backend_guide.md#when-architecture-changes-require-code-changes)
+的檔案對照表。
 
 ### CUDA backend（`train-cuda` / `cuda_legacy`）
 

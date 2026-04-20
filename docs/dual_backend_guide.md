@@ -74,6 +74,41 @@ Edit `model.layers` in `configs/dual_backend_cnn.yaml` (or your own config).
 Add, remove, or reorder entries freely — `in_channels` and `in_features` are
 inferred automatically by the flex builder.
 
+## When Architecture Changes Require Code Changes
+
+Most architecture edits should be YAML-only. Code changes are needed only when
+the requested layer behavior is outside the supported backend contract.
+
+| Change | Torch / Flex backend | CUDA legacy backend |
+|---|---|---|
+| Change layer count, channel width, pool placement, or classifier output within supported layers | Edit `model.layers`; PyTorch autograd handles backward. | Edit `model.conv_layers`; `CudaNetGeometry`, `BatchWorkspace`, and `cuda_batch.py` derive shapes from config. |
+| Add a built-in PyTorch layer already registered by MiniCNN | Edit `model.layers`; no backward file changes. | Not supported unless the CUDA subset already maps that layer. |
+| Add a new Torch-only layer or block | Add/register it in `src/minicnn/flex/builder.py` or `src/minicnn/flex/registry.py`; backward remains PyTorch autograd. | No change unless this layer must also run on CUDA legacy. |
+| Add a new CUDA legacy layer type | Usually no Torch change unless config parity is required. | Update `src/minicnn/unified/cuda_legacy.py`, `src/minicnn/training/cuda_arch.py`, `src/minicnn/training/cuda_workspace.py`, `src/minicnn/training/cuda_batch.py`, native kernels under `cpp/src/`, and ctypes signatures in `src/minicnn/core/cuda_backend.py`. |
+| Change backward math for an existing op | Usually no project code change; PyTorch autograd owns the gradient. | Update the relevant native backward kernel in `cpp/src/`, then update `src/minicnn/core/cuda_backend.py` and the call order in `src/minicnn/training/cuda_batch.py` if the ABI or buffers changed. |
+| Change optimizer/update semantics | Update torch optimizer config or `src/minicnn/flex/trainer.py` for flex training. | Update `cpp/src/optimizer.cu` and the CUDA update calls in `src/minicnn/training/cuda_batch.py`. |
+
+Native CUDA backward files by operation:
+
+| Operation | Native file | Python call site |
+|---|---|---|
+| Convolution backward | `cpp/src/conv_backward.cu` | `src/minicnn/training/cuda_batch.py` |
+| Dense backward | `cpp/src/dense_layer.cu` | `src/minicnn/training/cuda_batch.py` |
+| MaxPool backward | `cpp/src/maxpool_backward_use_idx.cu` or `cpp/src/maxpool_backward_nchw.cu` | `src/minicnn/training/cuda_batch.py` |
+| LeakyReLU backward | `cpp/src/leaky_relu.cu` | `src/minicnn/training/cuda_batch.py` |
+| Softmax / cross-entropy backward | `cpp/src/loss_layer.cu` | `src/minicnn/training/cuda_batch.py` |
+| LayerNorm backward | `cpp/src/layer_norm.cu` | Add a Python call site only if LayerNorm becomes part of CUDA legacy training. |
+
+Rule of thumb:
+
+- If the change can be expressed with current `model.layers` or
+  `model.conv_layers`, change YAML and validate.
+- If a new CUDA op appears in the training graph, update native forward,
+  native backward, ctypes bindings, CUDA workspace allocation, and
+  `cuda_batch.py`.
+- If only Torch needs the op, keep it in the flex builder/registry and let
+  PyTorch autograd handle backward.
+
 ## Custom components
 
 Custom dotted-path components are intended for the Torch backend. The CUDA backend requires supported layer shapes and semantics listed in `src/minicnn/unified/cuda_legacy.py`.

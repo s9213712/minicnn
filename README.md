@@ -230,6 +230,9 @@ If a config goes outside this subset, `validate-dual-config` explains why.
 ## Changing network architecture
 
 The two backends use separate config keys for architecture.
+For a file-by-file decision table covering YAML-only changes versus Torch
+registry changes versus native CUDA backward changes, see
+[docs/dual_backend_guide.md](docs/dual_backend_guide.md#when-architecture-changes-require-code-changes).
 
 ### CUDA backend (`train-cuda` / `cuda_legacy`)
 

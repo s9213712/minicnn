@@ -30,6 +30,10 @@ CIFAR-10 legacy trainer 已拆成明確模組。`src/minicnn/training/train_cuda
 
 兩個 legacy trainer 共用 `src/minicnn/training/legacy_data.py` 載入/normalize CIFAR-10，並共用 `src/minicnn/training/loop.py` 的 `RunningMetrics`、`LrState`、`FitState`、`EpochTimer`、plateau LR reduction 與 epoch summary formatter。CUDA 路徑仍使用 `conv_backward_precol`、`conv_update_fused` 與 `BatchWorkspace`；`USE_CUBLAS=1` 時 `gemm_forward` 與 conv weight gradient 走 cuBLAS 快速路徑，`USE_CUBLAS=0` 時走手寫 CUDA fallback。
 
+如果要判斷改架構時是否需要改 backward kernel，請看
+`docs/dual_backend_guide.md` 的 `When Architecture Changes Require Code Changes`
+決策表。
+
 MNIST 教學的最小版本是 `docs/train_mnist_so.py`；較乾淨的重構版本是 `docs/train_mnist_so_full_cnn_frame.py`，它把 CUDA orchestration 拆成 `ConvBlock`、`DenseLayer`、dataclass cache、shape helper 與獨立 `SgdOptimizer`。
 
 若要同時編譯兩種 native backend：
