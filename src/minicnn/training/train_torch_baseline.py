@@ -150,6 +150,8 @@ def apply_momentum_update(model, velocity, lr_conv1, lr_conv, lr_fc):
     with torch.no_grad():
         for param, lr, clip_value, use_decay, grad_normalizer in updates:
             grad = param.grad
+            if grad is None:
+                continue
             if CONV_GRAD_SPATIAL_NORMALIZE:
                 grad = grad / grad_normalizer
             if use_decay:

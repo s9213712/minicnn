@@ -1,9 +1,10 @@
 NVCC      ?= nvcc
 CUDA_HOME ?= $(dir $(shell which $(NVCC) 2>/dev/null))..
 
+CUDA_ARCH  ?= sm_86
 USE_CUBLAS ?= 1
 OUTPUT ?= libminimal_cuda_cnn.so
-CFLAGS = -O3 -Xcompiler -fPIC -arch=sm_86 -DUSE_CUBLAS=$(USE_CUBLAS)
+CFLAGS = -O3 -Xcompiler -fPIC -arch=$(CUDA_ARCH) -DUSE_CUBLAS=$(USE_CUBLAS)
 LDFLAGS = -shared -o $(OUTPUT) -Xlinker -rpath,$(CUDA_HOME)/lib64
 EXTRA_LDFLAGS ?=
 

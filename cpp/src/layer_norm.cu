@@ -3,6 +3,14 @@
 // Layer Normalization: y = (x - mean) / sqrt(var + eps) * gamma + beta
 // Input: (N, C, H, W) -> normalize over (H*W)
 // Output: (N, C, H, W)
+//
+// NOTE: Experimental — not used in the main CIFAR-10 training path.
+// The current CUDA training loop uses LeakyReLU activations and does not
+// call layer_norm_forward / layer_norm_backward.  This kernel exists as a
+// building block for future architectures (e.g. Vision Transformer pre-norm).
+// Correctness is verified by test_layer_norm_gradient_matches_pytorch in
+// tests/test_layer_norm.py; do not integrate into training without first
+// running that test with the actual build.
 
 // Warp-level sum using __shfl_down_sync (no bank conflicts).
 __device__ float warp_reduce_sum_ln(float val) {
