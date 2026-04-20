@@ -219,6 +219,59 @@ def test_free_weights_skips_none_and_accepts_none(monkeypatch):
     assert freed == ['p1', 'p2']
 
 
+def test_evaluation_uses_device_weights_container_interface(monkeypatch):
+    import minicnn.training.evaluation as evaluation
+    from minicnn.config.settings import get_arch
+    from minicnn.training.checkpoints import DeviceWeights
+
+    geom = get_arch()
+    device_weights = DeviceWeights(
+        conv_weights=[f'w_conv{i}' for i in range(geom.n_conv)],
+        fc_w='fc_w',
+        fc_b='fc_b',
+    )
+
+    class Workspace:
+        pass
+
+    workspace = Workspace()
+    workspace.batch_size = 2
+    workspace.d_x = 'x'
+    workspace.d_fc_out = 'fc_out'
+    workspace.geom = geom
+    workspace.d_col = [f'col{i}' for i in range(geom.n_conv)]
+    workspace.d_conv_raw = [f'conv_raw{i}' for i in range(geom.n_conv)]
+    workspace.d_conv_nchw = [None if s.pool else f'conv_nchw{i}' for i, s in enumerate(geom.conv_stages)]
+    workspace.d_pool = [f'pool{i}' if s.pool else None for i, s in enumerate(geom.conv_stages)]
+    workspace.d_max_idx = [f'max_idx{i}' if s.pool else None for i, s in enumerate(geom.conv_stages)]
+    workspace.d_pool_nchw = [f'pool_nchw{i}' if s.pool else None for i, s in enumerate(geom.conv_stages)]
+
+    conv_weights_seen = []
+    dense_args = []
+
+    monkeypatch.setattr(evaluation, 'upload_to', lambda dst, x: None)
+    monkeypatch.setattr(
+        evaluation,
+        'conv_forward_into',
+        lambda prev, weight, col, out, n, in_c, h, w, out_c: conv_weights_seen.append(weight),
+    )
+    monkeypatch.setattr(evaluation, 'maxpool_forward_into', lambda *args: None)
+    monkeypatch.setattr(evaluation, 'cnhw_to_nchw_into', lambda *args: None)
+
+    class Lib:
+        @staticmethod
+        def dense_forward(fc_in, fc_w, fc_b, fc_out, n, in_f, out_f):
+            dense_args.extend([fc_w, fc_b, fc_out])
+
+    monkeypatch.setattr(evaluation, 'lib', Lib())
+
+    x = np.zeros((2, 3, 32, 32), dtype=np.float32)
+
+    assert evaluation._forward_logits_into(x, device_weights, workspace) == 'fc_out'
+    assert conv_weights_seen == device_weights.conv_weights
+    assert dense_args == ['fc_w', 'fc_b', 'fc_out']
+
+
 def test_workspace_uses_int_allocators_for_index_and_label_buffers(monkeypatch):
     import minicnn.training.cuda_workspace as cuda_workspace
 
