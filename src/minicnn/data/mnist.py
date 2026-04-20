@@ -80,8 +80,10 @@ def load_mnist(
     if n_train < 0 or n_val < 0:
         raise ValueError('n_train and n_val must be non-negative')
     if n_train + n_val > len(train_images):
-        n_val = min(n_val, len(train_images))
-        n_train = len(train_images) - n_val
+        raise ValueError(
+            f"n_train + n_val exceeds available training samples: "
+            f"{n_train} + {n_val} > {len(train_images)}"
+        )
 
     x_train = train_images[:n_train]
     y_train = train_labels[:n_train].astype(np.int64)

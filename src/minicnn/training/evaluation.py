@@ -69,6 +69,17 @@ class EvalWorkspace:
         _free_ptrs(self.ptrs)
         self.ptrs = []
 
+    def __del__(self) -> None:  # pragma: no cover
+        try:
+            self.free()
+        except Exception as exc:
+            import warnings
+            warnings.warn(
+                f"EvalWorkspace.__del__: GPU memory cleanup failed: {exc}",
+                ResourceWarning,
+                stacklevel=2,
+            )
+
 
 def _fc_input_ptr(i: int, ws: EvalWorkspace) -> object:
     """Return the NCHW pointer that feeds into FC for stage i."""

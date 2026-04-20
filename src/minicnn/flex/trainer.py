@@ -5,10 +5,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+from minicnn.config.parsing import parse_bool
+from minicnn.paths import BEST_MODELS_ROOT
+
 from .builder import build_loss, build_model, build_optimizer, build_scheduler
 from .data import create_dataloaders, create_test_dataloader
 from .runtime import create_run_dir, dump_summary
-from minicnn.paths import BEST_MODELS_ROOT
 
 try:
     import torch
@@ -58,12 +60,12 @@ def _checkpoint_path(run_dir: Path, epoch: int) -> Path:
 
 
 def _optimizer_params(model, optimizer_cfg: dict[str, Any]):
-    """Modifies `optimizer_cfg` in-place by removing weight-decay helper keys.
-
-    The caller must pass a copy when the original config dict must be preserved.
-    """
+    """Returns param groups for the optimizer and removes weight-decay helper keys from optimizer_cfg."""
     weight_decay = float(optimizer_cfg.get('weight_decay', 0.0) or 0.0)
-    exclude_bias_norm = bool(optimizer_cfg.pop('exclude_bias_norm_weight_decay', True))
+    exclude_bias_norm = parse_bool(
+        optimizer_cfg.pop('exclude_bias_norm_weight_decay', True),
+        label='optimizer.exclude_bias_norm_weight_decay',
+    )
     if weight_decay <= 0.0 or not exclude_bias_norm:
         return model.parameters()
 
@@ -109,12 +111,16 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
     train_loader, val_loader = create_dataloaders(dataset_cfg, train_cfg)
     test_loader = create_test_dataloader(dataset_cfg, train_cfg)
     input_shape = tuple(dataset_cfg.get('input_shape', [3, 32, 32]))
+    init_seed = int(train_cfg.get('init_seed', dataset_cfg.get('seed', 42)))
+    torch.manual_seed(init_seed)
+    if device.type == 'cuda':
+        torch.cuda.manual_seed_all(init_seed)
     model = build_model(model_cfg, input_shape=input_shape).to(device)
     criterion = build_loss(cfg.get('loss', {'type': 'CrossEntropyLoss'}))
     optimizer_cfg = dict(cfg.get('optimizer', {'type': 'SGD', 'lr': 0.01}))
     optimizer = build_optimizer(_optimizer_params(model, optimizer_cfg), optimizer_cfg)
     scheduler = build_scheduler(optimizer, cfg.get('scheduler'))
-    amp_enabled = bool(train_cfg.get('amp', False) and device.type == 'cuda')
+    amp_enabled = parse_bool(train_cfg.get('amp', False), label='train.amp') and device.type == 'cuda'
     if hasattr(torch, 'amp') and hasattr(torch.amp, 'GradScaler'):
         scaler = torch.amp.GradScaler('cuda', enabled=amp_enabled)
     else:  # pragma: no cover

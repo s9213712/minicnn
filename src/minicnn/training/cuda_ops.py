@@ -7,6 +7,8 @@ import numpy as np
 from minicnn.config.settings import KH, KW, LEAKY_ALPHA
 from minicnn.core.cuda_backend import lib
 
+_C_LEAKY_ALPHA = c_float(LEAKY_ALPHA)
+
 
 def malloc_floats(size):
     return lib.gpu_malloc(size * 4)
@@ -34,11 +36,22 @@ def conv_forward_into(d_input_nchw, d_weight, d_col, d_raw, n, in_c, in_h, in_w,
     out_h, out_w = in_h - KH + 1, in_w - KW + 1
     lib.im2col_forward(d_input_nchw, d_col, n, in_c, in_h, in_w, KH, KW, out_h, out_w)
     lib.gemm_forward(d_weight, d_col, d_raw, out_c, n * out_h * out_w, in_c * KH * KW)
-    lib.leaky_relu_forward(d_raw, c_float(LEAKY_ALPHA), out_c * n * out_h * out_w)
+    lib.leaky_relu_forward(d_raw, _C_LEAKY_ALPHA, out_c * n * out_h * out_w)
 
 
 def maxpool_forward_into(d_input_cnhw, d_pool, d_max_idx, n, c, h, w):
     lib.maxpool_forward_store(d_pool, d_input_cnhw, d_max_idx, n, c, h, w)
+
+
+def maxpool_backward_nchw_into(d_grad_out, d_input, d_grad_input, n, c, in_h, in_w, out_h, out_w):
+    if hasattr(lib, 'maxpool_backward_nchw_status'):
+        status = lib.maxpool_backward_nchw_status(
+            d_grad_out, d_input, d_grad_input, n, c, in_h, in_w, out_h, out_w
+        )
+        if status != 0:
+            raise ValueError(f'maxpool_backward_nchw failed with CUDA status {status}')
+        return
+    lib.maxpool_backward_nchw(d_grad_out, d_input, d_grad_input, n, c, in_h, in_w, out_h, out_w)
 
 
 def cnhw_to_nchw_into(d_cnhw, d_nchw, n, c, h, w):
