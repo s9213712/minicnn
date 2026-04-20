@@ -33,12 +33,36 @@ def _choose_device(device_cfg: str):
     return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def _accuracy(logits, targets):
+def _adapt_targets(yb, logits, loss_type: str):
+    """Convert integer class labels to the shape/dtype expected by the loss function."""
+    if loss_type == 'CrossEntropyLoss':
+        return yb  # integer labels are correct
+    n, out = logits.shape[0], logits.shape[1] if logits.dim() > 1 else 1
+    if loss_type == 'MSELoss':
+        dense = torch.zeros(n, out, dtype=torch.float32, device=yb.device)
+        dense[torch.arange(n, device=yb.device), yb.long()] = 1.0
+        return dense
+    if loss_type == 'BCEWithLogitsLoss':
+        if out != 1:
+            raise ValueError(
+                f'BCEWithLogitsLoss with flex trainer requires out_features=1 (binary classification), '
+                f'but the model outputs {out} logits. '
+                'Use CrossEntropyLoss for multi-class classification.'
+            )
+        return yb.float().reshape(n, 1)
+    return yb
+
+
+def _pred_accuracy(logits, targets, loss_type: str) -> float:
+    """Compute prediction accuracy appropriate for the loss function."""
+    if loss_type == 'BCEWithLogitsLoss':
+        preds = (logits.squeeze(1) >= 0.0).long()
+        return float((preds == targets.long()).float().mean().item())
     preds = logits.argmax(dim=1)
-    return float((preds == targets).float().mean().item())
+    return float((preds == targets.long()).float().mean().item())
 
 
-def _eval(model, loader, criterion, device):
+def _eval(model, loader, criterion, device, loss_type: str = 'CrossEntropyLoss'):
     model.eval()
     loss_sum = 0.0
     acc_sum = 0.0
@@ -48,10 +72,11 @@ def _eval(model, loader, criterion, device):
             xb = xb.to(device)
             yb = yb.to(device)
             logits = model(xb)
-            loss = criterion(logits, yb)
+            adapted = _adapt_targets(yb, logits, loss_type)
+            loss = criterion(logits, adapted)
             bs = xb.shape[0]
             loss_sum += float(loss.item()) * bs
-            acc_sum += _accuracy(logits, yb) * bs
+            acc_sum += _pred_accuracy(logits, yb, loss_type) * bs
             count += bs
     return {'loss': loss_sum / max(count, 1), 'acc': acc_sum / max(count, 1)}
 
@@ -136,6 +161,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
     else:  # pragma: no cover
         scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
 
+    loss_type = str(cfg.get('loss', {}).get('type', 'CrossEntropyLoss'))
     best_val_acc = float('-inf')
     best_model_path = _best_model_path(run_dir)
     metrics_path = run_dir / 'metrics.jsonl'
@@ -168,7 +194,8 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
                     autocast_ctx = torch.cuda.amp.autocast(enabled=scaler.is_enabled())
                 with autocast_ctx:
                     logits = model(xb)
-                    loss = criterion(logits, yb) / grad_accum_steps
+                    adapted_yb = _adapt_targets(yb, logits, loss_type)
+                    loss = criterion(logits, adapted_yb) / grad_accum_steps
                 scaler.scale(loss).backward()
                 if step % grad_accum_steps == 0 or step == n_batches:
                     scaler.step(optimizer)
@@ -176,11 +203,11 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
                     _zero_grad(optimizer)
                 bs = xb.shape[0]
                 running_loss += float(loss.item()) * grad_accum_steps * bs
-                running_acc += _accuracy(logits, yb) * bs
+                running_acc += _pred_accuracy(logits, yb, loss_type) * bs
                 seen += bs
 
             train_metrics = {'loss': running_loss / max(seen, 1), 'acc': running_acc / max(seen, 1)}
-            val_metrics = _eval(model, val_loader, criterion, device)
+            val_metrics = _eval(model, val_loader, criterion, device, loss_type)
             if scheduler is not None:
                 if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                     scheduler.step(val_metrics['loss'])
@@ -229,7 +256,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
         except TypeError:  # pragma: no cover - older torch
             checkpoint = torch.load(best_model_path, map_location=device)
         model.load_state_dict(checkpoint['model_state'])
-        test_metrics = _eval(model, test_loader, criterion, device)
+        test_metrics = _eval(model, test_loader, criterion, device, loss_type)
 
     summary = {
         'device': str(device),

@@ -72,18 +72,15 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
     if backend == 'torch':
         run_dir = train_from_config(cfg)
         torch_summary_path = run_dir / 'summary.json'
-        torch_summary = json.loads(torch_summary_path.read_text(encoding='utf-8')) if torch_summary_path.exists() else {}
-        unified_summary: dict[str, Any] = {
-            'selected_backend': backend,
-            'effective_backend': 'torch',
-            'run_dir': str(run_dir),
-            'best_model_path': str(BEST_MODELS_ROOT / f'{run_dir.name}_best.pt'),
-            'config_backend_toggle_only': True,
-        }
-        for key in ('test_loss', 'test_acc'):
-            if key in torch_summary:
-                unified_summary[key] = torch_summary[key]
-        dump_summary(run_dir, unified_summary)
+        # Start from the existing flex summary so its fields are preserved.
+        merged: dict[str, Any] = json.loads(torch_summary_path.read_text(encoding='utf-8')) if torch_summary_path.exists() else {}
+        # Merge in unified metadata without overwriting existing keys.
+        merged.setdefault('selected_backend', backend)
+        merged.setdefault('effective_backend', 'torch')
+        merged.setdefault('run_dir', str(run_dir))
+        merged.setdefault('best_model_path', str(BEST_MODELS_ROOT / f'{run_dir.name}_best.pt'))
+        merged['config_backend_toggle_only'] = True
+        dump_summary(run_dir, merged)
         return run_dir
 
     if backend == 'cuda_legacy':

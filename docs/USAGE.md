@@ -42,7 +42,7 @@ CIFAR-10 legacy trainer 已拆成明確模組。`src/minicnn/training/train_cuda
 `docs/dual_backend_guide.md` 的 `When Architecture Changes Require Code Changes`
 決策表。
 
-MNIST 教學的最小版本是 `examples/mnist_ctypes/train_mnist_so.py`；較乾淨的重構版本是 `examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py`，它把 CUDA orchestration 拆成 `ConvBlock`、`DenseLayer`、dataclass cache、shape helper 與獨立 `SgdOptimizer`。
+MNIST ctypes 的 canonical entry point 是 `examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py`，它把 CUDA orchestration 拆成 `ConvBlock`、`DenseLayer`、dataclass cache、shape helper 與獨立 `SgdOptimizer`。舊的漸進版本保留在 `examples/mnist_ctypes/legacy/`。
 
 若要同時編譯兩種 native backend：
 

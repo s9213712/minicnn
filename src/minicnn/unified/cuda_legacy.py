@@ -109,9 +109,16 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
         errors.append('cuda_legacy only supports 10 output classes')
     if str(optim.get('type', 'SGD')) not in CUDA_LEGACY_SUPPORTED['optimizer']:
         errors.append('cuda_legacy only supports optimizer.type=SGD or Adam')
-    if str(loss.get('type', 'CrossEntropyLoss')) not in CUDA_LEGACY_SUPPORTED['loss']:
+    loss_type = str(loss.get('type', 'CrossEntropyLoss'))
+    if loss_type not in CUDA_LEGACY_SUPPORTED['loss']:
         supported = ', '.join(CUDA_LEGACY_SUPPORTED['loss'])
         errors.append(f'cuda_legacy only supports loss.type in [{supported}]')
+    elif loss_type == 'BCEWithLogitsLoss':
+        errors.append(
+            'cuda_legacy BCEWithLogitsLoss requires out_features=1 (binary classification), '
+            'which is incompatible with the required 10-class output; '
+            'use loss.type=CrossEntropyLoss for CIFAR-10'
+        )
     grad_accum_steps = _coerce_int(train.get('grad_accum_steps', 1), 'train.grad_accum_steps', errors)
     if grad_accum_steps is not None and grad_accum_steps != 1:
         errors.append('cuda_legacy does not support grad_accum_steps != 1')
@@ -257,12 +264,16 @@ def compile_to_legacy_experiment(cfg: dict[str, Any]) -> ExperimentConfig:
     exp.model.kw = 3
     # Build conv_layers from the unified config's Conv2d layers.
     # Fixed cuda_legacy pattern: conv1(no-pool), conv2(pool), conv3(no-pool), conv4(pool).
-    exp.model.conv_layers = [
-        {'out_c': int(convs[0]['out_channels']), 'pool': False},
-        {'out_c': int(convs[1]['out_channels']), 'pool': True},
-        {'out_c': int(convs[2]['out_channels']), 'pool': False},
-        {'out_c': int(convs[3]['out_channels']), 'pool': True},
-    ]
+    # layer_norm/batch_norm are passed through if present on the conv spec.
+    _pool_flags = [False, True, False, True]
+    exp.model.conv_layers = []
+    for conv, pool in zip(convs, _pool_flags):
+        entry: dict = {'out_c': int(conv['out_channels']), 'pool': pool}
+        if conv.get('layer_norm'):
+            entry['layer_norm'] = True
+        if conv.get('batch_norm'):
+            entry['batch_norm'] = True
+        exp.model.conv_layers.append(entry)
 
     return exp
 

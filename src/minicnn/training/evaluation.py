@@ -1,6 +1,8 @@
 """Forward-pass evaluation helpers for the CUDA CNN."""
 from __future__ import annotations
 
+from ctypes import c_float
+
 import numpy as np
 
 from minicnn.core.cuda_backend import download_int_scalar, lib, zero_bytes
@@ -39,6 +41,8 @@ class EvalWorkspace:
         self.d_col: list       = []
         self.d_conv_raw: list  = []
         self.d_conv_nchw: list = []
+        self.d_ln_out: list    = []
+        self.d_bn_out: list    = []
         self.d_pool: list      = []
         self.d_max_idx: list   = []
         self.d_pool_nchw: list = []
@@ -46,6 +50,14 @@ class EvalWorkspace:
         for s in geom.conv_stages:
             self.d_col.append(self._track(malloc_floats(s.in_c * s.kh * s.kw * n * s.h_out * s.w_out)))
             self.d_conv_raw.append(self._track(malloc_floats(s.out_c * n * s.h_out * s.w_out)))
+            if s.layer_norm and not s.pool:
+                self.d_ln_out.append(self._track(malloc_floats(n * s.out_c * s.h_out * s.w_out)))
+            else:
+                self.d_ln_out.append(None)
+            if s.batch_norm:
+                self.d_bn_out.append(self._track(malloc_floats(n * s.out_c * s.h_out * s.w_out)))
+            else:
+                self.d_bn_out.append(None)
             if s.pool:
                 self.d_pool.append(self._track(malloc_floats(s.out_c * n * s.ph * s.pw)))
                 self.d_max_idx.append(self._track(malloc_ints(s.out_c * n * s.ph * s.pw)))
@@ -81,10 +93,16 @@ class EvalWorkspace:
             )
 
 
-def _fc_input_ptr(i: int, ws: EvalWorkspace) -> object:
-    """Return the NCHW pointer that feeds into FC for stage i."""
+def _stage_output_ptr(i: int, ws: EvalWorkspace) -> object:
+    """Return the NCHW output pointer of stage i."""
     s = ws.geom.conv_stages[i]
-    return ws.d_pool_nchw[i] if s.pool else ws.d_conv_nchw[i]
+    if s.pool:
+        return ws.d_pool_nchw[i]
+    if s.batch_norm:
+        return ws.d_bn_out[i]
+    if s.layer_norm:
+        return ws.d_ln_out[i]
+    return ws.d_conv_nchw[i]
 
 
 def _forward_logits_into(x: np.ndarray, device_weights, workspace: EvalWorkspace) -> object:
@@ -97,7 +115,7 @@ def _forward_logits_into(x: np.ndarray, device_weights, workspace: EvalWorkspace
     upload_to(workspace.d_x, x)
 
     for i, s in enumerate(geom.conv_stages):
-        prev = workspace.d_x if i == 0 else _fc_input_ptr(i - 1, workspace)
+        prev = workspace.d_x if i == 0 else _stage_output_ptr(i - 1, workspace)
         conv_forward_into(prev, device_weights.conv_weights[i],
                           workspace.d_col[i], workspace.d_conv_raw[i],
                           n, s.in_c, s.h_in, s.w_in, s.out_c)
@@ -109,8 +127,30 @@ def _forward_logits_into(x: np.ndarray, device_weights, workspace: EvalWorkspace
         else:
             cnhw_to_nchw_into(workspace.d_conv_raw[i], workspace.d_conv_nchw[i],
                                n, s.out_c, s.h_out, s.w_out)
+            if s.layer_norm:
+                ln_idx = geom.ln_param_idx(i)
+                lib.layer_norm_forward(
+                    workspace.d_ln_out[i],
+                    workspace.d_conv_nchw[i],
+                    device_weights.ln_gamma[ln_idx],
+                    device_weights.ln_beta[ln_idx],
+                    n, s.out_c, s.h_out, s.w_out,
+                    c_float(1e-5),
+                )
+            elif s.batch_norm:
+                bn_idx = geom.bn_param_idx(i)
+                lib.bn_eval_forward(
+                    workspace.d_bn_out[i],
+                    workspace.d_conv_nchw[i],
+                    device_weights.bn_running_mean[bn_idx],
+                    device_weights.bn_running_var[bn_idx],
+                    device_weights.bn_gamma[bn_idx],
+                    device_weights.bn_beta[bn_idx],
+                    n, s.out_c, s.h_out, s.w_out,
+                    c_float(1e-5),
+                )
 
-    fc_in = _fc_input_ptr(geom.n_conv - 1, workspace)
+    fc_in = _stage_output_ptr(geom.n_conv - 1, workspace)
     lib.dense_forward(fc_in, device_weights.fc_w, device_weights.fc_b,
                       workspace.d_fc_out, n, geom.fc_in, geom.fc_out)
     return workspace.d_fc_out

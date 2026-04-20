@@ -1,0 +1,816 @@
+**important**依照本文優化時，要求先建立分支，以免污染main，並參閱超短版工作清單minicnn_staged_feature_expansion_short_checklist.txt一步一步執行
+MINICNN FEATURE EXPANSION MASTER INSTRUCTION (STAGED EXECUTION)
+Repository target: current uploaded repo `minicnn-main(2)`
+Goal: expand configurable training/model options without destabilizing the repo.
+Audience: coding agent working directly on this repo.
+
+=====================================================================
+0. MISSION AND OPERATING RULES
+=====================================================================
+You are modifying the CURRENT repo structure, not an older minimal_cuda_cnn layout.
+This repo already contains multiple execution paths:
+
+1) flex / torch stack
+   - registry-driven
+   - already supports multiple activations/losses/optimizers/schedulers via PyTorch
+2) autograd / pure-python stack
+   - custom Tensor/autograd engine
+   - partial support for losses and optimizers
+   - needs expansion and cleanup
+3) unified / cuda_legacy path
+   - heavily constrained handwritten CUDA legacy training path
+   - must remain conservative and highly validated
+4) framework registry / backend capability layer
+   - currently only partially populated
+
+Critical rule: DO NOT try to make all backends support all options in one pass.
+Critical rule: prefer correctness, compatibility, and validation over breadth.
+Critical rule: implement features in stages and stop at each stage with green tests.
+Critical rule: if a backend does not support a feature, fail early with a precise validation error.
+
+Required engineering behavior:
+- keep backward compatibility for existing configs where practical
+- do not silently reinterpret old configs in surprising ways
+- update tests alongside code
+- update docs/config examples only after code is working
+- avoid invasive refactors unless they reduce long-term complexity
+
+Definition of success:
+- the repo becomes a configurable mini-framework with staged support
+- flex stays broad and stable
+- autograd gains real feature breadth
+- cuda_legacy remains explicit, narrow, and safe
+
+=====================================================================
+1. CURRENT REPO FACTS TO RESPECT
+=====================================================================
+Observed relevant structure in this repo:
+
+- src/minicnn/flex/components.py
+  Already registers multiple torch-side activations, losses, optimizers, schedulers.
+  Includes ReLU / LeakyReLU / GELU / SiLU / Tanh.
+  Includes CrossEntropyLoss / MSELoss / BCEWithLogitsLoss.
+  Includes SGD / Adam / AdamW.
+  Includes StepLR / CosineAnnealingLR / ReduceLROnPlateau.
+
+- src/minicnn/training/train_autograd.py
+  Currently supports:
+  * optimizer.type: SGD or Adam only
+  * loss.type: CrossEntropyLoss / MSELoss / BCEWithLogitsLoss
+  * scheduler: hand-rolled simple step decay only
+
+- src/minicnn/framework/components.py
+  Currently registers only:
+  * backend: cuda, torch
+  * optimizer: sgd
+  * scheduler: plateau
+  This layer is incomplete vs actual repo capabilities.
+
+- src/minicnn/unified/cuda_legacy.py
+  Explicitly restricts:
+  * activations: ReLU, LeakyReLU
+  * optimizer: SGD only
+  * loss: CrossEntropyLoss only
+  * exact CNN layer pattern
+  This file must remain strict and explicit.
+
+- src/minicnn/models/initialization.py exists
+  Initialization can be expanded instead of added from scratch.
+
+- tests already exist for flex/unified/autograd behavior.
+  Extend them, do not bypass them.
+
+=====================================================================
+2. TARGET FEATURE MATRIX
+=====================================================================
+Implement or formalize multi-option support across these categories:
+
+A. Activation functions
+B. Optimizers
+C. Loss functions
+D. Schedulers
+E. Weight initialization
+F. Pooling
+G. Normalization
+H. Regularization
+I. Data augmentation
+J. Precision / dtype policy
+K. Architecture block presets
+L. Backend capability reporting / validation
+
+But not all categories have the same required backend scope.
+Use the staged scope matrix below.
+
+---------------------------------------------------------------------
+2.1 REQUIRED SUPPORT MATRIX BY STACK
+---------------------------------------------------------------------
+
+FLEX / TORCH STACK
+- keep as the broadest feature-complete stack
+- should support most user-facing options first
+
+AUTOGRAD STACK
+- support only options realistic for custom autograd implementation
+- no fake support
+- if unsupported, explicit error
+
+CUDA_LEGACY STACK
+- remain intentionally narrow
+- only expand if trivial and safe
+- otherwise improve validation + documentation, not feature breadth
+
+FRAMEWORK / REGISTRY LAYER
+- reflect real supported components cleanly
+- do not advertise unsupported combinations
+
+---------------------------------------------------------------------
+2.2 TARGET OPTION LIST PER CATEGORY
+---------------------------------------------------------------------
+
+A. Activation functions
+Priority required:
+- ReLU
+- LeakyReLU
+- SiLU
+- Tanh
+- Sigmoid
+Stretch:
+- GELU
+
+B. Optimizers
+Priority required:
+- SGD
+- Adam
+- AdamW
+- RMSprop
+Stretch:
+- Nesterov SGD as SGD flag, not separate optimizer unless cleaner
+
+C. Loss functions
+Priority required:
+- CrossEntropyLoss
+- MSELoss
+- BCEWithLogitsLoss
+Stretch:
+- HuberLoss / SmoothL1Loss
+- label_smoothing support for CrossEntropyLoss where feasible
+
+D. Schedulers
+Priority required:
+- none / disabled
+- StepLR
+- CosineAnnealingLR
+- ReduceLROnPlateau
+Autograd minimum acceptable:
+- none
+- step
+- cosine (simple implementation)
+Stretch:
+- warmup + cosine
+
+E. Weight initialization
+Priority required:
+- kaiming_uniform
+- kaiming_normal
+- xavier_uniform
+- xavier_normal
+- normal
+- zeros
+Stretch:
+- orthogonal
+
+F. Pooling
+Priority required:
+- MaxPool2d
+- AvgPool2d
+Stretch:
+- AdaptiveAvgPool2d / GlobalAvgPool equivalent where stack already supports it
+
+G. Normalization
+Priority required:
+- none
+- BatchNorm2d
+Stretch:
+- LayerNorm
+- GroupNorm
+Important: cuda_legacy must continue rejecting unsupported normalization.
+
+H. Regularization
+Priority required:
+- none
+- Dropout
+- weight_decay as optimizer option
+Stretch:
+- label smoothing (counts under loss too)
+
+I. Data augmentation
+Priority required for torch/flex configs:
+- normalize
+- random_crop
+- horizontal_flip
+Stretch:
+- cutout
+- mixup / cutmix only if repo already has a clean place for them
+
+J. Precision / dtype policy
+Priority required:
+- fp32
+- fp16 flag/policy only where backend genuinely supports it
+Important: cuda_legacy should reject unsupported amp/fp16 combinations if not real.
+
+K. Architecture block presets
+Priority required:
+- conv_relu
+- conv_bn_relu
+- conv_bn_silu
+Stretch:
+- residual_block preset
+Do not over-engineer full NAS/block factories.
+
+L. Backend capability reporting / validation
+Priority required:
+- clear support matrix surfaced in validation / docs / registry summary
+- explicit errors on unsupported combinations
+
+=====================================================================
+3. PHASED EXECUTION PLAN
+=====================================================================
+Work strictly phase by phase. Do not skip order.
+At the end of each phase:
+1) run targeted tests
+2) fix failures
+3) update minimal docs/config examples for that phase
+4) commit or checkpoint changes
+
+---------------------------------------------------------------------
+PHASE 0 — DISCOVERY, BASELINE, AND SAFETY RAILS
+---------------------------------------------------------------------
+Objective:
+Establish current behavior and prevent accidental regressions before feature expansion.
+
+Tasks:
+[ ] Audit current support in these files:
+    - src/minicnn/flex/components.py
+    - src/minicnn/flex/builder.py
+    - src/minicnn/training/train_autograd.py
+    - src/minicnn/framework/components.py
+    - src/minicnn/unified/cuda_legacy.py
+    - src/minicnn/models/initialization.py
+    - src/minicnn/models/builder.py
+    - src/minicnn/nn/modules.py
+    - src/minicnn/nn/layers.py
+    - relevant config schema/loader files
+[ ] Record current feature matrix in a new doc or update existing docs/backend_capabilities.md
+[ ] Add/extend tests that encode current narrow cuda_legacy restrictions so later phases do not accidentally broaden it.
+[ ] Add regression tests for existing flex builder behavior if missing.
+
+Deliverables:
+- baseline capability matrix documented
+- regression tests for current support boundaries
+
+Acceptance:
+- existing test suite remains green or known pre-existing failures are clearly isolated
+- no user-facing behavior change yet, except clearer validation/docs
+
+---------------------------------------------------------------------
+PHASE 1 — ACTIVATION SUPPORT CLEANUP AND EXPANSION
+---------------------------------------------------------------------
+Objective:
+Make activation selection consistent across stacks that can support it.
+
+Scope by stack:
+- Flex/torch: normalize naming and ensure registry coverage is complete
+- Autograd: implement real module/function support for required activations
+- CUDA legacy: keep only ReLU and LeakyReLU; improve validation and messaging
+
+Tasks:
+[ ] Define or normalize activation naming policy:
+    - prefer canonical strings, e.g. ReLU / LeakyReLU / SiLU / Tanh / Sigmoid / GELU
+    - optionally accept lowercase aliases via config normalization if already used elsewhere
+[ ] Audit `src/minicnn/models/builder.py`, `src/minicnn/nn/modules.py`, `src/minicnn/nn/layers.py` for current custom-module activation support.
+[ ] Implement missing autograd-compatible activation modules and backward logic as needed.
+[ ] Ensure builder/config path can instantiate chosen activations in custom/autograd models.
+[ ] Add config validation so unsupported activations fail early in unsupported stacks.
+[ ] Keep cuda_legacy rule: only ReLU and LeakyReLU allowed.
+[ ] For cuda_legacy, keep same-slope constraint for LeakyReLU unless thoroughly reworked.
+
+Minimum feature result:
+- custom/autograd path supports ReLU / LeakyReLU / SiLU / Tanh / Sigmoid
+- GELU optional if implementation is clean and numerically stable
+
+Tests:
+[ ] unit tests for activation forward/backward correctness on small tensors
+[ ] parity tests vs NumPy/PyTorch references where applicable
+[ ] builder tests for activation config strings
+[ ] unified/cuda_legacy validation tests for accepted/rejected activations
+
+Acceptance:
+- autograd train path can build and run with at least ReLU / LeakyReLU / SiLU / Tanh / Sigmoid
+- flex path remains green
+- cuda_legacy still explicitly rejects unsupported activations
+
+---------------------------------------------------------------------
+PHASE 2 — OPTIMIZER STACK EXPANSION
+---------------------------------------------------------------------
+Objective:
+Make optimizer choice configurable and consistent, especially in autograd and registry layers.
+
+Tasks:
+[ ] Audit current optimizer base classes in:
+    - src/minicnn/optim/optimizer.py
+    - src/minicnn/optim/sgd.py
+    - src/minicnn/optim/adam.py
+[ ] Add new optimizer modules as needed:
+    - adamw.py
+    - rmsprop.py
+[ ] Refactor shared optimizer utilities if necessary, but keep changes contained.
+[ ] Extend `src/minicnn/optim/__init__.py`
+[ ] Expand `train_autograd.py::_make_optimizer` to support SGD / Adam / AdamW / RMSprop
+[ ] If Nesterov is added, expose it as SGD config flag if simpler.
+[ ] Update framework registry so it does not only advertise `sgd` when repo actually supports more.
+[ ] Keep cuda_legacy optimizer restriction as SGD only unless native CUDA path truly supports more.
+
+Tests:
+[ ] optimizer smoke tests for parameter update direction
+[ ] zero_grad/state persistence tests
+[ ] train_autograd config tests for each optimizer type
+[ ] explicit validation test that cuda_legacy rejects Adam/AdamW/RMSprop
+
+Acceptance:
+- autograd stack supports SGD / Adam / AdamW / RMSprop
+- framework registry reports real optimizer support coherently
+- cuda_legacy remains narrow and explicit
+
+---------------------------------------------------------------------
+PHASE 3 — LOSS FUNCTION STANDARDIZATION
+---------------------------------------------------------------------
+Objective:
+Cleanly support multiple losses with consistent config-driven selection.
+
+Tasks:
+[ ] Confirm flex already supports CrossEntropyLoss / MSELoss / BCEWithLogitsLoss
+[ ] Audit autograd-side implementations in `minicnn.nn`
+[ ] Keep train_autograd loss factory but refactor into clearer registry/helper if helpful
+[ ] Ensure target-shape conversion logic for MSE/BCE is robust and tested
+[ ] Optionally add SmoothL1 / Huber only if straightforward and used cleanly
+[ ] Consider label smoothing support only where implementation is clear and tested
+
+Tests:
+[ ] unit tests for loss outputs on fixed toy examples
+[ ] train_autograd tests for all supported losses
+[ ] binary classification BCE test coverage
+[ ] unsupported-loss validation tests for stacks that cannot support extra losses
+
+Acceptance:
+- documented loss support matrix exists per stack
+- no ambiguity around logits/target shapes in autograd path
+
+---------------------------------------------------------------------
+PHASE 4 — SCHEDULER EXPANSION AND CONSISTENCY
+---------------------------------------------------------------------
+Objective:
+Move beyond one-off scheduler handling into consistent scheduler selection.
+
+Tasks:
+[ ] Audit existing scheduler base and plateau implementation:
+    - src/minicnn/schedulers/base.py
+    - src/minicnn/schedulers/plateau.py
+[ ] Decide whether autograd scheduler support should be:
+    A) small custom scheduler classes under minicnn.schedulers, or
+    B) a cleaner in-file adapter layer in train_autograd.py
+   Prefer A if it improves maintainability without much complexity.
+[ ] Implement/autowire:
+    - none / disabled
+    - StepLR
+    - CosineAnnealingLR
+    - ReduceLROnPlateau (if practical for autograd)
+[ ] Keep config schema consistent across flex and autograd where reasonable
+[ ] Avoid pretending scheduler support exists in cuda_legacy if it does not
+
+Tests:
+[ ] LR progression tests for step scheduler
+[ ] LR progression tests for cosine scheduler
+[ ] plateau behavior tests if implemented for autograd
+[ ] config parsing tests for enabled/disabled scheduler modes
+
+Acceptance:
+- autograd no longer has only hard-coded step decay behavior
+- scheduler config is explicit and test-covered
+
+---------------------------------------------------------------------
+PHASE 5 — WEIGHT INITIALIZATION OPTIONS
+---------------------------------------------------------------------
+Objective:
+Make initialization strategy configurable and aligned with chosen activations.
+
+Tasks:
+[ ] Audit `src/minicnn/models/initialization.py`
+[ ] Add or normalize init APIs for:
+    - kaiming_uniform
+    - kaiming_normal
+    - xavier_uniform
+    - xavier_normal
+    - normal
+    - zeros
+[ ] Connect initialization selection through model builder/config path
+[ ] Allow per-model default init and optional per-layer override only if simple; otherwise model-level init policy is enough
+[ ] Ensure docs recommend sensible pairings:
+    - kaiming_* for ReLU/LeakyReLU/SiLU-like
+    - xavier_* for Tanh/Sigmoid
+
+Tests:
+[ ] shape-preserving init tests
+[ ] statistical sanity tests (basic mean/std/range checks, not flaky)
+[ ] builder/config tests for init selection
+
+Acceptance:
+- config can choose init policy cleanly
+- custom/autograd and flex paths apply init consistently where appropriate
+
+---------------------------------------------------------------------
+PHASE 6 — POOLING OPTIONS
+---------------------------------------------------------------------
+Objective:
+Support multiple pooling choices where the stack realistically can.
+
+Tasks:
+[ ] Audit model builder parsing for pooling layers
+[ ] Ensure flex path supports MaxPool2d and AvgPool2d
+[ ] For autograd/custom path, add AvgPool2d only if forward/backward is manageable and correct
+[ ] If autograd AvgPool2d is too disruptive, document as unsupported and keep feature only in flex path for now
+[ ] Keep cuda_legacy restricted unless native kernels already exist or are trivial to add safely
+
+Tests:
+[ ] builder tests for MaxPool2d / AvgPool2d
+[ ] autograd pooling gradient tests if implemented
+[ ] cuda_legacy rejection tests for unsupported pooling types
+
+Acceptance:
+- at least flex path supports max and avg pooling by config
+- unsupported stacks fail clearly
+
+---------------------------------------------------------------------
+PHASE 7 — NORMALIZATION OPTIONS
+---------------------------------------------------------------------
+Objective:
+Formalize normalization support rather than leaving it implicit.
+
+Tasks:
+[ ] Confirm existing BatchNorm2d support paths in flex/torch and any custom modules
+[ ] Add/normalize config syntax for `none` vs `BatchNorm2d`
+[ ] Optionally expose LayerNorm / GroupNorm only in flex path if already easy via torch registry
+[ ] Keep cuda_legacy explicit rejection for BatchNorm2d in training graph until truly supported
+[ ] Improve validation errors and backend capability docs
+
+Tests:
+[ ] builder tests for BatchNorm2d insertion
+[ ] unified validation tests for cuda_legacy BatchNorm2d rejection
+[ ] flex training smoke tests for BN-enabled model config
+
+Acceptance:
+- normalization options are explicit in config/model builder
+- cuda_legacy behavior is clearly validated, not ambiguous
+
+---------------------------------------------------------------------
+PHASE 8 — REGULARIZATION OPTIONS
+---------------------------------------------------------------------
+Objective:
+Add common regularization knobs without destabilizing training loops.
+
+Tasks:
+[ ] Normalize Dropout support in flex/custom model builder where feasible
+[ ] Expose weight_decay consistently via optimizer configs across relevant stacks
+[ ] Consider label smoothing under loss config if implementation is clean
+[ ] Avoid adding many exotic regularizers at once
+
+Tests:
+[ ] builder tests for dropout insertion
+[ ] config propagation tests for weight_decay
+[ ] loss behavior tests for label smoothing if added
+
+Acceptance:
+- dropout and optimizer weight_decay are user-selectable and documented
+
+---------------------------------------------------------------------
+PHASE 9 — DATA AUGMENTATION OPTIONS
+---------------------------------------------------------------------
+Objective:
+Make basic augmentation configurable for the stacks that use DataLoader/torch data paths.
+
+Tasks:
+[ ] Audit data pipeline in flex/data and dataset loaders
+[ ] Add config-driven augmentation pipeline for torch/flex path:
+    - normalize
+    - random_crop
+    - horizontal_flip
+[ ] Keep autograd path simple; if augmentation is not naturally integrated there, document limited support
+[ ] Do not force augmentation into cuda_legacy if the data path is not designed for it
+
+Tests:
+[ ] config/data pipeline tests for augmentation enable/disable
+[ ] smoke test that training still runs with augmentations on CIFAR-10
+
+Acceptance:
+- flex path supports basic CIFAR-style augmentation by config
+- other stacks document/support only what is real
+
+---------------------------------------------------------------------
+PHASE 10 — PRECISION / DTYPE POLICY
+---------------------------------------------------------------------
+Objective:
+Expose precision choices only where actually supported.
+
+Tasks:
+[ ] Audit train/flex/unified/runtime config for dtype or amp flags
+[ ] Standardize config keys for precision policy where feasible
+[ ] For torch/flex, support explicit fp32 default and fp16/amp policy if real
+[ ] For autograd/custom NumPy path, likely keep fp32 only unless actual mixed precision exists
+[ ] For cuda_legacy, continue explicit rejection of unsupported amp/fp16
+
+Tests:
+[ ] validation tests for allowed/rejected precision modes per backend
+[ ] torch/flex smoke test for fp32 and any supported mixed precision mode
+
+Acceptance:
+- no fake mixed precision claims
+- backend-specific precision policy is explicit and validated
+
+---------------------------------------------------------------------
+PHASE 11 — ARCHITECTURE BLOCK PRESETS
+---------------------------------------------------------------------
+Objective:
+Lift the project from raw layer lists toward reusable configurable blocks.
+
+Tasks:
+[ ] Add a minimal set of block presets, preferably in flex/components or model builder helpers:
+    - conv_relu
+    - conv_bn_relu
+    - conv_bn_silu
+[ ] Optionally add a residual block preset if existing patterns make it cheap
+[ ] Keep these presets as sugar over already-supported layers, not a separate framework universe
+[ ] Ensure blocks map cleanly into config syntax and registry/builder
+
+Tests:
+[ ] builder tests for each preset block
+[ ] flex training smoke test using at least one preset block config
+
+Acceptance:
+- users can choose reusable block presets without breaking old layer-list configs
+
+---------------------------------------------------------------------
+PHASE 12 — CAPABILITY REPORTING, VALIDATION, AND DOC HARDENING
+---------------------------------------------------------------------
+Objective:
+Make support boundaries discoverable and hard to misuse.
+
+Tasks:
+[ ] Expand backend capability docs (prefer docs/backend_capabilities.md)
+[ ] Improve unified/config validation messages to mention exactly which backend supports what
+[ ] Update framework registry or summary reporting to reflect actual components
+[ ] Add example configs demonstrating supported combinations
+[ ] Ensure README/USAGE mention stack differences clearly:
+    - flex = broadest options
+    - autograd = educational/custom but limited
+    - cuda_legacy = narrow handwritten CUDA path
+
+Tests:
+[ ] validation tests for common invalid combinations
+[ ] docs/example configs pass at least parsing/build-level smoke tests
+
+Acceptance:
+- user can tell before training whether a config/backend combination is valid
+- docs and validation align with actual implementation
+
+=====================================================================
+4. WORKLIST / TASK CHECKLIST
+=====================================================================
+Use this as the working checklist. Do not mark items done until code + tests are green.
+
+CORE DISCOVERY
+[ ] Audit current capabilities per stack
+[ ] Document baseline support matrix
+[ ] Add regression tests for current cuda_legacy restrictions
+
+ACTIVATIONS
+[ ] Normalize activation naming/aliases
+[ ] Implement missing autograd activation modules
+[ ] Wire builder/config to chosen activations
+[ ] Add tests for activation forward/backward
+[ ] Keep cuda_legacy restriction explicit
+
+OPTIMIZERS
+[ ] Audit current optimizer base/state handling
+[ ] Add AdamW
+[ ] Add RMSprop
+[ ] Extend autograd optimizer factory
+[ ] Expand framework optimizer registry
+[ ] Add optimizer tests
+[ ] Preserve cuda_legacy SGD-only restriction
+
+LOSSES
+[ ] Standardize loss factory path
+[ ] Test CrossEntropyLoss / MSELoss / BCEWithLogitsLoss
+[ ] Improve target-shape handling tests
+[ ] Optionally add Huber/SmoothL1
+
+SCHEDULERS
+[ ] Refactor autograd scheduler handling
+[ ] Add none/step/cosine
+[ ] Add plateau if practical
+[ ] Add scheduler tests
+
+INITIALIZATION
+[ ] Audit current init utilities
+[ ] Add kaiming/xavier/normal/zeros policies
+[ ] Wire init choice through config/builder
+[ ] Add init tests
+
+POOLING
+[ ] Audit pooling config/build path
+[ ] Support max/avg where realistic
+[ ] Add tests / rejections by backend
+
+NORMALIZATION
+[ ] Normalize BatchNorm2d support
+[ ] Add config validation for unsupported backends
+[ ] Add tests
+
+REGULARIZATION
+[ ] Add Dropout config/build support
+[ ] Standardize weight_decay config behavior
+[ ] Optionally add label smoothing
+[ ] Add tests
+
+AUGMENTATION
+[ ] Add configurable normalize/random_crop/horizontal_flip for flex path
+[ ] Add tests
+
+PRECISION
+[ ] Standardize precision config semantics
+[ ] Add backend-specific validation
+[ ] Add smoke tests for real supported modes
+
+ARCHITECTURE PRESETS
+[ ] Add conv_relu preset
+[ ] Add conv_bn_relu preset
+[ ] Add conv_bn_silu preset
+[ ] Add builder tests
+
+DOCS / VALIDATION
+[ ] Update backend capabilities doc
+[ ] Update example configs
+[ ] Update README/USAGE where needed
+[ ] Add invalid-combination validation tests
+
+=====================================================================
+5. RECOMMENDED FILES TO TOUCH BY PHASE
+=====================================================================
+This is guidance, not a rigid limit.
+
+Likely core files:
+- src/minicnn/flex/components.py
+- src/minicnn/flex/builder.py
+- src/minicnn/flex/config.py
+- src/minicnn/flex/trainer.py
+- src/minicnn/framework/components.py
+- src/minicnn/framework/registry.py
+- src/minicnn/models/builder.py
+- src/minicnn/models/initialization.py
+- src/minicnn/nn/layers.py
+- src/minicnn/nn/modules.py
+- src/minicnn/optim/__init__.py
+- src/minicnn/optim/optimizer.py
+- src/minicnn/optim/adam.py
+- src/minicnn/optim/sgd.py
+- src/minicnn/optim/adamw.py (new)
+- src/minicnn/optim/rmsprop.py (new)
+- src/minicnn/schedulers/__init__.py
+- src/minicnn/schedulers/base.py
+- src/minicnn/schedulers/plateau.py
+- src/minicnn/schedulers/step.py (new if needed)
+- src/minicnn/schedulers/cosine.py (new if needed)
+- src/minicnn/training/train_autograd.py
+- src/minicnn/unified/cuda_legacy.py
+- src/minicnn/config/schema.py
+- src/minicnn/config/loader.py
+- src/minicnn/config/parsing.py
+- src/minicnn/data/cifar10.py
+- src/minicnn/flex/data.py
+- docs/backend_capabilities.md
+- docs/custom_components.md
+- docs/USAGE.md
+- configs/*.yaml
+- tests/*
+
+=====================================================================
+6. TEST STRATEGY AND GATES
+=====================================================================
+Do not rely only on end-to-end training.
+
+Required test layers:
+
+1) unit tests
+- activation forward/backward
+- optimizer state updates
+- scheduler LR evolution
+- init policy sanity
+- validation helpers
+
+2) builder/config tests
+- config string -> correct object construction
+- invalid combinations -> clear error messages
+
+3) stack smoke tests
+- flex training minimal run
+- autograd training minimal run
+- cuda_legacy validation/build smoke test
+
+4) parity/reference tests where practical
+- compare custom activation/loss behavior to NumPy or PyTorch reference
+
+Suggested commands (adjust to actual environment/tooling):
+- pytest tests/test_flex_builder.py -q
+- pytest tests/test_flex_training.py -q
+- pytest tests/test_autograd.py -q
+- pytest tests/test_autograd_stack.py -q
+- pytest tests/test_unified_validation.py -q
+- pytest tests/test_training_loop.py -q
+- pytest -q
+
+Gate policy:
+- Do not move to next phase if current phase introduces red tests in touched areas.
+- If a full suite is too slow, run targeted tests first, then broader suite before phase completion.
+
+=====================================================================
+7. BACKEND SUPPORT POLICY (IMPORTANT)
+=====================================================================
+Do not force artificial uniformity.
+The correct behavior is a documented uneven support matrix.
+
+Expected support philosophy after this work:
+
+FLEX / TORCH
+- broadest component coverage
+- best place for experimentation and production-like configs
+
+AUTOGRAD
+- educational/custom stack with real but smaller feature set
+- should support common activations/optimizers/losses/schedulers/init choices
+- should explicitly reject advanced unsupported features
+
+CUDA_LEGACY
+- narrow handwritten CUDA baseline
+- supports only a strict validated subset
+- strong validation is a feature, not a limitation to hide
+
+=====================================================================
+8. CONFIG DESIGN GUIDELINES
+=====================================================================
+Aim for config consistency, but do not break working configs unnecessarily.
+
+Recommended style:
+- activation as canonical type string
+- optimizer.type with optimizer-specific fields nested under optimizer
+- loss.type
+- scheduler.enabled + scheduler.type + scheduler params
+- model.init or model.initialization.type for init policy
+- explicit layer types for pooling/norm/dropout when layer-list config is used
+
+Avoid:
+- too many aliases without tests
+- backend-specific magic hidden behind generic names
+- silently ignoring unsupported keys
+
+If unsupported keys are present for a chosen backend, prefer warning or validation error depending on severity.
+
+=====================================================================
+9. DEFINITION OF DONE
+=====================================================================
+This project is considered complete when:
+
+[ ] features are added phase by phase with green tests
+[ ] activation/optimizer/loss/scheduler/init options are configurable where genuinely supported
+[ ] pooling/norm/regularization/augmentation/precision/block presets are available at least in the broad stack(s)
+[ ] framework/validation/docs accurately describe support boundaries
+[ ] cuda_legacy remains safe, narrow, and well-validated
+[ ] example configs demonstrate the new capabilities
+[ ] old configs still work or migration notes are explicit
+
+=====================================================================
+10. FINAL DELIVERABLES EXPECTED FROM AGENT
+=====================================================================
+Provide all of the following at the end:
+
+1) code changes
+2) updated tests
+3) updated docs
+4) at least a few example configs for:
+   - flex broad feature config
+   - autograd enhanced config
+   - cuda_legacy strict config
+5) a concise completion report containing:
+   - what was implemented in each phase
+   - what remains intentionally unsupported
+   - test commands run
+   - any known limitations
+

@@ -30,6 +30,7 @@ SRCS = \
 	src/maxpool_backward_nchw.cu \
 	src/leaky_relu.cu \
 	src/layer_norm.cu \
+	src/batchnorm.cu \
 	src/maxpool_store.cu \
 	src/maxpool_backward_use_idx.cu \
 	src/layout_convert.cu

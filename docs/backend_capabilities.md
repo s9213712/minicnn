@@ -22,11 +22,11 @@ not as one global project-level checklist.
 | Sigmoid / Tanh | Yes | Yes | No |
 | Dropout | Yes | Yes | No |
 | CrossEntropyLoss | Yes | Yes | Yes |
-| MSELoss | Yes | Yes | No |
-| BCEWithLogitsLoss | Yes | Yes | No |
+| MSELoss | Yes | Yes | Experimental (gradient scaling matches mean over N×features) |
+| BCEWithLogitsLoss | Yes | Yes | Not supported (requires out_features=1, incompatible with 10-class CIFAR-10) |
 | SGD | Yes | Yes | Yes |
 | Momentum SGD | Yes | Yes | Yes |
-| Adam | Yes | Yes | No |
+| Adam | Yes | Yes | Experimental |
 | AdamW | Yes | No | No |
 | AMP / mixed precision | Yes on CUDA | No | No |
 | Gradient accumulation | Yes | No | No |

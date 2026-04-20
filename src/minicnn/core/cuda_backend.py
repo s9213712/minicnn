@@ -145,6 +145,24 @@ def _bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
         bound_lib.layer_norm_backward.argtypes = [
             c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_float,
         ]
+    if hasattr(bound_lib, 'bn_train_forward'):
+        bound_lib.bn_train_forward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+            c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int,
+            c_float, c_float,
+        ]
+    if hasattr(bound_lib, 'bn_eval_forward'):
+        bound_lib.bn_eval_forward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_float,
+        ]
+    if hasattr(bound_lib, 'bn_backward'):
+        bound_lib.bn_backward.argtypes = [
+            c_void_p, c_void_p, c_void_p,
+            c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int,
+        ]
     if hasattr(bound_lib, 'adam_update_fused'):
         bound_lib.adam_update_fused.argtypes = [
             c_void_p, c_void_p, c_void_p, c_void_p,

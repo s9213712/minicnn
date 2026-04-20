@@ -73,8 +73,17 @@ def init_cuda_runtime(arch: "CudaNetGeometry") -> CudaRuntimeState:
     ln_stages = [s for s in arch.conv_stages if s.layer_norm]
     ln_gamma = [np.ones(s.out_c, dtype=np.float32) for s in ln_stages]
     ln_beta  = [np.zeros(s.out_c, dtype=np.float32) for s in ln_stages]
+    bn_stages = [s for s in arch.conv_stages if s.batch_norm]
+    bn_gamma        = [np.ones(s.out_c, dtype=np.float32)  for s in bn_stages]
+    bn_beta         = [np.zeros(s.out_c, dtype=np.float32) for s in bn_stages]
+    bn_running_mean = [np.zeros(s.out_c, dtype=np.float32) for s in bn_stages]
+    bn_running_var  = [np.ones(s.out_c, dtype=np.float32)  for s in bn_stages]
     return CudaRuntimeState(
-        weights=upload_weights(conv_arrays, fc_w, fc_b, ln_gamma, ln_beta),
+        weights=upload_weights(
+            conv_arrays, fc_w, fc_b,
+            ln_gamma, ln_beta,
+            bn_gamma, bn_beta, bn_running_mean, bn_running_var,
+        ),
         velocities=init_velocity_buffers(arch),
         adam=init_adam_buffers(arch) if use_adam else None,
     )

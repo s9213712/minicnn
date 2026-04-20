@@ -1,0 +1,132 @@
+watch minicnn_staged_feature_expansion_agent_instruction.txt first
+MiniCNN 分階段執行超短版作戰清單
+
+[總原則]
+- 一次只做一個 phase。
+- 每個 phase 完成後，先跑測試、修到綠，再進下一階段。
+- 不要一開始就強行把 cuda_legacy 補成全功能；先把 autograd / flex / config / registry 做穩。
+- 預設行為必須保持相容，舊 config 能跑。
+
+[Phase 0: 盤點與護欄]
+1. 盤點目前支援矩陣：
+   - backend: flex / autograd / cuda_legacy / torch
+   - activation / optimizer / loss / scheduler / norm / pooling / init / regularization / augmentation / precision
+2. 補 config 驗證與錯誤訊息。
+3. 為 capability 不支援的 backend 建立明確 fallback / error 規則。
+4. 先補最基本 smoke tests。
+
+驗收：
+- 不合法 config 會有清楚錯誤。
+- 舊 config 不壞。
+
+[Phase 1: Activation]
+目標：
+- 支援 relu / leaky_relu / silu / tanh / sigmoid
+- gelu 列為加分項，不要卡主線
+
+工作：
+1. 建立 activation resolver / registry。
+2. 整理 autograd / flex 的 activation 建構方式。
+3. 保留 cuda_legacy 預設 leaky_relu；若要擴充，只先做 relu，其他不強求。
+4. 補 forward / backward 測試。
+5. 更新 config schema 與文件。
+
+驗收：
+- autograd / flex 至少可選 relu、leaky_relu、silu、tanh、sigmoid
+- baseline 訓練能跑
+- 舊行為相容
+
+[Phase 2: Optimizer]
+目標：
+- 支援 sgd / adam / adamw / rmsprop
+
+工作：
+1. 統一 optimizer registry。
+2. 讓 train_autograd / framework builder / config 都走同一套名字。
+3. 補 AdamW、RMSprop。
+4. 明確定義 weight_decay、momentum、betas、eps 等參數。
+5. cuda_legacy 若無法支援，明確拒絕或 fallback，不要假裝支援。
+
+驗收：
+- autograd 可選 sgd / adam / adamw / rmsprop
+- 參數解析正確
+- smoke train 不崩
+
+[Phase 3: Loss + Scheduler]
+目標：
+- loss: cross_entropy / mse
+- scheduler: none / step / cosine
+
+工作：
+1. 建立 loss registry。
+2. 建立 scheduler registry。
+3. 將 train loop 接到統一 scheduler step 流程。
+4. 補最小測試與 config 文件。
+
+驗收：
+- cross_entropy 與 mse 可用
+- none / step / cosine 可切換
+- LR 變化符合預期
+
+[Phase 4: Initialization + Pooling + Norm]
+目標：
+- init: kaiming_uniform / kaiming_normal / xavier_uniform
+- pooling: max / avg
+- norm: none / batchnorm
+
+工作：
+1. 抽象初始化策略並接入 layer 建立流程。
+2. pooling 做成可選 max / avg。
+3. 先補 batchnorm；其他 norm 先不做。
+4. 補 shape、forward、基本訓練測試。
+
+驗收：
+- init / pooling / batchnorm 可從 config 切換
+- 不破壞既有模型路徑
+
+[Phase 5: Regularization + Augmentation + Precision]
+目標：
+- regularization: none / dropout / label_smoothing
+- augmentation: normalize / random_crop / horizontal_flip
+- precision: fp32 / fp16
+
+工作：
+1. dropout 接入 model builder。
+2. label_smoothing 接入分類 loss。
+3. augmentation 統一放在資料管線 config。
+4. precision 先在 torch / flex 路線處理；對不支援 backend 明確報錯。
+
+驗收：
+- 這些選項可由 config 控制
+- 不支援處會明確報錯，不可默默失效
+
+[Phase 6: Block Preset + 文件 + Capability Matrix]
+目標：
+- block preset: conv_relu / conv_bn_relu / conv_bn_silu
+- 完整 capability matrix
+- 文件與範例 config 補齊
+
+工作：
+1. 提供 block preset，減少 config 重複。
+2. 補 backend x feature capability matrix。
+3. 更新 README / example configs / migration notes。
+
+驗收：
+- 使用者能從文件快速知道哪些 backend 支援哪些功能
+- 至少有 2~3 份可直接跑的範例 config
+
+[每階段都要做的固定清單]
+- 改完先跑 lint / unit tests / smoke tests
+- 更新 config schema
+- 更新 README 或對應 docs
+- 補至少一個正向測試與一個錯誤處理測試
+- 保持舊 config 相容或提供明確 migration 說明
+
+[禁止事項]
+- 不要一次重寫所有訓練路徑
+- 不要強迫 cuda_legacy 與 autograd / torch 功能完全對齊
+- 不要在沒有測試的情況下擴大 API 面
+- 不要把 GELU、LayerNorm、GroupNorm、混合精度深度最佳化放在第一批主線任務
+
+[建議最小交付順序]
+Phase 0 -> Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6

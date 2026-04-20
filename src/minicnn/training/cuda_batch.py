@@ -113,6 +113,8 @@ def _prev_nchw(arch: CudaNetGeometry, i: int, workspace: BatchWorkspace) -> obje
     prev = arch.conv_stages[i - 1]
     if prev.pool:
         return workspace.d_pool_nchw[i - 1]
+    if prev.batch_norm:
+        return workspace.d_bn_out[i - 1]
     if prev.layer_norm:
         return workspace.d_ln_out[i - 1]
     return workspace.d_conv_nchw[i - 1]
@@ -122,6 +124,8 @@ def final_activation_ptr(arch: CudaNetGeometry, workspace: BatchWorkspace) -> ob
     last = arch.conv_stages[-1]
     if last.pool:
         return workspace.d_pool_nchw[-1]
+    if last.batch_norm:
+        return workspace.d_bn_out[-1]
     if last.layer_norm:
         return workspace.d_ln_out[-1]
     return workspace.d_conv_nchw[-1]
@@ -164,7 +168,7 @@ def forward_convs(
                 stage.pw,
             )
         else:
-            # Convert CNHW → NCHW; for LN stages this acts as the pre-LN buffer.
+            # Convert CNHW → NCHW; for LN/BN stages this acts as the pre-norm buffer.
             cnhw_to_nchw_into(
                 workspace.d_conv_raw[i],
                 workspace.d_conv_nchw[i],
@@ -182,6 +186,21 @@ def forward_convs(
                     runtime.weights.ln_beta[ln_idx],
                     batch_size, stage.out_c, stage.h_out, stage.w_out,
                     c_float(1e-5),
+                )
+            elif stage.batch_norm:
+                bn_idx = arch.bn_param_idx(i)
+                lib.bn_train_forward(
+                    workspace.d_bn_out[i],
+                    workspace.d_conv_nchw[i],
+                    workspace.d_bn_x_hat[i],
+                    workspace.d_bn_mean[i],
+                    workspace.d_bn_inv_std[i],
+                    runtime.weights.bn_running_mean[bn_idx],
+                    runtime.weights.bn_running_var[bn_idx],
+                    runtime.weights.bn_gamma[bn_idx],
+                    runtime.weights.bn_beta[bn_idx],
+                    batch_size, stage.out_c, stage.h_out, stage.w_out,
+                    c_float(1e-5), c_float(0.1),
                 )
 
     return final_activation_ptr(arch, workspace)
@@ -335,9 +354,9 @@ def backward_convs(
     for i in reversed(range(arch.n_conv)):
         stage = arch.conv_stages[i]
 
-        # For non-pool LN stages: backprop through LayerNorm first to get
-        # gradient w.r.t. d_conv_nchw[i], then continue as a regular non-pool stage.
+        # For non-pool LN stages: backprop through LayerNorm first.
         # Note: LN gamma/beta are frozen (not updated) in this implementation.
+        # For non-pool BN stages: backprop through BatchNorm, then update gamma/beta.
         if stage.layer_norm and not stage.pool:
             ln_idx = arch.ln_param_idx(i)
             lib.layer_norm_backward(
@@ -349,6 +368,22 @@ def backward_convs(
                 c_float(1e-5),
             )
             grad_for_cnhw = workspace.d_ln_input_grad[i]
+        elif stage.batch_norm and not stage.pool:
+            bn_idx = arch.bn_param_idx(i)
+            # Zero gradient accumulators (bn_backward accumulates, not overwrites).
+            zero_floats(workspace.d_bn_dgamma[i], stage.out_c)
+            zero_floats(workspace.d_bn_dbeta[i], stage.out_c)
+            lib.bn_backward(
+                workspace.d_bn_input_grad[i],   # grad w.r.t. BN input (d_conv_nchw)
+                workspace.d_bn_dgamma[i],        # accumulated dgamma
+                workspace.d_bn_dbeta[i],         # accumulated dbeta
+                grad_nchw,                       # grad w.r.t. BN output
+                workspace.d_bn_x_hat[i],         # saved x_hat from forward
+                runtime.weights.bn_gamma[bn_idx],
+                workspace.d_bn_inv_std[i],       # saved inv_std from forward
+                batch_size, stage.out_c, stage.h_out, stage.w_out,
+            )
+            grad_for_cnhw = workspace.d_bn_input_grad[i]
         else:
             grad_for_cnhw = grad_nchw
 
@@ -446,6 +481,24 @@ def update_convs(
                 grad_normalizer=spatial_norm, bias_corr1=bc1, bias_corr2=bc2,
                 log_grad=log_grad,
             )
+            if stage.batch_norm:
+                bn_idx = arch.bn_param_idx(i)
+                update_adam(
+                    runtime.weights.bn_gamma[bn_idx], workspace.d_bn_dgamma[i],
+                    runtime.adam.bn_gamma_m[bn_idx], runtime.adam.bn_gamma_v[bn_idx],
+                    lr_state.conv, ADAM_BETA1, ADAM_BETA2, ADAM_EPS,
+                    0.0, GRAD_CLIP_CONV,
+                    stage.out_c, f"bn_gamma{i + 1}",
+                    bias_corr1=bc1, bias_corr2=bc2,
+                )
+                update_adam(
+                    runtime.weights.bn_beta[bn_idx], workspace.d_bn_dbeta[i],
+                    runtime.adam.bn_beta_m[bn_idx], runtime.adam.bn_beta_v[bn_idx],
+                    lr_state.conv, ADAM_BETA1, ADAM_BETA2, ADAM_EPS,
+                    0.0, GRAD_CLIP_BIAS,
+                    stage.out_c, f"bn_beta{i + 1}",
+                    bias_corr1=bc1, bias_corr2=bc2,
+                )
     else:
         for i, stage in enumerate(arch.conv_stages):
             lr = lr_state.conv1 if i == 0 else lr_state.conv
@@ -463,6 +516,21 @@ def update_convs(
                 spatial_norm,
                 log_grad,
             )
+            if stage.batch_norm:
+                bn_idx = arch.bn_param_idx(i)
+                norm_c = c_float(scaled_normalizer(1.0, grad_scale))
+                lib.conv_update_fused(
+                    runtime.weights.bn_gamma[bn_idx], workspace.d_bn_dgamma[i],
+                    runtime.velocities.bn_gamma_vel[bn_idx],
+                    c_float(lr_state.conv), _C_MOMENTUM, _C_ZERO, c_float(GRAD_CLIP_CONV),
+                    norm_c, stage.out_c,
+                )
+                lib.conv_update_fused(
+                    runtime.weights.bn_beta[bn_idx], workspace.d_bn_dbeta[i],
+                    runtime.velocities.bn_beta_vel[bn_idx],
+                    c_float(lr_state.conv), _C_MOMENTUM, _C_ZERO, _C_GRAD_CLIP_BIAS,
+                    norm_c, stage.out_c,
+                )
 
 
 def train_cuda_batch(
