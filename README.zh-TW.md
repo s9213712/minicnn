@@ -61,11 +61,13 @@ Windows 可用 PowerShell 編譯 DLL：
 minicnn build --check
 ```
 
-> **開始訓練前**：請先下載 CIFAR-10 資料集。
->
-> ```bash
-> minicnn prepare-data
-> ```
+## 準備資料集
+
+執行下面的訓練指令前，請先下載 CIFAR-10：
+
+```bash
+minicnn prepare-data
+```
 
 ## 使用同一份 config 切換 backend
 

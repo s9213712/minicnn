@@ -61,11 +61,13 @@ Or with the CMake path:
 minicnn build --check
 ```
 
-> **Before training**: download the CIFAR-10 dataset first.
->
-> ```bash
-> minicnn prepare-data
-> ```
+## Prepare Dataset
+
+Download CIFAR-10 before running the training commands below:
+
+```bash
+minicnn prepare-data
+```
 
 ## Shared-config training
 
