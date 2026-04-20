@@ -42,7 +42,7 @@ CIFAR-10 legacy trainer 已拆成明確模組。`src/minicnn/training/train_cuda
 `docs/dual_backend_guide.md` 的 `When Architecture Changes Require Code Changes`
 決策表。
 
-MNIST 教學的最小版本是 `docs/train_mnist_so.py`；較乾淨的重構版本是 `docs/train_mnist_so_full_cnn_frame.py`，它把 CUDA orchestration 拆成 `ConvBlock`、`DenseLayer`、dataclass cache、shape helper 與獨立 `SgdOptimizer`。
+MNIST 教學的最小版本是 `examples/mnist_ctypes/train_mnist_so.py`；較乾淨的重構版本是 `examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py`，它把 CUDA orchestration 拆成 `ConvBlock`、`DenseLayer`、dataclass cache、shape helper 與獨立 `SgdOptimizer`。
 
 若要同時編譯兩種 native backend：
 
@@ -77,6 +77,10 @@ minicnn validate-config --config configs/dual_backend_cnn.yaml
 minicnn compile --config configs/autograd_tiny.yaml
 ```
 
+`compare` 會輸出每個 backend 的 `elapsed_s`、`avg_epoch_time_s`、
+`last_epoch_time_s`、`samples_per_sec`、train/val sample 數與 batch size，
+可直接填入 `docs/benchmark_report_template.md`。
+
 訓練產生的最佳模型檔固定寫入：
 
 ```text
@@ -101,7 +105,8 @@ Debug 時可直接用 config override 控制訓練參數：
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=cublas \
   train.epochs=1 train.batch_size=32 \
-  dataset.num_samples=128 dataset.val_samples=32
+  dataset.num_samples=128 dataset.val_samples=32 \
+  optimizer.grad_clip_global=2.0
 ```
 
 legacy trainer 也支援常用環境變數覆蓋：
@@ -147,3 +152,7 @@ minicnn build --legacy-make --check
 minicnn prepare-data
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
 ```
+
+## Custom Components
+
+See [docs/custom_components.md](custom_components.md) for how to add custom Python layers to the torch/flex backend.

@@ -81,6 +81,7 @@ optimizer:
   lr_fc: 0.005
   momentum: 0.9
   weight_decay: 0.0005
+  grad_clip_global: 0.0  # cuda_legacy only; 0 disables global norm clipping
 
 scheduler:
   enabled: true

@@ -78,7 +78,7 @@ FC(8*13*13 -> 10)
 Softmax cross entropy
 ```
 
-完整可執行版本已放在 [train_mnist_so.py](train_mnist_so.py)。該檔案不用 `torchvision`，只用 NumPy 與 Python 標準函式庫解析 MNIST IDX gzip 檔。
+完整可執行版本已放在 [`examples/mnist_ctypes/train_mnist_so.py`](../examples/mnist_ctypes/train_mnist_so.py)。該檔案不用 `torchvision`，只用 NumPy 與 Python 標準函式庫解析 MNIST IDX gzip 檔。
 
 ## 訓練流程骨架
 
@@ -162,13 +162,13 @@ lib.conv_update_fused(
 ## 完整範例檔
 
 ```text
-docs/train_mnist_so.py
+examples/mnist_ctypes/train_mnist_so.py
 ```
 
 較完整、較接近 framework 結構的重構版：
 
 ```text
-docs/train_mnist_so_full_cnn_frame.py
+examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py
 ```
 
 重構版把重複的 Python orchestration 收斂到 `ConvBlock`、`DenseLayer`、dataclass cache、shape helper 與獨立 `SgdOptimizer`，保留同一組 `.so` C API。
@@ -178,7 +178,7 @@ docs/train_mnist_so_full_cnn_frame.py
 ```bash
 cd minicnn
 make -C cpp
-python3 -u docs/train_mnist_so.py --download
+python3 -u examples/mnist_ctypes/train_mnist_so.py --download
 ```
 
 第一次執行若本機沒有 MNIST，使用 `--download` 下載 gzip IDX 檔到 `data/mnist/`。如果機器不能連網，請先把四個 MNIST `.gz` 檔放到該目錄。
@@ -186,7 +186,7 @@ python3 -u docs/train_mnist_so.py --download
 ## 快速驗證
 
 ```bash
-cuda-memcheck python3 -u docs/train_mnist_so.py
+cuda-memcheck python3 -u examples/mnist_ctypes/train_mnist_so.py
 ```
 
 如果只想驗證 `.so` 函式本身，使用既有 sanity test：

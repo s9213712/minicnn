@@ -14,7 +14,7 @@ except ImportError:  # pragma: no cover
     nn = None
 
 
-CUDA_LEGACY_OPTIMIZER_KEYS = {'lr_conv1', 'lr_conv', 'lr_fc'}
+CUDA_LEGACY_OPTIMIZER_KEYS = {'lr_conv1', 'lr_conv', 'lr_fc', 'grad_clip_global'}
 _PASSTHROUGH_LAYERS = {
     'BatchNorm2d',
     'Dropout',

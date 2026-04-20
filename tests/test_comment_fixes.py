@@ -126,6 +126,55 @@ def test_cli_seed_overrides_keep_dataset_init_and_train_seeds_separate():
     assert 'dataset.seed=222' not in overrides
 
 
+def test_cli_benchmark_fields_read_metrics_for_compare(tmp_path):
+    from minicnn.cli import _benchmark_fields
+
+    (tmp_path / 'metrics.jsonl').write_text(
+        '{"epoch": 1, "epoch_time_s": 1.0}\n'
+        '{"epoch": 2, "epoch_time_s": 2.0}\n',
+        encoding='utf-8',
+    )
+    cfg = {
+        'runtime': {'cuda_variant': 'cublas'},
+        'dataset': {'num_samples': 128, 'val_samples': 32},
+        'train': {'batch_size': 32, 'epochs': 2, 'max_steps_per_epoch': 2},
+    }
+
+    fields = _benchmark_fields('cuda_legacy', cfg, tmp_path, elapsed_s=10.0)
+
+    assert fields['variant'] == 'cublas'
+    assert fields['train_samples'] == 64
+    assert fields['val_samples'] == 32
+    assert fields['batch_size'] == 32
+    assert fields['epochs_requested'] == 2
+    assert fields['epochs_completed'] == 2
+    assert fields['avg_epoch_time_s'] == 1.5
+    assert fields['last_epoch_time_s'] == 2.0
+    assert fields['samples_per_sec'] == 42.667
+
+    torch_fields = _benchmark_fields('torch', cfg | {'train': {'device': 'cpu'}}, tmp_path, elapsed_s=10.0)
+    assert torch_fields['variant'] == 'cpu'
+
+    autograd_fields = _benchmark_fields('autograd', cfg | {'train': {'device': 'auto'}}, tmp_path, elapsed_s=10.0)
+    assert autograd_fields['variant'] == ''
+
+
+def test_cli_compare_backends_allow_key_value_overrides_after_backends():
+    from minicnn.cli import _compare_backends_and_overrides, build_parser
+
+    args = build_parser().parse_args([
+        'compare',
+        '--backends', 'torch', 'cuda_legacy',
+        'train.epochs=1',
+        'dataset.num_samples=8',
+    ])
+
+    backends, overrides = _compare_backends_and_overrides(args)
+
+    assert backends == ['torch', 'cuda_legacy']
+    assert overrides == ['train.epochs=1', 'dataset.num_samples=8']
+
+
 def test_build_native_passes_cuda_arch_to_make_and_cmake(monkeypatch):
     from minicnn.core import build
 

@@ -113,6 +113,12 @@ the requested layer behavior is outside the supported backend contract.
 
 Malformed CUDA legacy config values are collected as validation errors before the legacy experiment is compiled. If validation fails, fix the YAML or CLI override first rather than editing native code.
 
+CUDA legacy supports optional global gradient norm clipping through
+`optimizer.grad_clip_global`. The default `0.0` disables it. When enabled, the
+legacy batch step computes FC and Conv gradients first, derives one global scale,
+then applies the existing CUDA update kernels with adjusted gradient
+normalizers.
+
 Native CUDA backward files by operation:
 
 | Operation | Native file | Python call site |
@@ -123,6 +129,17 @@ Native CUDA backward files by operation:
 | LeakyReLU backward | `cpp/src/leaky_relu.cu` | `src/minicnn/training/cuda_batch.py` |
 | Softmax / cross-entropy backward | `cpp/src/loss_layer.cu` | `src/minicnn/training/cuda_batch.py` |
 | LayerNorm backward | `cpp/src/layer_norm.cu` | Add a Python call site only if LayerNorm becomes part of CUDA legacy training. |
+
+BatchNorm2d is evaluated separately in
+`docs/cuda_batchnorm2d_evaluation.md`. It is not only a kernel task: supported
+training needs BN affine parameters, running stats, workspace buffers,
+checkpointing, update semantics, validation, and parity tests.
+
+`cpp/src/layer_norm.cu` is currently a tested native kernel asset, not a
+supported `cuda_legacy` training layer. `tests/test_layer_norm.py` mirrors the
+kernel math in NumPy and checks it against PyTorch. Wiring it into training
+would still require config validation, ctypes bindings, workspace buffers, and
+call-site integration.
 
 Rule of thumb:
 

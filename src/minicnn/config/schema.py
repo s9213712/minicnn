@@ -51,6 +51,7 @@ class OptimConfig:
     grad_clip_fc: float = 1.0
     grad_clip_bias: float = 5.0
     grad_pool_clip: float = 1.0
+    grad_clip_global: float = 0.0
     conv_grad_spatial_normalize: bool = False
 
 

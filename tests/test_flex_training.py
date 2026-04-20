@@ -87,6 +87,7 @@ def test_optimizer_ignores_cuda_legacy_lr_fields_for_torch():
         'lr_conv1': 0.02,
         'lr_conv': 0.03,
         'lr_fc': 0.04,
+        'grad_clip_global': 1.0,
         'momentum': 0.0,
     }
     param = torch.nn.Parameter(torch.zeros(1))
