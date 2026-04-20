@@ -89,3 +89,54 @@ def test_sgd_without_momentum_is_vanilla_gradient_descent():
     opt.step()
 
     assert np.allclose(w.data, [-0.2], atol=1e-6)
+
+
+def test_function_apply_wires_backward():
+    """Function.apply() should propagate gradients through custom ops."""
+    from minicnn.autograd.function import Function
+    from minicnn.nn.tensor import Tensor
+    import numpy as np
+
+    class Square(Function):
+        @staticmethod
+        def forward(ctx, x):
+            ctx.save_for_backward(x)
+            return Tensor(x.data ** 2, requires_grad=x.requires_grad)
+
+        @staticmethod
+        def backward(ctx, grad_output):
+            (x,) = ctx.saved_tensors
+            return grad_output * 2.0 * x.data
+
+    x = Tensor([3.0, -2.0], requires_grad=True)
+    y = Square.apply(x)
+    y.sum().backward()
+
+    assert np.allclose(y.data, [9.0, 4.0])
+    assert np.allclose(x.grad, [6.0, -4.0])
+
+
+def test_sgd_grad_clip():
+    from minicnn.optim.sgd import SGD
+    from minicnn.nn.tensor import Parameter
+    import numpy as np
+
+    w = Parameter([0.0, 0.0])
+    opt = SGD([w], lr=1.0, grad_clip=1.0)
+    w.grad = np.array([3.0, 4.0], dtype=np.float32)  # norm=5, should be clipped to norm=1
+    opt.step()
+    assert np.allclose(np.linalg.norm(w.data), 1.0, atol=1e-5)
+
+
+def test_adam_grad_clip():
+    from minicnn.optim.adam import Adam
+    from minicnn.nn.tensor import Parameter
+    import numpy as np
+
+    w = Parameter([0.0, 0.0])
+    opt = Adam([w], lr=0.1, grad_clip=0.5)
+    w.grad = np.array([10.0, 0.0], dtype=np.float32)
+    opt.step()
+    # After clipping, gradient norm is 0.5; Adam still updates but in clipped direction
+    assert w.data[0] < 0.0  # should have decreased
+    assert w.data[1] == 0.0  # no gradient, no update

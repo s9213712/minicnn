@@ -44,8 +44,14 @@ def test_compile_supported_dual_config():
     }
     assert validate_cuda_legacy_compatibility(cfg) == []
     exp = compile_to_legacy_experiment(cfg)
-    assert exp.model.c1_out == 32
-    assert exp.model.c4_out == 64
+    # Verify correct ModelConfig fields are set (not the old dead-write c1_out etc.)
+    assert exp.model.c_in == 3
+    assert exp.model.conv_layers[0]['out_c'] == 32
+    assert exp.model.conv_layers[1]['out_c'] == 32
+    assert exp.model.conv_layers[2]['out_c'] == 64
+    assert exp.model.conv_layers[3]['out_c'] == 64
+    assert exp.model.conv_layers[1]['pool'] is True
+    assert exp.model.conv_layers[3]['pool'] is True
     assert exp.optim.lr_fc == 0.005
 
 

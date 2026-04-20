@@ -155,23 +155,35 @@ This repo intentionally supports two workflows:
 
 ## MiniCNN autograd core
 
-MiniCNN also includes a small CPU/NumPy autograd stack in `src/minicnn/nn/tensor.py`, `src/minicnn/ops/`, and `src/minicnn/nn/layers.py`. It supports `Tensor.backward()` with topological reverse-mode autodiff for scalar/tensor arithmetic, broadcasting, matrix multiply, reductions, reshape, ReLU, `log_softmax`, `cross_entropy`, trainable `Parameter`, lightweight `SGD` and `Adam` optimizers, and small educational layers such as `Linear`, `Conv2d`, `MaxPool2d`, `BatchNorm2d`, `Flatten`, and `ResidualBlock`.
+MiniCNN includes a CPU/NumPy autograd stack in `src/minicnn/nn/tensor.py`, `src/minicnn/ops/`, and `src/minicnn/nn/layers.py`. It supports:
 
-This core is useful for framework-level tests and small educational examples. The Torch backend still uses PyTorch autograd, and the handcrafted CUDA backend still uses its explicit CUDA backward kernels.
+- `Tensor.backward()` with topological reverse-mode autodiff
+- scalar/tensor arithmetic with broadcasting-aware gradients
+- matrix multiply, reductions, reshape, ReLU, `log_softmax`, `cross_entropy`
+- trainable `Parameter` and `no_grad()` context
+- `SGD` and `Adam` optimizers with `grad_clip` and `weight_decay`
+- educational layers: `Linear`, `Conv2d`, `MaxPool2d`, `BatchNorm2d`, `Flatten`, `ResidualBlock`
+- custom differentiable ops via the `Function` API (backward is automatically wired in `apply()`)
+- training on random, CIFAR-10, or MNIST data via `minicnn train-autograd`
+- step-decay LR scheduler via `scheduler.enabled=true`
+
+This core is useful for framework-level tests and educational examples. The Torch backend still uses PyTorch autograd, and the handcrafted CUDA backend uses its own CUDA backward kernels. See [docs/08_autograd.md](docs/08_autograd.md) for full usage.
 
 ### Robustness notes
 
-- **`train.init_seed`**: torch/flex model construction now seeds PyTorch before `build_model()`, so repeated runs with the same config start from the same weights. CUDA legacy and CPU/NumPy autograd already use their init seed paths.
-- **Config overrides**: dotted CLI overrides support list indexes such as `model.layers.1.out_features=7`; malformed CUDA legacy numeric fields are reported as validation errors instead of raw tracebacks.
-- **Boolean parsing**: string values such as `"false"` and `"0"` are parsed as false for dataset download, augmentation, AMP, optimizer helper flags, and CUDA conv `pool` fields.
+- **`train.init_seed`**: torch/flex model construction seeds PyTorch before `build_model()`, so repeated runs with the same config start from the same weights.
+- **Config overrides**: dotted CLI overrides support list indexes such as `model.layers.1.out_features=7`; malformed CUDA legacy numeric fields are reported as validation errors.
+- **Boolean parsing**: string values such as `"false"` and `"0"` are parsed correctly for all boolean config fields.
 - **CUDA library switching**: in-process `cuda_legacy` runs reset the cached native handle when runtime library settings change.
-- **CUDA cleanup**: legacy CUDA training now frees device weights and velocity buffers through an outer cleanup path even if training raises before final evaluation.
-- **`maxpool_backward_nchw`**: native code exports a status-returning wrapper, while the old void ABI remains for compatibility.
-- **SGD**: parameter updates that fail with a shape or type mismatch emit a `RuntimeWarning` (including the parameter name) instead of silently skipping. Truly unexpected exceptions are no longer swallowed.
-- **`Tensor.__pow__` backward**: gradient computation at `base == 0` with a negative exponent now returns `0` instead of `NaN`, preventing silent NaN propagation through the compute graph.
-- **`maxpool2d`**: forward pass is fully vectorized with `sliding_window_view`; the loop over spatial output positions is gone.
-- **`flex/builder`**: after each layer is materialized, the inferred output shape is validated to have all-positive dimensions. A misconfigured kernel size or pooling stride raises `ValueError` immediately with a descriptive message.
-- **`BatchWorkspace.__del__`**: GPU memory cleanup failures now emit a `ResourceWarning` instead of being silently discarded.
+- **CUDA cleanup**: legacy CUDA training frees device weights and velocity buffers through an outer cleanup path even if training raises.
+- **`compile_to_legacy_experiment`**: correctly sets `ModelConfig.c_in` and `ModelConfig.conv_layers` from the unified config (bug fix — previously wrote to non-existent dataclass attributes that were silently ignored).
+- **`shape_inference`**: Conv2d width formula now uses `kw` instead of `kh` (bug fix for non-square kernels).
+- **`Function.apply()`**: backward hook is now wired automatically; custom `Function` subclasses work like PyTorch's `torch.autograd.Function`.
+- **`SGD` / `Adam`**: both optimizers now support `grad_clip` to clip per-parameter gradient norms before the update step.
+- **Checkpoint security**: flex trainer saves model weights only (no config dict in the `.pt` file); loads with `weights_only=True`.
+- **`Tensor.__pow__` backward**: gradient at `base == 0` with a negative exponent returns `0` instead of `NaN`.
+- **`flex/builder`**: each layer's inferred output shape is validated for positive dimensions immediately after construction.
+- **`BatchWorkspace.__del__`**: GPU memory cleanup failures emit a `ResourceWarning` instead of being silently discarded.
 
 ## Shared config contract
 
@@ -365,7 +377,9 @@ minicnn/
 │   ├── config/                        # config schema, loader, legacy settings bridge
 │   ├── core/                          # native build helpers and lazy ctypes CUDA binding
 │   ├── data/                          # CIFAR-10 preparation/loading
+│   ├── engine/                        # backend capability declarations and component registry stubs
 │   ├── flex/                          # config-driven PyTorch model builder and trainer
+│   ├── framework/                     # component registry, healthcheck, and list-dual-components wiring
 │   ├── models/                        # MiniCNN CPU/NumPy model registry and config builder
 │   ├── nn/                            # MiniCNN Tensor, Parameter, and CPU/NumPy autograd core
 │   ├── ops/                           # CPU/NumPy differentiable layer ops

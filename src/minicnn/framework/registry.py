@@ -30,7 +30,8 @@ class Registry:
             raise KeyError(f'Unknown component: {category}:{name}') from exc
 
     def list_category(self, category: str) -> list[ComponentSpec]:
-        return [self._items.get(category, {}).get(k) for k in sorted(self._items.get(category, {}))]
+        bucket = self._items.get(category, {})
+        return [bucket[k] for k in sorted(bucket)]
 
     def summary(self) -> dict[str, list[str]]:
         return {category: sorted(items) for category, items in sorted(self._items.items())}

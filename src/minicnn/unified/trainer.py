@@ -109,7 +109,7 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
             best_model_path = legacy_result.get('best_model_path')
         else:
             best_model_path = None
-        cuda_summary['best_model_path'] = str(best_model_path or legacy_main.__globals__.get('BEST_MODEL_PATH', ''))
+        cuda_summary['best_model_path'] = str(best_model_path or '')
         cuda_summary['legacy_mapping'] = summarize_legacy_mapping(cfg)
         dump_summary(run_dir, cuda_summary)
         return run_dir

@@ -229,18 +229,20 @@ def compile_to_legacy_experiment(cfg: dict[str, Any]) -> ExperimentConfig:
     exp.optim.weight_decay = float(optim.get('weight_decay', exp.optim.weight_decay))
     exp.optim.leaky_alpha = negative_slope
 
-    exp.model.c1_in = int(dataset.get('input_shape', [3, 32, 32])[0])
-    exp.model.c1_out = int(convs[0]['out_channels'])
-    exp.model.c2_in = int(convs[1].get('in_channels', exp.model.c1_out))
-    exp.model.c2_out = int(convs[1]['out_channels'])
-    exp.model.c3_in = int(convs[2].get('in_channels', exp.model.c2_out))
-    exp.model.c3_out = int(convs[2]['out_channels'])
-    exp.model.c4_in = int(convs[3].get('in_channels', exp.model.c3_out))
-    exp.model.c4_out = int(convs[3]['out_channels'])
-    exp.model.h = int(dataset.get('input_shape', [3, 32, 32])[1])
-    exp.model.w = int(dataset.get('input_shape', [3, 32, 32])[2])
+    input_shape = dataset.get('input_shape', [3, 32, 32])
+    exp.model.c_in = int(input_shape[0])
+    exp.model.h = int(input_shape[1])
+    exp.model.w = int(input_shape[2])
     exp.model.kh = 3
     exp.model.kw = 3
+    # Build conv_layers from the unified config's Conv2d layers.
+    # Fixed cuda_legacy pattern: conv1(no-pool), conv2(pool), conv3(no-pool), conv4(pool).
+    exp.model.conv_layers = [
+        {'out_c': int(convs[0]['out_channels']), 'pool': False},
+        {'out_c': int(convs[1]['out_channels']), 'pool': True},
+        {'out_c': int(convs[2]['out_channels']), 'pool': False},
+        {'out_c': int(convs[3]['out_channels']), 'pool': True},
+    ]
 
     return exp
 

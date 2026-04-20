@@ -24,7 +24,7 @@ minicnn train-flex --config templates/cifar10/vgg_mini.yaml
 minicnn train-dual --config templates/cifar10/vgg_mini_cuda.yaml engine.backend=cuda_legacy
 ```
 
-MiniCNN 另有自己的小型 CPU/NumPy autograd stack，位於 `src/minicnn/nn/tensor.py`、`src/minicnn/ops/` 與 `src/minicnn/nn/layers.py`。它適合不依賴 torch 的 framework 測試與小型教學範例；正式 torch backend 仍使用 PyTorch autograd，CUDA legacy backend 仍使用 CUDA/C++ backward kernels。
+MiniCNN 另有自己的 CPU/NumPy autograd stack，位於 `src/minicnn/nn/tensor.py`、`src/minicnn/ops/` 與 `src/minicnn/nn/layers.py`。它支援自訂可微分 op（`Function` API）、`grad_clip`、step-decay scheduler、random/cifar10/mnist 資料集，適合不依賴 torch 的 framework 測試與小型教學範例。詳情見 `docs/08_autograd.md`。
 
 CIFAR-10 legacy trainer 已拆成明確模組。`src/minicnn/training/train_cuda.py` 只負責資料、epoch、validation、checkpoint、LR reduction、early stop 與 final test evaluation；CUDA batch 級的 conv forward、FC forward、fused loss/accuracy、FC update、conv backward/update 放在 `src/minicnn/training/cuda_batch.py`。Torch baseline 的 batch 準備、單步訓練與 epoch loop 在 `src/minicnn/training/train_torch_baseline.py` 中分成 `prepare_augmented_batch()`、`train_torch_batch()` 與 `run_torch_epoch()`。
 

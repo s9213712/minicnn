@@ -18,6 +18,13 @@ except Exception:  # pragma: no cover
     torch = None
 
 
+def _zero_grad(optimizer) -> None:
+    try:
+        optimizer.zero_grad(set_to_none=True)
+    except TypeError:
+        optimizer.zero_grad()
+
+
 def _choose_device(device_cfg: str):
     if device_cfg == 'cpu':
         return torch.device('cpu')
@@ -147,10 +154,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
                 train_loader.dataset.set_epoch(epoch)
             epoch_t0 = time.perf_counter()
             model.train()
-            try:
-                optimizer.zero_grad(set_to_none=True)
-            except TypeError:
-                optimizer.zero_grad()
+            _zero_grad(optimizer)
             running_loss = 0.0
             running_acc = 0.0
             seen = 0
@@ -169,10 +173,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
                 if step % grad_accum_steps == 0 or step == n_batches:
                     scaler.step(optimizer)
                     scaler.update()
-                    try:
-                        optimizer.zero_grad(set_to_none=True)
-                    except TypeError:
-                        optimizer.zero_grad()
+                    _zero_grad(optimizer)
                 bs = xb.shape[0]
                 running_loss += float(loss.item()) * grad_accum_steps * bs
                 running_acc += _accuracy(logits, yb) * bs
@@ -199,13 +200,13 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
             metrics_file.flush()
             if save_every_n_epochs > 0 and epoch % save_every_n_epochs == 0:
                 checkpoint_path = _checkpoint_path(run_dir, epoch)
-                torch.save({'epoch': epoch, 'model_state': model.state_dict(), 'config': cfg}, checkpoint_path)
+                torch.save({'epoch': epoch, 'model_state': model.state_dict()}, checkpoint_path)
                 periodic_checkpoints.append(str(checkpoint_path))
             improved = val_metrics['acc'] > best_val_acc + min_delta
             if improved:
                 best_val_acc = val_metrics['acc']
                 epochs_no_improve = 0
-                torch.save({'model_state': model.state_dict(), 'config': cfg}, best_model_path)
+                torch.save({'model_state': model.state_dict()}, best_model_path)
                 save_msg = ' saved_best'
             else:
                 epochs_no_improve += 1
@@ -224,7 +225,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
     test_metrics = None
     if test_loader is not None and best_model_path.exists():
         try:
-            checkpoint = torch.load(best_model_path, map_location=device, weights_only=False)
+            checkpoint = torch.load(best_model_path, map_location=device, weights_only=True)
         except TypeError:  # pragma: no cover - older torch
             checkpoint = torch.load(best_model_path, map_location=device)
         model.load_state_dict(checkpoint['model_state'])

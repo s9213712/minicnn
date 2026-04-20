@@ -13,11 +13,13 @@ class Adam(Optimizer):
         betas: tuple[float, float] = (0.9, 0.999),
         eps: float = 1e-8,
         weight_decay: float = 0.0,
+        grad_clip: float = 0.0,
     ):
         super().__init__(params=list(params), lr=lr)
         self.beta1, self.beta2 = betas
         self.eps = eps
         self.weight_decay = weight_decay
+        self.grad_clip = grad_clip
         self.t = 0
         self.m = [np.zeros_like(p.data, dtype=np.float32) for p in self.params]
         self.v = [np.zeros_like(p.data, dtype=np.float32) for p in self.params]
@@ -29,6 +31,10 @@ class Adam(Optimizer):
             if p.grad is None:
                 continue
             grad = p.grad + self.weight_decay * p.data if self.weight_decay else p.grad
+            if self.grad_clip > 0.0:
+                norm = float(np.linalg.norm(grad))
+                if norm > self.grad_clip:
+                    grad = grad * (self.grad_clip / norm)
             self.m[i] = self.beta1 * self.m[i] + (1.0 - self.beta1) * grad
             self.v[i] = self.beta2 * self.v[i] + (1.0 - self.beta2) * (grad * grad)
             m_hat = self.m[i] / (1.0 - self.beta1 ** self.t)

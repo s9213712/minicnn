@@ -11,7 +11,8 @@ def infer_layer_shape(layer_type: str, cfg: dict[str, Any], shape: tuple[int, ..
         padding = int(cfg.get('padding', 0))
         stride = int(cfg.get('stride', 1))
         out_c = int(cfg['out_channels'])
-        return (out_c, math.floor((h + 2 * padding - kh) / stride + 1), math.floor((w + 2 * padding - kh) / stride + 1))
+        kw = int(cfg.get('kernel_size', 3))
+        return (out_c, math.floor((h + 2 * padding - kh) / stride + 1), math.floor((w + 2 * padding - kw) / stride + 1))
     if layer_type == 'MaxPool2d':
         c, h, w = shape
         kernel = int(cfg.get('kernel_size', 2))

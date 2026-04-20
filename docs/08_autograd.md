@@ -2,7 +2,7 @@
 
 MiniCNN includes a compact CPU/NumPy autograd stack. The core graph engine is in `src/minicnn/nn/tensor.py`, differentiable layer ops live in `src/minicnn/ops/`, and small layer modules live in `src/minicnn/nn/layers.py`.
 
-It is meant for framework-level tests, small examples, and educational experiments that should not depend on torch.
+It is meant for framework-level tests, small examples, and educational experiments that should not depend on PyTorch.
 
 It supports:
 
@@ -14,9 +14,10 @@ It supports:
 - `relu`, `log_softmax`, and `cross_entropy`
 - trainable `Parameter`
 - `no_grad()` and `Tensor.detach()`
-- lightweight `SGD` and `Adam` optimizers through `src/minicnn/optim/`
+- lightweight `SGD` and `Adam` optimizers with optional `grad_clip` and `weight_decay`
 - `Linear`, `ReLU`, `Flatten`, `Conv2d`, `MaxPool2d`, `BatchNorm2d`, and same-channel `ResidualBlock`
-- a small random-data training entrypoint through `minicnn train-autograd`
+- custom differentiable ops via the `Function` API
+- training on random, CIFAR-10, or MNIST data through `minicnn train-autograd`
 - lightweight config tracing and IR inspection through `minicnn compile`
 
 ## Minimal example
@@ -38,74 +39,164 @@ loss.backward()
 SGD([w], lr=0.1).step()
 ```
 
-## Tiny training run
+## Tiny training run (random data)
 
 ```bash
-PYTHONPATH=src python -m minicnn.cli train-autograd \
+minicnn train-autograd \
   --config configs/autograd_tiny.yaml \
-  train.epochs=1 dataset.num_samples=16 dataset.val_samples=8 train.batch_size=4
+  train.epochs=5 dataset.num_samples=64 dataset.val_samples=16 train.batch_size=8
 ```
 
-The trainer currently supports `dataset.type=random`. It writes the best model to:
+## Training on real datasets
+
+The `train-autograd` command supports three dataset types.  Note that the NumPy Conv2d implementation is slow — use `train-flex` or `train-dual` for production CIFAR-10 training.
+
+### Random data (default, fast)
+
+```yaml
+dataset:
+  type: random
+  num_samples: 256
+  val_samples: 64
+  input_shape: [1, 4, 4]
+  num_classes: 2
+```
+
+### CIFAR-10 (requires `minicnn prepare-data` first)
+
+```yaml
+dataset:
+  type: cifar10
+  data_root: data/cifar-10-batches-py
+  num_samples: 1000
+  val_samples: 200
+```
+
+```bash
+minicnn train-autograd --config configs/autograd_tiny.yaml \
+  dataset.type=cifar10 dataset.num_samples=1000 dataset.val_samples=200 \
+  model.layers.0.type=Conv2d model.layers.0.out_channels=16
+```
+
+### MNIST (auto-downloads on first run)
+
+```yaml
+dataset:
+  type: mnist
+  download: true
+  num_samples: 10000
+  val_samples: 2000
+  input_shape: [1, 28, 28]
+```
+
+## Custom differentiable operations (Function API)
+
+Subclass `Function` and implement `forward` and `backward`.  Call via `MyOp.apply(*inputs)`:
+
+```python
+from minicnn.autograd.function import Function
+from minicnn.nn.tensor import Tensor
+import numpy as np
+
+class Square(Function):
+    @staticmethod
+    def forward(ctx, x):
+        ctx.save_for_backward(x)
+        return Tensor(x.data ** 2, requires_grad=x.requires_grad)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        (x,) = ctx.saved_tensors
+        return grad_output * 2.0 * x.data
+
+x = Tensor([3.0, -2.0], requires_grad=True)
+y = Square.apply(x)
+y.sum().backward()
+# x.grad == [6.0, -4.0]
+```
+
+`apply()` automatically wires the backward hook and sets `requires_grad=True` on the output when any input requires a gradient.
+
+## Optimizers
+
+Both `SGD` and `Adam` support `weight_decay` and `grad_clip`:
+
+```python
+from minicnn.optim.sgd import SGD
+from minicnn.optim.adam import Adam
+
+# SGD with momentum, weight decay, and gradient clipping
+opt = SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4, grad_clip=5.0)
+
+# Adam with weight decay and gradient clipping
+opt = Adam(model.parameters(), lr=1e-3, weight_decay=1e-4, grad_clip=1.0)
+```
+
+Gradient clipping clips each parameter's gradient to unit norm scaled by `grad_clip` before the update step.
+
+In YAML:
+
+```yaml
+optimizer:
+  type: SGD
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.0001
+  grad_clip: 5.0
+```
+
+## LR scheduler (step decay)
+
+The autograd trainer supports a simple step-decay scheduler via the `scheduler` config key:
+
+```yaml
+scheduler:
+  enabled: true
+  step_size: 10    # reduce every N epochs
+  gamma: 0.5       # multiply lr by gamma
+  min_lr: 1e-6     # floor
+```
+
+## Best model output
+
+The trainer writes the best checkpoint (by validation accuracy) to:
 
 ```text
-src/minicnn/training/models/
+src/minicnn/training/models/<run_name>_autograd_best.npz
 ```
 
-Autograd checkpoints use the `*_autograd_best.npz` suffix. Metrics and summaries stay under the configured `project.artifacts_root`.
-
-Inspect the lightweight MiniCNN IR generated from the same config with:
-
-```bash
-PYTHONPATH=src python -m minicnn.cli compile --config configs/autograd_tiny.yaml
-```
-
-## Backend boundary
-
-This autograd engine is separate from the two training backends:
-
-- `engine.backend: torch` uses PyTorch autograd.
-- `engine.backend: cuda_legacy` uses explicit CUDA/C++ backward kernels.
-- `src/minicnn/nn/tensor.py` is the MiniCNN CPU/NumPy autograd layer for tests and small examples.
-- Native CUDA lowering, a CUDA-backed autograd bridge, and production-grade fused CUDA kernels are not claimed by this CPU/NumPy stack.
-
-Run the autograd tests with:
-
-```bash
-PYTHONPATH=src python -m pytest -q tests/test_autograd.py tests/test_autograd_stack.py
-```
-
-## Seed and config notes
-
-`train.init_seed` is the initialization seed for this path and is separate from dataset shuffling. The torch/flex backend now follows the same user-facing contract by seeding PyTorch before model construction, while CUDA legacy maps the field into its `ExperimentConfig`.
-
-CLI dotted overrides support list indexes across unified/flex config loaders. This matters when comparing autograd configs with torch configs because commands can update a layer entry directly, for example:
-
-```bash
-PYTHONPATH=src python -m minicnn.cli train-autograd \
-  --config configs/autograd_tiny.yaml \
-  model.layers.1.out_features=16 train.init_seed=123
-```
-
-## Robustness notes
-
-### `Tensor.__pow__` and division by zero
-
-`x ** power` delegates to NumPy, so `0.0 ** -1` produces `inf` in the forward pass (expected). The backward pass, however, would compute `power * (0 ** (power - 1))` which yields `inf * 0 = NaN` for `power < 1`. This is now guarded with `np.where`:
+Load it back with `numpy.load()`:
 
 ```python
-# base == 0 with negative power → treat gradient as 0 (not NaN)
-if power < 1.0:
-    base_grad = np.where(self.data != 0.0, power * (self.data ** (power - 1.0)), 0.0)
+import numpy as np
+data = np.load('path/to/best.npz')
+# data contains named arrays matching model.state_dict() keys
 ```
 
-This means `Tensor.__truediv__` (which uses `other ** -1.0`) also benefits from this fix.
+## Layers available in the autograd path
 
-### SGD silent failures
+| Layer | Config key `type` |
+|---|---|
+| `Linear` | `Linear` |
+| `Conv2d` | `Conv2d` |
+| `MaxPool2d` | `MaxPool2d` |
+| `BatchNorm2d` | `BatchNorm2d` |
+| `ReLU` | `ReLU` |
+| `Flatten` | `Flatten` |
+| `ResidualBlock` | `ResidualBlock` |
 
-Previously, any exception inside `SGD.step()` was caught and silently ignored. The guard now only catches `ValueError` and `TypeError` (shape and type mismatches that can legitimately arise for metadata-only parameters), and emits a `RuntimeWarning` that includes the parameter index and name. All other exceptions propagate normally.
+Add custom layers to `MODEL_REGISTRY` in `src/minicnn/models/registry.py`.
 
-```python
-except (ValueError, TypeError) as exc:
-    warnings.warn(f"SGD.step(): skipped param {i} ({p.name!r}): {exc}", RuntimeWarning)
+## Compile command
+
+```bash
+minicnn compile --config configs/autograd_tiny.yaml
 ```
+
+This traces the model config into a lightweight IR graph and prints a JSON summary of layers, inferred shapes, and Conv+BN+ReLU fusion candidates.  The graph is not yet connected to an execution backend — it is useful for architecture inspection.
+
+## Limitations
+
+- Thread-safety: the global `_grad_enabled` flag in `nn/tensor.py` is not thread-safe.
+- Performance: NumPy Conv2d is not optimised; large CIFAR-10 runs are much slower than PyTorch.
+- No GPU support in the autograd path.

@@ -1,3 +1,9 @@
+"""NumPy reference implementation of Conv2d + BatchNorm2d + ReLU fusion.
+
+This module is a **reference utility** for verifying fusion semantics and for
+use in offline analysis or test fixtures.  It is not used by any live training
+path; production code uses PyTorch or the handcrafted CUDA kernels.
+"""
 from __future__ import annotations
 
 import numpy as np
