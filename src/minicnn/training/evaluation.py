@@ -126,6 +126,7 @@ def evaluate(
     device_weights,
     batch_size: int = BATCH,
     max_batches: int | None = EVAL_MAX_BATCHES,
+    workspace: EvalWorkspace | None = None,
 ) -> float:
     correct = 0
     total = 0
@@ -134,7 +135,9 @@ def evaluate(
         nbatches = min(nbatches, max_batches)
     if nbatches <= 0:
         return 0.0
-    workspace = EvalWorkspace(batch_size)
+    owns_workspace = workspace is None
+    if owns_workspace:
+        workspace = EvalWorkspace(batch_size)
     try:
         for i in range(nbatches):
             idx_s = i * batch_size
@@ -146,5 +149,6 @@ def evaluate(
             )
             total += idx_e - idx_s
     finally:
-        workspace.free()
+        if owns_workspace:
+            workspace.free()
     return correct / max(total, 1) * 100

@@ -87,6 +87,11 @@ def reload_weights_from_checkpoint(
     geom: CudaNetGeometry,
 ) -> tuple:
     ckpt = np.load(path)
+    saved_n_conv = int(ckpt['n_conv'])
+    if saved_n_conv != geom.n_conv:
+        raise ValueError(
+            f"Checkpoint '{path}' has n_conv={saved_n_conv} but current architecture has n_conv={geom.n_conv}"
+        )
     conv_arrays = [ckpt[f'w_conv{i + 1}'].astype(np.float32) for i in range(geom.n_conv)]
     fc_w = ckpt['fc_w'].astype(np.float32)
     fc_b = ckpt['fc_b'].astype(np.float32)

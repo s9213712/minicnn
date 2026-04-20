@@ -36,6 +36,16 @@ from minicnn.training.cuda_ops import (
 from minicnn.training.cuda_workspace import BatchWorkspace
 from minicnn.training.loop import LrState, RunningMetrics
 
+# Precompute ctypes wrappers for scalar hyperparameters that never change at runtime.
+_C_MOMENTUM      = c_float(MOMENTUM)
+_C_WEIGHT_DECAY  = c_float(WEIGHT_DECAY)
+_C_GRAD_CLIP_FC  = c_float(GRAD_CLIP_FC)
+_C_GRAD_CLIP_BIAS = c_float(GRAD_CLIP_BIAS)
+_C_GRAD_POOL_CLIP = c_float(GRAD_POOL_CLIP)
+_C_LEAKY_ALPHA   = c_float(LEAKY_ALPHA)
+_C_ZERO          = c_float(0.0)
+_C_ONE           = c_float(1.0)
+
 
 @dataclass
 class CudaRuntimeState:
@@ -181,10 +191,10 @@ def backward_fc_update(
         workspace.d_fc_grad_w,
         runtime.velocities.fc_w_vel,
         c_float(lr_state.fc),
-        c_float(MOMENTUM),
-        c_float(WEIGHT_DECAY),
-        c_float(GRAD_CLIP_FC),
-        c_float(1.0),
+        _C_MOMENTUM,
+        _C_WEIGHT_DECAY,
+        _C_GRAD_CLIP_FC,
+        _C_ONE,
         arch.fc_out * arch.fc_in,
     )
     lib.conv_update_fused(
@@ -192,10 +202,10 @@ def backward_fc_update(
         workspace.d_fc_grad_b,
         runtime.velocities.fc_b_vel,
         c_float(lr_state.fc),
-        c_float(MOMENTUM),
-        c_float(0.0),
-        c_float(GRAD_CLIP_BIAS),
-        c_float(1.0),
+        _C_MOMENTUM,
+        _C_ZERO,
+        _C_GRAD_CLIP_BIAS,
+        _C_ONE,
         arch.fc_out,
     )
 
@@ -208,7 +218,7 @@ def backward_convs_update(
     lr_state: LrState,
     log_grad: bool,
 ) -> None:
-    lib.clip_inplace(workspace.d_pre_fc_grad_nchw, c_float(GRAD_POOL_CLIP), batch_size * arch.fc_in)
+    lib.clip_inplace(workspace.d_pre_fc_grad_nchw, _C_GRAD_POOL_CLIP, batch_size * arch.fc_in)
     grad_nchw = workspace.d_pre_fc_grad_nchw
 
     for i in reversed(range(arch.n_conv)):
@@ -246,7 +256,7 @@ def backward_convs_update(
         lib.leaky_relu_backward(
             workspace.d_conv_raw[i],
             workspace.d_conv_raw_grad[i],
-            c_float(LEAKY_ALPHA),
+            _C_LEAKY_ALPHA,
             stage.out_c * batch_size * stage.h_out * stage.w_out,
         )
         lib.conv_backward_precol(

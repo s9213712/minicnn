@@ -13,6 +13,7 @@ class ReduceLROnPlateau(LRScheduler):
         self.bad_epochs = 0
 
     def step(self, metric=None):
+        self._last_lr = [self.optimizer.lr]
         self.last_epoch += 1
         if metric is None:
             return self.get_last_lr()
