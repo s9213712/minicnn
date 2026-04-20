@@ -134,6 +134,8 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
 
     with metrics_path.open('w', encoding='utf-8') as metrics_file:
         for epoch in range(1, epochs + 1):
+            if hasattr(train_loader.dataset, 'set_epoch'):
+                train_loader.dataset.set_epoch(epoch)
             epoch_t0 = time.perf_counter()
             model.train()
             try:

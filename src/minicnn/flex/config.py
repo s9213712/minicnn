@@ -39,6 +39,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         'grad_accum_steps': 1,
         'num_workers': 0,
         'log_every': 10,
+        'seed': 42,
+        'init_seed': 42,
         'early_stop_patience': 0,
         'min_delta': 0.0,
     },

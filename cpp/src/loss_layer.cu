@@ -144,8 +144,7 @@ __global__ void count_correct_kernel(
 
 extern "C" {
     void softmax_forward(float* d_input, float* d_output, int N, int features) {
-        int tpb = 256;
-        softmax_kernel<<<N, tpb>>>(d_input, d_output, N, features);
+        softmax_kernel<<<N, 1>>>(d_input, d_output, N, features);
         CUDA_KERNEL_CHECK();
     }
 

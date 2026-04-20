@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from minicnn.unified.config import load_unified_config
 from minicnn.unified.cuda_legacy import validate_cuda_legacy_compatibility, compile_to_legacy_experiment
 
@@ -39,7 +42,46 @@ def test_compile_supported_dual_config():
     assert exp.optim.lr_fc == 0.005
 
 
+def test_compile_cuda_legacy_maps_distinct_dataset_init_and_train_seeds():
+    cfg = load_unified_config(Path(__file__).resolve().parents[1] / 'configs' / 'dual_backend_cnn.yaml', [
+        'engine.backend=cuda_legacy',
+        'dataset.seed=111',
+        'train.init_seed=222',
+        'train.seed=333',
+    ])
+
+    exp = compile_to_legacy_experiment(cfg)
+
+    assert exp.train.dataset_seed == 111
+    assert exp.train.init_seed == 222
+    assert exp.train.train_seed == 333
+
+
 def test_cuda_legacy_accepts_native_variant_runtime_option():
     cfg = load_unified_config(None, ['engine.backend=cuda_legacy', 'runtime.cuda_variant=handmade'])
     errors = validate_cuda_legacy_compatibility(cfg)
     assert all('runtime.cuda_variant' not in err for err in errors)
+
+
+def test_cuda_legacy_summary_preserves_returned_test_acc(tmp_path, monkeypatch):
+    import minicnn.config.settings as settings
+    import minicnn.training.train_cuda as train_cuda
+    import minicnn.unified.trainer as trainer
+    from minicnn.config.schema import ExperimentConfig
+
+    run_dir = tmp_path / 'cuda-run'
+    run_dir.mkdir()
+    cfg = load_unified_config(None, ['engine.backend=cuda_legacy'])
+
+    monkeypatch.setattr(trainer, 'create_run_dir', lambda _cfg: run_dir)
+    monkeypatch.setattr(trainer, 'compile_to_legacy_experiment', lambda _cfg: ExperimentConfig())
+    monkeypatch.setattr(trainer, 'summarize_legacy_mapping', lambda _cfg: {'backend': 'cuda_legacy'})
+    monkeypatch.setattr(trainer, '_reload_legacy_modules_after_config', lambda: None)
+    monkeypatch.setattr(settings, 'apply_experiment_config', lambda _exp: None)
+    monkeypatch.setattr(train_cuda, 'main', lambda: {'test_acc': 12.5, 'best_model_path': 'best.npz'})
+
+    result = trainer.train_unified_from_config(cfg)
+    summary = json.loads((result / 'summary.json').read_text(encoding='utf-8'))
+
+    assert summary['test_acc'] == 12.5
+    assert summary['best_model_path'] == 'best.npz'

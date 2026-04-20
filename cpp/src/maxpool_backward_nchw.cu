@@ -1,5 +1,4 @@
 #include "cuda_check.h"
-#include <cassert>
 
 // MaxPool Backward for (N, C, H, W) layout with 2x2 stride
 __global__ void maxpool_backward_nchw_kernel(const float* grad_out, const float* input, float* grad_input,
@@ -38,7 +37,10 @@ __global__ void maxpool_backward_nchw_kernel(const float* grad_out, const float*
 
 extern "C" void maxpool_backward_nchw(float* d_grad_out, float* d_input, float* d_grad_input,
                                       int N, int C, int in_h, int in_w, int out_h, int out_w) {
-    assert(in_h == out_h * 2 && in_w == out_w * 2);
+    if (in_h != out_h * 2 || in_w != out_w * 2) {
+        CUDA_CHECK(cudaErrorInvalidValue);
+        return;
+    }
     int total = N * C * out_h * out_w;
     int tpb = 256;
     CUDA_CHECK(cudaMemset(d_grad_input, 0, N * C * in_h * in_w * sizeof(float)));

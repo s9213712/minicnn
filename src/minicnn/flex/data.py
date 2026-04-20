@@ -25,12 +25,17 @@ if TensorDataset is not None:
             self.random_crop_padding = int(random_crop_padding)
             self.horizontal_flip = bool(horizontal_flip)
             self.seed = int(seed)
+            self.epoch = 0
+
+        def set_epoch(self, epoch: int) -> None:
+            self.epoch = int(epoch)
 
         def _generator(self, index: int):
             worker = torch.utils.data.get_worker_info()
             worker_id = 0 if worker is None else worker.id
-            # Large prime separates per-worker, per-sample seeds to avoid collisions.
-            return torch.Generator().manual_seed(self.seed + worker_id * 1_000_003 + int(index))
+            # Large primes separate per-epoch, per-worker, per-sample seeds.
+            seed = self.seed + self.epoch * 10_000_019 + worker_id * 1_000_003 + int(index)
+            return torch.Generator().manual_seed(seed)
 
         def __getitem__(self, index):
             x, y = super().__getitem__(index)

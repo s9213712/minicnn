@@ -38,11 +38,18 @@ class VelocityBuffers:
 
 
 def upload_weights(conv_arrays: list[np.ndarray], fc_w: np.ndarray, fc_b: np.ndarray) -> DeviceWeights:
-    return DeviceWeights(
-        conv_weights=[upload(w) for w in conv_arrays],
-        fc_w=upload(fc_w),
-        fc_b=upload(fc_b),
-    )
+    uploaded: list = []
+    try:
+        for arr in (*conv_arrays, fc_w, fc_b):
+            uploaded.append(upload(arr))
+        return DeviceWeights(
+            conv_weights=uploaded[: len(conv_arrays)],
+            fc_w=uploaded[-2],
+            fc_b=uploaded[-1],
+        )
+    except Exception:
+        free_weights(uploaded)
+        raise
 
 
 def init_velocity_buffers(geom: CudaNetGeometry) -> VelocityBuffers:

@@ -26,6 +26,14 @@ def _normalize_layer_name(layer: dict[str, Any]) -> str:
     return str(layer.get('type'))
 
 
+def _coerce_int(value: Any, label: str, errors: list[str]) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        errors.append(f'{label} must be an integer, got {value!r}')
+        return None
+
+
 def _collect_conv_blocks(model_cfg: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     layers = model_cfg.get('layers', [])
     if not isinstance(layers, list):
@@ -109,23 +117,34 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
         elif abs(negative_slope - slope) > 1e-12:
             errors.append('cuda_legacy requires the same activation slope in all conv blocks')
 
+    conv_out_channels: list[int | None] = []
     for idx, conv in enumerate(convs, start=1):
-        if int(conv.get('kernel_size', 3)) != 3:
+        out_channels = _coerce_int(conv.get('out_channels'), f'Conv{idx}.out_channels', errors)
+        conv_out_channels.append(out_channels)
+        kernel_size = _coerce_int(conv.get('kernel_size', 3), f'Conv{idx}.kernel_size', errors)
+        stride = _coerce_int(conv.get('stride', 1), f'Conv{idx}.stride', errors)
+        padding = _coerce_int(conv.get('padding', 0), f'Conv{idx}.padding', errors)
+        if kernel_size is not None and kernel_size != 3:
             errors.append(f'Conv{idx} must use kernel_size=3 for cuda_legacy')
-        if int(conv.get('stride', 1)) != 1:
+        if stride is not None and stride != 1:
             errors.append(f'Conv{idx} must use stride=1 for cuda_legacy')
-        if int(conv.get('padding', 0)) != 0:
+        if padding is not None and padding != 0:
             errors.append(f'Conv{idx} must use padding=0 for cuda_legacy')
         if idx > 1:
-            prev_out = int(convs[idx - 2].get('out_channels'))
-            in_ch = int(conv.get('in_channels', prev_out))
-            if in_ch != prev_out:
+            prev_out = conv_out_channels[idx - 2]
+            if prev_out is None:
+                continue
+            in_ch = _coerce_int(conv.get('in_channels', prev_out), f'Conv{idx}.in_channels', errors)
+            if in_ch is not None and in_ch != prev_out:
                 errors.append(f'Conv{idx} in_channels must equal previous out_channels ({prev_out})')
     for pool_pos in (4, 9):
         layer = model.get('layers', [])[pool_pos]
-        if int(layer.get('kernel_size', 2)) != 2 or int(layer.get('stride', 2)) != 2:
+        kernel_size = _coerce_int(layer.get('kernel_size', 2), f'Pool layer at position {pool_pos + 1}.kernel_size', errors)
+        stride = _coerce_int(layer.get('stride', 2), f'Pool layer at position {pool_pos + 1}.stride', errors)
+        if kernel_size is not None and stride is not None and (kernel_size != 2 or stride != 2):
             errors.append(f'Pool layer at position {pool_pos + 1} must use kernel_size=2 and stride=2')
-    if int(linear.get('out_features', 10)) != 10:
+    out_features = _coerce_int(linear.get('out_features', 10), 'Final Linear out_features', errors)
+    if out_features is not None and out_features != 10:
         errors.append('Final Linear layer must use out_features=10 for cuda_legacy')
     return errors
 
@@ -155,6 +174,8 @@ def compile_to_legacy_experiment(cfg: dict[str, Any]) -> ExperimentConfig:
     exp.train.batch_size = int(train.get('batch_size', exp.train.batch_size))
     exp.train.epochs = int(train.get('epochs', exp.train.epochs))
     exp.train.dataset_seed = int(dataset.get('seed', exp.train.dataset_seed))
+    exp.train.init_seed = int(train.get('init_seed', exp.train.init_seed))
+    exp.train.train_seed = int(train.get('seed', train.get('train_seed', exp.train.train_seed)))
     exp.train.n_train = int(dataset.get('num_samples', exp.train.n_train))
     exp.train.n_val = int(dataset.get('val_samples', exp.train.n_val))
     exp.train.max_steps_per_epoch = train.get('max_steps_per_epoch', exp.train.max_steps_per_epoch)

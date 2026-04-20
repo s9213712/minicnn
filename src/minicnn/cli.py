@@ -81,7 +81,7 @@ def _common_train_overrides(args) -> list[str]:
         if value is not None:
             overrides.append(f'{key}={value}')
     if getattr(args, 'init_seed', None) is not None:
-        overrides.append(f'dataset.seed={args.init_seed}')
+        overrides.append(f'train.init_seed={args.init_seed}')
     if getattr(args, 'checkpoint_path', None) is not None:
         overrides.append(f'runtime.best_model_filename={args.checkpoint_path}')
     if getattr(args, 'grad_debug', False):

@@ -52,7 +52,8 @@ def test_load_mnist_reads_idx_gzip_without_torchvision(tmp_path):
     assert x_val.shape == (2, 1, 28, 28)
     assert x_test.shape == (3, 1, 28, 28)
     assert y_train.dtype == np.int64
-    assert y_val.tolist() == [4, 5]
+    assert y_train.tolist() == [2, 0]
+    assert y_val.tolist() == [1, 3]
     assert y_test.tolist() == [4, 5, 6]
     assert normalize_mnist(x_train).dtype == np.float32
 

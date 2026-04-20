@@ -110,6 +110,22 @@ def test_train_loader_supports_cifar_style_augmentation():
     assert tuple(yb.shape) == (4,)
 
 
+def test_augmented_dataset_changes_random_seed_by_epoch():
+    import torch
+
+    from minicnn.flex.data import AugmentedTensorDataset
+
+    x = torch.zeros((1, 3, 8, 8), dtype=torch.float32)
+    y = torch.zeros((1,), dtype=torch.long)
+    dataset = AugmentedTensorDataset(x, y, random_crop_padding=2, horizontal_flip=True, seed=123)
+
+    seed_epoch0 = dataset._generator(0).initial_seed()
+    dataset.set_epoch(1)
+    seed_epoch1 = dataset._generator(0).initial_seed()
+
+    assert seed_epoch1 != seed_epoch0
+
+
 def test_grad_accumulation_flushes_final_partial_window(tmp_path: Path, monkeypatch):
     import torch
     import minicnn.flex.trainer as trainer

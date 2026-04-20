@@ -77,13 +77,16 @@ def load_mnist(
     train_images = train_images[idx]
     train_labels = train_labels[idx]
 
-    n_train = min(n_train, len(train_images))
-    n_val   = min(n_val, len(test_images))
+    if n_train < 0 or n_val < 0:
+        raise ValueError('n_train and n_val must be non-negative')
+    if n_train + n_val > len(train_images):
+        n_val = min(n_val, len(train_images))
+        n_train = len(train_images) - n_val
 
     x_train = train_images[:n_train]
     y_train = train_labels[:n_train].astype(np.int64)
-    x_val   = test_images[:n_val]
-    y_val   = test_labels[:n_val].astype(np.int64)
+    x_val   = train_images[n_train:n_train + n_val]
+    y_val   = train_labels[n_train:n_train + n_val].astype(np.int64)
     x_test  = test_images
     y_test  = test_labels.astype(np.int64)
 

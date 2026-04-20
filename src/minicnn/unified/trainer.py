@@ -72,9 +72,16 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
         apply_experiment_config(exp)
         _reload_legacy_modules_after_config()
         from minicnn.training.train_cuda import main as legacy_main
-        legacy_main()
+        legacy_result = legacy_main() or {}
         cuda_summary['effective_backend'] = 'cuda_legacy'
-        cuda_summary['best_model_path'] = str(legacy_main.__globals__.get('BEST_MODEL_PATH', ''))
+        if isinstance(legacy_result, dict):
+            for key in ('test_loss', 'test_acc'):
+                if key in legacy_result:
+                    cuda_summary[key] = legacy_result[key]
+            best_model_path = legacy_result.get('best_model_path')
+        else:
+            best_model_path = None
+        cuda_summary['best_model_path'] = str(best_model_path or legacy_main.__globals__.get('BEST_MODEL_PATH', ''))
         cuda_summary['legacy_mapping'] = summarize_legacy_mapping(cfg)
         dump_summary(run_dir, cuda_summary)
         return run_dir

@@ -108,6 +108,24 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert '--cuda-arch' in build_help
 
 
+def test_cli_seed_overrides_keep_dataset_init_and_train_seeds_separate():
+    from minicnn.cli import _common_train_overrides, build_parser
+
+    args = build_parser().parse_args([
+        'train-dual',
+        '--dataset-seed', '111',
+        '--init-seed', '222',
+        '--train-seed', '333',
+    ])
+
+    overrides = _common_train_overrides(args)
+
+    assert 'dataset.seed=111' in overrides
+    assert 'train.init_seed=222' in overrides
+    assert 'train.seed=333' in overrides
+    assert 'dataset.seed=222' not in overrides
+
+
 def test_build_native_passes_cuda_arch_to_make_and_cmake(monkeypatch):
     from minicnn.core import build
 
@@ -199,6 +217,41 @@ def test_checkpoint_reload_is_transactional(tmp_path, monkeypatch):
     assert isinstance(new_weights, checkpoints.DeviceWeights)
     assert list(new_weights) == ['new0', 'new1', 'new2', 'new3', 'new4', 'new5']
     assert freed == list(old_weights)
+
+
+def test_upload_weights_is_transactional_on_partial_upload_failure(monkeypatch):
+    import minicnn.training.checkpoints as checkpoints
+
+    uploaded = []
+    freed = []
+
+    def failing_upload(_arr):
+        if len(uploaded) == 3:
+            raise RuntimeError('upload failed')
+        ptr = f'ptr{len(uploaded)}'
+        uploaded.append(ptr)
+        return ptr
+
+    class Lib:
+        @staticmethod
+        def gpu_free(ptr):
+            freed.append(ptr)
+
+    monkeypatch.setattr(checkpoints, 'upload', failing_upload)
+    monkeypatch.setattr(checkpoints, 'lib', Lib())
+
+    try:
+        checkpoints.upload_weights(
+            [np.array([1], dtype=np.float32), np.array([2], dtype=np.float32)],
+            np.array([3], dtype=np.float32),
+            np.array([4], dtype=np.float32),
+        )
+    except RuntimeError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError('expected upload failure')
+
+    assert freed == ['ptr0', 'ptr1', 'ptr2']
 
 
 def test_free_weights_skips_none_and_accepts_none(monkeypatch):
@@ -321,6 +374,7 @@ def test_native_cuda_comment_tasks_are_reflected_in_source():
 
     assert 'softmax_cross_entropy' not in loss_layer
     assert 'im2col_backward' not in loss_layer
+    assert 'softmax_kernel<<<N, 1>>>' in loss_layer
     assert 'softmax_xent_grad_loss_acc_kernel<<<N, 32>>>' in loss_layer
     assert '__shfl_down_sync' in loss_layer
 
@@ -341,7 +395,8 @@ def test_native_cuda_comment_tasks_are_reflected_in_source():
     assert 'leaky_relu_forward_nchw_kernel' not in leaky_relu
     assert 'leaky_relu_backward_nchw_kernel' not in leaky_relu
     assert 'int N, int C, int in_h, int in_w, int out_h, int out_w' in maxpool_nchw
-    assert 'assert(in_h == out_h * 2 && in_w == out_w * 2)' in maxpool_nchw
+    assert 'assert(' not in maxpool_nchw
+    assert 'cudaErrorInvalidValue' in maxpool_nchw
     assert 'dense_backward_weights_atomic_kernel' not in dense_layer
 
     assert 'system(' not in gpu_monitor
@@ -380,7 +435,8 @@ def test_python_comment_tasks_are_reflected_in_source():
     assert 'Always returns a new array' in cuda_epoch
     assert 'x = x.copy()' in cuda_epoch
     assert 'flip_mask = train_rng.random(len(x)) > 0.5' in torch_baseline
-    assert 'seed + worker_id * 1_000_003 + int(index)' in flex_data
+    assert 'self.epoch * 10_000_019' in flex_data
+    assert 'def set_epoch' in flex_data
     assert 'generator=generator' in flex_data
     assert 'Modifies `optimizer_cfg` in-place' in flex_trainer
     assert 'class EvalWorkspace' in evaluation

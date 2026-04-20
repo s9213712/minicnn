@@ -139,7 +139,7 @@ def reduce_lr_if_due(fit: FitState, lr_state: LrState) -> None:
               f"conv={lr_state.conv:.6f}, fc={lr_state.fc:.6f}")
 
 
-def run_final_evaluation(runtime: CudaRuntimeState, arch, x_test: np.ndarray, y_test: np.ndarray) -> None:
+def run_final_evaluation(runtime: CudaRuntimeState, arch, x_test: np.ndarray, y_test: np.ndarray) -> float:
     print("\n=== FINAL EVALUATION ON OFFICIAL TEST SET ===")
     free_weights(runtime.velocities)
     if os.path.exists(BEST_MODEL_PATH):
@@ -152,9 +152,10 @@ def run_final_evaluation(runtime: CudaRuntimeState, arch, x_test: np.ndarray, y_
     test_acc = evaluate(x_test, y_test, runtime.weights)
     print(f"Test Accuracy: {test_acc:.2f}%")
     free_weights(runtime.weights)
+    return float(test_acc)
 
 
-def main() -> None:
+def main() -> dict[str, object]:
     arch = get_arch()
     x_train, y_train, x_val, y_val, x_test_final, y_test_final = load_normalized_cifar10()
     runtime = init_cuda_runtime(arch)
@@ -194,8 +195,12 @@ def main() -> None:
     finally:
         workspace.free()
 
-    run_final_evaluation(runtime, arch, x_test_final, y_test_final)
+    test_acc = run_final_evaluation(runtime, arch, x_test_final, y_test_final)
     print("\nDone!")
+    return {
+        'test_acc': test_acc,
+        'best_model_path': BEST_MODEL_PATH,
+    }
 
 
 if __name__ == "__main__":
