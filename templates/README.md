@@ -241,6 +241,10 @@ minicnn train-flex --config templates/mnist/mlp.yaml
 | 開啟資料增強 | `dataset.random_crop_padding: 4`、`dataset.horizontal_flip: true` |
 | 減少訓練量（快速驗證） | `train.epochs: 1`、`dataset.num_samples: 1024`、`dataset.val_samples: 256` |
 | CLI 臨時覆蓋參數 | `minicnn train-flex --config ... train.epochs=3 optimizer.lr=0.001` |
+| 固定初始權重 | `train.init_seed: 42`，torch/flex、CUDA legacy、autograd 都會使用各自的 init seed 路徑 |
+| CLI 覆蓋 layer list | `model.layers.1.out_features=7`，數字段會當成 list index |
+
+布林欄位請使用 YAML boolean 或可解析字串，例如 `true`、`false`、`1`、`0`。MiniCNN 會用 strict parser 處理 `dataset.download`、`dataset.horizontal_flip`、`train.amp`、`optimizer.exclude_bias_norm_weight_decay` 與 CUDA `conv_layers[].pool`，避免 `"false"` 被 Python `bool()` 誤判為 true。
 
 ## 以 template 為起點建立新架構
 

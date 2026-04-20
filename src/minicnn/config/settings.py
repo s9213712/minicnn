@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from minicnn.config.parsing import parse_bool
 from .schema import ExperimentConfig
 
 _current_config: ExperimentConfig | None = None
@@ -20,7 +21,7 @@ _arch = None  # CudaNetGeometry, set by apply_experiment_config
 
 
 def _parse_bool(value: str) -> bool:
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    return parse_bool(value, label='environment boolean')
 
 
 _ENV_OVERRIDES = {

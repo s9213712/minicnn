@@ -6,6 +6,7 @@ import numpy as np
 
 from minicnn.data.cifar10 import load_cifar10, load_cifar10_test, normalize_cifar
 from minicnn.data.mnist import load_mnist, load_mnist_test, normalize_mnist
+from minicnn.config.parsing import parse_bool
 
 try:
     import torch
@@ -23,7 +24,7 @@ if TensorDataset is not None:
         def __init__(self, x, y, random_crop_padding: int = 0, horizontal_flip: bool = False, seed: int = 0):
             super().__init__(x, y)
             self.random_crop_padding = int(random_crop_padding)
-            self.horizontal_flip = bool(horizontal_flip)
+            self.horizontal_flip = parse_bool(horizontal_flip, label='horizontal_flip')
             self.seed = int(seed)
             self.epoch = 0
 
@@ -108,7 +109,7 @@ def _cifar_dataset(cfg: dict, train_cfg: dict):
         n_val=n_val,
         seed=seed,
         train_batch_ids=(1, 2, 3, 4, 5),
-        download=bool(cfg.get('download', False)),
+        download=parse_bool(cfg.get('download', False), label='dataset.download'),
     )
     return normalize_cifar(x_train), y_train, normalize_cifar(x_val), y_val
 
@@ -123,7 +124,7 @@ def _mnist_dataset(cfg: dict, train_cfg: dict):
         n_train=n_train,
         n_val=n_val,
         seed=seed,
-        download=bool(cfg.get('download', False)),
+        download=parse_bool(cfg.get('download', False), label='dataset.download'),
     )
     return normalize_mnist(x_train), y_train, normalize_mnist(x_val), y_val
 
@@ -144,7 +145,10 @@ def create_dataloaders(dataset_cfg: dict, train_cfg: dict):
     num_workers = int(train_cfg.get('num_workers', 0))
     seed = int(train_cfg.get('seed', dataset_cfg.get('seed', 42)))
     random_crop_padding = int(dataset_cfg.get('random_crop_padding', train_cfg.get('random_crop_padding', 0)))
-    horizontal_flip = bool(dataset_cfg.get('horizontal_flip', train_cfg.get('horizontal_flip', False)))
+    horizontal_flip = parse_bool(
+        dataset_cfg.get('horizontal_flip', train_cfg.get('horizontal_flip', False)),
+        label='horizontal_flip',
+    )
     train_loader = _make_loader(
         x_train,
         y_train,
@@ -168,10 +172,16 @@ def create_test_dataloader(dataset_cfg: dict, train_cfg: dict):
     seed = int(train_cfg.get('seed', dataset_cfg.get('seed', 42)))
     if dtype == 'cifar10':
         data_root = dataset_cfg.get('data_root', 'data/cifar-10-batches-py')
-        x_test, y_test = load_cifar10_test(data_root=Path(data_root), download=bool(dataset_cfg.get('download', False)))
+        x_test, y_test = load_cifar10_test(
+            data_root=Path(data_root),
+            download=parse_bool(dataset_cfg.get('download', False), label='dataset.download'),
+        )
         return _make_loader(normalize_cifar(x_test), y_test, batch_size=batch_size, shuffle=False, num_workers=num_workers, seed=seed + 20_000)
     if dtype == 'mnist':
         data_root = dataset_cfg.get('data_root', 'data/mnist')
-        x_test, y_test = load_mnist_test(data_root=Path(data_root), download=bool(dataset_cfg.get('download', False)))
+        x_test, y_test = load_mnist_test(
+            data_root=Path(data_root),
+            download=parse_bool(dataset_cfg.get('download', False), label='dataset.download'),
+        )
         return _make_loader(normalize_mnist(x_test), y_test, batch_size=batch_size, shuffle=False, num_workers=num_workers, seed=seed + 20_000)
     return None

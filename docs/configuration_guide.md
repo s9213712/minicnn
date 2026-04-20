@@ -166,6 +166,19 @@ than `min_delta`. Periodic checkpoints are written to
 minicnn train-flex --config configs/flex_cnn.yaml train.epochs=3 optimizer.lr=0.0005
 ```
 
+Dotted overrides can address list entries by numeric index:
+
+```bash
+minicnn train-flex --config configs/flex_cnn.yaml model.layers.1.out_features=32
+minicnn train-dual --config configs/dual_backend_cnn.yaml model.layers.1.negative_slope=0.05
+```
+
+Boolean values are parsed strictly. YAML booleans are preferred, but string values such as `true`, `false`, `1`, and `0` are also accepted for fields like `dataset.download`, `dataset.horizontal_flip`, `train.amp`, `optimizer.exclude_bias_norm_weight_decay`, and CUDA `conv_layers[].pool`.
+
+Use `train.init_seed` to control model initialization. This is separate from `dataset.seed` and `train.seed`, which control data generation/shuffling paths.
+
+The `cuda_legacy` validator reports malformed numeric fields as validation errors before compiling the legacy `ExperimentConfig`; it should not raise raw `int()`/`float()` tracebacks for user config typos.
+
 ## Design rule
 
 If a user needs to change architecture or common hyperparameters, they should usually be able to do it from YAML.

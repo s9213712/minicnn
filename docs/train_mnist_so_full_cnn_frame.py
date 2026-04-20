@@ -13,6 +13,8 @@ Goals of this version:
 - dataclass caches instead of tuple-position coupling
 - programmatic shape inference
 - keep the existing .so ABI unchanged
+- prefer status-returning native wrappers when available while preserving the
+  legacy void ABI
 """
 
 from __future__ import annotations

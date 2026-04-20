@@ -36,3 +36,13 @@ git worktree add ../minicnn-feature-<name> -b feature/<name>
 - no production imports from `features/`
 
 Use it as the pattern for future experiments.
+
+Before promoting a feature, rerun the same robustness checks used by the supported tree:
+
+```bash
+PYTHONPATH=src python3 -m pytest -q tests
+PYTHONPATH=src python3 -m compileall -q src/minicnn tests
+minicnn build --legacy-make --variant both --check
+```
+
+Feature configs should rely on strict booleans, `train.init_seed`, and list-index CLI overrides instead of adding one-off parsing logic.

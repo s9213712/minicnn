@@ -70,7 +70,7 @@ def test_flex_mnist_dataloaders_use_local_idx_files(tmp_path):
         'type': 'mnist',
         'data_root': str(tmp_path),
         'download': False,
-        'num_samples': 3,
+        'num_samples': 2,
         'val_samples': 2,
         'input_shape': [1, 28, 28],
         'seed': 123,

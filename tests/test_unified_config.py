@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 from minicnn.unified.config import load_unified_config
@@ -9,6 +10,12 @@ def test_unified_config_override_backend():
     cfg = load_unified_config(None, ['engine.backend=cuda_legacy', 'train.epochs=3'])
     assert cfg['engine']['backend'] == 'cuda_legacy'
     assert cfg['train']['epochs'] == 3
+
+
+def test_unified_config_override_supports_layer_list_index():
+    cfg = load_unified_config(None, ['model.layers.1.out_features=7'])
+
+    assert cfg['model']['layers'][1]['out_features'] == 7
 
 
 def test_compile_supported_dual_config():
@@ -61,6 +68,20 @@ def test_cuda_legacy_accepts_native_variant_runtime_option():
     cfg = load_unified_config(None, ['engine.backend=cuda_legacy', 'runtime.cuda_variant=handmade'])
     errors = validate_cuda_legacy_compatibility(cfg)
     assert all('runtime.cuda_variant' not in err for err in errors)
+
+
+def test_cuda_legacy_runtime_env_restores_previous_values(monkeypatch):
+    import minicnn.unified.trainer as trainer
+
+    trainer._MANAGED_CUDA_ENV.clear()
+    monkeypatch.setenv('MINICNN_CUDA_SO', '/tmp/external.so')
+    summary = {}
+
+    trainer._configure_cuda_legacy_runtime({'runtime': {'cuda_so': 'cpp/custom.so'}}, summary)
+    assert os.environ['MINICNN_CUDA_SO'] == 'cpp/custom.so'
+
+    trainer._configure_cuda_legacy_runtime({'runtime': {}}, {})
+    assert os.environ['MINICNN_CUDA_SO'] == '/tmp/external.so'
 
 
 def test_cuda_legacy_summary_preserves_returned_test_acc(tmp_path, monkeypatch):

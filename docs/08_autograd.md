@@ -75,6 +75,18 @@ Run the autograd tests with:
 PYTHONPATH=src python -m pytest -q tests/test_autograd.py tests/test_autograd_stack.py
 ```
 
+## Seed and config notes
+
+`train.init_seed` is the initialization seed for this path and is separate from dataset shuffling. The torch/flex backend now follows the same user-facing contract by seeding PyTorch before model construction, while CUDA legacy maps the field into its `ExperimentConfig`.
+
+CLI dotted overrides support list indexes across unified/flex config loaders. This matters when comparing autograd configs with torch configs because commands can update a layer entry directly, for example:
+
+```bash
+PYTHONPATH=src python -m minicnn.cli train-autograd \
+  --config configs/autograd_tiny.yaml \
+  model.layers.1.out_features=16 train.init_seed=123
+```
+
 ## Robustness notes
 
 ### `Tensor.__pow__` and division by zero

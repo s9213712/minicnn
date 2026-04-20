@@ -27,8 +27,14 @@ void conv_backward_precol(float* grad_out, float* input, float* weights,
 void conv_update_fused(float* weights, float* grad, float* velocity,
                        float lr, float momentum, float weight_decay,
                        float clip_val, float normalizer, int size);
+
+int maxpool_backward_nchw_status(float* grad_out, float* input, float* grad_input,
+                                 int N, int C, int in_h, int in_w,
+                                 int out_h, int out_w);
 }
 ```
+
+When calling native helpers that expose a status-returning variant, check the returned CUDA error code before continuing. The older void ABI is still present for compatibility, but the status form is easier to integrate into host-side error handling.
 
 ## 最小 inference 範例
 

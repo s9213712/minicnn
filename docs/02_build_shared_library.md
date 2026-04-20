@@ -80,6 +80,22 @@ minicnn build --legacy-make --cuda-arch sm_75 --variant cublas --check
 make -C cpp CUDA_ARCH=sm_75 cublas
 ```
 
+## Runtime variant selection
+
+訓練時可用同一份 config 切換 native library：
+
+```bash
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=cublas
+
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=handmade
+```
+
+`runtime.cuda_so=cpp/libminimal_cuda_cnn_cublas.so` 可指定完整檔名。MiniCNN 會 lazy-load `.so`，並在同一 Python process 切換 runtime library 時清掉 cached `ctypes` handle，避免下一次 CUDA 呼叫沿用舊 variant。
+
+`--check` 會確認 required symbols；新的 `maxpool_backward_nchw_status` 是 status-returning compatibility symbol，讓 Python wrapper 可以把 native 參數錯誤轉為可捕捉例外。
+
 ## 選擇 `.so`
 
 `cuda_legacy` 預設載入 `cpp/libminimal_cuda_cnn.so`。若要指定 variant：

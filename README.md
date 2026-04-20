@@ -96,6 +96,7 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
 ```
 
 The native library is lazy-loaded, so non-CUDA commands such as `--help`, `prepare-data`, `validate-dual-config`, and torch backend runs do not require a built `.so`.
+When a Python process switches between `runtime.cuda_variant` values, MiniCNN resets the cached `ctypes` handle so the next CUDA call loads the requested library instead of reusing the previous `.so`.
 
 For quick debug runs, use config overrides:
 
@@ -143,6 +144,8 @@ The smoke run writes model files to `src/minicnn/training/models/` and run logs 
 
 Verification also covered `pytest`, CLI help without a native `.so`, config validation, Python compile checks, and `minicnn build --legacy-make --variant both --check`.
 
+Latest maintenance verification on 2026-04-20: `99 passed, 4 warnings`, `compileall` clean, `git diff --check` clean, and both cuBLAS/handmade native variants rebuilt with required symbols OK.
+
 ## Why two backends?
 
 This repo intentionally supports two workflows:
@@ -158,6 +161,12 @@ This core is useful for framework-level tests and small educational examples. Th
 
 ### Robustness notes
 
+- **`train.init_seed`**: torch/flex model construction now seeds PyTorch before `build_model()`, so repeated runs with the same config start from the same weights. CUDA legacy and CPU/NumPy autograd already use their init seed paths.
+- **Config overrides**: dotted CLI overrides support list indexes such as `model.layers.1.out_features=7`; malformed CUDA legacy numeric fields are reported as validation errors instead of raw tracebacks.
+- **Boolean parsing**: string values such as `"false"` and `"0"` are parsed as false for dataset download, augmentation, AMP, optimizer helper flags, and CUDA conv `pool` fields.
+- **CUDA library switching**: in-process `cuda_legacy` runs reset the cached native handle when runtime library settings change.
+- **CUDA cleanup**: legacy CUDA training now frees device weights and velocity buffers through an outer cleanup path even if training raises before final evaluation.
+- **`maxpool_backward_nchw`**: native code exports a status-returning wrapper, while the old void ABI remains for compatibility.
 - **SGD**: parameter updates that fail with a shape or type mismatch emit a `RuntimeWarning` (including the parameter name) instead of silently skipping. Truly unexpected exceptions are no longer swallowed.
 - **`Tensor.__pow__` backward**: gradient computation at `base == 0` with a negative exponent now returns `0` instead of `NaN`, preventing silent NaN propagation through the compute graph.
 - **`maxpool2d`**: forward pass is fully vectorized with `sliding_window_view`; the loop over spatial output positions is gone.

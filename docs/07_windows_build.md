@@ -79,4 +79,13 @@ runtime.cuda_variant=cublas   -> cpp\minimal_cuda_cnn_cublas.dll
 runtime.cuda_variant=handmade -> cpp\minimal_cuda_cnn_handmade.dll
 ```
 
+The Python loader also resets its cached native handle when a process switches variants, so Windows smoke tests should verify both DLLs in the same order used on Linux:
+
+```powershell
+minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy runtime.cuda_variant=cublas train.epochs=1
+minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy runtime.cuda_variant=handmade train.epochs=1
+```
+
+Both DLL variants should export `maxpool_backward_nchw_status` in addition to the legacy void `maxpool_backward_nchw` symbol.
+
 This part should be verified on a Windows machine after compiling the DLLs.

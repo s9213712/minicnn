@@ -397,6 +397,7 @@ def test_native_cuda_comment_tasks_are_reflected_in_source():
     assert 'int N, int C, int in_h, int in_w, int out_h, int out_w' in maxpool_nchw
     assert 'assert(' not in maxpool_nchw
     assert 'cudaErrorInvalidValue' in maxpool_nchw
+    assert 'extern "C" int maxpool_backward_nchw_status' in maxpool_nchw
     assert 'dense_backward_weights_atomic_kernel' not in dense_layer
 
     assert 'system(' not in gpu_monitor

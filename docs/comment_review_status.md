@@ -46,6 +46,7 @@ Processed local note files:
 | Code review fixes | SGD.step() now emits `RuntimeWarning` (with param name) instead of silently swallowing exceptions; only `ValueError`/`TypeError` are caught. `Tensor.__pow__` backward guards against NaN when `base==0` with negative exponent. `flex/builder` validates that inferred output shapes are all-positive after each layer. `BatchWorkspace.__del__` emits `ResourceWarning` instead of silently discarding GPU cleanup failures. `maxpool2d` forward vectorized with `sliding_window_view`, removing the O(out_h×out_w) Python loop. `flex/trainer` zero_grad gets a `TypeError` fallback for older PyTorch. `tests/test_review_fixes.py` added with 14 targeted tests. |
 | MNIST `.so` orchestration refactor | `docs/train_mnist_so_full_cnn_frame.py` now follows the ordered Python cleanup guidance: reusable `ConvBlock`, reusable `DenseLayer`, dataclass caches instead of tuple-position coupling, programmatic shape helpers, and a separate `SgdOptimizer` that applies `ParamGrad` updates after backward. `tests/test_mnist_templates.py` covers MNIST IDX loading, flex MNIST dataloaders, template materialization, and the optimizer/layer separation contract. |
 | Legacy CIFAR trainer modularization | Completed. CUDA batch device work moved to `cuda_batch.py`; CUDA and Torch legacy trainers share `legacy_data.py` and `loop.py`; `tests/test_training_loop.py` locks the shared state helpers and source-level modularization contract. |
+| Follow-up audit fixes | Completed. `train.init_seed` is applied before torch/flex model construction; strict boolean parsing is shared across flex data/trainer, CUDA architecture, settings, and validation; dotted overrides support list indexes; malformed CUDA legacy numeric config fields report validation errors; in-process CUDA library switching resets the cached `ctypes` handle; CUDA legacy training frees weights/velocities on exceptional exits; `maxpool_backward_nchw_status` provides a status-returning native API while preserving the old void ABI. |
 
 ## Deferred
 
@@ -68,5 +69,15 @@ PYTHONPATH=src python3 -m compileall -q src tests
 PYTHONPATH=src python3 -m pytest -q tests
 PYTHONPATH=src python3 -m pytest -q tests/test_training_loop.py tests/test_comment_fixes.py tests/test_cuda_smoke.py
 # synthetic smoke runs were used for legacy torch and CUDA paths when CIFAR data was not present
+git diff --check
+```
+
+Latest verification after the follow-up audit fixes:
+
+```bash
+PYTHONPATH=src python3 -m pytest -q tests
+# 99 passed, 4 warnings
+PYTHONPATH=src python3 -m compileall -q src/minicnn tests
+minicnn build --legacy-make --variant both --cuda-arch sm_86 --check
 git diff --check
 ```

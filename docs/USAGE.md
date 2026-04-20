@@ -79,6 +79,14 @@ PyTorch backend 會寫入 `*_best.pt`，CUDA legacy backend 會寫入 `*_best_mo
 
 `cuda_legacy` 的 `.so` 會 lazy-load：`minicnn --help`、`validate-dual-config`、`prepare-data`、torch backend、以及純 import 測試不會因為 native library 不存在而失敗。只有第一次真正呼叫 CUDA helper 時才會載入 `.so`。
 
+目前 config/runtime 的穩健性規則：
+
+- `train.init_seed` 控制模型初始化；比較 backend 時請固定這個值。
+- CLI override 支援 list index，例如 `model.layers.1.out_features=7`。
+- 布林欄位使用 strict parser，`"false"` 不會被 Python `bool()` 誤判為 true。
+- 同一 process 內切換 `runtime.cuda_variant` 或 `runtime.cuda_so` 會重設 cached native library handle。
+- `maxpool_backward_nchw_status` 是優先使用的 status-returning native API；舊的 void ABI 保留相容性。
+
 Debug 時可直接用 config override 控制訓練參數：
 
 ```bash

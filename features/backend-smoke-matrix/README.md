@@ -50,6 +50,8 @@ src/minicnn/training/models/
 
 Use this after changing CUDA kernels, ctypes bindings, trainer scheduling, or backend config mapping. The goal is to catch obvious backend regressions quickly before running longer training.
 
+Backend switching in the same Python process now resets the cached CUDA library handle, so matrix runs that alternate `runtime.cuda_variant=cublas` and `runtime.cuda_variant=handmade` should load the requested `.so` each time. Keep `train.init_seed` fixed when comparing variants so initialization differences do not hide backend regressions.
+
 The supported trainer code lives under `src/minicnn/training/`: CUDA
 orchestration in `train_cuda.py`, CUDA batch device work in `cuda_batch.py`,
 Torch baseline orchestration in `train_torch_baseline.py`, and shared loop

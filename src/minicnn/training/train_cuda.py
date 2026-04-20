@@ -141,7 +141,6 @@ def reduce_lr_if_due(fit: FitState, lr_state: LrState) -> None:
 
 def run_final_evaluation(runtime: CudaRuntimeState, arch, x_test: np.ndarray, y_test: np.ndarray) -> float:
     print("\n=== FINAL EVALUATION ON OFFICIAL TEST SET ===")
-    free_weights(runtime.velocities)
     if os.path.exists(BEST_MODEL_PATH):
         best_ckpt, _fc_w, _fc_b, new_dw = reload_weights_from_checkpoint(
             BEST_MODEL_PATH, runtime.weights, arch,
@@ -151,7 +150,6 @@ def run_final_evaluation(runtime: CudaRuntimeState, arch, x_test: np.ndarray, y_
               f"with Val={float(best_ckpt['val_acc']):.2f}%")
     test_acc = evaluate(x_test, y_test, runtime.weights)
     print(f"Test Accuracy: {test_acc:.2f}%")
-    free_weights(runtime.weights)
     return float(test_acc)
 
 
@@ -166,41 +164,47 @@ def main() -> dict[str, object]:
     train_rng = np.random.default_rng(TRAIN_SEED)
 
     try:
-        for epoch in range(EPOCHS):
-            with EpochTimer() as timer:
-                metrics = run_cuda_epoch(
-                    runtime, workspace, arch, x_train, y_train, train_rng, lr_state
-                )
-                synchronize_if_available()
-                val_acc = evaluate(x_val, y_val, runtime.weights)
-                improved = fit.observe(epoch + 1, val_acc, MIN_DELTA)
+        try:
+            for epoch in range(EPOCHS):
+                with EpochTimer() as timer:
+                    metrics = run_cuda_epoch(
+                        runtime, workspace, arch, x_train, y_train, train_rng, lr_state
+                    )
+                    synchronize_if_available()
+                    val_acc = evaluate(x_val, y_val, runtime.weights)
+                    improved = fit.observe(epoch + 1, val_acc, MIN_DELTA)
 
-            if improved:
-                save_best_checkpoint(epoch + 1, val_acc, lr_state, runtime, arch)
-                save_msg = " [saved best]"
-            else:
-                save_msg = ""
+                if improved:
+                    save_best_checkpoint(epoch + 1, val_acc, lr_state, runtime, arch)
+                    save_msg = " [saved best]"
+                else:
+                    save_msg = ""
 
-            reduce_lr_if_due(fit, lr_state)
-            print(format_epoch_summary(
-                epoch + 1, EPOCHS, metrics, val_acc, fit, lr_state, timer.elapsed, save_msg,
-                lr_separator=",",
-            ))
+                reduce_lr_if_due(fit, lr_state)
+                print(format_epoch_summary(
+                    epoch + 1, EPOCHS, metrics, val_acc, fit, lr_state, timer.elapsed, save_msg,
+                    lr_separator=",",
+                ))
 
-            if fit.should_stop(EARLY_STOP_PATIENCE):
-                print(f"Early stopping after {epoch+1} epochs; "
-                      f"best val {fit.best_val_acc:.2f}% at epoch {fit.best_epoch}.")
-                break
+                if fit.should_stop(EARLY_STOP_PATIENCE):
+                    print(f"Early stopping after {epoch+1} epochs; "
+                          f"best val {fit.best_val_acc:.2f}% at epoch {fit.best_epoch}.")
+                    break
 
+        finally:
+            workspace.free()
+
+        test_acc = run_final_evaluation(runtime, arch, x_test_final, y_test_final)
+        print("\nDone!")
+        return {
+            'test_acc': test_acc,
+            'best_model_path': BEST_MODEL_PATH,
+        }
     finally:
-        workspace.free()
-
-    test_acc = run_final_evaluation(runtime, arch, x_test_final, y_test_final)
-    print("\nDone!")
-    return {
-        'test_acc': test_acc,
-        'best_model_path': BEST_MODEL_PATH,
-    }
+        free_weights(runtime.velocities)
+        runtime.velocities = None
+        free_weights(runtime.weights)
+        runtime.weights = None
 
 
 if __name__ == "__main__":

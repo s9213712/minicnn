@@ -6,6 +6,10 @@ Input NCHW 1x28x28
 -> Conv(1->8, 3x3) -> LeakyReLU -> MaxPool(2x2)
 -> Conv(8->16, 3x3) -> LeakyReLU -> MaxPool(2x2)
 -> FC(16*5*5 -> 10)
+
+Current native wrappers prefer status-returning symbols when available; the
+supported package wrapper uses maxpool_backward_nchw_status for catchable
+host-side errors while keeping the legacy void ABI compatible.
 """
 
 from __future__ import annotations

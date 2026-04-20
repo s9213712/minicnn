@@ -10,6 +10,10 @@ Input NCHW 1x28x28
 This file is intentionally self-contained and uses only NumPy plus Python's
 standard library for MNIST IDX parsing. The CUDA layer code comes from the
 project shared library.
+
+Current native wrappers prefer status-returning symbols when available; the
+supported package wrapper uses maxpool_backward_nchw_status for catchable
+host-side errors while keeping the legacy void ABI compatible.
 """
 
 from __future__ import annotations

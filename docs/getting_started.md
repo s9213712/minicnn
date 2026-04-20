@@ -18,6 +18,15 @@ minicnn train-flex --config configs/flex_cnn.yaml
 3. Run `minicnn train-flex --config <your-config>.yaml`.
 4. Inspect the run artifacts.
 
+For reproducible runs, set `train.init_seed` in the config. Use CLI overrides for quick checks:
+
+```bash
+minicnn train-flex --config configs/flex_cnn.yaml \
+  train.epochs=1 train.init_seed=123 model.layers.1.out_features=32
+```
+
+Boolean fields such as `dataset.download`, `dataset.horizontal_flip`, and `train.amp` use strict parsing; `false` and `"false"` both mean false.
+
 ## Suggested first configs
 
 - `templates/mnist/lenet_like.yaml`: first CNN run; downloads MNIST on first use.
@@ -36,3 +45,5 @@ minicnn train-flex --config configs/flex_cnn.yaml
 - `src/minicnn/training/legacy_data.py` contains shared CIFAR-10 load/normalize logic for legacy trainers.
 
 Best checkpoints are written under `src/minicnn/training/models/`.
+
+The CUDA legacy path lazy-loads its native library and resets the cached handle when switching `runtime.cuda_variant`, so `cublas` and `handmade` smoke runs can be compared from scripts without restarting Python.

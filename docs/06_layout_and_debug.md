@@ -110,6 +110,12 @@ nm -D cpp/libminimal_cuda_cnn.so | grep -E 'apply_momentum_update|conv_update_fu
 nm -D cpp/libminimal_cuda_cnn.so | grep conv_backward_precol
 ```
 
+如果改到 NCHW maxpool backward，確認 status-returning API 有匯出：
+
+```bash
+nm -D cpp/libminimal_cuda_cnn.so | grep maxpool_backward_nchw_status
+```
+
 若要確認 unified config 可以映射到 CUDA legacy backend：
 
 ```bash
@@ -158,3 +164,10 @@ cuda-memcheck python3 -u your_script.py
 4. 每一步都檢查 gradient scale。`conv_backward`/`conv_backward_precol` 的 weight gradient 會累加傳入的 `grad_out`，目前 CIFAR trainer 會先在 logits gradient 做 batch mean，再交給後續 backward。CUDA batch 呼叫順序集中在 `src/minicnn/training/cuda_batch.py`，可從 `train_cuda_batch()` 往下追。
 5. 使用 Momentum SGD 時，velocity buffer 不能每個 batch 重設；它必須從訓練開始保留到訓練結束。
 6. 若改到 loss，優先檢查 `softmax_xent_grad_loss_acc` 是否輸出合理的 loss scalar、correct count 與 `(probs - one_hot) / N`。
+
+## Config debug notes
+
+- 固定 `train.init_seed` 再比較 backend，避免初始權重差異干擾判斷。
+- CLI override 可直接改 list 元素，例如 `model.layers.1.out_features=7`。
+- 布林字串使用 strict parser；`"false"`、`"0"`、`"no"` 都會解析成 false。
+- `cuda_legacy` runtime variant 在同一 process 內切換時會重設 native library cache；若仍懷疑載錯 `.so`，列印 `MINICNN_CUDA_VARIANT`、`MINICNN_CUDA_SO` 與 `resolve_library_path()`。

@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from minicnn.config.parsing import parse_scalar
+from minicnn.config.parsing import parse_scalar, set_nested_value
 from minicnn.flex.config import _deep_update, DEFAULT_CONFIG
 
 UNIFIED_DEFAULT_CONFIG: dict[str, Any] = copy.deepcopy(DEFAULT_CONFIG)
@@ -29,11 +29,7 @@ def load_unified_config(path: str | Path | None = None, overrides: list[str] | N
             if '=' not in item:
                 raise ValueError(f'Override must look like key=value, got: {item}')
             key, raw = item.split('=', 1)
-            parts = key.split('.')
-            cur = data
-            for p in parts[:-1]:
-                cur = cur.setdefault(p, {})
-            cur[parts[-1]] = parse_scalar(raw)
+            set_nested_value(data, key.split('.'), parse_scalar(raw))
     return data
 
 

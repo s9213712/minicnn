@@ -69,6 +69,14 @@ def test_override_parser_handles_nested_lists():
     assert cfg['dataset']['patch_sizes'] == [3, [5, 7], 'wide value']
 
 
+def test_override_parser_updates_layer_list_index():
+    from minicnn.flex.config import load_flex_config
+
+    cfg = load_flex_config(None, ['model.layers.1.out_features=7'])
+
+    assert cfg['model']['layers'][1]['out_features'] == 7
+
+
 def test_optimizer_ignores_cuda_legacy_lr_fields_for_torch():
     from minicnn.flex.builder import build_optimizer
     import torch
@@ -108,6 +116,67 @@ def test_train_loader_supports_cifar_style_augmentation():
 
     assert tuple(xb.shape) == (4, 3, 8, 8)
     assert tuple(yb.shape) == (4,)
+
+
+def test_train_loader_parses_string_false_for_horizontal_flip():
+    from minicnn.flex.data import create_dataloaders
+
+    dataset_cfg = {
+        'type': 'random',
+        'input_shape': [3, 8, 8],
+        'num_classes': 3,
+        'num_samples': 8,
+        'val_samples': 4,
+        'seed': 1,
+        'horizontal_flip': 'false',
+    }
+    train_loader, _ = create_dataloaders(dataset_cfg, {'batch_size': 4, 'num_workers': 0})
+
+    assert train_loader.dataset.horizontal_flip is False
+
+
+def test_train_from_config_applies_init_seed_before_model_build(tmp_path: Path, monkeypatch):
+    import torch
+    import minicnn.flex.trainer as trainer
+
+    observed_seeds = []
+
+    def build_seed_probe(_model_cfg, input_shape):
+        observed_seeds.append(torch.initial_seed())
+        return torch.nn.Sequential(
+            torch.nn.Flatten(),
+            torch.nn.Linear(int(input_shape[0] * input_shape[1] * input_shape[2]), 2),
+        )
+
+    monkeypatch.setattr(trainer, 'build_model', build_seed_probe)
+    cfg = {
+        'project': {'name': 'test', 'run_name': 'pytest-init-seed', 'artifacts_root': str(tmp_path)},
+        'dataset': {
+            'type': 'random',
+            'input_shape': [1, 4, 4],
+            'num_classes': 2,
+            'num_samples': 4,
+            'val_samples': 2,
+            'seed': 1,
+        },
+        'model': {'layers': [{'type': 'Flatten'}, {'type': 'Linear', 'out_features': 2}]},
+        'train': {
+            'epochs': 1,
+            'batch_size': 2,
+            'device': 'cpu',
+            'amp': False,
+            'grad_accum_steps': 1,
+            'num_workers': 0,
+            'init_seed': 123,
+        },
+        'loss': {'type': 'CrossEntropyLoss'},
+        'optimizer': {'type': 'SGD', 'lr': 0.01, 'momentum': 0.0},
+        'scheduler': {'enabled': False},
+    }
+
+    train_from_config(cfg)
+
+    assert observed_seeds == [123]
 
 
 def test_augmented_dataset_changes_random_seed_by_epoch():

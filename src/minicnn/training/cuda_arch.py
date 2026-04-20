@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from minicnn.config.parsing import parse_bool
+
 if TYPE_CHECKING:
     from minicnn.config.schema import ModelConfig
 
@@ -63,7 +65,7 @@ class CudaNetGeometry:
         cur_h, cur_w, cur_c = h, w, c_in
         for i, spec in enumerate(model_cfg.conv_layers):
             out_c = int(spec['out_c'])
-            pool = bool(spec.get('pool', False))
+            pool = parse_bool(spec.get('pool', False), label=f'model.conv_layers[{i}].pool')
             h_out = cur_h - kh + 1
             w_out = cur_w - kw + 1
             if h_out <= 0 or w_out <= 0:

@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from minicnn.config.parsing import parse_scalar
+from minicnn.config.parsing import parse_scalar, set_nested_value
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -85,12 +85,7 @@ def load_flex_config(path: str | Path | None = None, overrides: list[str] | None
 
         parsed_overrides.sort(key=lambda item: 0 if item[0][-1] == 'type' else 1)
         for parts, value in parsed_overrides:
-            cur = data
-            for p in parts[:-1]:
-                cur = cur.setdefault(p, {})
-            if parts[-1] == 'type' and isinstance(cur, dict) and cur.get('type') != value:
-                cur.clear()
-            cur[parts[-1]] = value
+            set_nested_value(data, parts, value, clear_on_type_change=True)
     return data
 
 

@@ -12,6 +12,8 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=torch
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
 ```
 
+For reproducible backend comparisons, keep `train.init_seed`, `dataset.seed`, and `train.seed` fixed. The torch/flex path seeds PyTorch before model construction, and CUDA legacy maps the same field into its legacy experiment config.
+
 ## Validate before running handcrafted CUDA
 
 ```bash
@@ -23,6 +25,18 @@ minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 ```bash
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 ```
+
+To compare native variants:
+
+```bash
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=cublas
+
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=handmade
+```
+
+In-process variant switching resets the cached native library handle, so scripted comparisons should load the requested `.so` for each run.
 
 ## Training implementation layout
 
@@ -74,6 +88,15 @@ Edit `model.layers` in `configs/dual_backend_cnn.yaml` (or your own config).
 Add, remove, or reorder entries freely — `in_channels` and `in_features` are
 inferred automatically by the flex builder.
 
+Dotted CLI overrides can patch a layer entry directly:
+
+```bash
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=torch model.layers.1.negative_slope=0.05
+```
+
+Boolean fields are parsed strictly, so string `"false"` is treated as false rather than as a truthy Python string.
+
 ## When Architecture Changes Require Code Changes
 
 Most architecture edits should be YAML-only. Code changes are needed only when
@@ -87,6 +110,8 @@ the requested layer behavior is outside the supported backend contract.
 | Add a new CUDA legacy layer type | Usually no Torch change unless config parity is required. | Update `src/minicnn/unified/cuda_legacy.py`, `src/minicnn/training/cuda_arch.py`, `src/minicnn/training/cuda_workspace.py`, `src/minicnn/training/cuda_batch.py`, native kernels under `cpp/src/`, and ctypes signatures in `src/minicnn/core/cuda_backend.py`. |
 | Change backward math for an existing op | Usually no project code change; PyTorch autograd owns the gradient. | Update the relevant native backward kernel in `cpp/src/`, then update `src/minicnn/core/cuda_backend.py` and the call order in `src/minicnn/training/cuda_batch.py` if the ABI or buffers changed. |
 | Change optimizer/update semantics | Update torch optimizer config or `src/minicnn/flex/trainer.py` for flex training. | Update `cpp/src/optimizer.cu` and the CUDA update calls in `src/minicnn/training/cuda_batch.py`. |
+
+Malformed CUDA legacy config values are collected as validation errors before the legacy experiment is compiled. If validation fails, fix the YAML or CLI override first rather than editing native code.
 
 Native CUDA backward files by operation:
 
@@ -112,3 +137,5 @@ Rule of thumb:
 ## Custom components
 
 Custom dotted-path components are intended for the Torch backend. The CUDA backend requires supported layer shapes and semantics listed in `src/minicnn/unified/cuda_legacy.py`.
+
+`maxpool_backward_nchw.cu` exports both the old void ABI and `maxpool_backward_nchw_status(...)`. Prefer the status-returning form from Python wrappers so invalid geometry becomes a catchable host-side error.

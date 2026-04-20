@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
+from minicnn.config.parsing import parse_bool
 from minicnn.config.schema import ExperimentConfig
 
 
@@ -31,6 +32,22 @@ def _coerce_int(value: Any, label: str, errors: list[str]) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         errors.append(f'{label} must be an integer, got {value!r}')
+        return None
+
+
+def _coerce_float(value: Any, label: str, errors: list[str]) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        errors.append(f'{label} must be a number, got {value!r}')
+        return None
+
+
+def _coerce_bool(value: Any, label: str, errors: list[str]) -> bool | None:
+    try:
+        return parse_bool(value, label=label)
+    except ValueError as exc:
+        errors.append(str(exc))
         return None
 
 
@@ -82,16 +99,39 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
         errors.append('cuda_legacy only supports dataset.type=cifar10')
     if list(dataset.get('input_shape', [3, 32, 32])) != [3, 32, 32]:
         errors.append('cuda_legacy only supports dataset.input_shape=[3, 32, 32]')
-    if int(dataset.get('num_classes', 10)) != 10:
+    num_classes = _coerce_int(dataset.get('num_classes', 10), 'dataset.num_classes', errors)
+    if num_classes is not None and num_classes != 10:
         errors.append('cuda_legacy only supports 10 output classes')
     if str(optim.get('type', 'SGD')) not in CUDA_LEGACY_SUPPORTED['optimizer']:
         errors.append('cuda_legacy only supports optimizer.type=SGD')
     if str(loss.get('type', 'CrossEntropyLoss')) not in CUDA_LEGACY_SUPPORTED['loss']:
         errors.append('cuda_legacy only supports loss.type=CrossEntropyLoss')
-    if int(train.get('grad_accum_steps', 1)) != 1:
+    grad_accum_steps = _coerce_int(train.get('grad_accum_steps', 1), 'train.grad_accum_steps', errors)
+    if grad_accum_steps is not None and grad_accum_steps != 1:
         errors.append('cuda_legacy does not support grad_accum_steps != 1')
-    if bool(train.get('amp', False)):
+    amp = _coerce_bool(train.get('amp', False), 'train.amp', errors)
+    if amp:
         errors.append('cuda_legacy does not support amp=true')
+    for label, value in (
+        ('train.batch_size', train.get('batch_size', 1)),
+        ('train.epochs', train.get('epochs', 1)),
+        ('dataset.seed', dataset.get('seed', 42)),
+        ('train.init_seed', train.get('init_seed', 42)),
+        ('train.seed', train.get('seed', train.get('train_seed', 42))),
+        ('dataset.num_samples', dataset.get('num_samples', 1)),
+        ('dataset.val_samples', dataset.get('val_samples', 1)),
+    ):
+        _coerce_int(value, label, errors)
+    if train.get('max_steps_per_epoch') is not None:
+        _coerce_int(train.get('max_steps_per_epoch'), 'train.max_steps_per_epoch', errors)
+    for label, value in (
+        ('optimizer.lr_conv1', optim.get('lr_conv1', optim.get('lr', 0.0))),
+        ('optimizer.lr_conv', optim.get('lr_conv', optim.get('lr', 0.0))),
+        ('optimizer.lr_fc', optim.get('lr_fc', optim.get('lr', 0.0))),
+        ('optimizer.momentum', optim.get('momentum', 0.0)),
+        ('optimizer.weight_decay', optim.get('weight_decay', 0.0)),
+    ):
+        _coerce_float(value, label, errors)
     cuda_variant = runtime.get('cuda_variant')
     if cuda_variant is not None and str(cuda_variant) not in {'default', 'cublas', 'handmade', 'nocublas'}:
         errors.append('runtime.cuda_variant must be one of: default, cublas, handmade, nocublas')
@@ -108,7 +148,9 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
         if act_type == 'ReLU':
             slope = 0.0
         elif act_type == 'LeakyReLU':
-            slope = float(act.get('negative_slope', 0.1))
+            slope = _coerce_float(act.get('negative_slope', 0.1), 'LeakyReLU.negative_slope', errors)
+            if slope is None:
+                continue
         else:
             errors.append(f'Unsupported activation for cuda_legacy: {act_type}')
             continue

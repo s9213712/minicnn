@@ -26,6 +26,9 @@ lib.cnhw_to_nchw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
 lib.nchw_to_cnhw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
 lib.maxpool_forward_store.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
 lib.maxpool_backward_use_idx.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
+if hasattr(lib, "maxpool_backward_nchw_status"):
+    lib.maxpool_backward_nchw_status.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int]
+    lib.maxpool_backward_nchw_status.restype = c_int
 lib.leaky_relu_forward.argtypes = [c_void_p, c_float, c_int]
 lib.leaky_relu_backward.argtypes = [c_void_p, c_void_p, c_float, c_int]
 lib.dense_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
@@ -37,6 +40,8 @@ lib.apply_momentum_update.argtypes = [c_void_p, c_void_p, c_void_p, c_float, c_f
 lib.conv_update_fused.argtypes = [c_void_p, c_void_p, c_void_p, c_float, c_float, c_float, c_float, c_float, c_int]
 lib.clip_inplace.argtypes = [c_void_p, c_float, c_int]
 ```
+
+Prefer status-returning native wrappers when they exist. For example, `maxpool_backward_nchw_status(...)` returns `0` on success and a CUDA error code on invalid geometry, which lets Python raise `ValueError` instead of relying on a process-level CUDA check.
 
 ## Host/device helper
 

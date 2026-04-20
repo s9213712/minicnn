@@ -78,6 +78,14 @@ void leaky_relu_backward(float* data, float* grad, float alpha, int size);
 void maxpool_backward_use_idx(float* grad_out, int* max_idx, float* grad_input,
                               int N, int C, int H, int W);
 
+int maxpool_backward_nchw_status(float* grad_out, float* input, float* grad_input,
+                                 int N, int C, int in_h, int in_w,
+                                 int out_h, int out_w);
+
+void maxpool_backward_nchw(float* grad_out, float* input, float* grad_input,
+                           int N, int C, int in_h, int in_w,
+                           int out_h, int out_w);
+
 void softmax_backward(float* grad_out, float* probs, int N, int features);
 ```
 
@@ -93,6 +101,8 @@ grad_input:   dL/dInput
 `USE_CUBLAS=1` 時，`grad_weights` 使用 im2col + cuBLAS GEMM 計算，避免舊版 per-element `atomicAdd` 累積造成的嚴重 contention。`USE_CUBLAS=0` 時會使用手寫 CUDA fallback，不需要連結 cuBLAS。`grad_input` 仍使用直接 CUDA kernel。訓練程式會對部分 gradient 做 clipping 或 batch 平均，這些縮放通常在 Python 端或 optimizer kernel 完成。
 
 `conv_backward_precol` 與 `conv_backward` 行為相同，但多接收一個已存在的 `col` buffer。當 forward 已經呼叫過 `im2col_forward(input, col, ...)` 時，訓練 loop 可直接把同一個 `col` 傳入 backward，避免重新 im2col 與額外配置 scratch buffer。
+
+`maxpool_backward_use_idx` 是訓練主流程使用的安全路徑，搭配 forward 保存的 `max_idx`。`maxpool_backward_nchw_status` 是 NCHW helper 的 status-returning 版本：成功回傳 `0`，若 `in_h != out_h * 2` 或 `in_w != out_w * 2` 則回傳 CUDA error code。Python wrapper 優先用這個入口把 native 參數錯誤轉成 `ValueError`；舊的 `void maxpool_backward_nchw` 保留 ABI 相容性。
 
 ## Optimizer
 

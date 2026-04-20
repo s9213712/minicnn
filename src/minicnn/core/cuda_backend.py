@@ -133,6 +133,15 @@ def _bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
     bound_lib.cnhw_to_nchw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
     bound_lib.maxpool_forward_store.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
     bound_lib.maxpool_backward_use_idx.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
+    if hasattr(bound_lib, 'maxpool_backward_nchw'):
+        bound_lib.maxpool_backward_nchw.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int,
+        ]
+    if hasattr(bound_lib, 'maxpool_backward_nchw_status'):
+        bound_lib.maxpool_backward_nchw_status.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int,
+        ]
+        bound_lib.maxpool_backward_nchw_status.restype = c_int
     bound_lib.conv_backward.argtypes = [
         c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
         c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
@@ -149,6 +158,12 @@ def get_lib() -> ctypes.CDLL:
     if _lib is None:
         _lib = _bind_symbols(load_library())
     return _lib
+
+
+def reset_library_cache() -> None:
+    """Force the next CUDA call to resolve and load the current configured library."""
+    global _lib
+    _lib = None
 
 
 def check_cuda_ready(path: str | os.PathLike[str] | None = None) -> dict[str, object]:

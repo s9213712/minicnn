@@ -31,6 +31,17 @@ def test_cuda_backend_import_is_lazy_without_library():
     assert 'lazy-error-ok' in result.stdout
 
 
+def test_cuda_backend_reset_library_cache():
+    import minicnn.core.cuda_backend as cuda_backend
+
+    marker = object()
+    cuda_backend._lib = marker
+
+    cuda_backend.reset_library_cache()
+
+    assert cuda_backend._lib is None
+
+
 def test_train_cuda_import_does_not_load_missing_library():
     code = (
         "import os\n"

@@ -13,23 +13,51 @@ from minicnn.paths import BEST_MODELS_ROOT
 from minicnn.unified.cuda_legacy import compile_to_legacy_experiment, summarize_legacy_mapping
 
 
+_MANAGED_CUDA_ENV: dict[str, tuple[bool, str | None, str]] = {}
+
+
+def _set_managed_env(name: str, value: Any | None) -> None:
+    if value is None:
+        state = _MANAGED_CUDA_ENV.pop(name, None)
+        if state is not None:
+            old_present, old_value, managed_value = state
+            if os.environ.get(name) == managed_value:
+                if old_present and old_value is not None:
+                    os.environ[name] = old_value
+                else:
+                    os.environ.pop(name, None)
+        return
+    text = str(value)
+    old_present, old_value, _old_managed = _MANAGED_CUDA_ENV.get(
+        name,
+        (name in os.environ, os.environ.get(name), ''),
+    )
+    os.environ[name] = text
+    _MANAGED_CUDA_ENV[name] = (old_present, old_value, text)
+
+
 def _configure_cuda_legacy_runtime(cfg: dict[str, Any], summary: dict[str, Any]) -> None:
     runtime = cfg.get('runtime', {})
     cuda_variant = runtime.get('cuda_variant')
     cuda_so = runtime.get('cuda_so')
+    _set_managed_env('MINICNN_CUDA_VARIANT', cuda_variant)
+    _set_managed_env('MINICNN_CUDA_SO', cuda_so)
     if cuda_variant is not None:
-        os.environ['MINICNN_CUDA_VARIANT'] = str(cuda_variant)
         summary['cuda_variant'] = str(cuda_variant)
     if cuda_so is not None:
-        os.environ['MINICNN_CUDA_SO'] = str(cuda_so)
         summary['cuda_so'] = str(cuda_so)
 
 
 def _reload_legacy_modules_after_config() -> None:
+    from minicnn.core.cuda_backend import reset_library_cache
+
+    reset_library_cache()
     for name in (
+        'minicnn.core.cuda_backend',
         'minicnn.training.evaluation',
         'minicnn.training.cuda_ops',
         'minicnn.training.cuda_workspace',
+        'minicnn.training.cuda_batch',
         'minicnn.training.checkpoints',
         'minicnn.training.train_cuda',
     ):
