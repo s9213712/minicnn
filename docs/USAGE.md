@@ -152,3 +152,7 @@ minicnn build --legacy-make --check
 minicnn prepare-data
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
 ```
+
+## Custom Components
+
+See [docs/custom_components.md](custom_components.md) for how to add custom Python layers to the torch/flex backend.

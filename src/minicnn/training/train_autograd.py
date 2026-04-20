@@ -95,7 +95,11 @@ def _make_optimizer(params, cfg: dict[str, Any]):
     grad_clip = float(cfg.get('grad_clip', 0.0))
     if optim_type == 'Adam':
         return Adam(params, lr=lr, weight_decay=weight_decay, grad_clip=grad_clip)
-    return SGD(params, lr=lr, momentum=float(cfg.get('momentum', 0.0)), weight_decay=weight_decay, grad_clip=grad_clip)
+    if optim_type == 'SGD':
+        return SGD(params, lr=lr, momentum=float(cfg.get('momentum', 0.0)), weight_decay=weight_decay, grad_clip=grad_clip)
+    raise ValueError(
+        f'train-autograd: unsupported optimizer.type={optim_type!r}; expected SGD or Adam'
+    )
 
 
 def _dense_targets(labels: np.ndarray, logits_shape: tuple[int, ...], loss_type: str) -> np.ndarray:
@@ -124,15 +128,20 @@ def _make_loss(loss_cfg: dict[str, Any]):
     )
 
 
-def _accuracy(model, x, y, batch_size: int) -> float:
+def _accuracy(model, x, y, batch_size: int, loss_type: str = 'CrossEntropyLoss') -> float:
     correct = 0
     total = 0
     with no_grad():
         for start in range(0, x.shape[0], batch_size):
             xb = Tensor(x[start:start + batch_size])
+            yb = y[start:start + batch_size]
             logits = model(xb)
-            pred = logits.data.argmax(axis=1)
-            correct += int((pred == y[start:start + batch_size]).sum())
+            if loss_type == 'BCEWithLogitsLoss' and logits.data.shape[1] == 1:
+                # binary: positive when logit >= 0
+                pred = (logits.data[:, 0] >= 0.0).astype(np.int64)
+            else:
+                pred = logits.data.argmax(axis=1)
+            correct += int((pred == yb).sum())
             total += pred.shape[0]
     return correct / max(total, 1)
 
@@ -154,9 +163,13 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
     )
     optim_cfg = cfg.get('optimizer', {'type': 'SGD', 'lr': 0.01})
     optimizer = _make_optimizer(model.parameters(), optim_cfg)
-    loss_fn = _make_loss(cfg.get('loss', {'type': 'CrossEntropyLoss'}))
+    loss_cfg = cfg.get('loss', {'type': 'CrossEntropyLoss'})
+    loss_fn = _make_loss(loss_cfg)
+    loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
     batch_size = int(train_cfg.get('batch_size', 8))
     epochs = int(train_cfg.get('epochs', 1))
+    if epochs < 1:
+        raise ValueError(f'train.epochs must be >= 1, got {epochs}')
 
     # Simple step-decay scheduler: multiply lr by gamma every step_size epochs.
     sched_enabled = sched_cfg.get('enabled', False)
@@ -193,8 +206,8 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
 
             last_epoch_time = time.perf_counter() - epoch_start
             model.train(False)
-            last_train_acc = _accuracy(model, x_train, y_train, batch_size)
-            val_acc = _accuracy(model, x_val, y_val, batch_size)
+            last_train_acc = _accuracy(model, x_train, y_train, batch_size, loss_type)
+            val_acc = _accuracy(model, x_val, y_val, batch_size, loss_type)
 
             if sched_enabled and epoch % sched_step_size == 0:
                 new_lr = max(optimizer.lr * sched_gamma, sched_min_lr)
@@ -221,7 +234,7 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
                 np.savez(best_path, **model.state_dict())
 
     model.train(False)
-    test_acc = _accuracy(model, x_test, y_test, batch_size)
+    test_acc = _accuracy(model, x_test, y_test, batch_size, loss_type)
     dump_summary(run_dir, {
         'effective_backend': 'autograd',
         'run_dir': str(run_dir),

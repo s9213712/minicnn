@@ -11,6 +11,7 @@ from minicnn.core.cuda_backend import (
     download_float_scalar,
     download_int_scalar,
     g2h,
+    is_lib_loaded,
     lib,
     update_conv,
 )
@@ -77,7 +78,10 @@ def scaled_normalizer(base_normalizer: float, scale: float) -> float:
 
 
 def device_grad_sq(d_grad, size: int, normalizer: float = 1.0) -> float:
-    if size <= 0:
+    # NOTE: copies gradient buffer from device to host — incurs PCIe round-trip.
+    # Enabling GRAD_CLIP_GLOBAL will therefore reduce throughput proportionally
+    # to the number of parameter tensors in the network.
+    if size <= 0 or not is_lib_loaded():
         return 0.0
     grad = g2h(d_grad, size).astype(np.float64, copy=False).reshape(-1)
     if normalizer != 1.0:
@@ -326,12 +330,16 @@ def backward_convs(
         grad_nchw = workspace.d_input_nchw_grad[i]
 
 
-def cuda_global_grad_scale(workspace: BatchWorkspace, arch: CudaNetGeometry, max_norm: float) -> float:
+def cuda_global_grad_scale(
+    workspace: BatchWorkspace,
+    arch: CudaNetGeometry,
+    max_norm: float,
+    normalizers: list[float],
+) -> float:
     if max_norm <= 0.0:
         return 1.0
     total_sq = device_grad_sq(workspace.d_fc_grad_w, arch.fc_out * arch.fc_in)
     total_sq += device_grad_sq(workspace.d_fc_grad_b, arch.fc_out)
-    normalizers = conv_grad_normalizers(arch)
     for i, stage in enumerate(arch.conv_stages):
         total_sq += device_grad_sq(workspace.d_w_grad[i], stage.weight_numel, normalizers[i])
     return global_clip_scale(total_sq, max_norm)
@@ -344,8 +352,8 @@ def update_convs(
     lr_state: LrState,
     grad_scale: float,
     log_grad: bool,
+    normalizers: list[float],
 ) -> None:
-    normalizers = conv_grad_normalizers(arch)
     for i, stage in enumerate(arch.conv_stages):
         lr = lr_state.conv1 if i == 0 else lr_state.conv
         spatial_norm = scaled_normalizer(normalizers[i], grad_scale)
@@ -381,6 +389,7 @@ def train_cuda_batch(
     compute_loss_and_metrics(workspace, arch, metrics, batch_size)
     backward_fc(runtime, workspace, arch, fc_input, batch_size)
     backward_convs(runtime, workspace, arch, batch_size)
-    grad_scale = cuda_global_grad_scale(workspace, arch, GRAD_CLIP_GLOBAL)
+    normalizers = conv_grad_normalizers(arch)
+    grad_scale = cuda_global_grad_scale(workspace, arch, GRAD_CLIP_GLOBAL, normalizers)
     update_fc(runtime, workspace, arch, lr_state, grad_scale)
-    update_convs(runtime, workspace, arch, lr_state, grad_scale, log_grad)
+    update_convs(runtime, workspace, arch, lr_state, grad_scale, log_grad, normalizers)

@@ -25,6 +25,7 @@ def test_scaled_normalizer_applies_clip_scale_through_existing_update_api():
 
 def test_device_grad_sq_uses_normalized_gradient(monkeypatch):
     monkeypatch.setattr(cuda_batch, 'g2h', lambda _ptr, _size: np.array([2.0, 4.0], dtype=np.float32))
+    monkeypatch.setattr(cuda_batch, 'is_lib_loaded', lambda: True)
 
     assert cuda_batch.device_grad_sq(object(), 2, normalizer=2.0) == 5.0
 

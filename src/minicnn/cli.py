@@ -171,7 +171,7 @@ def _compare_backends_and_overrides(args) -> tuple[list[str], list[str]]:
             else:
                 expected = ', '.join(sorted(_COMPARE_BACKENDS))
                 raise ValueError(f"invalid compare backend {token!r}; expected one of: {expected}")
-        return backends, [*extra_overrides, *args.overrides]
+        return backends, [*args.overrides, *extra_overrides]
     backends = [b for b in (args.backend_a, args.backend_b) if b] or ['torch', 'cuda_legacy']
     return backends, args.overrides
 

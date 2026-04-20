@@ -166,6 +166,11 @@ def reset_library_cache() -> None:
     _lib = None
 
 
+def is_lib_loaded() -> bool:
+    """Return True if the native CUDA library has already been loaded into this process."""
+    return _lib is not None
+
+
 def check_cuda_ready(path: str | os.PathLike[str] | None = None) -> dict[str, object]:
     resolved = resolve_library_path(path)
     exists = os.path.exists(resolved)
