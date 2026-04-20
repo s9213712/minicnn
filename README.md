@@ -61,13 +61,13 @@ Or with the CMake path:
 minicnn build --check
 ```
 
-## Shared-config training
-
 > **Before training**: download the CIFAR-10 dataset first.
 >
 > ```bash
 > minicnn prepare-data
 > ```
+
+## Shared-config training
 
 ### 1) PyTorch backend
 

@@ -61,13 +61,13 @@ Windows 可用 PowerShell 編譯 DLL：
 minicnn build --check
 ```
 
-## 使用同一份 config 切換 backend
-
 > **開始訓練前**：請先下載 CIFAR-10 資料集。
 >
 > ```bash
 > minicnn prepare-data
 > ```
+
+## 使用同一份 config 切換 backend
 
 ### 1. PyTorch backend
 
