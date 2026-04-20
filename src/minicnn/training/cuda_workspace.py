@@ -23,8 +23,12 @@ class BatchWorkspace:
 
         # ---- per-stage forward buffers (indexed by stage) ----
         self.d_col: list       = []   # im2col output
-        self.d_conv_raw: list  = []   # conv output CNHW (before LN/activation)
-        self.d_ln_out: list    = []   # LayerNorm output CNHW (LN stages only, else None)
+        self.d_conv_raw: list  = []   # conv output CNHW (before LN/BN/activation)
+        self.d_ln_out: list    = []   # LayerNorm output NCHW (LN stages only, else None)
+        self.d_bn_out: list    = []   # BatchNorm output NCHW (BN stages only, else None)
+        self.d_bn_x_hat: list  = []   # saved x_hat for BN backward (BN stages only, else None)
+        self.d_bn_mean: list   = []   # saved batch mean per channel (BN stages only, else None)
+        self.d_bn_inv_std: list = []  # saved batch inv_std per channel (BN stages only, else None)
         self.d_conv_nchw: list = []   # NCHW version (non-pool stages only, else None)
         self.d_pool: list      = []   # pool output CNHW (pool stages only, else None)
         self.d_max_idx: list   = []   # pool argmax (pool stages only, else None)
@@ -34,12 +38,22 @@ class BatchWorkspace:
             self.d_col.append(self.alloc(s.in_c * s.kh * s.kw * N * s.h_out * s.w_out))
             self.d_conv_raw.append(self.alloc(s.out_c * N * s.h_out * s.w_out))
             # LN output buffer only needed for non-pool LN stages.
-            # Pool+LN combination requires an extra NCHW→CNHW pass before pooling;
-            # that case is not supported and is rejected by cuda_legacy validation.
             if s.layer_norm and not s.pool:
                 self.d_ln_out.append(self.alloc(s.out_c * N * s.h_out * s.w_out))
             else:
                 self.d_ln_out.append(None)
+            # BN buffers: output, saved x_hat, mean, inv_std (BN stages only).
+            if s.batch_norm:
+                spatial = N * s.out_c * s.h_out * s.w_out
+                self.d_bn_out.append(self.alloc(spatial))
+                self.d_bn_x_hat.append(self.alloc(spatial))
+                self.d_bn_mean.append(self.alloc(s.out_c))
+                self.d_bn_inv_std.append(self.alloc(s.out_c))
+            else:
+                self.d_bn_out.append(None)
+                self.d_bn_x_hat.append(None)
+                self.d_bn_mean.append(None)
+                self.d_bn_inv_std.append(None)
             if s.pool:
                 self.d_pool.append(self.alloc(s.out_c * N * s.ph * s.pw))
                 self.d_max_idx.append(self.alloc_ints(s.out_c * N * s.ph * s.pw))
@@ -67,7 +81,10 @@ class BatchWorkspace:
         # ---- per-stage backward buffers ----
         self.d_w_grad: list            = []  # weight gradients
         self.d_conv_raw_grad: list     = []  # grad wrt conv output (CNHW)
-        self.d_ln_input_grad: list     = []  # grad wrt LN input (= conv output) when LN present
+        self.d_ln_input_grad: list     = []  # grad wrt LN input (= conv output NCHW) when LN present
+        self.d_bn_input_grad: list     = []  # grad wrt BN input (= d_conv_nchw) when BN present
+        self.d_bn_dgamma: list         = []  # accumulated BN gamma gradient (BN stages only)
+        self.d_bn_dbeta: list          = []  # accumulated BN beta gradient (BN stages only)
         self.d_pool_grad_cnhw: list    = []  # grad wrt pool output (CNHW, pool stages only)
         self.d_input_nchw_grad: list   = []  # grad wrt stage input (NCHW)
 
@@ -78,6 +95,15 @@ class BatchWorkspace:
                 self.d_ln_input_grad.append(self.alloc(s.out_c * N * s.h_out * s.w_out))
             else:
                 self.d_ln_input_grad.append(None)
+            if s.batch_norm:
+                spatial = N * s.out_c * s.h_out * s.w_out
+                self.d_bn_input_grad.append(self.alloc(spatial))
+                self.d_bn_dgamma.append(self.alloc(s.out_c))
+                self.d_bn_dbeta.append(self.alloc(s.out_c))
+            else:
+                self.d_bn_input_grad.append(None)
+                self.d_bn_dgamma.append(None)
+                self.d_bn_dbeta.append(None)
             if s.pool:
                 self.d_pool_grad_cnhw.append(self.alloc(s.out_c * N * s.ph * s.pw))
             else:

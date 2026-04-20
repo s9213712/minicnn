@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from minicnn.config.parsing import parse_bool
 from minicnn.flex.runtime import create_run_dir, dump_summary
 from minicnn.models import build_model_from_config
 from minicnn.nn import Tensor, bce_with_logits_loss, cross_entropy, mse_loss, no_grad
@@ -35,7 +36,7 @@ def _random_dataset(dataset_cfg: dict[str, Any]):
 def _cifar10_dataset(dataset_cfg: dict[str, Any]):
     from minicnn.data.cifar10 import load_cifar10, normalize_cifar
     data_root = str(dataset_cfg.get('data_root', DATA_ROOT))
-    download = bool(dataset_cfg.get('download', False))
+    download = parse_bool(dataset_cfg.get('download', False), label='dataset.download')
     n_train = int(dataset_cfg.get('num_samples', 45000))
     n_val = int(dataset_cfg.get('val_samples', 5000))
     seed = int(dataset_cfg.get('seed', 42))
@@ -52,7 +53,7 @@ def _cifar10_dataset(dataset_cfg: dict[str, Any]):
 def _mnist_dataset(dataset_cfg: dict[str, Any]):
     from minicnn.data.mnist import load_mnist, normalize_mnist
     data_root = str(dataset_cfg.get('data_root', DATA_ROOT / 'mnist'))
-    download = bool(dataset_cfg.get('download', True))
+    download = parse_bool(dataset_cfg.get('download', True), label='dataset.download')
     n_train = int(dataset_cfg.get('num_samples', 60000))
     n_val = int(dataset_cfg.get('val_samples', 5000))
     seed = int(dataset_cfg.get('seed', 42))
@@ -172,10 +173,17 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
         raise ValueError(f'train.epochs must be >= 1, got {epochs}')
 
     # Simple step-decay scheduler: multiply lr by gamma every step_size epochs.
-    sched_enabled = sched_cfg.get('enabled', False)
+    sched_enabled = parse_bool(sched_cfg.get('enabled', False), label='scheduler.enabled')
     sched_step_size = int(sched_cfg.get('step_size', 10))
     sched_gamma = float(sched_cfg.get('gamma', 0.5))
     sched_min_lr = float(sched_cfg.get('min_lr', 1e-6))
+    if sched_enabled:
+        if sched_step_size < 1:
+            raise ValueError(f'scheduler.step_size must be >= 1 when scheduler.enabled, got {sched_step_size}')
+        if sched_gamma <= 0:
+            raise ValueError(f'scheduler.gamma must be > 0, got {sched_gamma}')
+        if sched_min_lr < 0:
+            raise ValueError(f'scheduler.min_lr must be >= 0, got {sched_min_lr}')
 
     run_dir = create_run_dir(cfg)
     metrics_path = run_dir / 'metrics.jsonl'
@@ -233,6 +241,10 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
                 best_val = val_acc
                 np.savez(best_path, **model.state_dict())
 
+    # Reload best checkpoint before final test evaluation so test_acc matches best_val_acc.
+    if best_path.exists():
+        ckpt = np.load(best_path)
+        model.load_state_dict({k: ckpt[k] for k in ckpt.files})
     model.train(False)
     test_acc = _accuracy(model, x_test, y_test, batch_size, loss_type)
     dump_summary(run_dir, {

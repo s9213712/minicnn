@@ -153,6 +153,10 @@ This repo intentionally supports two workflows:
 - **Torch backend**: broad layer coverage, fast experimentation, custom components via dotted-path imports
 - **CUDA backend**: your hand-rolled CUDA CNN path for low-level control and backend ownership
 
+## Documentation index
+
+[docs/USAGE.md](docs/USAGE.md) is the full documentation index: build guide, C API reference, Python ctypes tutorial, C++ linking, layout/debug notes, Windows build, and autograd usage — in recommended reading order.
+
 ## Architecture overview
 
 See [docs/architecture.md](docs/architecture.md) for:

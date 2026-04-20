@@ -147,6 +147,9 @@ extern "C" {
     void reorganize_backward(const float* d_grad_output, float* d_grad_input, int N, int C, int H, int W);
     void layer_norm_forward(float* d_output, const float* d_input, const float* d_gamma, const float* d_beta, int N, int C, int H, int W, float eps);
     void layer_norm_backward(float* d_grad_input, const float* d_grad_output, const float* d_input, const float* d_gamma, int N, int C, int H, int W, float eps);
+    void bn_train_forward(float* d_y, const float* d_x, float* d_x_hat, float* d_batch_mean, float* d_batch_inv_std, float* d_running_mean, float* d_running_var, const float* d_gamma, const float* d_beta, int N, int C, int H, int W, float eps, float momentum);
+    void bn_eval_forward(float* d_y, const float* d_x, const float* d_running_mean, const float* d_running_var, const float* d_gamma, const float* d_beta, int N, int C, int H, int W, float eps);
+    void bn_backward(float* d_dx, float* d_dgamma, float* d_dbeta, const float* d_dy, const float* d_x_hat, const float* d_gamma, const float* d_inv_std, int N, int C, int H, int W);
     void maxpool_forward_store(float* d_output, const float* d_input, int* d_max_idx, int N, int C, int H, int W);
     void maxpool_backward_use_idx(const float* d_grad_out, const int* d_max_idx, float* d_grad_input, int N, int C, int H, int W);
 }

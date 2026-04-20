@@ -66,6 +66,18 @@ class Module:
     def state_dict(self) -> dict[str, object]:
         return {name: tensor.data for name, tensor in self.named_parameters()}
 
+    def load_state_dict(self, state: dict[str, object]) -> None:
+        """Copy arrays from state into the model's parameter tensors in-place."""
+        params = dict(self.named_parameters())
+        missing = set(params) - set(state)
+        unexpected = set(state) - set(params)
+        if missing:
+            raise KeyError(f'load_state_dict: missing keys: {sorted(missing)}')
+        if unexpected:
+            raise KeyError(f'load_state_dict: unexpected keys: {sorted(unexpected)}')
+        for name, tensor in params.items():
+            tensor.data = state[name].copy() if hasattr(state[name], 'copy') else state[name]
+
 
 class Sequential(Module):
     def __init__(self, *modules: Module):

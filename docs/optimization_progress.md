@@ -20,7 +20,7 @@ after comparing the project with `llm.c`, `tiny-cuda-nn`, and
 | Area | Status |
 |---|---|
 | Comparison report | Added backend-scoped completion report and linked it from README |
-| Follow-up tracking | Added `docs/comparison_followup_todo.md` |
+| Follow-up tracking | Follow-up items tracked inline (comparison_followup_todo.md removed) |
 | Backend support matrix | Added `docs/backend_capabilities.md` |
 | Benchmark reporting | Added `docs/benchmark_report_template.md` |
 | `minicnn compare` UX | Added benchmark-ready fields and fixed `--backends ... key=value` parsing |

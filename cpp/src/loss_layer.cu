@@ -2,6 +2,8 @@
 #include <cmath>
 #include "cuda_check.h"
 
+__device__ float warp_reduce_sum(float val);
+
 // ============== Softmax CrossEntropy ==============
 // One warp (32 threads) per sample.  Requires features <= 1024 (= 32 * 32).
 // For CIFAR-10 (10 classes) this is always satisfied.
@@ -212,7 +214,7 @@ __global__ void mse_fwd_grad_loss_acc_kernel(
         float target = (j == label) ? 1.0f : 0.0f;
         float diff   = row[j] - target;
         thread_loss += diff * diff;
-        grow[j]      = 2.0f * diff / static_cast<float>(N);
+        grow[j]      = 2.0f * diff / static_cast<float>(N * features);
         if (row[j] > thread_best || (j == 0)) {
             thread_best = row[j];
             thread_pred = j;
