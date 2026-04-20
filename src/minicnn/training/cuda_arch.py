@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ConvStage:
-    """Geometry of one conv-[leaky_relu]-[maxpool] stage."""
+    """Geometry of one conv-[layer_norm]-[leaky_relu]-[maxpool] stage."""
 
     idx: int
     in_c: int
@@ -32,6 +32,7 @@ class ConvStage:
     pool: bool  # is there a 2×2 maxpool after the conv?
     ph: int     # spatial height AFTER pool  (= h_out // 2 if pool else h_out)
     pw: int
+    layer_norm: bool = False   # insert LayerNorm after conv, before activation
 
     @property
     def weight_numel(self) -> int:
@@ -66,6 +67,7 @@ class CudaNetGeometry:
         for i, spec in enumerate(model_cfg.conv_layers):
             out_c = int(spec['out_c'])
             pool = parse_bool(spec.get('pool', False), label=f'model.conv_layers[{i}].pool')
+            layer_norm = parse_bool(spec.get('layer_norm', False), label=f'model.conv_layers[{i}].layer_norm')
             h_out = cur_h - kh + 1
             w_out = cur_w - kw + 1
             if h_out <= 0 or w_out <= 0:
@@ -79,7 +81,12 @@ class CudaNetGeometry:
                 )
             ph = h_out // 2 if pool else h_out
             pw = w_out // 2 if pool else w_out
-            stages.append(ConvStage(i, cur_c, out_c, kh, kw, cur_h, cur_w, h_out, w_out, pool, ph, pw))
+            if layer_norm and pool:
+                raise ValueError(
+                    f"Conv stage {i}: layer_norm=True with pool=True is not supported. "
+                    "Apply LayerNorm only on non-pooling stages."
+                )
+            stages.append(ConvStage(i, cur_c, out_c, kh, kw, cur_h, cur_w, h_out, w_out, pool, ph, pw, layer_norm))
             cur_c, cur_h, cur_w = out_c, ph, pw
 
         fc_in = cur_c * cur_h * cur_w
@@ -90,6 +97,10 @@ class CudaNetGeometry:
     @property
     def n_conv(self) -> int:
         return len(self.conv_stages)
+
+    def ln_param_idx(self, stage_idx: int) -> int:
+        """Return the index into DeviceWeights.ln_gamma/ln_beta for a LN stage."""
+        return sum(1 for i in range(stage_idx) if self.conv_stages[i].layer_norm and not self.conv_stages[i].pool)
 
     def stage_output_nchw_dims(self, i: int) -> tuple[int, int, int]:
         """(channels, h, w) of the NCHW output of stage i (after pool if applicable)."""

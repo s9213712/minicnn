@@ -23,7 +23,8 @@ class BatchWorkspace:
 
         # ---- per-stage forward buffers (indexed by stage) ----
         self.d_col: list       = []   # im2col output
-        self.d_conv_raw: list  = []   # conv output CNHW (after leaky relu)
+        self.d_conv_raw: list  = []   # conv output CNHW (before LN/activation)
+        self.d_ln_out: list    = []   # LayerNorm output CNHW (LN stages only, else None)
         self.d_conv_nchw: list = []   # NCHW version (non-pool stages only, else None)
         self.d_pool: list      = []   # pool output CNHW (pool stages only, else None)
         self.d_max_idx: list   = []   # pool argmax (pool stages only, else None)
@@ -32,6 +33,13 @@ class BatchWorkspace:
         for s in geom.conv_stages:
             self.d_col.append(self.alloc(s.in_c * s.kh * s.kw * N * s.h_out * s.w_out))
             self.d_conv_raw.append(self.alloc(s.out_c * N * s.h_out * s.w_out))
+            # LN output buffer only needed for non-pool LN stages.
+            # Pool+LN combination requires an extra NCHW→CNHW pass before pooling;
+            # that case is not supported and is rejected by cuda_legacy validation.
+            if s.layer_norm and not s.pool:
+                self.d_ln_out.append(self.alloc(s.out_c * N * s.h_out * s.w_out))
+            else:
+                self.d_ln_out.append(None)
             if s.pool:
                 self.d_pool.append(self.alloc(s.out_c * N * s.ph * s.pw))
                 self.d_max_idx.append(self.alloc_ints(s.out_c * N * s.ph * s.pw))
@@ -59,12 +67,17 @@ class BatchWorkspace:
         # ---- per-stage backward buffers ----
         self.d_w_grad: list            = []  # weight gradients
         self.d_conv_raw_grad: list     = []  # grad wrt conv output (CNHW)
+        self.d_ln_input_grad: list     = []  # grad wrt LN input (= conv output) when LN present
         self.d_pool_grad_cnhw: list    = []  # grad wrt pool output (CNHW, pool stages only)
         self.d_input_nchw_grad: list   = []  # grad wrt stage input (NCHW)
 
         for s in geom.conv_stages:
             self.d_w_grad.append(self.alloc(s.weight_numel))
             self.d_conv_raw_grad.append(self.alloc(s.out_c * N * s.h_out * s.w_out))
+            if s.layer_norm and not s.pool:
+                self.d_ln_input_grad.append(self.alloc(s.out_c * N * s.h_out * s.w_out))
+            else:
+                self.d_ln_input_grad.append(None)
             if s.pool:
                 self.d_pool_grad_cnhw.append(self.alloc(s.out_c * N * s.ph * s.pw))
             else:

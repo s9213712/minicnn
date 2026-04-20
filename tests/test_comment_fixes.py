@@ -423,7 +423,7 @@ def test_native_cuda_comment_tasks_are_reflected_in_source():
 
     assert 'softmax_cross_entropy' not in loss_layer
     assert 'im2col_backward' not in loss_layer
-    assert 'softmax_kernel<<<N, 1>>>' in loss_layer
+    assert 'softmax_kernel<<<N, 32>>>' in loss_layer
     assert 'softmax_xent_grad_loss_acc_kernel<<<N, 32>>>' in loss_layer
     assert '__shfl_down_sync' in loss_layer
 

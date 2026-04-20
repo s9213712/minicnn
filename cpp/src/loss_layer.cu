@@ -3,30 +3,36 @@
 #include "cuda_check.h"
 
 // ============== Softmax CrossEntropy ==============
+// One warp (32 threads) per sample.  Requires features <= 1024 (= 32 * 32).
+// For CIFAR-10 (10 classes) this is always satisfied.
 __global__ void softmax_kernel(const float* input, float* output, int N, int features) {
-    int n = blockIdx.x;
-    if (n >= N) return;
+    int n   = blockIdx.x;
+    int tid = threadIdx.x;
+    if (n >= N || tid >= 32) return;
 
-    const float* row = input + n * features;
-    float* out_row = output + n * features;
+    const float* row     = input  + n * features;
+    float*       out_row = output + n * features;
 
-    // Find max for numerical stability
-    float max_val = -1e38f;
-    for (int i = 0; i < features; i++) {
-        max_val = fmaxf(max_val, row[i]);
+    // Warp-parallel max
+    float thread_max = -1e38f;
+    for (int j = tid; j < features; j += 32)
+        thread_max = fmaxf(thread_max, row[j]);
+    for (int offset = 16; offset > 0; offset >>= 1)
+        thread_max = fmaxf(thread_max, __shfl_down_sync(0xffffffff, thread_max, offset));
+    float max_val = __shfl_sync(0xffffffff, thread_max, 0);
+
+    // Warp-parallel exp + sum
+    float thread_sum = 0.0f;
+    for (int j = tid; j < features; j += 32) {
+        float e = expf(row[j] - max_val);
+        out_row[j] = e;
+        thread_sum += e;
     }
-
-    // Compute exp sum
-    float sum = 0.0f;
-    for (int i = 0; i < features; i++) {
-        out_row[i] = expf(row[i] - max_val);
-        sum += out_row[i];
-    }
+    float sum = __shfl_sync(0xffffffff, warp_reduce_sum(thread_sum), 0);
 
     // Normalize
-    for (int i = 0; i < features; i++) {
-        out_row[i] /= sum;
-    }
+    for (int j = tid; j < features; j += 32)
+        out_row[j] /= sum;
 }
 
 __global__ void cross_entropy_backward_kernel(float* grad_out, float* probs, int N, int features) {
@@ -144,7 +150,7 @@ __global__ void count_correct_kernel(
 
 extern "C" {
     void softmax_forward(float* d_input, float* d_output, int N, int features) {
-        softmax_kernel<<<N, 1>>>(d_input, d_output, N, features);
+        softmax_kernel<<<N, 32>>>(d_input, d_output, N, features);
         CUDA_KERNEL_CHECK();
     }
 
@@ -173,6 +179,117 @@ extern "C" {
 
     void count_correct(float* d_logits, int* d_labels, int* d_correct_count, int N, int features) {
         count_correct_kernel<<<N, 1>>>(d_logits, d_labels, d_correct_count, N, features);
+        CUDA_KERNEL_CHECK();
+    }
+}
+
+// ============== MSE Loss ==============
+// Labels are integer class indices; the kernel converts them to one-hot targets internally.
+// Gradient: dL/dlogit_j = 2 * (logit_j - target_j) / N
+__global__ void mse_fwd_grad_loss_acc_kernel(
+    const float* logits,
+    const int*   labels,
+    float* grad_logits,
+    float* loss_sum,
+    int*   correct_count,
+    int N,
+    int features
+) {
+    int n   = blockIdx.x;
+    int tid = threadIdx.x;
+    if (n >= N) return;
+
+    const float* row  = logits      + n * features;
+    float*       grow = grad_logits + n * features;
+    int label = labels[n];
+
+    // Each warp lane covers a strided subset of features.
+    float thread_loss = 0.0f;
+    int thread_pred   = 0;
+    float thread_best = row[0];
+
+    for (int j = tid; j < features; j += 32) {
+        float target = (j == label) ? 1.0f : 0.0f;
+        float diff   = row[j] - target;
+        thread_loss += diff * diff;
+        grow[j]      = 2.0f * diff / static_cast<float>(N);
+        if (row[j] > thread_best || (j == 0)) {
+            thread_best = row[j];
+            thread_pred = j;
+        }
+    }
+
+    float total_loss = __shfl_sync(0xffffffff, warp_reduce_sum(thread_loss), 0);
+
+    // Warp argmax for accuracy (same logic as CE kernel)
+    warp_reduce_max_with_index(thread_best, thread_pred);
+    int pred = __shfl_sync(0xffffffff, thread_pred, 0);
+
+    if (tid == 0) {
+        atomicAdd(loss_sum, total_loss / static_cast<float>(features));
+        if (pred == label) atomicAdd(correct_count, 1);
+    }
+}
+
+// ============== BCEWithLogits Loss ==============
+// Single-output binary classification: features must equal 1.
+// Numerically stable: L = max(x,0) - x*y + log(1 + exp(-|x|))
+// Gradient: sigmoid(x) - y
+// Accuracy: predict 1 if logit >= 0, else 0.
+__global__ void bce_fwd_grad_loss_acc_kernel(
+    const float* logits,
+    const int*   labels,
+    float* grad_logits,
+    float* loss_sum,
+    int*   correct_count,
+    int N
+) {
+    int n = blockIdx.x * blockDim.x + threadIdx.x;
+    if (n >= N) return;
+
+    float x = logits[n];
+    float y = static_cast<float>(labels[n]);  // 0 or 1
+
+    // Numerically stable BCE
+    float loss = fmaxf(x, 0.0f) - x * y + logf(1.0f + expf(-fabsf(x)));
+    // sigmoid(x)
+    float sig  = 1.0f / (1.0f + expf(-x));
+    grad_logits[n] = (sig - y) / static_cast<float>(N);
+
+    atomicAdd(loss_sum, loss);
+    int pred = (x >= 0.0f) ? 1 : 0;
+    if (pred == static_cast<int>(y)) atomicAdd(correct_count, 1);
+}
+
+extern "C" {
+    void mse_fwd_grad_loss_acc(
+        float* d_logits,
+        int*   d_labels,
+        float* d_grad_logits,
+        float* d_loss_sum,
+        int*   d_correct_count,
+        int N,
+        int features
+    ) {
+        mse_fwd_grad_loss_acc_kernel<<<N, 32>>>(
+            d_logits, d_labels, d_grad_logits, d_loss_sum, d_correct_count, N, features
+        );
+        CUDA_KERNEL_CHECK();
+    }
+
+    void bce_fwd_grad_loss_acc(
+        float* d_logits,
+        int*   d_labels,
+        float* d_grad_logits,
+        float* d_loss_sum,
+        int*   d_correct_count,
+        int N
+    ) {
+        int tpb = 256;
+        int bpg = (N + tpb - 1) / tpb;
+        bce_fwd_grad_loss_acc_kernel<<<bpg, tpb>>>(
+            d_logits, d_labels, d_grad_logits, d_loss_sum, d_correct_count, N
+        );
         CUDA_KERNEL_CHECK();
     }
 }

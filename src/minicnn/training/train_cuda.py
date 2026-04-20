@@ -17,6 +17,7 @@ from minicnn.training.evaluation import evaluate
 from minicnn.models.initialization import init_weights
 from minicnn.training.checkpoints import (
     free_weights,
+    init_adam_buffers,
     init_velocity_buffers,
     reload_weights_from_checkpoint,
     save_checkpoint,
@@ -50,6 +51,7 @@ from minicnn.config.settings import (
     MIN_DELTA,
     MIN_LR,
     MOMENTUM,
+    OPTIMIZER_TYPE,
     RANDOM_CROP_PADDING,
     HORIZONTAL_FLIP,
     TRAIN_SEED,
@@ -67,9 +69,14 @@ BEST_MODEL_PATH = str(BEST_MODELS_ROOT / f"{RUN_DIR.name}_{BEST_MODEL_FILENAME}"
 
 def init_cuda_runtime(arch: "CudaNetGeometry") -> CudaRuntimeState:
     *conv_arrays, fc_w, fc_b = init_weights(INIT_SEED, arch)
+    use_adam = OPTIMIZER_TYPE.lower() == 'adam'
+    ln_stages = [s for s in arch.conv_stages if s.layer_norm]
+    ln_gamma = [np.ones(s.out_c, dtype=np.float32) for s in ln_stages]
+    ln_beta  = [np.zeros(s.out_c, dtype=np.float32) for s in ln_stages]
     return CudaRuntimeState(
-        weights=upload_weights(conv_arrays, fc_w, fc_b),
+        weights=upload_weights(conv_arrays, fc_w, fc_b, ln_gamma, ln_beta),
         velocities=init_velocity_buffers(arch),
+        adam=init_adam_buffers(arch) if use_adam else None,
     )
 
 
@@ -207,6 +214,9 @@ def main() -> dict[str, object]:
     finally:
         free_weights(runtime.velocities)
         runtime.velocities = None
+        if runtime.adam is not None:
+            free_weights(runtime.adam)
+            runtime.adam = None
         free_weights(runtime.weights)
         runtime.weights = None
 
