@@ -304,6 +304,32 @@ class Tensor:
         out._backward = _backward
         return out
 
+    def sigmoid(self) -> 'Tensor':
+        s = 1.0 / (1.0 + np.exp(-self.data))
+        out = Tensor(s, requires_grad=_requires_grad(self))
+        out._prev = {self}
+        out._op = 'sigmoid'
+
+        def _backward() -> None:
+            if out.grad is not None:
+                self._add_grad(out.grad * s * (1.0 - s))
+
+        out._backward = _backward
+        return out
+
+    def tanh(self) -> 'Tensor':
+        t = np.tanh(self.data)
+        out = Tensor(t, requires_grad=_requires_grad(self))
+        out._prev = {self}
+        out._op = 'tanh'
+
+        def _backward() -> None:
+            if out.grad is not None:
+                self._add_grad(out.grad * (1.0 - t ** 2))
+
+        out._backward = _backward
+        return out
+
 
 class Parameter(Tensor):
     def __init__(self, data: Any, name: str | None = None, metadata: dict[str, Any] | None = None):
@@ -312,6 +338,14 @@ class Parameter(Tensor):
 
 def relu(x: Tensor) -> Tensor:
     return x.relu()
+
+
+def sigmoid(x: Tensor) -> Tensor:
+    return x.sigmoid()
+
+
+def tanh(x: Tensor) -> Tensor:
+    return x.tanh()
 
 
 def log_softmax(x: Tensor, axis: int = -1) -> Tensor:

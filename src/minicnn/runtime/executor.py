@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from minicnn.models.registry import get_model_component
+from minicnn.nn.tensor import Tensor
 
 
 class GraphExecutor:
@@ -8,6 +9,8 @@ class GraphExecutor:
         self.graph = graph
 
     def run(self, inputs):
+        if not isinstance(inputs, Tensor):
+            inputs = Tensor(inputs)
         values = {'input': inputs}
         modules = {}
         for node in self.graph.topological_order():

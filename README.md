@@ -153,19 +153,40 @@ This repo intentionally supports two workflows:
 - **Torch backend**: broad layer coverage, fast experimentation, custom components via dotted-path imports
 - **CUDA backend**: your hand-rolled CUDA CNN path for low-level control and backend ownership
 
+## Architecture overview
+
+See [docs/architecture.md](docs/architecture.md) for:
+
+- A one-page diagram of all three training paths and how they relate
+- The compiler → runtime inference pipeline
+- A full module map
+- Instructions for adding new layers and custom differentiable ops
+
+## Interactive tutorial
+
+`notebooks/01_autograd_from_scratch.ipynb` walks through the autograd engine from first principles:
+
+```bash
+pip install jupyter
+jupyter notebook notebooks/01_autograd_from_scratch.ipynb
+```
+
+No PyTorch required. Covers: computation graph construction, `backward()`, the `Function` API, dropout, Adam with gradient clipping, and the compiler/runtime pipeline.
+
 ## MiniCNN autograd core
 
 MiniCNN includes a CPU/NumPy autograd stack in `src/minicnn/nn/tensor.py`, `src/minicnn/ops/`, and `src/minicnn/nn/layers.py`. It supports:
 
 - `Tensor.backward()` with topological reverse-mode autodiff
 - scalar/tensor arithmetic with broadcasting-aware gradients
-- matrix multiply, reductions, reshape, ReLU, `log_softmax`, `cross_entropy`
+- matrix multiply, reductions, reshape, `relu`, `sigmoid`, `tanh`, `log_softmax`, `cross_entropy`
 - trainable `Parameter` and `no_grad()` context
 - `SGD` and `Adam` optimizers with `grad_clip` and `weight_decay`
-- educational layers: `Linear`, `Conv2d`, `MaxPool2d`, `BatchNorm2d`, `Flatten`, `ResidualBlock`
+- layers: `Linear`, `Conv2d`, `MaxPool2d`, `BatchNorm2d`, `Flatten`, `ResidualBlock`, `Sigmoid`, `Tanh`, `Dropout`
 - custom differentiable ops via the `Function` API (backward is automatically wired in `apply()`)
 - training on random, CIFAR-10, or MNIST data via `minicnn train-autograd`
 - step-decay LR scheduler via `scheduler.enabled=true`
+- compiler + runtime inference pipeline via `InferencePipeline` (no training overhead)
 
 This core is useful for framework-level tests and educational examples. The Torch backend still uses PyTorch autograd, and the handcrafted CUDA backend uses its own CUDA backward kernels. See [docs/08_autograd.md](docs/08_autograd.md) for full usage.
 

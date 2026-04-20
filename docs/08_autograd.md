@@ -175,25 +175,51 @@ data = np.load('path/to/best.npz')
 
 ## Layers available in the autograd path
 
-| Layer | Config key `type` |
-|---|---|
-| `Linear` | `Linear` |
-| `Conv2d` | `Conv2d` |
-| `MaxPool2d` | `MaxPool2d` |
-| `BatchNorm2d` | `BatchNorm2d` |
-| `ReLU` | `ReLU` |
-| `Flatten` | `Flatten` |
-| `ResidualBlock` | `ResidualBlock` |
+| Layer | Config key `type` | Notes |
+|---|---|---|
+| `Linear` | `Linear` | |
+| `Conv2d` | `Conv2d` | |
+| `MaxPool2d` | `MaxPool2d` | |
+| `BatchNorm2d` | `BatchNorm2d` | |
+| `ReLU` | `ReLU` | |
+| `Sigmoid` | `Sigmoid` | |
+| `Tanh` | `Tanh` | |
+| `Dropout` | `Dropout` | active in `training=True`, pass-through in `eval()` |
+| `Flatten` | `Flatten` | |
+| `ResidualBlock` | `ResidualBlock` | same-channel skip connection |
 
 Add custom layers to `MODEL_REGISTRY` in `src/minicnn/models/registry.py`.
 
-## Compile command
+## Compile command and inference pipeline
 
 ```bash
 minicnn compile --config configs/autograd_tiny.yaml
 ```
 
-This traces the model config into a lightweight IR graph and prints a JSON summary of layers, inferred shapes, and Conv+BN+ReLU fusion candidates.  The graph is not yet connected to an execution backend — it is useful for architecture inspection.
+This traces the model config into a lightweight IR graph, applies optimization passes (identity removal, Conv+BN+ReLU fusion annotation), and prints a JSON summary.
+
+The compiled graph is also runnable via `InferencePipeline` — no training loop required:
+
+```python
+from minicnn.runtime.pipeline import InferencePipeline
+import numpy as np
+
+model_cfg = {'layers': [
+    {'type': 'Linear', 'in_features': 4, 'out_features': 16},
+    {'type': 'ReLU'},
+    {'type': 'Linear', 'in_features': 16, 'out_features': 3},
+]}
+
+pipeline = InferencePipeline.from_config(model_cfg, profile=True)
+logits = pipeline.run_final(np.random.randn(8, 4).astype('float32'))
+print(pipeline.profile_summary())
+```
+
+`from_config()` internally calls `trace_model_config → optimize → ir_to_runtime_graph → GraphExecutor`.
+
+## Interactive tutorial
+
+`notebooks/01_autograd_from_scratch.ipynb` walks through the engine from first principles — computation graph, backward(), Function API, training loop, and the pipeline — with no PyTorch dependency.
 
 ## Limitations
 

@@ -1,3 +1,11 @@
+# MiniCNN 使用教學索引
+
+系統架構圖（三條訓練路徑、compiler/runtime pipeline、模組地圖）請見 [architecture.md](architecture.md)。
+
+互動式教學筆記本（從 NumPy 反向傳播到 Function API）請見 `notebooks/01_autograd_from_scratch.ipynb`。
+
+---
+
 # libminimal_cuda_cnn.so 使用教學索引
 
 這組文件說明如何編譯與使用 `cpp/libminimal_cuda_cnn.so`，並用 MNIST 示範如何從 Python 或 C++ 呼叫 CUDA C API 做訓練與驗證。

@@ -12,6 +12,30 @@ def relu(x: Tensor) -> Tensor:
     return x.relu()
 
 
+def sigmoid(x: Tensor) -> Tensor:
+    return x.sigmoid()
+
+
+def tanh(x: Tensor) -> Tensor:
+    return x.tanh()
+
+
+def dropout(x: Tensor, p: float = 0.5, training: bool = True) -> Tensor:
+    if not training or p == 0.0:
+        return x
+    mask = (np.random.random(x.data.shape) > p).astype(np.float32) / (1.0 - p)
+    out = Tensor(x.data * mask, requires_grad=_requires_grad(x))
+    out._prev = {x}
+    out._op = 'dropout'
+
+    def _backward() -> None:
+        if out.grad is not None:
+            x._add_grad(out.grad * mask)
+
+    out._backward = _backward
+    return out
+
+
 def flatten(x: Tensor) -> Tensor:
     return x.reshape((x.data.shape[0], int(np.prod(x.data.shape[1:]))))
 

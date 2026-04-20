@@ -4,7 +4,7 @@ import numpy as np
 
 from minicnn.nn.modules import Module, Sequential
 from minicnn.nn.tensor import Parameter, Tensor
-from minicnn.ops.nn_ops import batchnorm2d, conv2d, flatten, linear, maxpool2d, relu
+from minicnn.ops.nn_ops import batchnorm2d, conv2d, dropout, flatten, linear, maxpool2d, relu, sigmoid, tanh
 
 
 class Linear(Module):
@@ -22,6 +22,25 @@ class Linear(Module):
 class ReLU(Module):
     def forward(self, x: Tensor) -> Tensor:
         return relu(x)
+
+
+class Sigmoid(Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return sigmoid(x)
+
+
+class Tanh(Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return tanh(x)
+
+
+class Dropout(Module):
+    def __init__(self, p: float = 0.5):
+        super().__init__()
+        self.p = p
+
+    def forward(self, x: Tensor) -> Tensor:
+        return dropout(x, p=self.p, training=self.training)
 
 
 class Flatten(Module):
