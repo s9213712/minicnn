@@ -6,8 +6,12 @@ removing layers requires only a YAML edit — no Python changes.
 """
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from minicnn.training.cuda_arch import CudaNetGeometry
 
 from minicnn.training.evaluation import evaluate
 from minicnn.models.initialization import init_weights
@@ -61,7 +65,7 @@ BEST_MODELS_ROOT.mkdir(parents=True, exist_ok=True)
 BEST_MODEL_PATH = str(BEST_MODELS_ROOT / f"{RUN_DIR.name}_{BEST_MODEL_FILENAME}")
 
 
-def init_cuda_runtime(arch) -> CudaRuntimeState:
+def init_cuda_runtime(arch: "CudaNetGeometry") -> CudaRuntimeState:
     *conv_arrays, fc_w, fc_b = init_weights(INIT_SEED, arch)
     return CudaRuntimeState(
         weights=upload_weights(conv_arrays, fc_w, fc_b),
@@ -69,7 +73,7 @@ def init_cuda_runtime(arch) -> CudaRuntimeState:
     )
 
 
-def print_training_header(arch, x_train: np.ndarray, x_val: np.ndarray, x_test: np.ndarray) -> None:
+def print_training_header(arch: "CudaNetGeometry", x_train: np.ndarray, x_val: np.ndarray, x_test: np.ndarray) -> None:
     print(f"Train: {x_train.shape[0]}, Val: {x_val.shape[0]}, Test: {x_test.shape[0]}")
     stage_str = ' -> '.join(
         f"Conv({s.in_c}→{s.out_c}){'+Pool' if s.pool else ''}"
@@ -125,7 +129,7 @@ def run_cuda_epoch(
     return metrics
 
 
-def save_best_checkpoint(epoch: int, val_acc: float, lr_state: LrState, runtime: CudaRuntimeState, arch) -> None:
+def save_best_checkpoint(epoch: int, val_acc: float, lr_state: LrState, runtime: CudaRuntimeState, arch: "CudaNetGeometry") -> None:
     save_checkpoint(
         BEST_MODEL_PATH, epoch, val_acc,
         lr_state.conv1, lr_state.conv, lr_state.fc,
@@ -139,7 +143,7 @@ def reduce_lr_if_due(fit: FitState, lr_state: LrState) -> None:
               f"conv={lr_state.conv:.6f}, fc={lr_state.fc:.6f}")
 
 
-def run_final_evaluation(runtime: CudaRuntimeState, arch, x_test: np.ndarray, y_test: np.ndarray) -> float:
+def run_final_evaluation(runtime: CudaRuntimeState, arch: "CudaNetGeometry", x_test: np.ndarray, y_test: np.ndarray) -> float:
     print("\n=== FINAL EVALUATION ON OFFICIAL TEST SET ===")
     if os.path.exists(BEST_MODEL_PATH):
         best_ckpt, _fc_w, _fc_b, new_dw = reload_weights_from_checkpoint(

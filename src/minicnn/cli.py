@@ -268,7 +268,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == 'train-autograd':
-        from minicnn.flex.config import load_flex_config
         from minicnn.training.train_autograd import train_autograd_from_config
         cfg = load_flex_config(args.config if args.config else None, [*_common_train_overrides(args), *args.overrides])
         run_dir = train_autograd_from_config(cfg)
@@ -281,7 +280,6 @@ def main(argv: list[str] | None = None) -> int:
         for backend in backends:
             t0 = time.perf_counter()
             if backend == 'autograd':
-                from minicnn.flex.config import load_flex_config
                 from minicnn.training.train_autograd import train_autograd_from_config
                 cfg = load_flex_config(args.config if args.config else None, [*_common_train_overrides(args), *args.overrides])
                 run_dir = train_autograd_from_config(cfg)

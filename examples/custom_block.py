@@ -9,6 +9,11 @@ except Exception:  # pragma: no cover
 
 
 class Swish(nn.Module if torch is not None else object):
+    def __init__(self):
+        super().__init__()
+        if torch is None:
+            raise RuntimeError('PyTorch is required for Swish')
+
     def forward(self, x):
         return x * torch.sigmoid(x)
 
