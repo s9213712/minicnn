@@ -2,6 +2,8 @@
 
 本文說明如何從 C++ 程式連結 `cpp/libminimal_cuda_cnn.so`。
 
+預設訓練流程走 Python `ctypes` 呼叫 flat C ABI。`network.h`、`dense_layer.h`、`tensor.h` 提供的是 secondary C++ API，適合 C++ 範例與實驗；若只是要訓練 CIFAR-10，優先使用 `minicnn train-dual`。
+
 ## 基本方式
 
 因為 `.so` 主要匯出 C ABI，C++ 程式可直接宣告相同 prototype：

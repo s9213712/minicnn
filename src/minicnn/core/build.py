@@ -37,7 +37,24 @@ def native_library_path(variant: str = 'default') -> Path:
         raise ValueError(f'Unknown native variant {variant!r}; expected one of: {choices}, both') from exc
 
 
-def _build_one_cmake(use_cublas: bool, generator: str, variant: str) -> None:
+def _normalize_cuda_arch(cuda_arch: str) -> str:
+    arch = str(cuda_arch).strip()
+    if arch.startswith('sm_'):
+        arch = arch[3:]
+    if not arch:
+        raise ValueError('CUDA architecture must not be empty')
+    return arch
+
+
+def _cmake_cuda_arch(cuda_arch: str) -> str:
+    return _normalize_cuda_arch(cuda_arch)
+
+
+def _make_cuda_arch(cuda_arch: str) -> str:
+    return f'sm_{_normalize_cuda_arch(cuda_arch)}'
+
+
+def _build_one_cmake(use_cublas: bool, generator: str, variant: str, cuda_arch: str) -> None:
     build_dir = CPP_ROOT / ('build-cmake' if variant == 'default' else f'build-cmake-{variant}')
     build_dir.mkdir(parents=True, exist_ok=True)
     cmake_generator = 'Unix Makefiles' if generator == 'make' else 'Ninja'
@@ -52,7 +69,7 @@ def _build_one_cmake(use_cublas: bool, generator: str, variant: str) -> None:
         '-G', cmake_generator,
         f'-DUSE_CUBLAS={"ON" if use_cublas else "OFF"}',
         f'-DMINICNN_OUTPUT_NAME={output_name}',
-        '-DCMAKE_CUDA_ARCHITECTURES=86',
+        f'-DCMAKE_CUDA_ARCHITECTURES={_cmake_cuda_arch(cuda_arch)}',
     ]
     nvcc = cuda_home / 'bin' / ('nvcc.exe' if os.name == 'nt' else 'nvcc')
     if nvcc.exists():
@@ -70,26 +87,28 @@ def build_native(
     generator: str = "make",
     legacy_make: bool = False,
     variant: str = 'default',
+    cuda_arch: str = '86',
 ) -> None:
     if legacy_make:
+        make_arch = f'CUDA_ARCH={_make_cuda_arch(cuda_arch)}'
         if variant == 'both':
-            cmd = ['make', '-C', str(CPP_ROOT), 'variants']
+            cmd = ['make', '-C', str(CPP_ROOT), make_arch, 'variants']
         elif variant in {'cublas', 'handmade'}:
-            cmd = ['make', '-C', str(CPP_ROOT), variant]
+            cmd = ['make', '-C', str(CPP_ROOT), make_arch, variant]
         else:
-            cmd = ['make', '-C', str(CPP_ROOT), f'USE_CUBLAS={1 if use_cublas else 0}']
+            cmd = ['make', '-C', str(CPP_ROOT), make_arch, f'USE_CUBLAS={1 if use_cublas else 0}']
         subprocess.run(cmd, check=True)
         return
 
     if variant == 'both':
-        _build_one_cmake(True, generator, 'cublas')
-        _build_one_cmake(False, generator, 'handmade')
+        _build_one_cmake(True, generator, 'cublas', cuda_arch)
+        _build_one_cmake(False, generator, 'handmade', cuda_arch)
     elif variant == 'cublas':
-        _build_one_cmake(True, generator, 'cublas')
+        _build_one_cmake(True, generator, 'cublas', cuda_arch)
     elif variant == 'handmade':
-        _build_one_cmake(False, generator, 'handmade')
+        _build_one_cmake(False, generator, 'handmade', cuda_arch)
     else:
-        _build_one_cmake(use_cublas, generator, 'default')
+        _build_one_cmake(use_cublas, generator, 'default', cuda_arch)
 
 
 def check_native(variant: str = 'default') -> bool:

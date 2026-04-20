@@ -93,7 +93,10 @@ def test_cli_reports_missing_train_flex_config_without_traceback():
 def test_cli_exposes_doctor_compare_and_backend_aliases():
     from minicnn.cli import build_parser
 
-    help_text = build_parser().format_help()
+    parser = build_parser()
+    help_text = parser.format_help()
+    subparsers = next(action for action in parser._actions if getattr(action, 'choices', None))
+    build_help = subparsers.choices['build'].format_help()
 
     assert 'doctor' in help_text
     assert 'compare' in help_text
@@ -102,6 +105,21 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'train-autograd' in help_text
     assert 'validate-config' in help_text
     assert 'compile' in help_text
+    assert '--cuda-arch' in build_help
+
+
+def test_build_native_passes_cuda_arch_to_make_and_cmake(monkeypatch):
+    from minicnn.core import build
+
+    calls = []
+    monkeypatch.setattr(build.subprocess, 'run', lambda cmd, check: calls.append(cmd))
+
+    build.build_native(legacy_make=True, variant='handmade', cuda_arch='sm_75')
+    assert 'CUDA_ARCH=sm_75' in calls[-1]
+
+    calls.clear()
+    build.build_native(legacy_make=False, variant='handmade', cuda_arch='75')
+    assert '-DCMAKE_CUDA_ARCHITECTURES=75' in calls[0]
 
 
 def test_random_crop_batch_matches_reference_crop():
@@ -181,6 +199,24 @@ def test_checkpoint_reload_is_transactional(tmp_path, monkeypatch):
     assert isinstance(new_weights, checkpoints.DeviceWeights)
     assert list(new_weights) == ['new0', 'new1', 'new2', 'new3', 'new4', 'new5']
     assert freed == list(old_weights)
+
+
+def test_free_weights_skips_none_and_accepts_none(monkeypatch):
+    import minicnn.training.checkpoints as checkpoints
+
+    freed = []
+
+    class Lib:
+        @staticmethod
+        def gpu_free(ptr):
+            freed.append(ptr)
+
+    monkeypatch.setattr(checkpoints, 'lib', Lib())
+
+    checkpoints.free_weights(None)
+    checkpoints.free_weights([None, 'p1', None, 'p2'])
+
+    assert freed == ['p1', 'p2']
 
 
 def test_workspace_uses_int_allocators_for_index_and_label_buffers(monkeypatch):

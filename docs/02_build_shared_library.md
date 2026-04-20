@@ -46,7 +46,8 @@ CUDA_HOME ?= /usr/local/cuda
 NVCC ?= $(CUDA_HOME)/bin/nvcc
 USE_CUBLAS ?= 1
 OUTPUT ?= libminimal_cuda_cnn.so
-CFLAGS = -O3 -Xcompiler -fPIC -arch=sm_86 -DUSE_CUBLAS=$(USE_CUBLAS)
+CUDA_ARCH ?= sm_86
+CFLAGS = -O3 -Xcompiler -fPIC -arch=$(CUDA_ARCH) -DUSE_CUBLAS=$(USE_CUBLAS)
 LDFLAGS = -shared -o $(OUTPUT) -Xlinker -rpath,$(CUDA_HOME)/lib64
 ```
 
@@ -70,6 +71,13 @@ minicnn build --legacy-make --check
 make -C cpp cublas
 make -C cpp handmade
 make -C cpp check-variants
+```
+
+GPU 架構可用 `--cuda-arch` 或 Makefile 變數覆蓋：
+
+```bash
+minicnn build --legacy-make --cuda-arch sm_75 --variant cublas --check
+make -C cpp CUDA_ARCH=sm_75 cublas
 ```
 
 ## 選擇 `.so`
@@ -113,7 +121,7 @@ maxpool_backward_use_idx.cu, layout_convert.cu
 
 ## GPU 架構參數
 
-如果你的 GPU 不是 Ampere/RTX 30 系列，可能需要修改 `-arch=sm_86`。
+如果你的 GPU 不是 Ampere/RTX 30 系列，不需要修改檔案，直接在 build 指令傳入架構即可。
 
 | GPU 架構 | `-arch` |
 |---|---|
@@ -121,6 +129,13 @@ maxpool_backward_use_idx.cu, layout_convert.cu
 | RTX 20 系列 Turing | `sm_75` |
 | RTX 30 系列 Ampere | `sm_86` |
 | RTX 40 系列 Ada | `sm_89` |
+
+CMake build 接受不含 `sm_` 前綴的數字，也可透過 CLI 傳入：
+
+```bash
+minicnn build --cuda-arch 75 --variant cublas --check
+cmake -S cpp -B cpp/build-cmake -DCMAKE_CUDA_ARCHITECTURES=75
+```
 
 ## 檢查匯出符號
 

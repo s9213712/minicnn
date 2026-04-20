@@ -389,7 +389,7 @@ Key folder and file responsibilities:
 | `configs/autograd_tiny.yaml` | Small random-data config for the CPU/NumPy autograd trainer. |
 | `cpp/` | Native CUDA/C++ source, headers, Makefile, and CMake build files. |
 | `cpp/include/cuda_check.h` | CUDA runtime and kernel launch checking; debug builds define `MINICNN_DEBUG_SYNC` for synchronizing checks. |
-| `cpp/include/network.h` | C++ layer interface using RAII-owned `std::unique_ptr<CudaTensor>` forward outputs. |
+| `cpp/include/network.h` | Secondary C++ layer API using RAII-owned `std::unique_ptr<CudaTensor>` forward outputs; the default CLI path uses the flat C ABI through `ctypes`. |
 | `cpp/src/cublas_context.cu` | Shared cuBLAS handle used by forward and backward CUDA code. |
 | `cpp/src/core.cu` | GEMM forward path; switches between cuBLAS and handwritten CUDA with `USE_CUBLAS`. |
 | `cpp/src/conv_backward.cu` | Convolution backward kernels and cuBLAS/handmade weight-gradient path. |

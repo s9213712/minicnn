@@ -58,6 +58,23 @@ def test_sgd_step_continues_other_params_after_bad_one():
     assert np.allclose(good.data, [-0.1])
 
 
+def test_sgd_momentum_two_steps_matches_expected_velocity():
+    w = Parameter([0.0], name='w')
+    opt = SGD([w], lr=0.1, momentum=0.9)
+
+    w.grad = np.array([1.0], dtype=np.float32)
+    result1 = opt.step()
+    assert result1['updated'] == 1
+    assert np.allclose(w.data, [-0.1], atol=1e-6)
+    assert np.allclose(opt.velocities[0], [-0.1], atol=1e-6)
+
+    w.grad = np.array([1.0], dtype=np.float32)
+    result2 = opt.step()
+    assert result2['updated'] == 1
+    assert np.allclose(w.data, [-0.29], atol=1e-6)
+    assert np.allclose(opt.velocities[0], [-0.19], atol=1e-6)
+
+
 # ---------------------------------------------------------------------------
 # Fix 2: __pow__ backward doesn't produce NaN for zero base with negative power
 # ---------------------------------------------------------------------------

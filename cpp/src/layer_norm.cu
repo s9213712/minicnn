@@ -165,7 +165,8 @@ extern "C" void layer_norm_backward(float* d_grad_input, const float* d_grad_out
     int tpb = hw < 256 ? hw : 256;
     if (tpb < 1) tpb = 1;
     // extern __shared__ is used only for inter-warp reduction: needs ceil(tpb/32) floats.
-    // Allocate tpb floats so the buffer is always sufficient regardless of tpb.
+    // Static __shared__ scalars in the kernel are separate from this dynamic buffer.
+    // Allocate at least tpb floats so the reduction buffer is sufficient even at tpb=1.
     int nwarps = (tpb + 31) / 32;
     size_t shared_bytes = (size_t)(nwarps < tpb ? tpb : nwarps) * sizeof(float);
     layer_norm_backward_kernel<<<N * C, tpb, shared_bytes>>>(

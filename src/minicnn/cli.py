@@ -98,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument('--check', action='store_true', help='Run symbol/export checks after build')
     p_build.add_argument('--generator', choices=['make', 'ninja'], default='make')
     p_build.add_argument('--legacy-make', action='store_true', help='Use original cpp/Makefile instead of CMake')
+    p_build.add_argument('--cuda-arch', default='86', help='CUDA architecture, for example 86 or sm_86')
     p_build.add_argument(
         '--variant',
         choices=['default', 'cublas', 'handmade', 'both'],
@@ -180,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
             generator=args.generator,
             legacy_make=args.legacy_make,
             variant=args.variant,
+            cuda_arch=args.cuda_arch,
         )
         if args.check:
             check_native(args.variant)

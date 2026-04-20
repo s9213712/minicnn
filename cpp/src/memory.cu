@@ -10,6 +10,7 @@ extern "C" {
     }
 
     void gpu_free(void* ptr) {
+        if (ptr == nullptr) return;
         CUDA_CHECK(cudaFree(ptr));
     }
 

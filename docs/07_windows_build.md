@@ -47,10 +47,11 @@ The cuBLAS variant compiles with `USE_CUBLAS=ON`. The handmade variant compiles 
 ## Manual CMake command
 
 ```powershell
+$CudaArch = "86"
 cmake -S cpp -B cpp\build-windows-cublas -G "Visual Studio 17 2022" -A x64 `
   -DUSE_CUBLAS=ON `
   -DMINICNN_OUTPUT_NAME=minimal_cuda_cnn_cublas `
-  -DCMAKE_CUDA_ARCHITECTURES=86
+  -DCMAKE_CUDA_ARCHITECTURES=$CudaArch
 
 cmake --build cpp\build-windows-cublas --config Release --parallel
 ```
@@ -58,10 +59,11 @@ cmake --build cpp\build-windows-cublas --config Release --parallel
 For the handmade variant:
 
 ```powershell
+$CudaArch = "86"
 cmake -S cpp -B cpp\build-windows-handmade -G "Visual Studio 17 2022" -A x64 `
   -DUSE_CUBLAS=OFF `
   -DMINICNN_OUTPUT_NAME=minimal_cuda_cnn_handmade `
-  -DCMAKE_CUDA_ARCHITECTURES=86
+  -DCMAKE_CUDA_ARCHITECTURES=$CudaArch
 
 cmake --build cpp\build-windows-handmade --config Release --parallel
 ```

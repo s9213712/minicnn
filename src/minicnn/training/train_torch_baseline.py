@@ -108,6 +108,7 @@ class TorchCifarCnn(nn.Module):
         x = self.act(self.conv4(x))
         x = self.pool(x)
         if clamp_pool_grad and x.requires_grad:
+            # Keep the PyTorch comparison path aligned with the CUDA pool-gradient clip.
             x.register_hook(lambda grad: grad.clamp(-GRAD_POOL_CLIP, GRAD_POOL_CLIP))
         x = torch.flatten(x, 1)
         return self.fc(x)

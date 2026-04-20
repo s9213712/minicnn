@@ -104,5 +104,8 @@ def reload_weights_from_checkpoint(
 
 def free_weights(device_weights) -> None:
     """Free all GPU pointers in device_weights (accepts DeviceWeights or a plain list)."""
+    if device_weights is None:
+        return
     for ptr in device_weights:
-        lib.gpu_free(ptr)
+        if ptr is not None:
+            lib.gpu_free(ptr)

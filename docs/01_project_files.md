@@ -1,6 +1,6 @@
 # 專案檔案說明
 
-本文整理 `cpp/include` 與 `cpp/src` 中各檔案的責任。預設訓練流程主要透過 `extern "C"` 匯出的 C API 呼叫 `.so`，C++ layer 類別則偏向 C++ 端直接使用。
+本文整理 `cpp/include` 與 `cpp/src` 中各檔案的責任。預設訓練流程主要透過 `extern "C"` 匯出的 C API 呼叫 `.so`，C++ layer 類別是 secondary API，供 C++ 端範例與實驗直接使用。
 
 ## 目錄結構
 
@@ -61,9 +61,11 @@ minicnn/
 | 檔案 | 作用 |
 |---|---|
 | `cuda_check.h` | CUDA 錯誤檢查工具。`CUDA_CHECK(expr)` 檢查 runtime API 回傳值；release 版 `CUDA_KERNEL_CHECK()` 只檢查 launch error，debug build 啟用 `MINICNN_DEBUG_SYNC` 後才同步 GPU。 |
-| `tensor.h` | `CudaTensor` C++ RAII 包裝，管理 GPU tensor 記憶體，提供 host/device copy。 |
-| `network.h` | C++ layer 介面與 `ConvLayer`、`ReLULayer`、`MaxPoolLayer` 宣告；forward output 以 `std::unique_ptr<CudaTensor>` 表示所有權。 |
-| `dense_layer.h` | C++ `DenseLayer` 宣告，forward output 以 RAII pointer 管理。 |
+| `tensor.h` | Secondary C++ API 的 `CudaTensor` RAII 包裝，管理 GPU tensor 記憶體，提供 host/device copy。 |
+| `network.h` | Secondary C++ layer 介面與 `ConvLayer`、`ReLULayer`、`MaxPoolLayer` 宣告；forward output 以 `std::unique_ptr<CudaTensor>` 表示所有權。 |
+| `dense_layer.h` | Secondary C++ API 的 `DenseLayer` 宣告，forward output 以 RAII pointer 管理。 |
+
+主要 Python/CLI 訓練路徑使用 flat C ABI 和 `ctypes`。`network.h`、`dense_layer.h`、`tensor.h` 保留給 [05_cpp_linking.md](05_cpp_linking.md) 的 C++ 使用場景，不是預設訓練入口。
 
 ## src
 
