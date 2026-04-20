@@ -41,6 +41,10 @@ _ENV_OVERRIDES = {
     "MOMENTUM": ("MINICNN_MOMENTUM", float),
     "WEIGHT_DECAY": ("MINICNN_WEIGHT_DECAY", float),
     "GRAD_CLIP_GLOBAL": ("MINICNN_GRAD_CLIP_GLOBAL", float),
+    "OPTIMIZER_TYPE": ("MINICNN_OPTIMIZER_TYPE", str),
+    "ADAM_BETA1": ("MINICNN_ADAM_BETA1", float),
+    "ADAM_BETA2": ("MINICNN_ADAM_BETA2", float),
+    "ADAM_EPS": ("MINICNN_ADAM_EPS", float),
 }
 
 
@@ -86,9 +90,14 @@ def apply_experiment_config(cfg: ExperimentConfig) -> None:
         "LR_PLATEAU_PATIENCE": cfg.optim.lr_plateau_patience,
         "LR_REDUCE_FACTOR": cfg.optim.lr_reduce_factor,
         "MIN_LR": cfg.optim.min_lr,
+        "OPTIMIZER_TYPE": cfg.optim.optimizer_type,
+        "CUDA_LOSS_TYPE": cfg.loss.loss_type,
         "MOMENTUM": cfg.optim.momentum,
         "LEAKY_ALPHA": cfg.optim.leaky_alpha,
         "WEIGHT_DECAY": cfg.optim.weight_decay,
+        "ADAM_BETA1": cfg.optim.adam_beta1,
+        "ADAM_BETA2": cfg.optim.adam_beta2,
+        "ADAM_EPS": cfg.optim.adam_eps,
         "GRAD_CLIP_CONV": cfg.optim.grad_clip_conv,
         "GRAD_CLIP_FC": cfg.optim.grad_clip_fc,
         "GRAD_CLIP_BIAS": cfg.optim.grad_clip_bias,

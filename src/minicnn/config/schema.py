@@ -38,6 +38,7 @@ class TrainConfig:
 
 @dataclass
 class OptimConfig:
+    optimizer_type: str = "sgd"   # "sgd" or "adam" for cuda_legacy backend
     lr_conv1: float = 0.005
     lr_conv: float = 0.005
     lr_fc: float = 0.005
@@ -47,6 +48,9 @@ class OptimConfig:
     momentum: float = 0.9
     leaky_alpha: float = 0.1
     weight_decay: float = 5e-4
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.999
+    adam_eps: float = 1e-8
     grad_clip_conv: float = 5.0
     grad_clip_fc: float = 1.0
     grad_clip_bias: float = 5.0
@@ -69,6 +73,11 @@ class ModelConfig:
         {'out_c': 64, 'pool': False},
         {'out_c': 64, 'pool': True},
     ])
+
+
+@dataclass
+class LossConfig:
+    loss_type: str = "cross_entropy"  # "cross_entropy" | "mse" | "bce" for cuda_legacy
 
 
 @dataclass
@@ -121,6 +130,7 @@ class ExperimentConfig:
     backend: BackendConfig = field(default_factory=BackendConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     optim: OptimConfig = field(default_factory=OptimConfig)
+    loss: LossConfig = field(default_factory=LossConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)

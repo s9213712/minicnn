@@ -17,8 +17,8 @@ CUDA_LEGACY_SUPPORTED = {
         ['MaxPool2d'],
         ['Flatten'], ['Linear'],
     ],
-    'optimizer': ['SGD'],
-    'loss': ['CrossEntropyLoss'],
+    'optimizer': ['SGD', 'Adam'],
+    'loss': ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss'],
     'dataset': ['cifar10'],
 }
 
@@ -108,9 +108,10 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
     if num_classes is not None and num_classes != 10:
         errors.append('cuda_legacy only supports 10 output classes')
     if str(optim.get('type', 'SGD')) not in CUDA_LEGACY_SUPPORTED['optimizer']:
-        errors.append('cuda_legacy only supports optimizer.type=SGD')
+        errors.append('cuda_legacy only supports optimizer.type=SGD or Adam')
     if str(loss.get('type', 'CrossEntropyLoss')) not in CUDA_LEGACY_SUPPORTED['loss']:
-        errors.append('cuda_legacy only supports loss.type=CrossEntropyLoss')
+        supported = ', '.join(CUDA_LEGACY_SUPPORTED['loss'])
+        errors.append(f'cuda_legacy only supports loss.type in [{supported}]')
     grad_accum_steps = _coerce_int(train.get('grad_accum_steps', 1), 'train.grad_accum_steps', errors)
     if grad_accum_steps is not None and grad_accum_steps != 1:
         errors.append('cuda_legacy does not support grad_accum_steps != 1')
@@ -206,6 +207,7 @@ def compile_to_legacy_experiment(cfg: dict[str, Any]) -> ExperimentConfig:
     dataset = cfg.get('dataset', {})
     model = cfg.get('model', {})
     optim = cfg.get('optimizer', {})
+    loss = cfg.get('loss', {})
     train = cfg.get('train', {})
     project = cfg.get('project', {})
 
@@ -228,13 +230,24 @@ def compile_to_legacy_experiment(cfg: dict[str, Any]) -> ExperimentConfig:
     exp.train.n_val = int(dataset.get('val_samples', exp.train.n_val))
     exp.train.max_steps_per_epoch = train.get('max_steps_per_epoch', exp.train.max_steps_per_epoch)
 
+    exp.optim.optimizer_type = str(optim.get('type', 'SGD')).lower()
     exp.optim.lr_conv1 = float(optim.get('lr_conv1', optim.get('lr', exp.optim.lr_conv1)))
     exp.optim.lr_conv = float(optim.get('lr_conv', optim.get('lr', exp.optim.lr_conv)))
     exp.optim.lr_fc = float(optim.get('lr_fc', optim.get('lr', exp.optim.lr_fc)))
     exp.optim.momentum = float(optim.get('momentum', exp.optim.momentum))
     exp.optim.weight_decay = float(optim.get('weight_decay', exp.optim.weight_decay))
+    exp.optim.adam_beta1 = float(optim.get('beta1', optim.get('adam_beta1', exp.optim.adam_beta1)))
+    exp.optim.adam_beta2 = float(optim.get('beta2', optim.get('adam_beta2', exp.optim.adam_beta2)))
+    exp.optim.adam_eps = float(optim.get('eps', optim.get('adam_eps', exp.optim.adam_eps)))
     exp.optim.grad_clip_global = float(optim.get('grad_clip_global', exp.optim.grad_clip_global))
     exp.optim.leaky_alpha = negative_slope
+
+    _LOSS_MAP = {
+        'CrossEntropyLoss': 'cross_entropy',
+        'MSELoss': 'mse',
+        'BCEWithLogitsLoss': 'bce',
+    }
+    exp.loss.loss_type = _LOSS_MAP.get(str(loss.get('type', 'CrossEntropyLoss')), 'cross_entropy')
 
     input_shape = dataset.get('input_shape', [3, 32, 32])
     exp.model.c_in = int(input_shape[0])

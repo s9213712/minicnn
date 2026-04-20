@@ -52,17 +52,36 @@ __global__ void im2col_kernel(const float* input, float* output, int N, int C, i
 }
 
 #if !USE_CUBLAS
-__global__ void gemm_kernel(const float* A, const float* B, float* C_out, int M, int N, int K) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row < M && col < N) {
-        float sum = 0.0f;
-        for (int i = 0; i < K; ++i) {
-            sum += A[row * K + i] * B[i * N + col];
-        }
-        C_out[row * N + col] = sum;
+// Tiled shared-memory GEMM: C[M,N] = A[M,K] * B[K,N], row-major.
+// TILE_SIZE should be a power of 2; 16 gives a good occupancy/register balance.
+#define TILE_SIZE 16
+__global__ void gemm_kernel(const float* __restrict__ A,
+                             const float* __restrict__ B,
+                             float* C_out,
+                             int M, int N, int K) {
+    __shared__ float tileA[TILE_SIZE][TILE_SIZE];
+    __shared__ float tileB[TILE_SIZE][TILE_SIZE];
+
+    int row = blockIdx.y * TILE_SIZE + threadIdx.y;
+    int col = blockIdx.x * TILE_SIZE + threadIdx.x;
+    float sum = 0.0f;
+
+    for (int t = 0; t * TILE_SIZE < K; ++t) {
+        int aCol = t * TILE_SIZE + threadIdx.x;
+        int bRow = t * TILE_SIZE + threadIdx.y;
+        tileA[threadIdx.y][threadIdx.x] = (row < M && aCol < K) ? A[row * K + aCol] : 0.0f;
+        tileB[threadIdx.y][threadIdx.x] = (bRow < K && col < N) ? B[bRow * N + col] : 0.0f;
+        __syncthreads();
+
+        for (int k = 0; k < TILE_SIZE; ++k)
+            sum += tileA[threadIdx.y][k] * tileB[k][threadIdx.x];
+        __syncthreads();
     }
+
+    if (row < M && col < N)
+        C_out[row * N + col] = sum;
 }
+#undef TILE_SIZE
 #endif
 
 extern "C" {

@@ -12,40 +12,93 @@ from minicnn.training.cuda_arch import CudaNetGeometry
 class DeviceWeights:
     """GPU pointers for all trainable weights."""
 
-    def __init__(self, conv_weights: list, fc_w, fc_b) -> None:
+    def __init__(self, conv_weights: list, fc_w, fc_b,
+                 ln_gamma: list | None = None, ln_beta: list | None = None) -> None:
         self.conv_weights = list(conv_weights)
         self.fc_w = fc_w
         self.fc_b = fc_b
+        self.ln_gamma: list = list(ln_gamma) if ln_gamma else []
+        self.ln_beta: list  = list(ln_beta)  if ln_beta  else []
 
     def __iter__(self) -> Iterator:
         yield from self.conv_weights
         yield self.fc_w
         yield self.fc_b
+        yield from self.ln_gamma
+        yield from self.ln_beta
 
 
 class VelocityBuffers:
     """GPU momentum velocity buffers matching DeviceWeights layout."""
 
-    def __init__(self, conv_velocities: list, fc_w_vel, fc_b_vel) -> None:
+    def __init__(self, conv_velocities: list, fc_w_vel, fc_b_vel,
+                 ln_gamma_vel: list | None = None, ln_beta_vel: list | None = None) -> None:
         self.conv_velocities = list(conv_velocities)
         self.fc_w_vel = fc_w_vel
         self.fc_b_vel = fc_b_vel
+        self.ln_gamma_vel: list = list(ln_gamma_vel) if ln_gamma_vel else []
+        self.ln_beta_vel: list  = list(ln_beta_vel)  if ln_beta_vel  else []
 
     def __iter__(self) -> Iterator:
         yield from self.conv_velocities
         yield self.fc_w_vel
         yield self.fc_b_vel
+        yield from self.ln_gamma_vel
+        yield from self.ln_beta_vel
 
 
-def upload_weights(conv_arrays: list[np.ndarray], fc_w: np.ndarray, fc_b: np.ndarray) -> DeviceWeights:
+class AdamBuffers:
+    """GPU first/second moment buffers for Adam, mirroring DeviceWeights layout."""
+
+    def __init__(self, conv_m: list, conv_v: list, fc_w_m, fc_w_v, fc_b_m, fc_b_v) -> None:
+        self.conv_m = list(conv_m)
+        self.conv_v = list(conv_v)
+        self.fc_w_m = fc_w_m
+        self.fc_w_v = fc_w_v
+        self.fc_b_m = fc_b_m
+        self.fc_b_v = fc_b_v
+
+    def __iter__(self):
+        yield from self.conv_m
+        yield from self.conv_v
+        yield self.fc_w_m
+        yield self.fc_w_v
+        yield self.fc_b_m
+        yield self.fc_b_v
+
+
+def init_adam_buffers(geom: CudaNetGeometry) -> AdamBuffers:
+    return AdamBuffers(
+        conv_m=[gpu_zeros(s.weight_numel) for s in geom.conv_stages],
+        conv_v=[gpu_zeros(s.weight_numel) for s in geom.conv_stages],
+        fc_w_m=gpu_zeros(geom.fc_out * geom.fc_in),
+        fc_w_v=gpu_zeros(geom.fc_out * geom.fc_in),
+        fc_b_m=gpu_zeros(geom.fc_out),
+        fc_b_v=gpu_zeros(geom.fc_out),
+    )
+
+
+def upload_weights(
+    conv_arrays: list[np.ndarray],
+    fc_w: np.ndarray,
+    fc_b: np.ndarray,
+    ln_gamma_arrays: list[np.ndarray] | None = None,
+    ln_beta_arrays: list[np.ndarray] | None = None,
+) -> DeviceWeights:
     uploaded: list = []
+    ln_gamma_arrays = ln_gamma_arrays or []
+    ln_beta_arrays  = ln_beta_arrays  or []
     try:
-        for arr in (*conv_arrays, fc_w, fc_b):
+        for arr in (*conv_arrays, fc_w, fc_b, *ln_gamma_arrays, *ln_beta_arrays):
             uploaded.append(upload(arr))
+        n_conv = len(conv_arrays)
+        n_ln   = len(ln_gamma_arrays)
         return DeviceWeights(
-            conv_weights=uploaded[: len(conv_arrays)],
-            fc_w=uploaded[-2],
-            fc_b=uploaded[-1],
+            conv_weights=uploaded[:n_conv],
+            fc_w=uploaded[n_conv],
+            fc_b=uploaded[n_conv + 1],
+            ln_gamma=uploaded[n_conv + 2 : n_conv + 2 + n_ln],
+            ln_beta=uploaded[n_conv + 2 + n_ln :],
         )
     except Exception:
         free_weights(uploaded)
@@ -53,10 +106,13 @@ def upload_weights(conv_arrays: list[np.ndarray], fc_w: np.ndarray, fc_b: np.nda
 
 
 def init_velocity_buffers(geom: CudaNetGeometry) -> VelocityBuffers:
+    ln_stages = [s for s in geom.conv_stages if s.layer_norm]
     return VelocityBuffers(
         conv_velocities=[gpu_zeros(s.weight_numel) for s in geom.conv_stages],
         fc_w_vel=gpu_zeros(geom.fc_out * geom.fc_in),
         fc_b_vel=gpu_zeros(geom.fc_out),
+        ln_gamma_vel=[gpu_zeros(s.out_c) for s in ln_stages],
+        ln_beta_vel=[gpu_zeros(s.out_c) for s in ln_stages],
     )
 
 

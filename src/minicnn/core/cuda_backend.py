@@ -120,6 +120,14 @@ def _bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
         c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
         c_int, c_int,
     ]
+    if hasattr(bound_lib, 'mse_fwd_grad_loss_acc'):
+        bound_lib.mse_fwd_grad_loss_acc.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int,
+        ]
+    if hasattr(bound_lib, 'bce_fwd_grad_loss_acc'):
+        bound_lib.bce_fwd_grad_loss_acc.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_int,
+        ]
     bound_lib.count_correct.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int]
     bound_lib.apply_sgd_update.argtypes = [c_void_p, c_void_p, c_float, c_int]
     bound_lib.apply_momentum_update.argtypes = [c_void_p, c_void_p, c_void_p, c_float, c_float, c_int]
@@ -129,6 +137,20 @@ def _bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
         c_int,
     ]
     bound_lib.clip_inplace.argtypes = [c_void_p, c_float, c_int]
+    if hasattr(bound_lib, 'layer_norm_forward'):
+        bound_lib.layer_norm_forward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_float,
+        ]
+    if hasattr(bound_lib, 'layer_norm_backward'):
+        bound_lib.layer_norm_backward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_float,
+        ]
+    if hasattr(bound_lib, 'adam_update_fused'):
+        bound_lib.adam_update_fused.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p,
+            c_float, c_float, c_float, c_float, c_float, c_float, c_float, c_float, c_float,
+            c_int,
+        ]
     bound_lib.nchw_to_cnhw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
     bound_lib.cnhw_to_nchw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
     bound_lib.maxpool_forward_store.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
@@ -285,6 +307,39 @@ def maxpool_forward(d_input_cnhw, n, c, h, w):
     d_idx = lib.gpu_malloc(out_size * 4)
     lib.maxpool_forward_store(d_pool, d_input_cnhw, d_idx, n, c, h, w)
     return d_pool, d_idx, out_h, out_w
+
+
+def update_adam(
+    d_weight,
+    d_grad,
+    d_m,
+    d_v,
+    lr,
+    beta1,
+    beta2,
+    eps,
+    weight_decay,
+    clip_value,
+    size,
+    name,
+    grad_normalizer=1.0,
+    bias_corr1=1.0,
+    bias_corr2=1.0,
+    log_grad=False,
+):
+    if log_grad:
+        h_grad = g2h(d_grad, size).reshape(-1) / grad_normalizer
+        h_weight = g2h(d_weight, size).reshape(-1)
+        h_grad = h_grad + weight_decay * h_weight
+        print(f"    {name} grad_abs_mean={np.mean(np.abs(h_grad)):.6e} grad_abs_max={np.max(np.abs(h_grad)):.6e}")
+
+    lib.adam_update_fused(
+        d_weight, d_grad, d_m, d_v,
+        c_float(lr), c_float(beta1), c_float(beta2), c_float(eps),
+        c_float(weight_decay), c_float(clip_value),
+        c_float(grad_normalizer), c_float(bias_corr1), c_float(bias_corr2),
+        size,
+    )
 
 
 def update_conv(

@@ -49,6 +49,45 @@ __global__ void clip_inplace_kernel(float* values, float clip_val, int size) {
     }
 }
 
+// Adam/AdamW fused update kernel.
+// bias_corr1 = 1 - beta1^t, bias_corr2 = 1 - beta2^t (computed on host each step).
+// weight_decay is applied in decoupled AdamW style (after the adaptive step).
+// clip_val <= 0 disables gradient clipping.
+__global__ void adam_update_fused_kernel(
+    float* weights,
+    const float* grad,
+    float* m,           // first moment (EMA of gradients)
+    float* v,           // second moment (EMA of squared gradients)
+    float lr,
+    float beta1,
+    float beta2,
+    float eps,
+    float weight_decay,
+    float clip_val,
+    float normalizer,   // spatial/global grad normalizer (same role as in conv_update_fused)
+    float bias_corr1,   // 1 - beta1^t
+    float bias_corr2,   // 1 - beta2^t
+    int size
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+
+    float g = grad[idx] / normalizer;
+    if (clip_val > 0.0f) {
+        g = fmaxf(-clip_val, fminf(clip_val, g));
+    }
+
+    m[idx] = beta1 * m[idx] + (1.0f - beta1) * g;
+    v[idx] = beta2 * v[idx] + (1.0f - beta2) * g * g;
+
+    float m_hat = m[idx] / bias_corr1;
+    float v_hat = v[idx] / bias_corr2;
+
+    float update = lr * m_hat / (sqrtf(v_hat) + eps);
+    // AdamW decoupled weight decay
+    weights[idx] -= update + lr * weight_decay * weights[idx];
+}
+
 extern "C" {
     void apply_sgd_update(float* d_weights, float* d_grad, float lr, int size) {
         int tpb = 256;
@@ -95,6 +134,33 @@ extern "C" {
         int tpb = 256;
         int bpg = (size + tpb - 1) / tpb;
         clip_inplace_kernel<<<bpg, tpb>>>(d_values, clip_val, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void adam_update_fused(
+        float* d_weights,
+        const float* d_grad,
+        float* d_m,
+        float* d_v,
+        float lr,
+        float beta1,
+        float beta2,
+        float eps,
+        float weight_decay,
+        float clip_val,
+        float normalizer,
+        float bias_corr1,
+        float bias_corr2,
+        int size
+    ) {
+        int tpb = 256;
+        int bpg = (size + tpb - 1) / tpb;
+        adam_update_fused_kernel<<<bpg, tpb>>>(
+            d_weights, d_grad, d_m, d_v,
+            lr, beta1, beta2, eps,
+            weight_decay, clip_val, normalizer,
+            bias_corr1, bias_corr2, size
+        );
         CUDA_KERNEL_CHECK();
     }
 }
