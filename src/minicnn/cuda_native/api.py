@@ -1,13 +1,10 @@
-"""Public API surface for cuda_native.
-
-Phase 0: stubs that establish the interface contract.
-Actual graph construction is wired in Phase 1.
-"""
+"""Public API surface for cuda_native."""
 from __future__ import annotations
 
 from typing import Any
 
 from minicnn.cuda_native.capabilities import get_cuda_native_capabilities
+from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.validators import validate_cuda_native_model_config
 
 
@@ -20,18 +17,21 @@ def validate_cuda_native_config(cfg: dict[str, Any]) -> list[str]:
     return validate_cuda_native_model_config(model_cfg)
 
 
-def build_cuda_native_graph(model_cfg: dict[str, Any], input_shape: tuple[int, ...]):
-    """Build a NativeGraph from a model config dict.
+def build_cuda_native_graph(
+    model_cfg: dict[str, Any],
+    input_shape: tuple[int, ...],
+) -> NativeGraph:
+    """Build and return a NativeGraph from a model config dict.
 
-    Phase 0 stub — raises NotImplementedError until Phase 1 is wired.
+    Args:
+        model_cfg:   dict with a 'layers' key (same format as flex/autograd).
+        input_shape: fixed input shape, e.g. (1, 3, 32, 32).
+
+    Raises:
+        ValueError: if the config references unsupported ops or has bad attrs/shapes.
     """
-    errors = validate_cuda_native_model_config(model_cfg)
-    if errors:
-        raise ValueError('cuda_native validation failed:\n- ' + '\n- '.join(errors))
-    raise NotImplementedError(
-        'cuda_native graph construction is not yet implemented (Phase 1). '
-        'Capabilities: ' + str(get_cuda_native_capabilities())
-    )
+    layers = model_cfg.get('layers', [])
+    return build_graph(layers, input_shape)
 
 
 def get_capability_summary() -> dict[str, object]:

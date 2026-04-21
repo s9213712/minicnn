@@ -114,13 +114,13 @@ def test_api_validate_config_rejects_groupnorm():
     assert any('GroupNorm' in e for e in errors)
 
 
-def test_api_build_graph_is_not_yet_implemented():
+def test_api_build_graph_returns_graph():
     from minicnn.cuda_native.api import build_cuda_native_graph
-    with pytest.raises(NotImplementedError):
-        build_cuda_native_graph(
-            {'layers': [{'type': 'Linear', 'out_features': 10}]},
-            (1, 4),
-        )
+    g = build_cuda_native_graph(
+        {'layers': [{'type': 'Linear', 'out_features': 10}]},
+        (1, 4),
+    )
+    assert g is not None
 
 
 def test_api_build_graph_raises_validation_error_before_not_implemented():

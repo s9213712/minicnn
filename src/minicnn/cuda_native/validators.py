@@ -21,6 +21,42 @@ def validate_op_type(op: str, node_name: str = '') -> list[str]:
     return []
 
 
+def _validate_conv2d_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    errors: list[str] = []
+    if 'out_channels' not in attrs:
+        errors.append(
+            f'Conv2d node={node_name}: missing required attr "out_channels"'
+        )
+    for key in ('kernel_size', 'stride', 'padding'):
+        val = attrs.get(key)
+        if val is not None:
+            try:
+                if isinstance(val, (list, tuple)):
+                    [int(v) for v in val]
+                else:
+                    int(val)
+            except (TypeError, ValueError):
+                errors.append(
+                    f'Conv2d node={node_name}: attr "{key}" must be an integer or pair, got {val!r}'
+                )
+    return errors
+
+
+def _validate_linear_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    if 'out_features' not in attrs:
+        return [f'Linear node={node_name}: missing required attr "out_features"']
+    return []
+
+
+def validate_layer_attrs(op: str, attrs: dict[str, Any], node_name: str) -> list[str]:
+    """Validate op-specific attributes."""
+    if op == 'Conv2d':
+        return _validate_conv2d_attrs(attrs, node_name)
+    if op == 'Linear':
+        return _validate_linear_attrs(attrs, node_name)
+    return []
+
+
 def validate_layer_list(layers: list[dict[str, Any]]) -> list[str]:
     """Validate a list of layer dicts from a model config."""
     errors: list[str] = []
@@ -31,7 +67,11 @@ def validate_layer_list(layers: list[dict[str, Any]]) -> list[str]:
         if not op:
             errors.append(f'Layer {i}: missing "type" key')
             continue
-        errors.extend(validate_op_type(op, node_name=f'layer_{i}'))
+        node_name = f'layer_{i}'
+        errors.extend(validate_op_type(op, node_name=node_name))
+        if not errors or errors[-1].startswith('Unsupported'):
+            attrs = {k: v for k, v in layer.items() if k != 'type'}
+            errors.extend(validate_layer_attrs(op, attrs, node_name))
     return errors
 
 
