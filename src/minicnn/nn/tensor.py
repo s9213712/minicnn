@@ -3,25 +3,25 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 from typing import Any, Callable, Iterator
+import threading
 
 import numpy as np
 
-_grad_enabled = True
+_grad_ctx = threading.local()
 
 
 @contextmanager
 def no_grad() -> Iterator[None]:
-    global _grad_enabled
-    prev = _grad_enabled
-    _grad_enabled = False
+    prev = getattr(_grad_ctx, 'enabled', True)
+    _grad_ctx.enabled = False
     try:
         yield
     finally:
-        _grad_enabled = prev
+        _grad_ctx.enabled = prev
 
 
 def is_grad_enabled() -> bool:
-    return _grad_enabled
+    return getattr(_grad_ctx, 'enabled', True)
 
 
 def _array(data: Any) -> np.ndarray:
@@ -99,16 +99,18 @@ class Tensor:
 
         topo: list[Tensor] = []
         visited: set[Tensor] = set()
+        stack: list[tuple[Tensor, bool]] = [(self, False)]
+        while stack:
+            node, processed = stack.pop()
+            if processed:
+                if node not in visited:
+                    visited.add(node)
+                    topo.append(node)
+            elif node not in visited:
+                stack.append((node, True))
+                for child in node._prev:
+                    stack.append((child, False))
 
-        def build(node: Tensor) -> None:
-            if node in visited:
-                return
-            visited.add(node)
-            for child in node._prev:
-                build(child)
-            topo.append(node)
-
-        build(self)
         self.grad = grad
         for node in reversed(topo):
             node._backward()
@@ -270,13 +272,13 @@ class Tensor:
         return out
 
     def log(self) -> 'Tensor':
-        out = Tensor(np.log(self.data), requires_grad=_requires_grad(self))
+        out = Tensor(np.log(self.data + 1e-10), requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'log'
 
         def _backward() -> None:
             if out.grad is not None:
-                self._add_grad(out.grad / self.data)
+                self._add_grad(out.grad / (self.data + 1e-10))
 
         out._backward = _backward
         return out
