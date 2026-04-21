@@ -72,7 +72,7 @@ def get_initializer(name: str):
 
 def he_init(size: int, fan_in: int, rng=None) -> np.ndarray:
     rng = rng or np.random.default_rng()
-    return (rng.standard_normal(size).astype(np.float32) * np.sqrt(2.0 / fan_in)).astype(np.float32)
+    return (rng.standard_normal(size) * np.sqrt(2.0 / fan_in)).astype(np.float32)
 
 
 def init_weights(seed: int, geom=None):

@@ -94,10 +94,7 @@ class ShapeTracer:
 
     @property
     def flattened(self) -> int:
-        total = 1
-        for x in self.shape:
-            total *= int(x)
-        return int(total)
+        return math.prod(self.shape)
 
 
 def _ensure_tuple2(value: Any) -> tuple[int, int]:

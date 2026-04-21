@@ -3,25 +3,25 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 from typing import Any, Callable, Iterator
+import threading
 
 import numpy as np
 
-_grad_enabled = True
+_grad_ctx = threading.local()
 
 
 @contextmanager
 def no_grad() -> Iterator[None]:
-    global _grad_enabled
-    prev = _grad_enabled
-    _grad_enabled = False
+    prev = getattr(_grad_ctx, 'enabled', True)
+    _grad_ctx.enabled = False
     try:
         yield
     finally:
-        _grad_enabled = prev
+        _grad_ctx.enabled = prev
 
 
 def is_grad_enabled() -> bool:
-    return _grad_enabled
+    return getattr(_grad_ctx, 'enabled', True)
 
 
 def _array(data: Any) -> np.ndarray:
