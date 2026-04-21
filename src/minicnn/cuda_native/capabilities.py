@@ -16,6 +16,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     'branching_graph': False,
     'amp': False,
     'supported_ops': [
+        'BatchNorm2d',
         'Conv2d',
         'ReLU',
         'LeakyReLU',
@@ -26,7 +27,6 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     ],
     'planned_ops': [],
     'unsupported_ops': [
-        'BatchNorm2d',
         'GroupNorm',
         'LayerNorm',
         'ResidualBlock',

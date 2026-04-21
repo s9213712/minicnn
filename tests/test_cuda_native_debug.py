@@ -32,6 +32,33 @@ def _small_params(graph):
     return params
 
 
+def _smoke_graph():
+    return build_graph(
+        [
+            {'type': 'Conv2d', 'out_channels': 2, 'kernel_size': 3},
+            {'type': 'ReLU'},
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 3},
+        ],
+        input_shape=(1, 1, 5, 5),
+    )
+
+
+def test_dump_graph_runs_without_error():
+    graph = _smoke_graph()
+    out = dump_graph(graph)
+    assert isinstance(out, str)
+    assert len(out) > 0
+
+
+def test_dump_plan_runs_without_error():
+    graph = _smoke_graph()
+    plan = make_naive_plan(graph)
+    out = dump_plan(plan)
+    assert isinstance(out, str)
+    assert len(out) > 0
+
+
 class TestDumpGraph:
     def test_returns_string(self):
         g = _small_graph()

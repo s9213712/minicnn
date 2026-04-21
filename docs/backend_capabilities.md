@@ -44,7 +44,7 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | Linear | ✓ | ✓ | ✓ | ✓ numpy ref |
 | MaxPool2d | ✓ | ✓ | ✓ fixed 2×2 | ✓ numpy ref |
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
-| BatchNorm2d | ✓ | ✓ | ✗ | ✗ rejected |
+| BatchNorm2d | ✓ | ✓ | ✗ | ✓ eval-only numpy |
 | LayerNorm | ✓ | ✗ | ✗ | ✗ rejected |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ rejected |
 | ResidualBlock | ✓ | ✓ | ✗ | ✗ rejected |
@@ -129,9 +129,9 @@ Use `minicnn validate-dual-config` before running.
 
 Opt-in via `engine.backend=cuda_native` or `train-native`. Not the default. Not a replacement for `cuda_legacy`.
 
-Supported ops: `Conv2d`, `ReLU`, `LeakyReLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`.
+Supported ops: `BatchNorm2d` (eval-only), `Conv2d`, `ReLU`, `LeakyReLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`.
 
-Unsupported (rejected at validation): `BatchNorm2d`, `GroupNorm`, `LayerNorm`, `ResidualBlock`.
+Unsupported (rejected at validation): `GroupNorm`, `LayerNorm`, `ResidualBlock`.
 
 Developer tooling (unique to cuda_native):
 
@@ -222,7 +222,7 @@ Debugging order:
 | Linear | ✓ | ✓ | ✓ | ✓ numpy ref |
 | MaxPool2d | ✓ | ✓ | ✓ 固定 2×2 | ✓ numpy ref |
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
-| BatchNorm2d | ✓ | ✓ | ✗ | ✗ 拒絕 |
+| BatchNorm2d | ✓ | ✓ | ✗ | ✓ 僅 eval mode numpy |
 | LayerNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
 | ResidualBlock | ✓ | ✓ | ✗ | ✗ 拒絕 |
@@ -308,7 +308,7 @@ Debugging order:
 
 支援 op：`Conv2d`、`ReLU`、`LeakyReLU`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`。
 
-驗證時拒絕的 op：`BatchNorm2d`、`GroupNorm`、`LayerNorm`、`ResidualBlock`。
+驗證時拒絕的 op：`GroupNorm`、`LayerNorm`、`ResidualBlock`。
 
 開發者工具（cuda_native 獨有）：
 

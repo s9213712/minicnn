@@ -44,7 +44,7 @@ MiniCNN 不是要取代 PyTorch。
 | `torch` | 穩定 | 新模型、自訂元件、快速迭代 |
 | `cuda_legacy` | 穩定但刻意狹窄 | 以固定 CIFAR-10 組態為前提的手寫 CUDA 訓練 |
 | `autograd` | 穩定的教學路徑 | CPU-only 學習、可重現測試、小型框架實驗 |
-| `cuda_native` | 實驗性 — 僅 forward prototype | graph IR / planner / numpy executor 研發，非正式 |
+| `cuda_native` | 實驗性研究 prototype | graph IR / planner / numpy executor 研發，非正式 |
 
 高階來看：
 
@@ -88,7 +88,7 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 - 記憶體估算與 pool（`memory.py` — `memory_footprint()`、`BufferPool`）
 - 觀測工具（`debug.py` — `dump_graph()`、`dump_plan()`、`TracingForwardExecutor`）
 
-支援 op：`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`。
+支援 op：`BatchNorm2d`（僅 eval mode）、`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`。
 
 非正式 backend，僅支援 sequential graph，不取代 `cuda_legacy`。
 

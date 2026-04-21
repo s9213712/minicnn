@@ -122,9 +122,8 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
     loss_type = str(loss.get('type', 'CrossEntropyLoss'))
     if loss_type == 'BCEWithLogitsLoss':
         errors.append(
-            'cuda_legacy does not support BCEWithLogitsLoss: binary classification '
-            'is incompatible with the required 10-class CIFAR-10 output. '
-            'Use loss.type=CrossEntropyLoss for multi-class classification.'
+            'cuda_legacy backend does not support BCEWithLogitsLoss. '
+            'Use loss.type=CrossEntropyLoss, or switch to engine.backend=torch.'
         )
     elif loss_type not in CUDA_LEGACY_SUPPORTED['loss']:
         supported = ', '.join(CUDA_LEGACY_SUPPORTED['loss'])

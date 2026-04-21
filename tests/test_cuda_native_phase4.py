@@ -31,7 +31,7 @@ class TestCLICapabilities:
         from minicnn.cuda_native.api import get_capability_summary
         caps = get_capability_summary()
         supported = caps.get('supported_ops', [])
-        for op in ('Conv2d', 'ReLU', 'Flatten', 'Linear'):
+        for op in ('BatchNorm2d', 'Conv2d', 'ReLU', 'Flatten', 'Linear'):
             assert op in supported, f'{op} missing from supported_ops'
 
     def test_unsupported_ops_listed(self):
@@ -68,7 +68,7 @@ class TestValidateCudaNativeConfig:
     def test_unsupported_op_rejected(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
         cfg = self._minimal_cfg([
-            {'type': 'BatchNorm2d'},
+            {'type': 'GroupNorm'},
             {'type': 'Flatten'},
             {'type': 'Linear', 'out_features': 2},
         ])

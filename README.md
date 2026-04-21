@@ -46,7 +46,7 @@ It is useful when you want one of these:
 | `torch` | stable | new models, custom components, fast iteration |
 | `cuda_legacy` | stable but intentionally narrow | handwritten CUDA training on the fixed CIFAR-10 contract |
 | `autograd` | stable educational path | CPU-only learning, deterministic tests, framework experiments |
-| `cuda_native` | experimental — forward-only prototype | native graph IR / planner R&D; not production-ready |
+| `cuda_native` | experimental research prototype | native graph IR / planner / numpy executor R&D; not production-ready |
 
 At a high level:
 
@@ -90,7 +90,7 @@ A graph-based backend prototype with:
 - memory estimation and reuse (`memory.py` — `memory_footprint()`, `BufferPool`)
 - observability tooling (`debug.py` — `dump_graph()`, `dump_plan()`, `TracingForwardExecutor`)
 
-Supported ops: `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
+Supported ops: `BatchNorm2d` (eval-only), `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
 
 Not production-ready. Sequential graphs only. Not a replacement for `cuda_legacy`.
 

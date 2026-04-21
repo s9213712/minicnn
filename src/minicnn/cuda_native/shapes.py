@@ -45,6 +45,15 @@ def infer_activation(input_shape: tuple[int, ...]) -> tuple[int, ...]:
     return input_shape
 
 
+def infer_batchnorm2d(input_shape: tuple[int, ...]) -> tuple[int, ...]:
+    """BatchNorm2d preserves shape but requires NCHW input."""
+    if len(input_shape) != 4:
+        raise ValueError(
+            f'BatchNorm2d expects 4-D input (N,C,H,W), got shape {input_shape}'
+        )
+    return input_shape
+
+
 def infer_flatten(input_shape: tuple[int, ...]) -> tuple[int, ...]:
     """Flatten all dims except batch into one vector: (N, C*H*W)."""
     if len(input_shape) < 2:
@@ -124,6 +133,8 @@ def infer_shape(
             )
         if op_type in ('ReLU', 'LeakyReLU', 'Sigmoid', 'Tanh', 'SiLU'):
             return infer_activation(input_shape)
+        if op_type == 'BatchNorm2d':
+            return infer_batchnorm2d(input_shape)
         if op_type == 'Flatten':
             return infer_flatten(input_shape)
         if op_type == 'Linear':

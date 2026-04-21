@@ -40,22 +40,23 @@ def test_capability_supported_ops_not_empty():
     from minicnn.cuda_native.capabilities import get_cuda_native_capabilities
     ops = get_cuda_native_capabilities()['supported_ops']
     assert len(ops) > 0
+    assert 'BatchNorm2d' in ops
     assert 'Conv2d' in ops
     assert 'Linear' in ops
 
 
 def test_validator_accepts_supported_ops():
     from minicnn.cuda_native.validators import validate_op_type
-    for op in ('Conv2d', 'ReLU', 'LeakyReLU', 'Flatten', 'Linear'):
+    for op in ('BatchNorm2d', 'Conv2d', 'ReLU', 'LeakyReLU', 'Flatten', 'Linear'):
         assert validate_op_type(op) == [], f'{op} should be accepted'
 
 
-def test_validator_rejects_batchnorm():
+def test_validator_rejects_groupnorm():
     from minicnn.cuda_native.validators import validate_op_type
-    errors = validate_op_type('BatchNorm2d', node_name='bn1')
+    errors = validate_op_type('GroupNorm', node_name='gn1')
     assert len(errors) == 1
-    assert 'BatchNorm2d' in errors[0]
-    assert 'bn1' in errors[0]
+    assert 'GroupNorm' in errors[0]
+    assert 'gn1' in errors[0]
 
 
 def test_validator_rejects_unknown_op():
@@ -80,11 +81,11 @@ def test_validate_layer_list_rejects_unsupported():
     from minicnn.cuda_native.validators import validate_layer_list
     layers = [
         {'type': 'Conv2d', 'out_channels': 32},
-        {'type': 'BatchNorm2d'},
+        {'type': 'GroupNorm'},
         {'type': 'ReLU'},
     ]
     errors = validate_layer_list(layers)
-    assert any('BatchNorm2d' in e for e in errors)
+    assert any('GroupNorm' in e for e in errors)
 
 
 def test_validate_layer_list_missing_type():
@@ -127,7 +128,7 @@ def test_api_build_graph_raises_validation_error_before_not_implemented():
     from minicnn.cuda_native.api import build_cuda_native_graph
     with pytest.raises(ValueError, match='cuda_native validation failed'):
         build_cuda_native_graph(
-            {'layers': [{'type': 'BatchNorm2d'}]},
+            {'layers': [{'type': 'GroupNorm'}]},
             (1, 3, 32, 32),
         )
 

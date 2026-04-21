@@ -11,11 +11,19 @@ callers.
 """
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass, field
 from typing import Any
 
 from minicnn.cuda_native.graph import NativeGraph
 from minicnn.cuda_native.nodes import TensorSpec
+
+
+class BufferType(enum.Enum):
+    ACTIVATION = 'activation'
+    PARAMETER = 'parameter'
+    STATISTIC = 'statistic'
+    GRADIENT = 'gradient'
 
 
 @dataclass

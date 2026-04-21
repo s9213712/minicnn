@@ -92,6 +92,24 @@ def test_avgpool2d_kernel():
     np.testing.assert_array_equal(out, np.ones((1, 1, 2, 2), dtype=np.float32))
 
 
+def test_avgpool2d_forward():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.executor import ForwardExecutor
+    layers = [{'type': 'AvgPool2d', 'kernel_size': 2, 'stride': 2}]
+    g = build_graph(layers, (1, 1, 4, 4))
+    x = np.array(
+        [[[[1.0, 3.0, 2.0, 4.0],
+           [5.0, 7.0, 6.0, 8.0],
+           [0.0, 2.0, 1.0, 3.0],
+           [4.0, 6.0, 5.0, 7.0]]]],
+        dtype=np.float32,
+    )
+    out = ForwardExecutor().run_inference(g, x)
+    expected = np.array([[[[4.0, 5.0], [3.0, 4.0]]]], dtype=np.float32)
+    assert out.shape == (1, 1, 2, 2)
+    np.testing.assert_allclose(out, expected, atol=1e-5)
+
+
 def test_maxpool_avgpool_different_outputs():
     """MaxPool and AvgPool must produce distinct results on non-uniform input."""
     from minicnn.cuda_native.graph import build_graph

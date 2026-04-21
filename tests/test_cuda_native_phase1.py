@@ -102,7 +102,13 @@ def test_infer_shape_missing_out_features():
 def test_infer_shape_unknown_op():
     from minicnn.cuda_native.shapes import infer_shape
     with pytest.raises(ValueError, match='No shape inference rule'):
-        infer_shape('BatchNorm2d', (1, 16, 8, 8), {})
+        infer_shape('GroupNorm', (1, 16, 8, 8), {})
+
+
+def test_infer_shape_batchnorm2d_passthrough():
+    from minicnn.cuda_native.shapes import infer_shape
+    out = infer_shape('BatchNorm2d', (1, 16, 8, 8), {})
+    assert out == (1, 16, 8, 8)
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +170,7 @@ def test_build_graph_shape_propagation():
 def test_build_graph_rejects_unsupported_op():
     from minicnn.cuda_native.graph import build_graph
     with pytest.raises(ValueError, match='cuda_native validation failed'):
-        build_graph([{'type': 'BatchNorm2d'}], (1, 3, 32, 32))
+        build_graph([{'type': 'GroupNorm'}], (1, 3, 32, 32))
 
 
 def test_build_graph_topological_order():
@@ -203,7 +209,7 @@ def test_kernel_registry_get_missing_raises():
 def test_default_registry_has_minimum_ops():
     from minicnn.cuda_native.kernels import make_default_registry
     reg = make_default_registry()
-    for op in ('Conv2d', 'ReLU', 'LeakyReLU', 'Flatten', 'Linear'):
+    for op in ('BatchNorm2d', 'Conv2d', 'ReLU', 'LeakyReLU', 'Flatten', 'Linear'):
         assert reg.has(op), f'missing kernel for {op}'
 
 
@@ -307,6 +313,20 @@ def test_executor_missing_kernel_raises():
     x = np.zeros((1, 16, 8, 8), dtype=np.float32)
     with pytest.raises(KeyError, match='No cuda_native kernel'):
         ex.run(g, {'input': x})
+
+
+def test_node_trainable_state_defaults_to_empty_dict():
+    from minicnn.cuda_native.nodes import Node
+    node = Node(name='relu_0', op_type='ReLU')
+    assert node.trainable_state == {}
+
+
+def test_planner_buffer_type_enum_exposes_expected_members():
+    from minicnn.cuda_native.planner import BufferType
+    assert BufferType.ACTIVATION.value == 'activation'
+    assert BufferType.PARAMETER.value == 'parameter'
+    assert BufferType.STATISTIC.value == 'statistic'
+    assert BufferType.GRADIENT.value == 'gradient'
 
 
 # ---------------------------------------------------------------------------

@@ -74,6 +74,50 @@ def _kernel_conv2d(node: Node, ctx: dict[str, Any]) -> None:
     ctx[node.outputs[0]] = out
 
 
+def _kernel_batchnorm2d_eval(node: Node, ctx: dict[str, Any]) -> None:
+    x: np.ndarray = ctx[node.inputs[0]]
+    if x.ndim != 4:
+        raise ValueError(
+            f'BatchNorm2d expects 4-D input (N,C,H,W), got shape {x.shape}'
+        )
+    channels = x.shape[1]
+    eps = float(node.attrs.get('eps', 1e-5))
+    gamma = np.asarray(
+        ctx.get(f'_w_{node.name}', np.ones(channels, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    beta = np.asarray(
+        ctx.get(f'_b_{node.name}', np.zeros(channels, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    running_mean = np.asarray(
+        ctx.get(f'_running_mean_{node.name}', np.zeros(channels, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    running_var = np.asarray(
+        ctx.get(f'_running_var_{node.name}', np.ones(channels, dtype=np.float32)),
+        dtype=np.float32,
+    )
+
+    for label, arr in (
+        ('weight', gamma),
+        ('bias', beta),
+        ('running_mean', running_mean),
+        ('running_var', running_var),
+    ):
+        if arr.shape != (channels,):
+            raise ValueError(
+                f'BatchNorm2d node={node.name}: {label} must have shape {(channels,)}, '
+                f'got {arr.shape}'
+            )
+
+    centered = x - running_mean[None, :, None, None]
+    inv_std = 1.0 / np.sqrt(running_var[None, :, None, None] + eps)
+    out = centered * inv_std
+    out = out * gamma[None, :, None, None] + beta[None, :, None, None]
+    ctx[node.outputs[0]] = out.astype(np.float32)
+
+
 def _kernel_relu(node: Node, ctx: dict[str, Any]) -> None:
     x = ctx[node.inputs[0]]
     ctx[node.outputs[0]] = np.maximum(x, 0.0).astype(np.float32)
@@ -138,6 +182,7 @@ def make_default_registry() -> KernelRegistry:
     """Build a KernelRegistry with all Phase-1/2 reference kernels."""
     reg = KernelRegistry()
     reg.register('Conv2d', _kernel_conv2d)
+    reg.register('BatchNorm2d', _kernel_batchnorm2d_eval)
     reg.register('ReLU', _kernel_relu)
     reg.register('LeakyReLU', _kernel_leaky_relu)
     reg.register('Flatten', _kernel_flatten)

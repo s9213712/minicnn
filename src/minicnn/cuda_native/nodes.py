@@ -34,6 +34,7 @@ class Node:
     attrs: dict[str, Any] = field(default_factory=dict)
     input_specs: list[TensorSpec] = field(default_factory=list)
     output_specs: list[TensorSpec] = field(default_factory=list)
+    trainable_state: dict[str, tuple[int, ...]] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         in_shapes = [str(s.shape) for s in self.input_specs]

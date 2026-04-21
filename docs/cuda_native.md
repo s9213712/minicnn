@@ -56,7 +56,7 @@ A staged, modular backend structured in layers:
 | AvgPool2d | ✓ | Prototype |
 | Flatten | ✓ | Prototype |
 | Linear | ✓ | Prototype |
-| BatchNorm2d | ✗ rejected | — |
+| BatchNorm2d | ✓ eval-only | ✗ |
 | GroupNorm | ✗ rejected | — |
 | LayerNorm | ✗ rejected | — |
 | ResidualBlock | ✗ rejected | — |
@@ -255,7 +255,7 @@ Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 | AvgPool2d | ✓ | Prototype |
 | Flatten | ✓ | Prototype |
 | Linear | ✓ | Prototype |
-| BatchNorm2d | ✗ 拒絕 | — |
+| BatchNorm2d | ✓ 僅 eval mode | ✗ |
 | GroupNorm | ✗ 拒絕 | — |
 | LayerNorm | ✗ 拒絕 | — |
 | ResidualBlock | ✗ 拒絕 | — |
