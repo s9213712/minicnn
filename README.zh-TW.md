@@ -90,7 +90,7 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 
 支援 op：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`。
 
-目前通過驗證的 contract：
+目前通過驗證的支援範圍：
 
 - dataset：`random`、`cifar10`、`mnist`
 - loss：`CrossEntropyLoss`、`MSELoss`
@@ -133,7 +133,7 @@ pytest
 
 `minicnn smoke` 是安裝後最推薦先跑的自檢。它會檢查 repo 結構、解析內建
 config、跑一次小型 compiler trace，並驗證 `cuda_legacy` 與
-`cuda_native` 的 config contract。
+`cuda_native` 的 config 驗證邊界。
 
 ## 最小依賴矩陣
 
@@ -300,7 +300,7 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 
 完整支援矩陣見 [docs/backend_capabilities.md](docs/backend_capabilities.md)，長期方向見 [docs/generalization_roadmap.md](docs/generalization_roadmap.md)。
 
-## Config 合約
+## Config 介面
 
 主要的 shared-config 介面：
 
@@ -398,7 +398,7 @@ minicnn/
 ## 設計哲學
 
 - 顯式的 backend 能力邊界，而非模糊的對等性宣稱
-- 一個前端合約，在這個範圍內抽象是誠實的
+- 一個前端介面，在這個範圍內抽象是誠實的
 - 不支援的 backend 組合快速失敗
 - 實驗性 backend 工作維持可見，但不偽裝成穩定
 

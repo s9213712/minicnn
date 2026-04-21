@@ -130,7 +130,7 @@ Keep it inside `src/minicnn/cuda_native/`. The capability descriptor, validator,
 
 # MiniCNN 架構（中文）
 
-MiniCNN 有一個廣泛的前端介面，對應多條以 backend 為導向的執行路徑。並非每個 backend 都接受完整的前端合約。
+MiniCNN 有一個廣泛的前端介面，對應多條以 backend 為導向的執行路徑。並非每個 backend 都接受完整的前端設定介面。
 
 ## 執行路徑
 
@@ -194,7 +194,7 @@ model config
 - `backward.py` — backward pass prototype
 - `loss.py`, `training.py` — loss 與 SGD 訓練迴圈 prototype
 - `capabilities.py` — 誠實的功能旗標
-- `layouts.py` — layout 常數（NCHW/NC）、per-op 合約、`validate_graph_layouts()`
+- `layouts.py` — layout 常數（NCHW/NC）、各 op 的規則、`validate_graph_layouts()`
 - `memory.py` — `BufferAllocator`、`BufferPool`、`memory_footprint()`
 - `debug.py` — `dump_graph()`、`dump_plan()`、`TracingForwardExecutor`、`ExecutionTrace`
 

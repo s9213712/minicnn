@@ -220,7 +220,7 @@ minicnn/
 | `src/minicnn/training/cuda_batch.py` | CUDA batch 級 forward/loss/backward/update 步驟。 |
 | `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 `torch`、`cuda_legacy` 或 `cuda_native` backend。 |
 
-## 目前可靠性合約
+## 目前可靠性邊界
 
 - `train.init_seed` 控制 torch/flex 模型初始化；CUDA legacy 與 CPU/NumPy autograd 使用各自的 seeded init 路徑。
 - 布林字串使用 strict parser；`"false"`、`"0"` 不會透過 Python `bool()` 成為 true。

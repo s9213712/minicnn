@@ -165,14 +165,14 @@ minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 
 同一個 YAML key 在各個 backend 的接受範圍不同。
 
-## cuda_legacy 合約
+## cuda_legacy 支援邊界
 
 接受：
 - 資料集：`cifar10`，input shape `[3, 32, 32]`
 - 固定 pattern：`Conv2d → activation → Conv2d → activation → MaxPool2d → Conv2d → activation → Conv2d → activation → MaxPool2d → Flatten → Linear`
 - 激活：`ReLU` 或 `LeakyReLU`
 
-## cuda_native 合約
+## cuda_native 支援邊界
 
 接受：
 - 資料集：`cifar10`、`mnist`、`random`

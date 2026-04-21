@@ -305,7 +305,7 @@ Debugging order:
 
 真正的訓練 backend，刻意維持狹窄。
 
-穩定合約：
+穩定支援範圍：
 - 資料集：`cifar10`，input shape `[3, 32, 32]`
 - 層 pattern：`Conv2d → activation → Conv2d → activation → MaxPool2d → Conv2d → activation → Conv2d → activation → MaxPool2d → Flatten → Linear`
 - 激活：`ReLU` 或 `LeakyReLU`
@@ -318,7 +318,7 @@ Debugging order:
 
 透過 `engine.backend=cuda_native` 或 `train-native` 明確啟用。不是預設 backend，不取代 `cuda_legacy`。
 
-目前通過驗證的 train-native contract：
+目前通過驗證的 train-native 支援範圍：
 
 - dataset：`random`、`cifar10`、`mnist`
 - loss：`CrossEntropyLoss`、`MSELoss`

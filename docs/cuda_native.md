@@ -232,7 +232,7 @@ Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 - **Backward 層**（`backward.py`）— 梯度 kernel prototype
 - **訓練層**（`loss.py`, `training.py`）— 損失函數與 SGD 訓練迴圈
 - **能力層**（`capabilities.py`）— 誠實的功能旗標
-- **Layout 層**（`layouts.py`）— layout 常數、per-op 合約、驗證
+- **Layout 層**（`layouts.py`）— layout 常數、各 op 的輸入輸出規則、驗證
 - **Memory 層**（`memory.py`）— buffer 分配器與 pool 抽象
 - **Debug 層**（`debug.py`）— graph dump、plan dump、execution trace
 
@@ -284,7 +284,7 @@ Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 `BatchNorm2d` 現在已有 forward/backward prototype，已可進入實驗性訓練路徑，
 但整體仍屬 prototype 層級，不能視為穩定支援。
 
-目前通過驗證的 `train-native` 合約：
+目前通過驗證的 `train-native` 支援範圍：
 
 - dataset：`random`、`cifar10`、`mnist`
 - loss：`CrossEntropyLoss`、`MSELoss`
@@ -298,7 +298,7 @@ Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 |---|---|---|
 | Kernel 類型 | 真正 CUDA / cuBLAS | NumPy 參考實作 |
 | Graph | 固定手寫流水線 | 顯式 graph IR |
-| 驗證 | 嚴格合約檢查 | Graph 層級 shape 與 op 檢查 |
+| 驗證 | 嚴格邊界檢查 | Graph 層級 shape 與 op 檢查 |
 | Planner | 隱式 | 顯式 buffer 規劃 |
 | 支援資料集 | 僅 CIFAR-10 | CIFAR-10、MNIST、隨機假資料 |
 | AvgPool2d | ✗ | ✓ |

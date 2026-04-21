@@ -171,7 +171,7 @@ cuda_native.
 
 MiniCNN **沒有**在所有 backend 間使用單一統一的模型檔格式。
 
-這是目前刻意的設計：每個 backend 儲存最符合自己 runtime contract 的
+這是目前刻意的設計：每個 backend 儲存最符合自己 runtime 邊界的
 checkpoint。代價是模型復用目前主要侷限在同 backend 內，除非之後再加轉換工具。
 
 ## 產物矩陣

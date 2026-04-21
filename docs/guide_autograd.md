@@ -259,7 +259,7 @@ configs/autograd_enhanced.yaml
 - `dataset.type=cifar10`
 - `dataset.type=mnist`
 
-## Loss 合約說明
+## Loss 介面說明
 
 `CrossEntropyLoss` 期望傳入 class index。
 

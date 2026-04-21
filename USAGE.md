@@ -231,7 +231,7 @@ If you are unsure where to go next:
 
 - [docs/cuda_native.md](docs/cuda_native.md) — 目前實驗性 backend 的完整指南
 - [docs/cuda_native_phase5_rfc.md](docs/cuda_native_phase5_rfc.md) — 後續擴充 RFC
-- [docs/backend_capabilities.md](docs/backend_capabilities.md) — 目前已驗證的 contract
+- [docs/backend_capabilities.md](docs/backend_capabilities.md) — 目前已驗證的支援邊界
 
 ## CLI 介面
 
