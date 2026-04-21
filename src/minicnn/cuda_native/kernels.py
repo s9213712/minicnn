@@ -100,12 +100,48 @@ def _kernel_linear(node: Node, ctx: dict[str, Any]) -> None:
     ctx[node.outputs[0]] = out.astype(np.float32)
 
 
+def _kernel_maxpool2d(node: Node, ctx: dict[str, Any]) -> None:
+    x: np.ndarray = ctx[node.inputs[0]]
+    attrs = node.attrs
+    ks = attrs.get('kernel_size', 2)
+    kh = kw = ks if isinstance(ks, int) else ks[0]
+    st = attrs.get('stride', ks)
+    sh = sw = st if isinstance(st, int) else st[0]
+    n, c, h, w = x.shape
+    oh = (h - kh) // sh + 1
+    ow = (w - kw) // sw + 1
+    out = np.empty((n, c, oh, ow), dtype=np.float32)
+    for i in range(oh):
+        for j in range(ow):
+            out[:, :, i, j] = x[:, :, i * sh:i * sh + kh, j * sw:j * sw + kw].max(axis=(2, 3))
+    ctx[node.outputs[0]] = out
+
+
+def _kernel_avgpool2d(node: Node, ctx: dict[str, Any]) -> None:
+    x: np.ndarray = ctx[node.inputs[0]]
+    attrs = node.attrs
+    ks = attrs.get('kernel_size', 2)
+    kh = kw = ks if isinstance(ks, int) else ks[0]
+    st = attrs.get('stride', ks)
+    sh = sw = st if isinstance(st, int) else st[0]
+    n, c, h, w = x.shape
+    oh = (h - kh) // sh + 1
+    ow = (w - kw) // sw + 1
+    out = np.empty((n, c, oh, ow), dtype=np.float32)
+    for i in range(oh):
+        for j in range(ow):
+            out[:, :, i, j] = x[:, :, i * sh:i * sh + kh, j * sw:j * sw + kw].mean(axis=(2, 3))
+    ctx[node.outputs[0]] = out
+
+
 def make_default_registry() -> KernelRegistry:
-    """Build a KernelRegistry with all Phase-1 reference kernels."""
+    """Build a KernelRegistry with all Phase-1/2 reference kernels."""
     reg = KernelRegistry()
     reg.register('Conv2d', _kernel_conv2d)
     reg.register('ReLU', _kernel_relu)
     reg.register('LeakyReLU', _kernel_leaky_relu)
     reg.register('Flatten', _kernel_flatten)
     reg.register('Linear', _kernel_linear)
+    reg.register('MaxPool2d', _kernel_maxpool2d)
+    reg.register('AvgPool2d', _kernel_avgpool2d)
     return reg

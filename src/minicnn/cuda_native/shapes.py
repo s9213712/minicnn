@@ -71,6 +71,34 @@ def infer_linear(
     return (input_shape[0], out_features)
 
 
+def infer_pool2d(
+    input_shape: tuple[int, ...],
+    kernel_size: int | tuple[int, int] = 2,
+    stride: int | tuple[int, int] | None = None,
+    padding: int | tuple[int, int] = 0,
+) -> tuple[int, ...]:
+    """Return (N, C, H_out, W_out) for MaxPool2d or AvgPool2d."""
+    if len(input_shape) != 4:
+        raise ValueError(
+            f'Pool2d expects 4-D input (N,C,H,W), got shape {input_shape}'
+        )
+    n, c, h, w = input_shape
+    kh, kw = _pair(kernel_size)
+    if stride is None:
+        sh, sw = kh, kw
+    else:
+        sh, sw = _pair(stride)
+    ph, pw = _pair(padding)
+    oh = (h + 2 * ph - kh) // sh + 1
+    ow = (w + 2 * pw - kw) // sw + 1
+    if oh <= 0 or ow <= 0:
+        raise ValueError(
+            f'Invalid Pool2d output shape: ({oh}, {ow}). '
+            f'input=({h},{w}), kernel=({kh},{kw}), stride=({sh},{sw}), padding=({ph},{pw})'
+        )
+    return (n, c, oh, ow)
+
+
 def infer_shape(
     op_type: str,
     input_shape: tuple[int, ...],
@@ -103,6 +131,13 @@ def infer_shape(
             if out_f is None:
                 raise ValueError(f'Linear{loc}: missing required attr "out_features"')
             return infer_linear(input_shape, int(out_f))
+        if op_type in ('MaxPool2d', 'AvgPool2d'):
+            return infer_pool2d(
+                input_shape,
+                kernel_size=attrs.get('kernel_size', 2),
+                stride=attrs.get('stride', None),
+                padding=attrs.get('padding', 0),
+            )
         raise ValueError(f'No shape inference rule for op: {op_type}{loc}')
     except ValueError:
         raise

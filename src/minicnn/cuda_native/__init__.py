@@ -13,6 +13,7 @@ from minicnn.cuda_native.api import (
 )
 from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.executor import ForwardExecutor
+from minicnn.cuda_native.planner import ExecutionPlan, BufferPlan, make_naive_plan
 
 __all__ = [
     'CUDA_NATIVE_CAPABILITIES',
@@ -23,4 +24,7 @@ __all__ = [
     'NativeGraph',
     'build_graph',
     'ForwardExecutor',
+    'ExecutionPlan',
+    'BufferPlan',
+    'make_naive_plan',
 ]

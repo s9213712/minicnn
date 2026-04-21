@@ -21,11 +21,10 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'LeakyReLU',
         'Flatten',
         'Linear',
-    ],
-    'planned_ops': [
         'MaxPool2d',
         'AvgPool2d',
     ],
+    'planned_ops': [],
     'unsupported_ops': [
         'BatchNorm2d',
         'GroupNorm',
