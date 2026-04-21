@@ -1,5 +1,5 @@
 from minicnn.nn.modules import Module, Sequential
-from minicnn.nn.layers import BatchNorm2d, Conv2d, Dropout, Flatten, Linear, MaxPool2d, ReLU, ResidualBlock, Sigmoid, Tanh
+from minicnn.nn.layers import AvgPool2d, BatchNorm2d, Conv2d, Dropout, Flatten, LeakyReLU, Linear, MaxPool2d, ReLU, ResidualBlock, Sigmoid, SiLU, Tanh
 from minicnn.nn.tensor import (
     Parameter,
     Tensor,
@@ -14,10 +14,12 @@ from minicnn.nn.tensor import (
 )
 
 __all__ = [
+    'AvgPool2d',
     'BatchNorm2d',
     'Conv2d',
     'Dropout',
     'Flatten',
+    'LeakyReLU',
     'Linear',
     'MaxPool2d',
     'Module',
@@ -26,6 +28,7 @@ __all__ = [
     'ResidualBlock',
     'Sequential',
     'Sigmoid',
+    'SiLU',
     'Tanh',
     'Tensor',
     'bce_with_logits_loss',

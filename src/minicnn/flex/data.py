@@ -129,7 +129,7 @@ def _mnist_dataset(cfg: dict, train_cfg: dict):
     return normalize_mnist(x_train), y_train, normalize_mnist(x_val), y_val
 
 
-def create_dataloaders(dataset_cfg: dict, train_cfg: dict):
+def create_dataloaders(dataset_cfg: dict, train_cfg: dict, augmentation_cfg: dict | None = None):
     if torch is None:
         raise RuntimeError('PyTorch is required for train-flex')
     dtype = dataset_cfg.get('type', 'cifar10')
@@ -144,9 +144,15 @@ def create_dataloaders(dataset_cfg: dict, train_cfg: dict):
     batch_size = int(train_cfg.get('batch_size', 64))
     num_workers = int(train_cfg.get('num_workers', 0))
     seed = int(train_cfg.get('seed', dataset_cfg.get('seed', 42)))
-    random_crop_padding = int(dataset_cfg.get('random_crop_padding', train_cfg.get('random_crop_padding', 0)))
+    aug = augmentation_cfg or {}
+    random_crop_padding = int(
+        aug.get('random_crop_padding',
+        dataset_cfg.get('random_crop_padding', train_cfg.get('random_crop_padding', 0)))
+    )
+    if parse_bool(aug.get('random_crop', False), label='augmentation.random_crop'):
+        random_crop_padding = random_crop_padding or 4
     horizontal_flip = parse_bool(
-        dataset_cfg.get('horizontal_flip', train_cfg.get('horizontal_flip', False)),
+        aug.get('horizontal_flip', dataset_cfg.get('horizontal_flip', train_cfg.get('horizontal_flip', False))),
         label='horizontal_flip',
     )
     train_loader = _make_loader(

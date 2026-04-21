@@ -4,7 +4,7 @@ import numpy as np
 
 from minicnn.nn.modules import Module, Sequential
 from minicnn.nn.tensor import Parameter, Tensor
-from minicnn.ops.nn_ops import batchnorm2d, conv2d, dropout, flatten, linear, maxpool2d, relu, sigmoid, tanh
+from minicnn.ops.nn_ops import avgpool2d, batchnorm2d, conv2d, dropout, flatten, leaky_relu, linear, maxpool2d, relu, sigmoid, silu, tanh
 
 
 class Linear(Module):
@@ -32,6 +32,20 @@ class Sigmoid(Module):
 class Tanh(Module):
     def forward(self, x: Tensor) -> Tensor:
         return tanh(x)
+
+
+class LeakyReLU(Module):
+    def __init__(self, negative_slope: float = 0.01):
+        super().__init__()
+        self.negative_slope = negative_slope
+
+    def forward(self, x: Tensor) -> Tensor:
+        return leaky_relu(x, self.negative_slope)
+
+
+class SiLU(Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return silu(x)
 
 
 class Dropout(Module):
@@ -82,6 +96,16 @@ class MaxPool2d(Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return maxpool2d(x, self.kernel_size, self.stride)
+
+
+class AvgPool2d(Module):
+    def __init__(self, kernel_size: int = 2, stride: int | None = None):
+        super().__init__()
+        self.kernel_size = kernel_size
+        self.stride = stride
+
+    def forward(self, x: Tensor) -> Tensor:
+        return avgpool2d(x, self.kernel_size, self.stride)
 
 
 class BatchNorm2d(Module):

@@ -12,8 +12,11 @@ from minicnn.config.parsing import parse_bool
 from minicnn.flex.runtime import create_run_dir, dump_summary
 from minicnn.models import build_model_from_config
 from minicnn.nn import Tensor, bce_with_logits_loss, cross_entropy, mse_loss, no_grad
-from minicnn.optim import Adam, SGD
+from minicnn.optim import Adam, AdamW, RMSprop, SGD
 from minicnn.paths import BEST_MODELS_ROOT, DATA_ROOT
+from minicnn.schedulers.cosine import CosineAnnealingLR
+from minicnn.schedulers.plateau import ReduceLROnPlateau
+from minicnn.schedulers.step import StepLR
 
 
 def _random_dataset(dataset_cfg: dict[str, Any]):
@@ -94,13 +97,45 @@ def _make_optimizer(params, cfg: dict[str, Any]):
     lr = float(cfg.get('lr', 0.01))
     weight_decay = float(cfg.get('weight_decay', 0.0))
     grad_clip = float(cfg.get('grad_clip', 0.0))
-    if optim_type == 'Adam':
+    if optim_type in ('Adam', 'adam'):
         return Adam(params, lr=lr, weight_decay=weight_decay, grad_clip=grad_clip)
-    if optim_type == 'SGD':
+    if optim_type in ('AdamW', 'adamw'):
+        return AdamW(params, lr=lr, weight_decay=weight_decay if weight_decay else 0.01, grad_clip=grad_clip)
+    if optim_type in ('RMSprop', 'rmsprop'):
+        return RMSprop(params, lr=lr, weight_decay=weight_decay, grad_clip=grad_clip, momentum=float(cfg.get('momentum', 0.0)))
+    if optim_type in ('SGD', 'sgd'):
         return SGD(params, lr=lr, momentum=float(cfg.get('momentum', 0.0)), weight_decay=weight_decay, grad_clip=grad_clip)
     raise ValueError(
-        f'train-autograd: unsupported optimizer.type={optim_type!r}; expected SGD or Adam'
+        f'train-autograd: unsupported optimizer.type={optim_type!r}; expected SGD, Adam, AdamW, or RMSprop'
     )
+
+
+def _make_scheduler(optimizer, cfg: dict[str, Any]):
+    sched_enabled = parse_bool(cfg.get('enabled', False), label='scheduler.enabled')
+    if not sched_enabled:
+        return None
+    sched_type = str(cfg.get('type', 'step'))
+    if sched_type == 'none':
+        return None
+    if sched_type == 'step':
+        step_size = int(cfg.get('step_size', 10))
+        gamma = float(cfg.get('gamma', 0.5))
+        min_lr = float(cfg.get('min_lr', 1e-6))
+        if step_size < 1:
+            raise ValueError(f'scheduler.step_size must be >= 1, got {step_size}')
+        if gamma <= 0:
+            raise ValueError(f'scheduler.gamma must be > 0, got {gamma}')
+        return StepLR(optimizer, step_size=step_size, gamma=gamma, min_lr=min_lr)
+    if sched_type == 'cosine':
+        T_max = int(cfg.get('T_max', cfg.get('t_max', 10)))
+        lr_min = float(cfg.get('lr_min', cfg.get('min_lr', 0.0)))
+        return CosineAnnealingLR(optimizer, T_max=T_max, lr_min=lr_min)
+    if sched_type == 'plateau':
+        factor = float(cfg.get('factor', 0.5))
+        patience = int(cfg.get('patience', 3))
+        min_lr = float(cfg.get('min_lr', 1e-5))
+        return ReduceLROnPlateau(optimizer, factor=factor, patience=patience, min_lr=min_lr)
+    raise ValueError(f'train-autograd: unsupported scheduler.type={sched_type!r}; expected none, step, cosine, or plateau')
 
 
 def _dense_targets(labels: np.ndarray, logits_shape: tuple[int, ...], loss_type: str) -> np.ndarray:
@@ -127,7 +162,8 @@ def _dense_targets(labels: np.ndarray, logits_shape: tuple[int, ...], loss_type:
 def _make_loss(loss_cfg: dict[str, Any]):
     loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
     if loss_type == 'CrossEntropyLoss':
-        return lambda logits, labels: cross_entropy(logits, labels)
+        smoothing = float(loss_cfg.get('label_smoothing', 0.0))
+        return lambda logits, labels: cross_entropy(logits, labels, label_smoothing=smoothing)
     if loss_type == 'MSELoss':
         return lambda logits, labels: mse_loss(logits, _dense_targets(labels, logits.data.shape, loss_type))
     if loss_type == 'BCEWithLogitsLoss':
@@ -161,6 +197,12 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
     model_cfg = cfg.get('model', {})
     sched_cfg = cfg.get('scheduler', {})
 
+    if parse_bool(train_cfg.get('amp', False), label='train.amp'):
+        raise ValueError(
+            'train-autograd (NumPy backend) does not support amp=true; '
+            'use engine.backend=torch for mixed-precision training'
+        )
+
     x_train, y_train, x_val, y_val, x_test, y_test = _load_dataset(dataset_cfg)
     train_rng = np.random.default_rng(int(train_cfg.get('seed', 0)))
     init_seed = int(train_cfg.get('init_seed', dataset_cfg.get('seed', 42)))
@@ -180,18 +222,7 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
     if epochs < 1:
         raise ValueError(f'train.epochs must be >= 1, got {epochs}')
 
-    # Simple step-decay scheduler: multiply lr by gamma every step_size epochs.
-    sched_enabled = parse_bool(sched_cfg.get('enabled', False), label='scheduler.enabled')
-    sched_step_size = int(sched_cfg.get('step_size', 10))
-    sched_gamma = float(sched_cfg.get('gamma', 0.5))
-    sched_min_lr = float(sched_cfg.get('min_lr', 1e-6))
-    if sched_enabled:
-        if sched_step_size < 1:
-            raise ValueError(f'scheduler.step_size must be >= 1 when scheduler.enabled, got {sched_step_size}')
-        if sched_gamma <= 0:
-            raise ValueError(f'scheduler.gamma must be > 0, got {sched_gamma}')
-        if sched_min_lr < 0:
-            raise ValueError(f'scheduler.min_lr must be >= 0, got {sched_min_lr}')
+    scheduler = _make_scheduler(optimizer, sched_cfg)
 
     run_dir = create_run_dir(cfg)
     metrics_path = run_dir / 'metrics.jsonl'
@@ -225,9 +256,11 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
             last_train_acc = _accuracy(model, x_train, y_train, batch_size, loss_type)
             val_acc = _accuracy(model, x_val, y_val, batch_size, loss_type)
 
-            if sched_enabled and epoch % sched_step_size == 0:
-                new_lr = max(optimizer.lr * sched_gamma, sched_min_lr)
-                optimizer.lr = new_lr
+            if scheduler is not None:
+                if isinstance(scheduler, ReduceLROnPlateau):
+                    scheduler.step(metric=row['train_loss'])
+                else:
+                    scheduler.step()
 
             row = {
                 'epoch': epoch,

@@ -1,0 +1,52 @@
+project:
+  name: minicnn-autograd
+  run_name: autograd-enhanced
+  artifacts_root: artifacts
+
+dataset:
+  type: cifar10
+  data_root: data/cifar-10-batches-py
+  input_shape: [3, 32, 32]
+  num_classes: 10
+  num_samples: 512
+  val_samples: 128
+  seed: 42
+
+model:
+  input_shape: [3, 32, 32]
+  layers:
+    - type: Conv2d
+      out_channels: 16
+      kernel_size: 3
+    - type: SiLU
+    - type: MaxPool2d
+      kernel_size: 2
+    - type: Flatten
+    - type: Linear
+      out_features: 64
+    - type: SiLU
+    - type: Dropout
+      p: 0.3
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 10
+  batch_size: 32
+  init_seed: 42
+  seed: 42
+
+loss:
+  type: CrossEntropyLoss
+  label_smoothing: 0.05
+
+optimizer:
+  type: AdamW
+  lr: 0.001
+  weight_decay: 0.01
+
+scheduler:
+  enabled: true
+  type: cosine
+  T_max: 10
+  min_lr: 0.00001

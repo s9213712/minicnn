@@ -44,6 +44,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         'early_stop_patience': 0,
         'min_delta': 0.0,
     },
+    'augmentation': {
+        'normalize': True,
+        'random_crop': False,
+        'random_crop_padding': 4,
+        'horizontal_flip': False,
+    },
     'loss': {'type': 'CrossEntropyLoss'},
     'optimizer': {'type': 'SGD', 'lr': 0.01, 'momentum': 0.9, 'exclude_bias_norm_weight_decay': True},
     'scheduler': {'enabled': False, 'type': 'StepLR', 'step_size': 10, 'gamma': 0.5},

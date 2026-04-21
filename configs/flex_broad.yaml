@@ -1,0 +1,69 @@
+project:
+  name: minicnn-flex
+  run_name: flex-broad
+  artifacts_root: artifacts
+
+dataset:
+  type: cifar10
+  data_root: data/cifar-10-batches-py
+  input_shape: [3, 32, 32]
+  num_classes: 10
+  num_samples: 2048
+  val_samples: 512
+  seed: 42
+
+augmentation:
+  normalize: true
+  random_crop: true
+  random_crop_padding: 4
+  horizontal_flip: true
+
+model:
+  layers:
+    - type: conv_bn_silu
+      out_channels: 32
+      kernel_size: 3
+      padding: 1
+    - type: conv_bn_silu
+      out_channels: 64
+      kernel_size: 3
+      padding: 1
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    - type: Dropout
+      p: 0.25
+    - type: conv_bn_silu
+      out_channels: 128
+      kernel_size: 3
+      padding: 1
+    - type: AdaptiveAvgPool2d
+      output_size: [1, 1]
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 20
+  batch_size: 64
+  device: auto
+  amp: false
+  seed: 42
+  init_seed: 42
+  early_stop_patience: 5
+  min_delta: 0.001
+
+loss:
+  type: CrossEntropyLoss
+  label_smoothing: 0.1
+
+optimizer:
+  type: AdamW
+  lr: 0.001
+  weight_decay: 0.01
+
+scheduler:
+  enabled: true
+  type: CosineAnnealingLR
+  T_max: 20
+  eta_min: 0.00001

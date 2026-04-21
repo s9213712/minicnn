@@ -15,6 +15,42 @@ except ImportError:  # pragma: no cover
 
 
 CUDA_LEGACY_OPTIMIZER_KEYS = {'lr_conv1', 'lr_conv', 'lr_fc', 'grad_clip_global'}
+
+# Block presets expand a single layer config into multiple layers.
+_BLOCK_PRESETS: dict[str, list[dict[str, Any]]] = {
+    'conv_relu': [
+        {'type': 'Conv2d'},
+        {'type': 'ReLU'},
+    ],
+    'conv_bn_relu': [
+        {'type': 'Conv2d'},
+        {'type': 'BatchNorm2d'},
+        {'type': 'ReLU'},
+    ],
+    'conv_bn_silu': [
+        {'type': 'Conv2d'},
+        {'type': 'BatchNorm2d'},
+        {'type': 'SiLU'},
+    ],
+}
+
+
+def _expand_presets(layers_cfg: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Replace any preset layer entry with its constituent layer configs."""
+    expanded: list[dict[str, Any]] = []
+    for raw in layers_cfg:
+        layer_type = raw.get('type', '')
+        if layer_type in _BLOCK_PRESETS:
+            conv_keys = {'out_channels', 'kernel_size', 'stride', 'padding', 'dilation', 'bias', 'groups'}
+            conv_cfg = {k: v for k, v in raw.items() if k in conv_keys or k == 'type'}
+            for template in _BLOCK_PRESETS[layer_type]:
+                entry = deepcopy(template)
+                if entry['type'] == 'Conv2d':
+                    entry.update({k: v for k, v in raw.items() if k in conv_keys})
+                expanded.append(entry)
+        else:
+            expanded.append(raw)
+    return expanded
 _PASSTHROUGH_LAYERS = {
     'BatchNorm2d',
     'Dropout',
@@ -155,7 +191,7 @@ def build_model(model_cfg: dict[str, Any], input_shape: list[int] | tuple[int, .
     if 'factory' in model_cfg:
         factory = import_from_string(model_cfg['factory'])
         return factory(model_cfg)
-    for layer_cfg in model_cfg.get('layers', []):
+    for layer_cfg in _expand_presets(model_cfg.get('layers', [])):
         if not isinstance(layer_cfg, dict) or 'type' not in layer_cfg:
             raise TypeError(f'Each model layer entry must be a mapping with a type, got: {layer_cfg!r}')
         modules.append(_materialize_layer(layer_cfg, tracer))

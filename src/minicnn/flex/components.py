@@ -75,6 +75,7 @@ if nn is not None:
     register('activations', 'LeakyReLU')(nn.LeakyReLU)
     register('activations', 'GELU')(nn.GELU)
     register('activations', 'SiLU')(nn.SiLU)
+    register('activations', 'Sigmoid')(nn.Sigmoid)
     register('activations', 'Tanh')(nn.Tanh)
 
     # Losses
