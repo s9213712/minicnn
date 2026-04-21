@@ -88,19 +88,30 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 - 記憶體估算與 pool（`memory.py` — `memory_footprint()`、`BufferPool`）
 - 觀測工具（`debug.py` — `dump_graph()`、`dump_plan()`、`TracingForwardExecutor`）
 
-支援 op：`BatchNorm2d`（僅 forward prototype，尚無 backward）、`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`。
+支援 op：`BatchNorm2d`（forward prototype，尚無 backward）、`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`。
 
-非正式 backend，僅支援 sequential graph，不取代 `cuda_legacy`。
+目前通過驗證的 contract：
+
+- dataset：`random`、`cifar10`、`mnist`
+- loss：`CrossEntropyLoss`、`MSELoss`
+- optimizer：僅支援 plain `SGD`
+- scheduler：`train-native` 目前不支援
+- `train.amp=false`、`train.grad_accum_steps=1`
+
+雖然已經有 backward 與 training prototype，但這條 backend 仍屬實驗性、只支援 sequential graph，也不取代 `cuda_legacy`。
 
 ```bash
 # 查看 cuda_native 支援能力
 minicnn cuda-native-capabilities
 
 # 驗證 config 是否相容
-minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
+minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml \
+  optimizer.momentum=0 scheduler.enabled=false
 
 # 執行（研究用）
-minicnn train-native --config configs/dual_backend_cnn.yaml train.epochs=1 dataset.num_samples=128
+minicnn train-native --config configs/dual_backend_cnn.yaml \
+  dataset.type=random dataset.num_samples=128 dataset.val_samples=32 \
+  optimizer.momentum=0 scheduler.enabled=false
 ```
 
 完整說明請見 [docs/cuda_native.md](docs/cuda_native.md)。

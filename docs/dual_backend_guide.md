@@ -66,6 +66,9 @@ Accepts:
 
 - dataset type: `cifar10`, `mnist`, or `random`
 - any sequential graph with supported ops: `BatchNorm2d` (forward prototype only), `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`
+- loss type: `CrossEntropyLoss` or `MSELoss`
+- optimizer: plain `SGD` only
+- requires: `scheduler.enabled=false`, `train.amp=false`, `train.grad_accum_steps=1`
 - rejects at validation: `GroupNorm`, `LayerNorm`, `ResidualBlock`
 
 ## Variant Selection (cuda_legacy)

@@ -31,9 +31,18 @@ def test_capability_experimental_is_true():
     assert get_cuda_native_capabilities()['experimental'] is True
 
 
-def test_capability_training_is_false():
+def test_capability_training_is_prototype():
     from minicnn.cuda_native.capabilities import get_cuda_native_capabilities
-    assert get_cuda_native_capabilities()['training'] is False
+    caps = get_cuda_native_capabilities()
+    assert caps['training'] is True
+    assert caps['training_stable'] is False
+
+
+def test_capability_backward_is_prototype():
+    from minicnn.cuda_native.capabilities import get_cuda_native_capabilities
+    caps = get_cuda_native_capabilities()
+    assert caps['backward'] is True
+    assert caps['backward_stable'] is False
 
 
 def test_capability_supported_ops_not_empty():
@@ -101,7 +110,7 @@ def test_api_validate_config_accepts_supported():
         {'type': 'ReLU'},
         {'type': 'Flatten'},
         {'type': 'Linear', 'out_features': 10},
-    ]}}
+    ]}, 'optimizer': {'type': 'SGD', 'momentum': 0.0}, 'scheduler': {'enabled': False}}
     assert validate_cuda_native_config(cfg) == []
 
 
@@ -110,9 +119,29 @@ def test_api_validate_config_rejects_groupnorm():
     cfg = {'model': {'layers': [
         {'type': 'Conv2d', 'out_channels': 16},
         {'type': 'GroupNorm'},
-    ]}}
+    ]}, 'optimizer': {'type': 'SGD', 'momentum': 0.0}, 'scheduler': {'enabled': False}}
     errors = validate_cuda_native_config(cfg)
     assert any('GroupNorm' in e for e in errors)
+
+
+def test_validate_layer_list_collects_missing_type_and_later_attr_error():
+    from minicnn.cuda_native.validators import validate_layer_list
+    errors = validate_layer_list([
+        {'out_channels': 16},
+        {'type': 'Linear'},
+    ])
+    assert any('missing "type"' in e for e in errors)
+    assert any('missing required attr "out_features"' in e for e in errors)
+
+
+def test_validate_layer_list_collects_unsupported_and_later_conv_attrs():
+    from minicnn.cuda_native.validators import validate_layer_list
+    errors = validate_layer_list([
+        {'type': 'GroupNorm'},
+        {'type': 'Conv2d', 'kernel_size': 'bad'},
+    ])
+    assert any('GroupNorm' in e for e in errors)
+    assert any('kernel_size' in e for e in errors)
 
 
 def test_api_build_graph_returns_graph():

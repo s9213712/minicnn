@@ -90,19 +90,30 @@ A graph-based backend prototype with:
 - memory estimation and reuse (`memory.py` — `memory_footprint()`, `BufferPool`)
 - observability tooling (`debug.py` — `dump_graph()`, `dump_plan()`, `TracingForwardExecutor`)
 
-Supported ops: `BatchNorm2d` (forward prototype only; no backward), `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
+Supported ops: `BatchNorm2d` (forward prototype; no backward), `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
 
-Not production-ready. Sequential graphs only. Not a replacement for `cuda_legacy`.
+Current validated contract:
+
+- datasets: `random`, `cifar10`, `mnist`
+- losses: `CrossEntropyLoss`, `MSELoss`
+- optimizer: plain `SGD` only
+- scheduler: unsupported for `train-native` today
+- `train.amp=false`, `train.grad_accum_steps=1`
+
+Backward and training prototypes exist, but the backend is still experimental, sequential-only, and not a replacement for `cuda_legacy`.
 
 ```bash
 # Check what cuda_native supports
 minicnn cuda-native-capabilities
 
 # Validate your config
-minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
+minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml \
+  optimizer.momentum=0 scheduler.enabled=false
 
 # Run (research only)
-minicnn train-native --config configs/dual_backend_cnn.yaml train.epochs=1 dataset.num_samples=128
+minicnn train-native --config configs/dual_backend_cnn.yaml \
+  dataset.type=random dataset.num_samples=128 dataset.val_samples=32 \
+  optimizer.momentum=0 scheduler.enabled=false
 ```
 
 See [docs/cuda_native.md](docs/cuda_native.md) for the full guide.

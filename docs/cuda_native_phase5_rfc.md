@@ -8,7 +8,7 @@ None of these are implemented in the current MVP. Each RFC defines:
 - what risks it introduces
 - what the recommended implementation sequence is
 
-The goal is to establish clear design constraints **before** coding starts, so that future implementation work does not break the existing forward-only MVP.
+The goal is to establish clear design constraints **before** coding starts, so that future implementation work does not break the existing experimental MVP.
 
 ---
 
@@ -16,7 +16,7 @@ The goal is to establish clear design constraints **before** coding starts, so t
 
 ### Problem
 
-Normalization layers are among the most commonly used in modern CNNs. Currently `cuda_native` rejects them at validation time. This RFC defines what it would take to support them correctly.
+Normalization layers are among the most commonly used in modern CNNs. `BatchNorm2d` now has a forward prototype, but backward is still missing and the validated training path still rejects BN-containing models. This RFC defines what full support would require.
 
 ### Why They Are Hard
 
@@ -465,7 +465,7 @@ Regardless of which RFC is implemented first, the following invariants must be p
 
 本文件描述四個高風險功能區域未來進入 `cuda_native` 的設計方向。
 
-目前 MVP 均未實作。每份 RFC 定義問題、架構變更需求、風險分析與建議實作順序。目標是在寫程式碼之前建立清楚的設計約束，避免未來實作工作破壞現有的 forward-only MVP。
+目前 RFC 內功能仍未完整實作。每份 RFC 定義問題、架構變更需求、風險分析與建議實作順序。目標是在寫程式碼之前建立清楚的設計約束，避免未來實作工作破壞現有的實驗性 MVP。
 
 ---
 
@@ -473,7 +473,7 @@ Regardless of which RFC is implemented first, the following invariants must be p
 
 ### 問題
 
-正規化層是現代 CNN 最常用的模組之一。目前 `cuda_native` 在驗證時直接拒絕它們。本 RFC 定義正確支援所需的架構條件。
+正規化層是現代 CNN 最常用的模組之一。`BatchNorm2d` 現在已經有 forward prototype，但 backward 尚未補上，驗證過的訓練路徑仍會拒絕含 BN 的模型。本 RFC 定義完整支援所需的架構條件。
 
 ### 為什麼難
 

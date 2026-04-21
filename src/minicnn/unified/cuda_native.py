@@ -35,14 +35,7 @@ from minicnn.flex.runtime import create_run_dir, dump_summary
 
 def check_config(cfg: dict[str, Any]) -> list[str]:
     """Return validation errors for *cfg* against cuda_native constraints."""
-    errors = validate_cuda_native_config(cfg)
-    layers = cfg.get('model', {}).get('layers', [])
-    if any(str(layer.get('type')) == 'BatchNorm2d' for layer in layers):
-        errors.append(
-            'cuda_native training path does not yet support BatchNorm2d backward. '
-            'BatchNorm2d is currently eval-only; remove it for train-native or use engine.backend=torch.'
-        )
-    return errors
+    return validate_cuda_native_config(cfg)
 
 
 def get_summary() -> dict[str, object]:
@@ -312,7 +305,8 @@ def run_cuda_native_training(cfg: dict[str, Any]) -> Path:
         'best_val_acc': best_val_acc,
         'input_shape': list(input_shape),
         'model_layers': [layer.get('type') for layer in model_cfg.get('layers', [])],
-        'optimizer': optim_cfg.get('type', 'SGD'),
+        'optimizer': 'SGD',
+        'scheduler': None,
         'loss': loss_cfg.get('type', 'CrossEntropyLoss'),
         'epochs': epochs,
         'capabilities': get_capability_summary(),

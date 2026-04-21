@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import pytest
+import yaml
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +86,16 @@ class TestValidateCudaNativeConfig:
         assert len(errors) > 0
 
     def test_batchnorm2d_is_allowed_by_generic_validator(self):
+        from minicnn.cuda_native.validators import validate_cuda_native_model_config
+        cfg = self._minimal_cfg([
+            {'type': 'BatchNorm2d'},
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        errors = validate_cuda_native_model_config(cfg['model'])
+        assert errors == []
+
+    def test_full_config_rejects_batchnorm2d_until_backward_exists(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
         cfg = self._minimal_cfg([
             {'type': 'BatchNorm2d'},
@@ -92,7 +103,69 @@ class TestValidateCudaNativeConfig:
             {'type': 'Linear', 'out_features': 2},
         ])
         errors = validate_cuda_native_config(cfg)
-        assert errors == []
+        assert any('BatchNorm2d backward' in e for e in errors)
+
+    def test_dataset_type_foo_rejected(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        cfg['dataset']['type'] = 'foo'
+        errors = validate_cuda_native_config(cfg)
+        assert any('dataset.type' in e for e in errors)
+
+    def test_loss_bcewithlogits_rejected(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        cfg['loss']['type'] = 'BCEWithLogitsLoss'
+        errors = validate_cuda_native_config(cfg)
+        assert any('loss.type' in e for e in errors)
+
+    def test_optimizer_adam_rejected(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        cfg['optimizer']['type'] = 'Adam'
+        errors = validate_cuda_native_config(cfg)
+        assert any('optimizer.type' in e for e in errors)
+
+    def test_optimizer_momentum_rejected(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        cfg['optimizer']['momentum'] = 0.9
+        errors = validate_cuda_native_config(cfg)
+        assert any('optimizer.momentum=0' in e for e in errors)
+
+    def test_scheduler_enabled_rejected(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        cfg['scheduler'] = {'enabled': True, 'type': 'StepLR'}
+        errors = validate_cuda_native_config(cfg)
+        assert any('does not support schedulers' in e for e in errors)
+
+    def test_amp_and_grad_accum_rejected(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        cfg['train']['amp'] = True
+        cfg['train']['grad_accum_steps'] = 2
+        errors = validate_cuda_native_config(cfg)
+        assert any('train.amp=true' in e for e in errors)
+        assert any('train.grad_accum_steps' in e for e in errors)
 
 
 # ---------------------------------------------------------------------------
@@ -152,8 +225,42 @@ class TestTrainerBridge:
         ]
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
-            with pytest.raises(ValueError, match='BatchNorm2d.*eval-only'):
+            with pytest.raises(ValueError, match='BatchNorm2d.*rejects BN-containing models'):
                 train_unified_from_config(cfg)
+
+    def test_trainer_rejects_unsupported_optimizer_before_runtime(self):
+        import warnings
+        from minicnn.unified.trainer import train_unified_from_config
+        cfg = self._minimal_cfg()
+        cfg['optimizer']['type'] = 'Adam'
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            with pytest.raises(ValueError, match='optimizer.type'):
+                train_unified_from_config(cfg)
+
+    def test_validate_cuda_native_cli_rejects_invalid_optimizer(self, tmp_path, capsys):
+        from minicnn.cli import main
+
+        cfg = {
+            'engine': {'backend': 'cuda_native'},
+            'dataset': {'type': 'random', 'input_shape': [1, 8, 8], 'num_classes': 2, 'num_samples': 4, 'val_samples': 2},
+            'model': {'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ]},
+            'train': {'batch_size': 2, 'epochs': 1},
+            'optimizer': {'type': 'Adam', 'lr': 0.01},
+            'loss': {'type': 'CrossEntropyLoss'},
+        }
+        cfg['optimizer']['type'] = 'Adam'
+        config_path = tmp_path / 'cuda_native_invalid.yaml'
+        config_path.write_text(yaml.safe_dump(cfg), encoding='utf-8')
+
+        rc = main(['validate-cuda-native-config', '--config', str(config_path)])
+        captured = capsys.readouterr()
+
+        assert rc == 2
+        assert 'optimizer.type' in captured.out
 
 
 # ---------------------------------------------------------------------------

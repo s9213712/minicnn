@@ -61,8 +61,16 @@ A staged, modular backend structured in layers:
 | LayerNorm | ✗ rejected | — |
 | ResidualBlock | ✗ rejected | — |
 
-`BatchNorm2d` is currently a forward-only prototype. The `train-native`
+`BatchNorm2d` currently has a forward prototype only. The `train-native`
 training path still rejects BN-containing models until backward support exists.
+
+Validated `train-native` contract today:
+
+- dataset: `random`, `cifar10`, `mnist`
+- loss: `CrossEntropyLoss`, `MSELoss`
+- optimizer: plain `SGD` only
+- scheduler: unsupported
+- `train.amp=false`, `train.grad_accum_steps=1`
 
 ## How It Differs From cuda_legacy
 
@@ -93,14 +101,16 @@ minicnn cuda-native-capabilities
 Validate a config:
 
 ```bash
-minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
+minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml \
+  optimizer.momentum=0 scheduler.enabled=false
 ```
 
 Run (experimental, research only):
 
 ```bash
 minicnn train-native --config configs/dual_backend_cnn.yaml \
-  train.epochs=1 dataset.num_samples=128 dataset.val_samples=32
+  train.epochs=1 dataset.type=random dataset.num_samples=128 dataset.val_samples=32 \
+  optimizer.momentum=0 scheduler.enabled=false
 ```
 
 Or via `train-dual`:
@@ -263,8 +273,16 @@ Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 | LayerNorm | ✗ 拒絕 | — |
 | ResidualBlock | ✗ 拒絕 | — |
 
-`BatchNorm2d` 目前只做到 forward prototype。`train-native` 訓練路徑仍會拒絕含
+`BatchNorm2d` 目前只有 forward prototype。`train-native` 訓練路徑仍會拒絕含
 BN 的模型，直到 backward 支援補上為止。
+
+目前通過驗證的 `train-native` 合約：
+
+- dataset：`random`、`cifar10`、`mnist`
+- loss：`CrossEntropyLoss`、`MSELoss`
+- optimizer：僅支援 plain `SGD`
+- scheduler：目前不支援
+- `train.amp=false`、`train.grad_accum_steps=1`
 
 ## 與 cuda_legacy 的比較
 

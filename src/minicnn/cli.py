@@ -424,7 +424,11 @@ def main(argv: list[str] | None = None) -> int:
         if errors:
             print(json.dumps({'ok': False, 'errors': errors, 'backend': 'cuda_native'}, indent=2))
             return 2
-        print(json.dumps({'ok': True, 'backend': 'cuda_native', 'note': 'experimental — forward-only'}, indent=2))
+        print(json.dumps({
+            'ok': True,
+            'backend': 'cuda_native',
+            'note': 'experimental — backward/training prototypes present, strict contract validation applied',
+        }, indent=2))
         return 0
 
     if args.command == 'cuda-native-capabilities':
@@ -434,7 +438,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == 'train-native':
         import warnings
         cfg = _load_unified_config_or_exit(args.config, ['engine.backend=cuda_native', *_common_train_overrides(args), *args.overrides])
-        warnings.warn('[EXPERIMENTAL] cuda_native backend: forward-only prototype, not production-ready.', stacklevel=1)
+        warnings.warn(
+            '[EXPERIMENTAL] cuda_native backend: backward/training prototypes exist, '
+            'but the validated contract remains narrow and not production-ready.',
+            stacklevel=1,
+        )
         run_dir = train_unified_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0

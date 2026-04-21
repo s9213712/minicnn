@@ -68,8 +68,9 @@ def validate_layer_list(layers: list[dict[str, Any]]) -> list[str]:
             errors.append(f'Layer {i}: missing "type" key')
             continue
         node_name = f'layer_{i}'
-        errors.extend(validate_op_type(op, node_name=node_name))
-        if not errors or errors[-1].startswith('Unsupported'):
+        op_errors = validate_op_type(op, node_name=node_name)
+        errors.extend(op_errors)
+        if not op_errors:
             attrs = {k: v for k, v in layer.items() if k != 'type'}
             errors.extend(validate_layer_attrs(op, attrs, node_name))
     return errors

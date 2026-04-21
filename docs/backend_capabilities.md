@@ -129,12 +129,20 @@ Use `minicnn validate-dual-config` before running.
 
 Opt-in via `engine.backend=cuda_native` or `train-native`. Not the default. Not a replacement for `cuda_legacy`.
 
-Supported ops: `BatchNorm2d` (forward prototype only), `Conv2d`, `ReLU`, `LeakyReLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`.
+Supported ops: `BatchNorm2d` (forward prototype; no backward yet), `Conv2d`, `ReLU`, `LeakyReLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`.
+
+Validated train-native contract:
+
+- dataset: `random`, `cifar10`, `mnist`
+- loss: `CrossEntropyLoss`, `MSELoss`
+- optimizer: plain `SGD` only
+- scheduler: unsupported
+- `train.amp=false`, `train.grad_accum_steps=1`
 
 Unsupported (rejected at validation): `GroupNorm`, `LayerNorm`, `ResidualBlock`.
 
-Note: `BatchNorm2d` only has forward prototype support today. `train-native`
-still rejects BN-containing training configs because backward is not implemented.
+Note: backward and training prototypes exist, but `BatchNorm2d` still has no
+backward path. `train-native` therefore rejects BN-containing training configs.
 
 Developer tooling (unique to cuda_native):
 
@@ -309,12 +317,20 @@ Debugging order:
 
 透過 `engine.backend=cuda_native` 或 `train-native` 明確啟用。不是預設 backend，不取代 `cuda_legacy`。
 
+目前通過驗證的 train-native contract：
+
+- dataset：`random`、`cifar10`、`mnist`
+- loss：`CrossEntropyLoss`、`MSELoss`
+- optimizer：僅支援 plain `SGD`
+- scheduler：目前不支援
+- `train.amp=false`、`train.grad_accum_steps=1`
+
 支援 op：`Conv2d`、`ReLU`、`LeakyReLU`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`。
 
 驗證時拒絕的 op：`GroupNorm`、`LayerNorm`、`ResidualBlock`。
 
-注意：`BatchNorm2d` 目前只有 forward prototype。由於 backward 尚未實作，
-`train-native` 仍會拒絕含 BN 的訓練設定。
+注意：雖然已有 backward 與 training prototype，但 `BatchNorm2d` 目前仍沒有
+backward；因此 `train-native` 仍會拒絕含 BN 的訓練設定。
 
 開發者工具（cuda_native 獨有）：
 
