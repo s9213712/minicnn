@@ -36,7 +36,7 @@ In practice, that means the project should treat these as separate concerns.
 The frontend should keep moving toward:
 
 - more reusable `model.layers[]` declarations
-- better dataset contracts
+- better dataset interfaces
 - clearer optimizer/loss/scheduler configuration
 - stronger component registries and extension points
 - consistent CLI behavior across paths

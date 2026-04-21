@@ -49,7 +49,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     'notes': [
         'Backward and training are research prototypes, not production-ready.',
         'BatchNorm2d forward/backward exist as prototypes; training remains experimental.',
-        'validate-cuda-native-config enforces the current train-native contract.',
+        'validate-cuda-native-config enforces the current train-native support boundary.',
     ],
 }
 

@@ -39,12 +39,12 @@ SUPPORTED_ACTIVATION_LAYOUTS: frozenset[str] = frozenset({NCHW, NC})
 
 
 # ---------------------------------------------------------------------------
-# Per-op layout contract
+# Per-op layout rules
 # ---------------------------------------------------------------------------
 
 #: Maps op_type -> (expected_input_layout, produced_output_layout).
 #: None means the layout passes through unchanged.
-OP_LAYOUT_CONTRACT: dict[str, tuple[str | None, str | None]] = {
+OP_LAYOUT_RULES: dict[str, tuple[str | None, str | None]] = {
     'Conv2d':     (NCHW,  NCHW),
     'ReLU':       (None,  None),   # passthrough
     'LeakyReLU':  (None,  None),   # passthrough
@@ -60,14 +60,14 @@ OP_LAYOUT_CONTRACT: dict[str, tuple[str | None, str | None]] = {
 
 def expected_input_layout(op_type: str) -> str | None:
     """Return the expected input activation layout for *op_type*, or None if any layout is accepted."""
-    contract = OP_LAYOUT_CONTRACT.get(op_type)
-    return contract[0] if contract else None
+    rule = OP_LAYOUT_RULES.get(op_type)
+    return rule[0] if rule else None
 
 
 def expected_output_layout(op_type: str) -> str | None:
     """Return the output layout produced by *op_type*, or None if it mirrors the input."""
-    contract = OP_LAYOUT_CONTRACT.get(op_type)
-    return contract[1] if contract else None
+    rule = OP_LAYOUT_RULES.get(op_type)
+    return rule[1] if rule else None
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ def infer_layout(shape: tuple[int, ...]) -> str:
 # ---------------------------------------------------------------------------
 
 def validate_op_layout(op_type: str, input_layout: str, node_name: str) -> list[str]:
-    """Check that *input_layout* satisfies the contract for *op_type*.
+    """Check that *input_layout* satisfies the layout rule for *op_type*.
 
     Returns a list of error strings (empty = OK).
     """

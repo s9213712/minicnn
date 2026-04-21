@@ -23,7 +23,7 @@ backend boundaries behind a smooth API.
 
 MiniCNN is useful when you want to look at those boundaries directly:
 
-- how one frontend contract maps into different backend realities
+- how one frontend interface maps into different backend realities
 - where a narrow native backend needs strict validation instead of fake parity
 - how a small autograd stack behaves without relying on torch internals
 - how a future graph-based native backend can be prototyped in public
@@ -34,7 +34,7 @@ MiniCNN is not trying to replace PyTorch.
 
 It is useful when you want one of these:
 
-- a shared YAML/frontend contract that can target different backends
+- a shared YAML/frontend interface that can target different backends
 - a narrow handcrafted CUDA training path with explicit capability limits
 - a small NumPy autograd stack for learning and framework-level experiments
 - a place to prototype a future graph-based native backend without pretending it is already finished
@@ -44,7 +44,7 @@ It is useful when you want one of these:
 | Backend | Status | Best use |
 |---|---|---|
 | `torch` | stable | new models, custom components, fast iteration |
-| `cuda_legacy` | stable but intentionally narrow | handwritten CUDA training on the fixed CIFAR-10 contract |
+| `cuda_legacy` | stable but intentionally narrow | handwritten CUDA training on the fixed CIFAR-10 setup |
 | `autograd` | stable educational path | CPU-only learning, deterministic tests, framework experiments |
 | `cuda_native` | experimental research prototype | native graph IR / planner / numpy executor R&D; not production-ready |
 
@@ -69,7 +69,7 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 - handcrafted CUDA / C++ backend in `cpp/`
 - shared-config bridge from `engine.backend=cuda_legacy`
 - strict validation instead of silent fallback
-- narrow, honest contract centered on CIFAR-10 and the fixed Conv/Pool/Linear pattern
+- narrow, honest support boundary centered on CIFAR-10 and the fixed Conv/Pool/Linear pattern
 
 ### `autograd`
 
@@ -92,7 +92,7 @@ A graph-based backend prototype with:
 
 Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
 
-Current validated contract:
+Current validated support boundary:
 
 - datasets: `random`, `cifar10`, `mnist`
 - losses: `CrossEntropyLoss`, `MSELoss`
@@ -135,7 +135,7 @@ pytest
 
 `minicnn smoke` is the recommended first check after install. It verifies the
 repo layout, parses built-in configs, runs a small compiler trace, and validates
-both the `cuda_legacy` and `cuda_native` config contracts.
+both the `cuda_legacy` and `cuda_native` config validation boundaries.
 
 ## Minimum Dependency Matrix
 

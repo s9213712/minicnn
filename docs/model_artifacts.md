@@ -3,7 +3,7 @@
 MiniCNN does **not** use one universal model file format across all backends.
 
 That is intentional today: each backend saves the checkpoint format that matches
-its runtime contract. The tradeoff is that reuse is backend-local unless a
+its runtime boundary. The tradeoff is that reuse is backend-local unless a
 conversion tool is added later.
 
 ## Artifact Matrix

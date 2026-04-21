@@ -683,7 +683,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({
             'ok': True,
             'backend': 'cuda_native',
-            'note': 'experimental — backward/training prototypes present, strict contract validation applied',
+            'note': 'experimental — backward/training prototypes present, strict boundary validation applied',
         }, indent=2))
         return 0
 
@@ -701,13 +701,20 @@ def main(argv: list[str] | None = None) -> int:
         cfg = _load_unified_config_or_exit(args.config, ['engine.backend=cuda_native', *_common_train_overrides(args), *args.overrides])
         warnings.warn(
             '[EXPERIMENTAL] cuda_native backend: backward/training prototypes exist, '
-            'but the validated contract remains narrow and not production-ready.',
+            'but the validated support boundary remains narrow and not production-ready.',
             stacklevel=1,
         )
+        summary = get_cuda_native_summary()
         print(json.dumps({
             'backend': 'cuda_native',
             'status': 'experimental',
-            'validated_contract': get_cuda_native_summary().get('validated_training_contract', {}),
+            'validated_support_boundary': {
+                'datasets': summary.get('supported_datasets', []),
+                'losses': summary.get('supported_losses', []),
+                'optimizers': summary.get('supported_optimizers', []),
+                'schedulers': summary.get('supported_schedulers', []),
+                'ops': summary.get('supported_ops', []),
+            },
         }, indent=2))
         run_dir = train_unified_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')

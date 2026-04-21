@@ -52,7 +52,7 @@ Read these in order if you want the current, operational picture of the repo:
 
 - [docs/cuda_native.md](docs/cuda_native.md) — full guide to the current experimental backend
 - [docs/cuda_native_phase5_rfc.md](docs/cuda_native_phase5_rfc.md) — future extension RFCs
-- [docs/backend_capabilities.md](docs/backend_capabilities.md) — current validated contract
+- [docs/backend_capabilities.md](docs/backend_capabilities.md) — current validated support boundary
 
 ## CLI Surface
 
@@ -173,7 +173,7 @@ If you are unsure where to go next:
 - If you want the broadest stable feature set, use torch/flex.
 - If you want the handwritten CUDA path, stay inside the `cuda_legacy` validator boundary.
 - If you want framework learning without torch, use `train-autograd`.
-- If you want to push native backend generalization, treat `cuda_native` as an experimental backend with a narrow validated contract, not as a drop-in stable replacement.
+- If you want to push native backend generalization, treat `cuda_native` as an experimental backend with a narrow validated support boundary, not as a drop-in stable replacement.
 
 ---
 

@@ -12,7 +12,7 @@ from minicnn.cuda_native.layouts import (
     LayoutSpec, infer_layout,
     expected_input_layout, expected_output_layout,
     validate_op_layout, validate_graph_layouts,
-    OP_LAYOUT_CONTRACT,
+    OP_LAYOUT_RULES,
 )
 from minicnn.cuda_native.memory import (
     BufferAllocator, BufferPool, memory_footprint,
@@ -47,9 +47,9 @@ class TestLayoutConstants:
         assert NC in SUPPORTED_ACTIVATION_LAYOUTS
         assert NHWC not in SUPPORTED_ACTIVATION_LAYOUTS
 
-    def test_op_layout_contract_covers_supported_ops(self):
+    def test_op_layout_rules_cover_supported_ops(self):
         for op in ('Conv2d', 'ReLU', 'LeakyReLU', 'MaxPool2d', 'AvgPool2d', 'Flatten', 'Linear'):
-            assert op in OP_LAYOUT_CONTRACT
+            assert op in OP_LAYOUT_RULES
 
 
 class TestLayoutSpec:

@@ -149,7 +149,7 @@ def _dense_targets(labels: np.ndarray, logits_shape: tuple[int, ...], loss_type:
             bad = labels[(labels < 0) | (labels > 1)]
             if len(bad) > 0:
                 raise ValueError(
-                    f'BCEWithLogitsLoss binary classification contract: labels must be in {{0, 1}}, '
+                    f'BCEWithLogitsLoss binary classification labels must be in {{0, 1}}, '
                     f'but got values including {sorted(set(int(v) for v in bad[:5]))}. '
                     'Use CrossEntropyLoss for multi-class classification.'
                 )

@@ -23,7 +23,7 @@ path is still split between:
 
 - a stable but narrow `cuda_legacy` backend
 - an experimental `cuda_native` backend whose public CLI surface exists, but
-  whose validated contract is still narrow and prototype-level
+  whose validated support boundary is still narrow and prototype-level
 
 That means the next useful improvements are backend-focused, not marketing or
 surface-level ones.

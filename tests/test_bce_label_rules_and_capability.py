@@ -1,11 +1,11 @@
-"""P0/P1 regression tests: BCE binary label contract and cuda_legacy capability."""
+"""P0/P1 regression tests: BCE binary label rules and cuda_legacy capability."""
 from __future__ import annotations
 import numpy as np
 import pytest
 
 
 # ---------------------------------------------------------------------------
-# P0: flex BCE binary label contract
+# P0: flex BCE binary label rules
 # ---------------------------------------------------------------------------
 
 def _flex_bce_cfg(labels, out_features=1):
@@ -69,7 +69,7 @@ def test_flex_bce_multioutput_still_rejected():
 
 
 # ---------------------------------------------------------------------------
-# P0: autograd BCE binary label contract
+# P0: autograd BCE binary label rules
 # ---------------------------------------------------------------------------
 
 def test_autograd_bce_binary_accepts_legal_labels():

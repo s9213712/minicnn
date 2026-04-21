@@ -21,7 +21,7 @@ from minicnn.cuda_native.layouts import (
     NCHW, NHWC, NC, C, SCALAR,
     LayoutSpec, infer_layout,
     validate_op_layout, validate_graph_layouts,
-    OP_LAYOUT_CONTRACT,
+    OP_LAYOUT_RULES,
 )
 from minicnn.cuda_native.memory import (
     BufferAllocator, BufferPool, memory_footprint,
@@ -64,6 +64,6 @@ __all__ = [
     'NCHW', 'NHWC', 'NC', 'C', 'SCALAR',
     'LayoutSpec', 'infer_layout',
     'validate_op_layout', 'validate_graph_layouts',
-    'OP_LAYOUT_CONTRACT',
+    'OP_LAYOUT_RULES',
     'BufferAllocator', 'BufferPool', 'memory_footprint',
 ]

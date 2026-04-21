@@ -115,7 +115,7 @@ Limitations: Conv2d is much slower than torch; no AMP; no LayerNorm / GroupNorm;
 
 Real training backend, intentionally narrow.
 
-Stable contract:
+Stable support boundary:
 
 - dataset: `cifar10`, input shape `[3, 32, 32]`
 - layer pattern: `Conv2d → activation → Conv2d → activation → MaxPool2d → Conv2d → activation → Conv2d → activation → MaxPool2d → Flatten → Linear`
@@ -131,7 +131,7 @@ Opt-in via `engine.backend=cuda_native` or `train-native`. Not the default. Not 
 
 Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`.
 
-Validated train-native contract:
+Validated train-native support boundary:
 
 - dataset: `random`, `cifar10`, `mnist`
 - loss: `CrossEntropyLoss`, `MSELoss`

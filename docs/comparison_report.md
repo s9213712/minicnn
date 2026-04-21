@@ -35,7 +35,7 @@ The original comparison still pointed at one useful truth:
 MiniCNN is strongest as a small educational framework that exposes frontend and
 backend boundaries directly. Its most obvious gap is not project structure. Its
 main gap is broader native backend coverage beyond the narrow `cuda_legacy`
-contract.
+support boundary.
 
 That conclusion still holds. The current roadmap question is how to generalize
 the native path without pretending the fixed `cuda_legacy` training graph is

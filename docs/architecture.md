@@ -1,6 +1,6 @@
 # MiniCNN Architecture
 
-MiniCNN has one broad frontend surface and multiple backend-oriented execution paths. Not every backend accepts the full frontend contract.
+MiniCNN has one broad frontend surface and multiple backend-oriented execution paths. Not every backend accepts the full frontend interface.
 
 ## Execution Paths
 
@@ -64,7 +64,7 @@ A staged, modular experimental backend under `src/minicnn/cuda_native/`:
 - `backward.py` — backward pass prototype
 - `loss.py`, `training.py` — loss and SGD training loop prototype
 - `capabilities.py` — honest feature flags
-- `layouts.py` — layout constants (NCHW/NC), per-op contracts, `validate_graph_layouts()`
+- `layouts.py` — layout constants (NCHW/NC), per-op layout rules, `validate_graph_layouts()`
 - `memory.py` — `BufferAllocator`, `BufferPool`, `memory_footprint()`
 - `debug.py` — `dump_graph()`, `dump_plan()`, `TracingForwardExecutor`, `ExecutionTrace`
 

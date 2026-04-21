@@ -16,7 +16,7 @@ These files used to have historical review-oriented names such as
 purpose is visible from the filename:
 
 - `test_regressions_cli_runtime.py`: CLI, build, checkpoint, and runtime regressions
-- `test_regressions_training_contracts.py`: training-contract and validator regressions
+- `test_regressions_training_validation.py`: training-validation and validator regressions
 - `test_regressions_tensor_ops.py`: tensor-op, optimizer, and math regressions
 
 ## What Is Not Dead Weight

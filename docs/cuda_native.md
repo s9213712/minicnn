@@ -15,7 +15,7 @@ A staged, modular backend structured in layers:
 - **Backward layer** (`backward.py`) — gradient kernels prototype
 - **Training layer** (`loss.py`, `training.py`) — loss functions and SGD training loop
 - **Capability layer** (`capabilities.py`) — honest feature flags
-- **Layout layer** (`layouts.py`) — layout constants, per-op contracts, validation
+- **Layout layer** (`layouts.py`) — layout constants, per-op layout rules, validation
 - **Memory layer** (`memory.py`) — buffer allocator and pool abstraction
 - **Debug layer** (`debug.py`) — graph dump, plan dump, execution trace
 
@@ -67,7 +67,7 @@ A staged, modular backend structured in layers:
 `BatchNorm2d` now has forward/backward prototype support. It is part of the
 experimental training path, but remains prototype-level rather than stable.
 
-Validated `train-native` contract today:
+Validated `train-native` support boundary today:
 
 - dataset: `random`, `cifar10`, `mnist`
 - loss: `CrossEntropyLoss`, `MSELoss`
@@ -81,7 +81,7 @@ Validated `train-native` contract today:
 |---|---|---|
 | Kernel type | Real CUDA / cuBLAS | NumPy reference |
 | Graph | Fixed handcrafted pipeline | Explicit graph IR |
-| Validation | Strict contract check | Graph-level shape and op check |
+| Validation | Strict boundary check | Graph-level shape and op check |
 | Planner | Implicit | Explicit buffer plan |
 | Dataset | CIFAR-10 only | CIFAR-10, MNIST, random |
 | AvgPool2d | ✗ | ✓ |
@@ -177,7 +177,7 @@ Config / YAML
   └─ shapes.py         (per-op shape inference)
   └─ nodes.py          (TensorSpec, Node dataclasses)
   └─ graph.py          (NativeGraph, build_graph)
-  └─ layouts.py        (NCHW/NC layout constants, OP_LAYOUT_CONTRACT, validate_graph_layouts)
+  └─ layouts.py        (NCHW/NC layout constants, OP_LAYOUT_RULES, validate_graph_layouts)
   └─ planner.py        (BufferPlan, ExecutionPlan, make_naive_plan)
   └─ memory.py         (BufferAllocator, BufferPool, memory_footprint)
   └─ kernels.py        (KernelRegistry, numpy reference kernels)
@@ -358,7 +358,7 @@ Config / YAML
   └─ shapes.py       （各 op 的 shape inference）
   └─ nodes.py        （TensorSpec、Node dataclasses）
   └─ graph.py        （NativeGraph、build_graph）
-  └─ layouts.py      （NCHW/NC 常數、OP_LAYOUT_CONTRACT、validate_graph_layouts）
+  └─ layouts.py      （NCHW/NC 常數、OP_LAYOUT_RULES、validate_graph_layouts）
   └─ planner.py      （BufferPlan、ExecutionPlan、make_naive_plan）
   └─ memory.py       （BufferAllocator、BufferPool、memory_footprint）
   └─ kernels.py      （KernelRegistry、numpy 參考 kernel）

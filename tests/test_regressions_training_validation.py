@@ -1,4 +1,4 @@
-"""Training-contract and validator regression tests."""
+"""Training-validation and validator regression tests."""
 from __future__ import annotations
 
 import json
@@ -218,7 +218,7 @@ class TestAutogradBooleanParsing:
 
 
 # ---------------------------------------------------------------------------
-# Instruction #1 — flex loss contract: CrossEntropy still works
+# Instruction #1 — flex loss validation: CrossEntropy still works
 # ---------------------------------------------------------------------------
 
 class TestFlexLossContract:

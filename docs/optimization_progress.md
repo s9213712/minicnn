@@ -42,7 +42,7 @@ prototype-level rather than a stable training backend.
 
 Current limits include:
 
-- CIFAR-10-centered training contract
+- CIFAR-10-centered training boundary
 - fixed validated Conv/Pool/Linear pattern
 - no `BatchNorm2d`, `LayerNorm`, `GroupNorm`, or `ResidualBlock`
 - no shared scheduler bridge
