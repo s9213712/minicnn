@@ -88,7 +88,7 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 - 記憶體估算與 pool（`memory.py` — `memory_footprint()`、`BufferPool`）
 - 觀測工具（`debug.py` — `dump_graph()`、`dump_plan()`、`TracingForwardExecutor`）
 
-支援 op：`BatchNorm2d`（僅 eval mode）、`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`。
+支援 op：`BatchNorm2d`（僅 forward prototype，尚無 backward）、`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`。
 
 非正式 backend，僅支援 sequential graph，不取代 `cuda_legacy`。
 

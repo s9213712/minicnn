@@ -90,7 +90,7 @@ A graph-based backend prototype with:
 - memory estimation and reuse (`memory.py` — `memory_footprint()`, `BufferPool`)
 - observability tooling (`debug.py` — `dump_graph()`, `dump_plan()`, `TracingForwardExecutor`)
 
-Supported ops: `BatchNorm2d` (eval-only), `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
+Supported ops: `BatchNorm2d` (forward prototype only; no backward), `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
 
 Not production-ready. Sequential graphs only. Not a replacement for `cuda_legacy`.
 

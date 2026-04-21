@@ -84,6 +84,16 @@ class TestValidateCudaNativeConfig:
         errors = validate_cuda_native_config(cfg)
         assert len(errors) > 0
 
+    def test_batchnorm2d_is_allowed_by_generic_validator(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'BatchNorm2d'},
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        errors = validate_cuda_native_config(cfg)
+        assert errors == []
+
 
 # ---------------------------------------------------------------------------
 # Trainer bridge
@@ -130,6 +140,20 @@ class TestTrainerBridge:
         cfg = {'engine': {'backend': 'nonexistent'}}
         with pytest.raises(ValueError, match='nonexistent'):
             train_unified_from_config(cfg)
+
+    def test_trainer_rejects_batchnorm2d_until_backward_exists(self):
+        import warnings
+        from minicnn.unified.trainer import train_unified_from_config
+        cfg = self._minimal_cfg()
+        cfg['model']['layers'] = [
+            {'type': 'BatchNorm2d'},
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ]
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            with pytest.raises(ValueError, match='BatchNorm2d.*eval-only'):
+                train_unified_from_config(cfg)
 
 
 # ---------------------------------------------------------------------------

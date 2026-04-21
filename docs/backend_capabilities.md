@@ -44,7 +44,7 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | Linear | ✓ | ✓ | ✓ | ✓ numpy ref |
 | MaxPool2d | ✓ | ✓ | ✓ fixed 2×2 | ✓ numpy ref |
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
-| BatchNorm2d | ✓ | ✓ | ✗ | ✓ eval-only numpy |
+| BatchNorm2d | ✓ | ✓ | ✗ | ✓ forward prototype only |
 | LayerNorm | ✓ | ✗ | ✗ | ✗ rejected |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ rejected |
 | ResidualBlock | ✓ | ✓ | ✗ | ✗ rejected |
@@ -129,9 +129,12 @@ Use `minicnn validate-dual-config` before running.
 
 Opt-in via `engine.backend=cuda_native` or `train-native`. Not the default. Not a replacement for `cuda_legacy`.
 
-Supported ops: `BatchNorm2d` (eval-only), `Conv2d`, `ReLU`, `LeakyReLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`.
+Supported ops: `BatchNorm2d` (forward prototype only), `Conv2d`, `ReLU`, `LeakyReLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`.
 
 Unsupported (rejected at validation): `GroupNorm`, `LayerNorm`, `ResidualBlock`.
+
+Note: `BatchNorm2d` only has forward prototype support today. `train-native`
+still rejects BN-containing training configs because backward is not implemented.
 
 Developer tooling (unique to cuda_native):
 
@@ -222,7 +225,7 @@ Debugging order:
 | Linear | ✓ | ✓ | ✓ | ✓ numpy ref |
 | MaxPool2d | ✓ | ✓ | ✓ 固定 2×2 | ✓ numpy ref |
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
-| BatchNorm2d | ✓ | ✓ | ✗ | ✓ 僅 eval mode numpy |
+| BatchNorm2d | ✓ | ✓ | ✗ | ✓ 僅 forward prototype |
 | LayerNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
 | ResidualBlock | ✓ | ✓ | ✗ | ✗ 拒絕 |
@@ -309,6 +312,9 @@ Debugging order:
 支援 op：`Conv2d`、`ReLU`、`LeakyReLU`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`。
 
 驗證時拒絕的 op：`GroupNorm`、`LayerNorm`、`ResidualBlock`。
+
+注意：`BatchNorm2d` 目前只有 forward prototype。由於 backward 尚未實作，
+`train-native` 仍會拒絕含 BN 的訓練設定。
 
 開發者工具（cuda_native 獨有）：
 

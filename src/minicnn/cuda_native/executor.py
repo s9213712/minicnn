@@ -1,4 +1,4 @@
-"""Forward-only executor for cuda_native sequential graphs."""
+"""Forward executor for cuda_native sequential graphs."""
 from __future__ import annotations
 
 from typing import Any
@@ -29,6 +29,7 @@ class ForwardExecutor:
         graph: NativeGraph,
         feeds: dict[str, Any],
         params: dict[str, Any] | None = None,
+        mode: str = 'eval',
     ) -> dict[str, Any]:
         """Execute *graph* forward pass.
 
@@ -43,9 +44,12 @@ class ForwardExecutor:
         Returns:
             context dict containing all intermediate and final tensors.
         """
+        if mode not in {'eval', 'train'}:
+            raise ValueError(f"Unsupported cuda_native execution mode {mode!r}; expected 'eval' or 'train'")
         ctx: dict[str, Any] = dict(feeds)
         if params:
             ctx.update(params)
+        ctx['__mode__'] = mode
 
         for node in graph.topological_order():
             kernel = self.registry.get(node.op_type)
@@ -64,11 +68,12 @@ class ForwardExecutor:
         graph: NativeGraph,
         x: np.ndarray,
         params: dict[str, Any] | None = None,
+        mode: str = 'eval',
     ) -> np.ndarray:
         """Convenience wrapper: feed *x* as 'input', return final output array."""
         if graph.input_spec is None:
             raise ValueError('Graph has no input_spec; was it built with build_graph()?')
-        ctx = self.run(graph, {graph.input_spec.name: x}, params=params)
+        ctx = self.run(graph, {graph.input_spec.name: x}, params=params, mode=mode)
         out_name = graph.output_spec.name if graph.output_spec else graph.nodes[-1].outputs[0]
         return ctx[out_name]
 
@@ -77,6 +82,7 @@ class ForwardExecutor:
         graph: NativeGraph,
         feeds: dict[str, Any],
         params: dict[str, Any] | None = None,
+        mode: str = 'eval',
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Forward pass that also builds a backward cache.
 
@@ -89,9 +95,12 @@ class ForwardExecutor:
             (ctx, cache) where ctx is the full tensor context and cache has the
             backward-specific entries.
         """
+        if mode not in {'eval', 'train'}:
+            raise ValueError(f"Unsupported cuda_native execution mode {mode!r}; expected 'eval' or 'train'")
         ctx: dict[str, Any] = dict(feeds)
         if params:
             ctx.update(params)
+        ctx['__mode__'] = mode
 
         cache: dict[str, Any] = {}
 

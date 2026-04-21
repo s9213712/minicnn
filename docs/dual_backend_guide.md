@@ -65,7 +65,7 @@ Accepts:
 Accepts:
 
 - dataset type: `cifar10`, `mnist`, or `random`
-- any sequential graph with supported ops: `BatchNorm2d` (eval-only), `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`
+- any sequential graph with supported ops: `BatchNorm2d` (forward prototype only), `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`
 - rejects at validation: `GroupNorm`, `LayerNorm`, `ResidualBlock`
 
 ## Variant Selection (cuda_legacy)
@@ -172,7 +172,7 @@ minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 
 接受：
 - 資料集：`cifar10`、`mnist`、`random`
-- 任何 sequential graph，op 限於：`BatchNorm2d`（僅 eval mode）、`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`
+- 任何 sequential graph，op 限於：`BatchNorm2d`（僅 forward prototype）、`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`
 - 驗證時拒絕：`GroupNorm`、`LayerNorm`、`ResidualBlock`
 
 ## Variant 選擇（cuda_legacy）

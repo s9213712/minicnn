@@ -161,12 +161,16 @@ class TracingForwardExecutor:
         graph,
         feeds: dict[str, Any],
         params: dict[str, Any] | None = None,
+        mode: str = 'eval',
     ) -> tuple[dict[str, Any], ExecutionTrace]:
         from minicnn.cuda_native.kernels import make_default_registry
+        if mode not in {'eval', 'train'}:
+            raise ValueError(f"Unsupported cuda_native execution mode {mode!r}; expected 'eval' or 'train'")
         registry = make_default_registry()
         ctx: dict[str, Any] = dict(feeds)
         if params:
             ctx.update(params)
+        ctx['__mode__'] = mode
         trace = ExecutionTrace()
 
         for node in graph.topological_order():

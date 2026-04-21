@@ -257,7 +257,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_compile.add_argument('--config', type=str, default='configs/autograd_tiny.yaml')
     p_compile.add_argument('overrides', nargs='*')
 
-    p_train_native = sub.add_parser('train-native', help='[EXPERIMENTAL] Train with cuda_native backend (forward-only prototype)')
+    p_train_native = sub.add_parser('train-native', help='[EXPERIMENTAL] Train with cuda_native backend (research prototype)')
     p_train_native.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
     p_train_native.add_argument('overrides', nargs='*')
 

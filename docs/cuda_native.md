@@ -56,10 +56,13 @@ A staged, modular backend structured in layers:
 | AvgPool2d | ✓ | Prototype |
 | Flatten | ✓ | Prototype |
 | Linear | ✓ | Prototype |
-| BatchNorm2d | ✓ eval-only | ✗ |
+| BatchNorm2d | ✓ prototype (eval + train-state update) | ✗ |
 | GroupNorm | ✗ rejected | — |
 | LayerNorm | ✗ rejected | — |
 | ResidualBlock | ✗ rejected | — |
+
+`BatchNorm2d` is currently a forward-only prototype. The `train-native`
+training path still rejects BN-containing models until backward support exists.
 
 ## How It Differs From cuda_legacy
 
@@ -255,10 +258,13 @@ Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 | AvgPool2d | ✓ | Prototype |
 | Flatten | ✓ | Prototype |
 | Linear | ✓ | Prototype |
-| BatchNorm2d | ✓ 僅 eval mode | ✗ |
+| BatchNorm2d | ✓ prototype（eval + train 狀態更新） | ✗ |
 | GroupNorm | ✗ 拒絕 | — |
 | LayerNorm | ✗ 拒絕 | — |
 | ResidualBlock | ✗ 拒絕 | — |
+
+`BatchNorm2d` 目前只做到 forward prototype。`train-native` 訓練路徑仍會拒絕含
+BN 的模型，直到 backward 支援補上為止。
 
 ## 與 cuda_legacy 的比較
 

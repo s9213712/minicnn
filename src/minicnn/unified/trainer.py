@@ -115,7 +115,7 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
         from minicnn.unified.cuda_native import run_cuda_native_training
         import warnings
         warnings.warn(
-            'engine.backend=cuda_native is experimental and forward-only. '
+            'engine.backend=cuda_native is experimental. '
             'Training loop is a research prototype, not production-ready.',
             stacklevel=2,
         )

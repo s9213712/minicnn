@@ -90,12 +90,14 @@ def _kernel_batchnorm2d_eval(node: Node, ctx: dict[str, Any]) -> None:
         ctx.get(f'_b_{node.name}', np.zeros(channels, dtype=np.float32)),
         dtype=np.float32,
     )
+    rm_key = f'_running_mean_{node.name}'
+    rv_key = f'_running_var_{node.name}'
     running_mean = np.asarray(
-        ctx.get(f'_running_mean_{node.name}', np.zeros(channels, dtype=np.float32)),
+        ctx.get(rm_key, np.zeros(channels, dtype=np.float32)),
         dtype=np.float32,
     )
     running_var = np.asarray(
-        ctx.get(f'_running_var_{node.name}', np.ones(channels, dtype=np.float32)),
+        ctx.get(rv_key, np.ones(channels, dtype=np.float32)),
         dtype=np.float32,
     )
 
@@ -111,8 +113,35 @@ def _kernel_batchnorm2d_eval(node: Node, ctx: dict[str, Any]) -> None:
                 f'got {arr.shape}'
             )
 
-    centered = x - running_mean[None, :, None, None]
-    inv_std = 1.0 / np.sqrt(running_var[None, :, None, None] + eps)
+    mode = str(ctx.get('__mode__', 'eval'))
+    if mode not in {'eval', 'train'}:
+        raise ValueError(
+            f'BatchNorm2d node={node.name}: unsupported execution mode {mode!r}; '
+            "expected 'eval' or 'train'"
+        )
+
+    if mode == 'train':
+        momentum = float(node.attrs.get('momentum', 0.1))
+        batch_mean = x.mean(axis=(0, 2, 3)).astype(np.float32)
+        batch_var = x.var(axis=(0, 2, 3)).astype(np.float32)
+        next_mean = ((1.0 - momentum) * running_mean + momentum * batch_mean).astype(np.float32)
+        next_var = ((1.0 - momentum) * running_var + momentum * batch_var).astype(np.float32)
+        if rm_key in ctx:
+            ctx[rm_key][...] = next_mean
+        else:
+            ctx[rm_key] = next_mean
+        if rv_key in ctx:
+            ctx[rv_key][...] = next_var
+        else:
+            ctx[rv_key] = next_var
+        mean = batch_mean
+        var = batch_var
+    else:
+        mean = running_mean
+        var = running_var
+
+    centered = x - mean[None, :, None, None]
+    inv_std = 1.0 / np.sqrt(var[None, :, None, None] + eps)
     out = centered * inv_std
     out = out * gamma[None, :, None, None] + beta[None, :, None, None]
     ctx[node.outputs[0]] = out.astype(np.float32)

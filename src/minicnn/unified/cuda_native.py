@@ -35,7 +35,14 @@ from minicnn.flex.runtime import create_run_dir, dump_summary
 
 def check_config(cfg: dict[str, Any]) -> list[str]:
     """Return validation errors for *cfg* against cuda_native constraints."""
-    return validate_cuda_native_config(cfg)
+    errors = validate_cuda_native_config(cfg)
+    layers = cfg.get('model', {}).get('layers', [])
+    if any(str(layer.get('type')) == 'BatchNorm2d' for layer in layers):
+        errors.append(
+            'cuda_native training path does not yet support BatchNorm2d backward. '
+            'BatchNorm2d is currently eval-only; remove it for train-native or use engine.backend=torch.'
+        )
+    return errors
 
 
 def get_summary() -> dict[str, object]:
@@ -79,6 +86,15 @@ def _init_params(graph: NativeGraph, seed: int = 42) -> dict[str, np.ndarray]:
             w = rng.standard_normal((out_f, in_f)) * np.sqrt(2.0 / in_f)
             params[f'_w_{node.name}'] = w.astype(np.float32)
             params[f'_b_{node.name}'] = np.zeros(out_f, dtype=np.float32)
+        elif node.op_type == 'BatchNorm2d':
+            s = node.input_specs[0].shape if node.input_specs else None
+            if s is None:
+                continue
+            channels = int(s[1])
+            params[f'_w_{node.name}'] = np.ones(channels, dtype=np.float32)
+            params[f'_b_{node.name}'] = np.zeros(channels, dtype=np.float32)
+            params[f'_running_mean_{node.name}'] = np.zeros(channels, dtype=np.float32)
+            params[f'_running_var_{node.name}'] = np.ones(channels, dtype=np.float32)
 
     return params
 
