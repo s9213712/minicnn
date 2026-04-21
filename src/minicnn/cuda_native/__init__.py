@@ -17,6 +17,12 @@ from minicnn.cuda_native.planner import ExecutionPlan, BufferPlan, make_naive_pl
 from minicnn.cuda_native.backward import BackwardExecutor, make_default_backward_registry
 from minicnn.cuda_native.loss import cross_entropy_loss, mse_loss
 from minicnn.cuda_native.training import train_step, sgd_update
+from minicnn.cuda_native.debug import (
+    dump_graph, print_graph,
+    dump_plan, print_plan,
+    inspect, print_inspect,
+    ExecutionTrace, NodeTrace, TracingForwardExecutor,
+)
 
 __all__ = [
     'CUDA_NATIVE_CAPABILITIES',
@@ -36,4 +42,13 @@ __all__ = [
     'mse_loss',
     'train_step',
     'sgd_update',
+    'dump_graph',
+    'print_graph',
+    'dump_plan',
+    'print_plan',
+    'inspect',
+    'print_inspect',
+    'ExecutionTrace',
+    'NodeTrace',
+    'TracingForwardExecutor',
 ]
