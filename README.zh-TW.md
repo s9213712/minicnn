@@ -84,6 +84,9 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 - 保守記憶體規劃（`planner.py`）
 - numpy 參考 kernel 與 dispatch（`kernels.py`, `executor.py`）
 - backward 原型與 SGD 訓練迴圈
+- layout 驗證（`layouts.py` — `validate_graph_layouts()`）
+- 記憶體估算與 pool（`memory.py` — `memory_footprint()`、`BufferPool`）
+- 觀測工具（`debug.py` — `dump_graph()`、`dump_plan()`、`TracingForwardExecutor`）
 
 支援 op：`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`。
 

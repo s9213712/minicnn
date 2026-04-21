@@ -86,6 +86,9 @@ A graph-based backend prototype with:
 - conservative buffer planning (`planner.py`)
 - numpy reference kernels (`kernels.py`, `executor.py`)
 - backward prototype and SGD training loop
+- layout validation (`layouts.py` — `validate_graph_layouts()`)
+- memory estimation and reuse (`memory.py` — `memory_footprint()`, `BufferPool`)
+- observability tooling (`debug.py` — `dump_graph()`, `dump_plan()`, `TracingForwardExecutor`)
 
 Supported ops: `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
 

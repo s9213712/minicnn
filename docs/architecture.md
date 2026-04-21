@@ -64,6 +64,9 @@ A staged, modular experimental backend under `src/minicnn/cuda_native/`:
 - `backward.py` — backward pass prototype
 - `loss.py`, `training.py` — loss and SGD training loop prototype
 - `capabilities.py` — honest feature flags
+- `layouts.py` — layout constants (NCHW/NC), per-op contracts, `validate_graph_layouts()`
+- `memory.py` — `BufferAllocator`, `BufferPool`, `memory_footprint()`
+- `debug.py` — `dump_graph()`, `dump_plan()`, `TracingForwardExecutor`, `ExecutionTrace`
 
 Capability descriptor marks it as: experimental, sequential-only, numpy-only, not production-ready.
 
@@ -191,6 +194,9 @@ model config
 - `backward.py` — backward pass prototype
 - `loss.py`, `training.py` — loss 與 SGD 訓練迴圈 prototype
 - `capabilities.py` — 誠實的功能旗標
+- `layouts.py` — layout 常數（NCHW/NC）、per-op 合約、`validate_graph_layouts()`
+- `memory.py` — `BufferAllocator`、`BufferPool`、`memory_footprint()`
+- `debug.py` — `dump_graph()`、`dump_plan()`、`TracingForwardExecutor`、`ExecutionTrace`
 
 Capability descriptor 標記為：實驗性、僅支援 sequential graph、numpy-only、非正式環境可用。
 

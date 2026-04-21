@@ -4,18 +4,32 @@ Read MiniCNN capability by backend, not as one global checklist.
 
 The frontend surface is broader than the narrowest backend. That is expected.
 
+---
+
 ## What cuda_native Adds Over cuda_legacy (✗ → ✓)
 
 These features were **not** supported in `cuda_legacy` and are now supported in `cuda_native`:
 
 | Feature | cuda_legacy | cuda_native |
 |---|:---:|:---:|
+| **Datasets** | | |
 | MNIST dataset | ✗ | ✓ |
 | Random toy data | ✗ | ✓ |
+| **Layers** | | |
 | AvgPool2d | ✗ | ✓ numpy ref |
+| **Losses** | | |
 | MSELoss | Experimental | ✓ numpy |
+| **Developer tooling** | | |
+| Graph dump (`dump_graph`) | ✗ | ✓ |
+| Plan dump (`dump_plan`) | ✗ | ✓ |
+| Execution trace (`TracingForwardExecutor`) | ✗ | ✓ |
+| Layout validation (`validate_graph_layouts`) | ✗ | ✓ |
+| Memory footprint estimate (`memory_footprint`) | ✗ | ✓ |
+| Buffer pool pre-allocation (`BufferPool`) | ✗ | ✓ |
 
 Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimental and not production-ready.
+
+---
 
 ## Full Capability Matrix
 
@@ -23,13 +37,13 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 |---|:---:|:---:|:---:|:---:|
 | **Datasets** | | | | |
 | CIFAR-10 | ✓ | ✓ slow | ✓ | ✓ |
-| MNIST | ✓ | ✓ slow | ✗ | ✓ |
-| Random toy data | ✓ | ✓ | ✗ | ✓ |
+| MNIST | ✓ | ✓ slow | ✗ | **✓** |
+| Random toy data | ✓ | ✓ | ✗ | **✓** |
 | **Layers** | | | | |
 | Conv2d | ✓ | ✓ | ✓ fixed 3×3 s1 p0 | ✓ numpy ref |
 | Linear | ✓ | ✓ | ✓ | ✓ numpy ref |
 | MaxPool2d | ✓ | ✓ | ✓ fixed 2×2 | ✓ numpy ref |
-| AvgPool2d | ✓ | ✓ | ✗ | ✓ numpy ref |
+| AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | BatchNorm2d | ✓ | ✓ | ✗ | ✗ rejected |
 | LayerNorm | ✓ | ✗ | ✗ | ✗ rejected |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ rejected |
@@ -44,7 +58,7 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | GELU | ✓ | ✗ | ✗ | ✗ |
 | **Losses** | | | | |
 | CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
-| MSELoss | ✓ | ✓ | Experimental | ✓ numpy |
+| MSELoss | ✓ | ✓ | Experimental | **✓** numpy |
 | BCEWithLogitsLoss | ✓ binary | ✓ binary | ✗ | ✗ |
 | label_smoothing | ✓ | ✓ | ✗ | ✗ |
 | **Optimizers** | | | | |
@@ -71,6 +85,17 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | Backward / gradients | ✓ | ✓ | ✓ | Prototype |
 | Full training loop | ✓ | ✓ | ✓ | Prototype |
 | Production-ready | ✓ | ✓ | ✓ | ✗ experimental |
+| **Developer tooling** | | | | |
+| Graph dump | ✗ | ✗ | ✗ | **✓** `dump_graph()` |
+| Plan dump | ✗ | ✗ | ✗ | **✓** `dump_plan()` |
+| Execution trace | ✗ | ✗ | ✗ | **✓** `TracingForwardExecutor` |
+| Layout validation | ✗ | ✗ | ✗ | **✓** `validate_graph_layouts()` |
+| Memory footprint | ✗ | ✗ | ✗ | **✓** `memory_footprint()` |
+| Buffer pool | ✗ | ✗ | ✗ | **✓** `BufferPool` |
+
+**Bold** = changed from ✗ in cuda_legacy (or new capability not in any other backend).
+
+---
 
 ## Torch/Flex
 
@@ -108,12 +133,37 @@ Supported ops: `Conv2d`, `ReLU`, `LeakyReLU`, `Flatten`, `Linear`, `MaxPool2d`, 
 
 Unsupported (rejected at validation): `BatchNorm2d`, `GroupNorm`, `LayerNorm`, `ResidualBlock`.
 
+Developer tooling (unique to cuda_native):
+
+```python
+from minicnn.cuda_native.debug import dump_graph, dump_plan, TracingForwardExecutor
+from minicnn.cuda_native.layouts import validate_graph_layouts
+from minicnn.cuda_native.memory import memory_footprint, BufferPool
+
+# Inspect a graph
+print(dump_graph(graph))
+
+# Inspect a plan
+plan = make_naive_plan(graph)
+print(dump_plan(plan))
+
+# Trace execution with per-node timing
+ctx, trace = TracingForwardExecutor().run(graph, feeds, params)
+trace.print()
+
+# Check memory usage
+print(memory_footprint(graph))
+```
+
+CLI:
+
 ```bash
 minicnn cuda-native-capabilities
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
 
 See [docs/cuda_native.md](cuda_native.md) for the full guide.
+See [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md) for future extension RFCs.
 
 ## Reading Validation Errors
 
@@ -132,18 +182,32 @@ Debugging order:
 
 前端支援的功能本來就比最窄的 backend 更廣，這是預期中的設計。
 
+---
+
 ## cuda_native 比 cuda_legacy 多了什麼（✗ → ✓）
 
-以下功能在 `cuda_legacy` 不支援，在 `cuda_native` 已支援：
+以下功能在 `cuda_legacy` 不支援或受限，在 `cuda_native` 已支援：
 
 | 功能 | cuda_legacy | cuda_native |
 |---|:---:|:---:|
+| **資料集** | | |
 | MNIST 資料集 | ✗ | ✓ |
 | 隨機假資料 | ✗ | ✓ |
+| **層** | | |
 | AvgPool2d | ✗ | ✓ numpy ref |
+| **損失函數** | | |
 | MSELoss | 實驗中 | ✓ numpy |
+| **開發者工具** | | |
+| Graph dump（`dump_graph`） | ✗ | ✓ |
+| Plan dump（`dump_plan`） | ✗ | ✓ |
+| Execution trace（`TracingForwardExecutor`） | ✗ | ✓ |
+| Layout 驗證（`validate_graph_layouts`） | ✗ | ✓ |
+| 記憶體估算（`memory_footprint`） | ✗ | ✓ |
+| Buffer pool 預分配（`BufferPool`） | ✗ | ✓ |
 
 注意：`cuda_native` 使用 numpy 參考 kernel，不是真正的 CUDA，屬於實驗性 backend。
+
+---
 
 ## 完整能力對照表
 
@@ -151,13 +215,13 @@ Debugging order:
 |---|:---:|:---:|:---:|:---:|
 | **資料集** | | | | |
 | CIFAR-10 | ✓ | ✓ 較慢 | ✓ | ✓ |
-| MNIST | ✓ | ✓ 較慢 | ✗ | ✓ |
-| 隨機假資料 | ✓ | ✓ | ✗ | ✓ |
+| MNIST | ✓ | ✓ 較慢 | ✗ | **✓** |
+| 隨機假資料 | ✓ | ✓ | ✗ | **✓** |
 | **層 (Layers)** | | | | |
 | Conv2d | ✓ | ✓ | ✓ 固定 3×3 s1 p0 | ✓ numpy ref |
 | Linear | ✓ | ✓ | ✓ | ✓ numpy ref |
 | MaxPool2d | ✓ | ✓ | ✓ 固定 2×2 | ✓ numpy ref |
-| AvgPool2d | ✓ | ✓ | ✗ | ✓ numpy ref |
+| AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | BatchNorm2d | ✓ | ✓ | ✗ | ✗ 拒絕 |
 | LayerNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
@@ -172,7 +236,7 @@ Debugging order:
 | GELU | ✓ | ✗ | ✗ | ✗ |
 | **損失函數** | | | | |
 | CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
-| MSELoss | ✓ | ✓ | 實驗中 | ✓ numpy |
+| MSELoss | ✓ | ✓ | 實驗中 | **✓** numpy |
 | BCEWithLogitsLoss | ✓ binary | ✓ binary | ✗ | ✗ |
 | label_smoothing | ✓ | ✓ | ✗ | ✗ |
 | **優化器** | | | | |
@@ -199,6 +263,17 @@ Debugging order:
 | Backward / 梯度 | ✓ | ✓ | ✓ | Prototype |
 | 完整訓練迴圈 | ✓ | ✓ | ✓ | Prototype |
 | 正式環境可用 | ✓ | ✓ | ✓ | ✗ 實驗中 |
+| **開發者工具（cuda_native 獨有）** | | | | |
+| Graph dump | ✗ | ✗ | ✗ | **✓** `dump_graph()` |
+| Plan dump | ✗ | ✗ | ✗ | **✓** `dump_plan()` |
+| Execution trace | ✗ | ✗ | ✗ | **✓** `TracingForwardExecutor` |
+| Layout 驗證 | ✗ | ✗ | ✗ | **✓** `validate_graph_layouts()` |
+| 記憶體估算 | ✗ | ✗ | ✗ | **✓** `memory_footprint()` |
+| Buffer pool | ✗ | ✗ | ✗ | **✓** `BufferPool` |
+
+**粗體** = 從 cuda_legacy 的 ✗ 變為 ✓，或其他 backend 都沒有的新能力。
+
+---
 
 ## Torch/Flex
 
@@ -235,12 +310,37 @@ Debugging order:
 
 驗證時拒絕的 op：`BatchNorm2d`、`GroupNorm`、`LayerNorm`、`ResidualBlock`。
 
+開發者工具（cuda_native 獨有）：
+
+```python
+from minicnn.cuda_native.debug import dump_graph, dump_plan, TracingForwardExecutor
+from minicnn.cuda_native.layouts import validate_graph_layouts
+from minicnn.cuda_native.memory import memory_footprint, BufferPool
+
+# 查看 graph 結構
+print(dump_graph(graph))
+
+# 查看 buffer 分配計劃
+plan = make_naive_plan(graph)
+print(dump_plan(plan))
+
+# 帶 per-node 時序的 trace 執行
+ctx, trace = TracingForwardExecutor().run(graph, feeds, params)
+trace.print()
+
+# 估算記憶體用量
+print(memory_footprint(graph))
+```
+
+CLI：
+
 ```bash
 minicnn cuda-native-capabilities
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
 
 完整說明見 [docs/cuda_native.md](cuda_native.md)。
+Phase 5 擴充 RFC 見 [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)。
 
 ## 閱讀 Validation 錯誤
 
