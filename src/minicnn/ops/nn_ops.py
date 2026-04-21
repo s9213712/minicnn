@@ -12,6 +12,37 @@ def relu(x: Tensor) -> Tensor:
     return x.relu()
 
 
+def leaky_relu(x: Tensor, negative_slope: float = 0.01) -> Tensor:
+    out_data = np.where(x.data > 0, x.data, negative_slope * x.data).astype(np.float32)
+    out = Tensor(out_data, requires_grad=_requires_grad(x))
+    out._prev = {x}
+    out._op = 'leaky_relu'
+
+    def _backward() -> None:
+        if out.grad is not None:
+            mask = np.where(x.data > 0, 1.0, negative_slope).astype(np.float32)
+            x._add_grad(out.grad * mask)
+
+    out._backward = _backward
+    return out
+
+
+def silu(x: Tensor) -> Tensor:
+    s = 1.0 / (1.0 + np.exp(-x.data))
+    out_data = (x.data * s).astype(np.float32)
+    out = Tensor(out_data, requires_grad=_requires_grad(x))
+    out._prev = {x}
+    out._op = 'silu'
+
+    def _backward() -> None:
+        if out.grad is not None:
+            grad = (s + x.data * s * (1.0 - s)).astype(np.float32)
+            x._add_grad(out.grad * grad)
+
+    out._backward = _backward
+    return out
+
+
 def sigmoid(x: Tensor) -> Tensor:
     return x.sigmoid()
 
@@ -129,6 +160,34 @@ def maxpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None) -> Ten
         n_idx = np.broadcast_to(np.arange(n).reshape(n, 1, 1, 1), (n, c, out_h, out_w)).ravel()
         c_idx = np.broadcast_to(np.arange(c).reshape(1, c, 1, 1), (n, c, out_h, out_w)).ravel()
         np.add.at(dx, (n_idx, c_idx, src_r, src_c), out.grad.ravel())
+        x._add_grad(dx)
+
+    out._backward = _backward
+    return out
+
+
+def avgpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None) -> Tensor:
+    stride = kernel_size if stride is None else stride
+    n, c, h, w = x.data.shape
+    out_h = (h - kernel_size) // stride + 1
+    out_w = (w - kernel_size) // stride + 1
+    windows = sliding_window_view(x.data, (kernel_size, kernel_size), axis=(2, 3))[:, :, ::stride, ::stride]
+    out_data = windows.mean(axis=(-2, -1)).astype(np.float32)
+    out = Tensor(out_data, requires_grad=_requires_grad(x))
+    out._prev = {x}
+    out._op = 'avgpool2d'
+    area = float(kernel_size * kernel_size)
+
+    def _backward() -> None:
+        if out.grad is None:
+            return
+        dx = np.zeros_like(x.data, dtype=np.float32)
+        grad_distributed = out.grad / area
+        for i in range(out_h):
+            for j in range(out_w):
+                r0 = i * stride
+                c0 = j * stride
+                dx[:, :, r0:r0 + kernel_size, c0:c0 + kernel_size] += grad_distributed[:, :, i:i + 1, j:j + 1]
         x._add_grad(dx)
 
     out._backward = _backward

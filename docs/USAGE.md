@@ -156,3 +156,25 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_le
 ## Custom Components
 
 See [docs/custom_components.md](custom_components.md) for how to add custom Python layers to the torch/flex backend.
+
+## Backend Feature Support
+
+Full capability matrix (activations, optimizers, losses, schedulers, init, pooling, normalization, regularization, augmentation, precision, block presets) per backend: [docs/backend_capabilities.md](backend_capabilities.md).
+
+Quick rule of thumb:
+- **Flex (PyTorch)** — broadest options: AdamW/RMSprop, SiLU/Sigmoid, CosineAnnealingLR, label_smoothing, conv_bn_silu block presets, AMP.
+- **Autograd (NumPy)** — educational stack: SGD/Adam/AdamW/RMSprop, ReLU/LeakyReLU/SiLU/Tanh/Sigmoid, StepLR/CosineAnnealingLR, label_smoothing. No AMP.
+- **CUDA legacy** — narrow handwritten CUDA: fixed pattern, SGD, CrossEntropyLoss, LeakyReLU. Explicit errors for unsupported features.
+
+Ready-to-run example configs:
+
+```bash
+# Flex broad: conv_bn_silu presets, AdamW, CosineAnnealingLR, augmentation, label_smoothing
+minicnn train-flex --config configs/flex_broad.yaml
+
+# Autograd enhanced: SiLU, AdamW, cosine scheduler, label_smoothing
+minicnn train-autograd --config configs/autograd_enhanced.yaml
+
+# CUDA legacy strict: validated 4-conv pattern, SGD, CrossEntropyLoss
+minicnn train-dual --config configs/cuda_legacy_strict.yaml engine.backend=cuda_legacy
+```

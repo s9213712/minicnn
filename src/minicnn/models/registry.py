@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-from minicnn.nn import BatchNorm2d, Conv2d, Dropout, Flatten, Linear, MaxPool2d, ReLU, ResidualBlock, Sequential, Sigmoid, Tanh
+from minicnn.nn import AvgPool2d, BatchNorm2d, Conv2d, Dropout, Flatten, LeakyReLU, Linear, MaxPool2d, ReLU, ResidualBlock, Sequential, Sigmoid, SiLU, Tanh
 
 MODEL_REGISTRY = {
+    'AvgPool2d': AvgPool2d,
     'BatchNorm2d': BatchNorm2d,
     'Conv2d': Conv2d,
     'Dropout': Dropout,
     'Flatten': Flatten,
+    'LeakyReLU': LeakyReLU,
     'Linear': Linear,
     'MaxPool2d': MaxPool2d,
     'ReLU': ReLU,
     'ResidualBlock': ResidualBlock,
     'Sequential': Sequential,
     'Sigmoid': Sigmoid,
+    'SiLU': SiLU,
     'Tanh': Tanh,
 }
 

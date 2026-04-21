@@ -67,6 +67,16 @@ def _collect_conv_blocks(model_cfg: dict[str, Any]) -> tuple[list[dict[str, Any]
                 'cuda_legacy does not yet support BatchNorm2d in the training graph; '
                 'use engine.backend=torch or remove BatchNorm2d for cuda_legacy'
             )
+        if name == 'LayerNorm':
+            raise ValueError(
+                'cuda_legacy does not support LayerNorm; '
+                'use engine.backend=torch for LayerNorm support'
+            )
+        if name == 'GroupNorm':
+            raise ValueError(
+                'cuda_legacy does not support GroupNorm; '
+                'use engine.backend=torch for GroupNorm support'
+            )
         if expected_idx >= len(expected):
             raise ValueError('Too many layers for cuda_legacy backend')
         allowed = expected[expected_idx]

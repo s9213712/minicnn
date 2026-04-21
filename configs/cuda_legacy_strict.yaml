@@ -1,0 +1,89 @@
+project:
+  name: minicnn
+  run_name: cuda-legacy-strict
+  artifacts_root: artifacts
+
+engine:
+  backend: cuda_legacy
+  strict_backend_validation: true
+
+runtime:
+  cuda_variant: cublas   # cublas | handmade | default
+  cuda_so: null
+
+dataset:
+  type: cifar10
+  data_root: data/cifar-10-batches-py
+  download: false
+  num_samples: 45000
+  val_samples: 5000
+  num_classes: 10
+  input_shape: [3, 32, 32]
+  seed: 42
+
+# cuda_legacy requires exactly this 11-layer pattern:
+# Conv -> Act, Conv -> Act, MaxPool, Conv -> Act, Conv -> Act, MaxPool, Flatten, Linear
+model:
+  layers:
+    - type: Conv2d
+      out_channels: 32
+      kernel_size: 3
+      stride: 1
+      padding: 0
+    - type: LeakyReLU
+      negative_slope: 0.1
+    - type: Conv2d
+      out_channels: 32
+      kernel_size: 3
+      stride: 1
+      padding: 0
+    - type: LeakyReLU
+      negative_slope: 0.1
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    - type: Conv2d
+      out_channels: 64
+      kernel_size: 3
+      stride: 1
+      padding: 0
+    - type: LeakyReLU
+      negative_slope: 0.1
+    - type: Conv2d
+      out_channels: 64
+      kernel_size: 3
+      stride: 1
+      padding: 0
+    - type: LeakyReLU
+      negative_slope: 0.1
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+
+train:
+  batch_size: 64
+  epochs: 30
+  init_seed: 42
+  dataset_seed: 42
+  train_seed: 42
+  grad_accum_steps: 1
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: SGD
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.0001
+  grad_clip_global: 1.0
+
+scheduler:
+  enabled: true
+  type: plateau
+  factor: 0.5
+  patience: 3
+  min_lr: 0.00001

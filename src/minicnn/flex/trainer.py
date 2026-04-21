@@ -151,7 +151,8 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
     run_dir = create_run_dir(cfg)
     device = _choose_device(str(train_cfg.get('device', 'auto')))
 
-    train_loader, val_loader = create_dataloaders(dataset_cfg, train_cfg)
+    augmentation_cfg = cfg.get('augmentation', {})
+    train_loader, val_loader = create_dataloaders(dataset_cfg, train_cfg, augmentation_cfg=augmentation_cfg)
     test_loader = create_test_dataloader(dataset_cfg, train_cfg)
     input_shape = tuple(dataset_cfg.get('input_shape', [3, 32, 32]))
     init_seed = int(train_cfg.get('init_seed', dataset_cfg.get('seed', 42)))

@@ -358,17 +358,24 @@ def log_softmax(x: Tensor, axis: int = -1) -> Tensor:
     return x.log_softmax(axis=axis)
 
 
-def cross_entropy(logits: Tensor, targets: Any) -> Tensor:
+def cross_entropy(logits: Tensor, targets: Any, label_smoothing: float = 0.0) -> Tensor:
     targets = np.asarray(targets, dtype=np.int64)
     if logits.data.ndim != 2:
         raise ValueError(f'cross_entropy expects logits with shape (N, C), got {logits.data.shape}')
     if targets.shape != (logits.data.shape[0],):
         raise ValueError(f'cross_entropy targets must have shape ({logits.data.shape[0]},), got {targets.shape}')
-    n = logits.data.shape[0]
+    n, c = logits.data.shape
     shifted = logits.data - np.max(logits.data, axis=1, keepdims=True)
     exp = np.exp(shifted)
     probs = exp / exp.sum(axis=1, keepdims=True)
-    loss_val = -np.log(probs[np.arange(n), targets] + 1e-10).sum() / float(n)
+    if label_smoothing > 0.0:
+        smooth_targets = np.full((n, c), label_smoothing / c, dtype=np.float32)
+        smooth_targets[np.arange(n), targets] += 1.0 - label_smoothing
+        loss_val = -(smooth_targets * np.log(probs + 1e-10)).sum() / float(n)
+        grad_smooth = smooth_targets
+    else:
+        loss_val = -np.log(probs[np.arange(n), targets] + 1e-10).sum() / float(n)
+        grad_smooth = None
     out = Tensor(loss_val, requires_grad=_requires_grad(logits))
     out._prev = {logits}
     out._op = 'cross_entropy'
@@ -377,7 +384,10 @@ def cross_entropy(logits: Tensor, targets: Any) -> Tensor:
         if out.grad is None:
             return
         grad = probs.copy()
-        grad[np.arange(n), targets] -= 1.0
+        if grad_smooth is not None:
+            grad -= grad_smooth
+        else:
+            grad[np.arange(n), targets] -= 1.0
         grad *= np.asarray(out.grad, dtype=np.float32) / float(n)
         logits._add_grad(grad)
 

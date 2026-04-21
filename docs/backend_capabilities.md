@@ -3,38 +3,79 @@
 MiniCNN has three execution paths. Feature support should be read by backend,
 not as one global project-level checklist.
 
+Flex (PyTorch) is the broadest stack; autograd (NumPy) is educational with a
+real but smaller feature set; CUDA legacy is narrow, validated, and intentionally
+conservative.
+
 ## Summary Matrix
 
 | Capability | Torch/flex | CPU/NumPy autograd | CUDA legacy |
 |---|---:|---:|---:|
-| YAML model config | Yes | Yes | Yes, fixed CNN pattern only |
-| Custom Python components | Yes | Registry-based local components | No |
-| CIFAR-10 | Yes | Yes, slow for large runs | Yes |
-| MNIST | Yes | Yes, slow for large runs | No |
-| Random toy data | Yes | Yes | No |
-| Conv2d | Yes | Yes | Yes |
-| Linear | Yes | Yes | Yes |
-| MaxPool2d | Yes | Yes | Yes |
-| BatchNorm2d | Yes | Yes | No; see `docs/cuda_batchnorm2d_evaluation.md` |
-| LayerNorm | Via PyTorch custom config | No built-in layer | Native kernel exists and is covered by NumPy/PyTorch parity tests, but is not wired into training |
-| ResidualBlock | Yes | Same-channel block | No |
-| ReLU / LeakyReLU | Yes | ReLU built in | Yes |
-| Sigmoid / Tanh | Yes | Yes | No |
-| Dropout | Yes | Yes | No |
-| CrossEntropyLoss | Yes | Yes | Yes |
-| MSELoss | Yes | Yes | Experimental (gradient scaling matches mean over N×features) |
-| BCEWithLogitsLoss | Yes | Yes | Not supported (requires out_features=1, incompatible with 10-class CIFAR-10) |
-| SGD | Yes | Yes | Yes |
-| Momentum SGD | Yes | Yes | Yes |
-| Adam | Yes | Yes | Experimental |
-| AdamW | Yes | No | No |
-| AMP / mixed precision | Yes on CUDA | No | No |
-| Gradient accumulation | Yes | No | No |
-| Per-parameter norm clipping | Via PyTorch config or optimizer code | Yes | No |
-| Global gradient norm clipping | Via PyTorch utilities if configured | No | Yes |
-| Elementwise gradient clipping | Via custom code | No | Yes |
-| Native CUDA kernels | PyTorch-managed | No | Yes |
-| cuBLAS path | PyTorch-managed | No | Yes |
+| **Datasets** | | | |
+| CIFAR-10 | ✓ | ✓ slow | ✓ |
+| MNIST | ✓ | ✓ slow | ✗ |
+| Random toy data | ✓ | ✓ | ✗ |
+| **Layers** | | | |
+| Conv2d | ✓ | ✓ | ✓ fixed 3×3, stride 1, pad 0 |
+| Linear | ✓ | ✓ | ✓ |
+| MaxPool2d | ✓ | ✓ | ✓ fixed 2×2 |
+| AvgPool2d | ✓ | ✓ | ✗ |
+| BatchNorm2d | ✓ | ✓ | Partial (via batch_norm flag on ConvStage only) |
+| LayerNorm | ✓ | ✗ | Kernel exists, not in training graph |
+| GroupNorm | ✓ | ✗ | ✗ |
+| ResidualBlock | ✓ | ✓ same-channel | ✗ |
+| Dropout | ✓ | ✓ | ✗ |
+| **Activations** | | | |
+| ReLU | ✓ | ✓ | ✓ |
+| LeakyReLU | ✓ | ✓ | ✓ same slope |
+| SiLU | ✓ | ✓ | ✗ |
+| Tanh | ✓ | ✓ | ✗ |
+| Sigmoid | ✓ | ✓ | ✗ |
+| GELU | ✓ | ✗ | ✗ |
+| **Losses** | | | |
+| CrossEntropyLoss | ✓ | ✓ | ✓ |
+| MSELoss | ✓ | ✓ | Experimental |
+| BCEWithLogitsLoss | ✓ (binary only) | ✓ (binary only) | ✗ |
+| label_smoothing | ✓ PyTorch built-in | ✓ custom impl | ✗ |
+| **Optimizers** | | | |
+| SGD | ✓ | ✓ | ✓ |
+| Momentum SGD | ✓ | ✓ | ✓ |
+| Adam | ✓ | ✓ | Experimental |
+| AdamW | ✓ | ✓ | ✗ |
+| RMSprop | ✓ | ✓ | ✗ |
+| **Schedulers** | | | |
+| None / disabled | ✓ | ✓ | ✓ |
+| StepLR | ✓ | ✓ | ✗ |
+| CosineAnnealingLR | ✓ | ✓ | ✗ |
+| ReduceLROnPlateau | ✓ | ✓ | Partial (config key, no auto trigger) |
+| **Initialization** | | | |
+| kaiming_uniform | ✓ | ✓ | ✓ (fixed He) |
+| kaiming_normal | ✓ | ✓ | ✗ |
+| xavier_uniform | ✓ | ✓ | ✗ |
+| xavier_normal | ✓ | ✓ | ✗ |
+| normal | ✓ | ✓ | ✗ |
+| zeros | ✓ | ✓ | ✗ |
+| **Regularization** | | | |
+| weight_decay | ✓ | ✓ | ✓ |
+| Dropout | ✓ | ✓ | ✗ |
+| Gradient clipping | ✓ | ✓ per-param norm | ✓ global + elementwise |
+| **Augmentation** | | | |
+| normalize | ✓ | ✓ | Partial (fixed CIFAR norm) |
+| random_crop | ✓ | ✗ | ✗ |
+| horizontal_flip | ✓ | ✗ | ✗ |
+| **Precision** | | | |
+| fp32 (default) | ✓ | ✓ | ✓ |
+| fp16 / AMP | ✓ on CUDA | ✗ | ✗ |
+| **Block presets** | | | |
+| conv_relu | ✓ | ✗ | ✗ |
+| conv_bn_relu | ✓ | ✗ | ✗ |
+| conv_bn_silu | ✓ | ✗ | ✗ |
+| **Misc** | | | |
+| YAML model config | ✓ | ✓ | ✓ fixed pattern |
+| Custom Python components | ✓ | Registry-based | ✗ |
+| Gradient accumulation | ✓ | ✗ | ✗ |
+| Native CUDA kernels | PyTorch-managed | ✗ | ✓ |
+| cuBLAS path | PyTorch-managed | ✗ | ✓ |
 
 ## Torch/flex Backend
 
