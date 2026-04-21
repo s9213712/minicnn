@@ -52,24 +52,27 @@ A staged, modular backend structured in layers:
 | Conv2d | ✓ | Prototype |
 | ReLU | ✓ | Prototype |
 | LeakyReLU | ✓ | Prototype |
+| Sigmoid | ✓ | Prototype |
+| Tanh | ✓ | Prototype |
+| SiLU | ✓ | Prototype |
 | MaxPool2d | ✓ | Prototype |
 | AvgPool2d | ✓ | Prototype |
 | Flatten | ✓ | Prototype |
 | Linear | ✓ | Prototype |
-| BatchNorm2d | ✓ prototype (eval + train-state update) | ✗ |
+| BatchNorm2d | ✓ prototype (eval + train-state update) | ✓ prototype |
 | GroupNorm | ✗ rejected | — |
 | LayerNorm | ✗ rejected | — |
 | ResidualBlock | ✗ rejected | — |
 
-`BatchNorm2d` currently has a forward prototype only. The `train-native`
-training path still rejects BN-containing models until backward support exists.
+`BatchNorm2d` now has forward/backward prototype support. It is part of the
+experimental training path, but remains prototype-level rather than stable.
 
 Validated `train-native` contract today:
 
 - dataset: `random`, `cifar10`, `mnist`
 - loss: `CrossEntropyLoss`, `MSELoss`
-- optimizer: plain `SGD` only
-- scheduler: unsupported
+- optimizer: `SGD` with optional momentum and global gradient clipping
+- scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
 - `train.amp=false`, `train.grad_accum_steps=1`
 
 ## How It Differs From cuda_legacy
@@ -102,7 +105,8 @@ Validate a config:
 
 ```bash
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml \
-  optimizer.momentum=0 scheduler.enabled=false
+  optimizer.momentum=0.9 optimizer.grad_clip_global=1.0 \
+  scheduler.enabled=true scheduler.type=StepLR scheduler.step_size=5
 ```
 
 Run (experimental, research only):
@@ -110,7 +114,8 @@ Run (experimental, research only):
 ```bash
 minicnn train-native --config configs/dual_backend_cnn.yaml \
   train.epochs=1 dataset.type=random dataset.num_samples=128 dataset.val_samples=32 \
-  optimizer.momentum=0 scheduler.enabled=false
+  optimizer.momentum=0.9 optimizer.grad_clip_global=1.0 \
+  scheduler.enabled=true scheduler.type=StepLR scheduler.step_size=5
 ```
 
 Or via `train-dual`:
@@ -264,24 +269,27 @@ Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 | Conv2d | ✓ | Prototype |
 | ReLU | ✓ | Prototype |
 | LeakyReLU | ✓ | Prototype |
+| Sigmoid | ✓ | Prototype |
+| Tanh | ✓ | Prototype |
+| SiLU | ✓ | Prototype |
 | MaxPool2d | ✓ | Prototype |
 | AvgPool2d | ✓ | Prototype |
 | Flatten | ✓ | Prototype |
 | Linear | ✓ | Prototype |
-| BatchNorm2d | ✓ prototype（eval + train 狀態更新） | ✗ |
+| BatchNorm2d | ✓ prototype（eval + train 狀態更新） | ✓ prototype |
 | GroupNorm | ✗ 拒絕 | — |
 | LayerNorm | ✗ 拒絕 | — |
 | ResidualBlock | ✗ 拒絕 | — |
 
-`BatchNorm2d` 目前只有 forward prototype。`train-native` 訓練路徑仍會拒絕含
-BN 的模型，直到 backward 支援補上為止。
+`BatchNorm2d` 現在已有 forward/backward prototype，已可進入實驗性訓練路徑，
+但整體仍屬 prototype 層級，不能視為穩定支援。
 
 目前通過驗證的 `train-native` 合約：
 
 - dataset：`random`、`cifar10`、`mnist`
 - loss：`CrossEntropyLoss`、`MSELoss`
-- optimizer：僅支援 plain `SGD`
-- scheduler：目前不支援
+- optimizer：支援 `SGD`，可選 momentum 與 global gradient clipping
+- scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
 - `train.amp=false`、`train.grad_accum_steps=1`
 
 ## 與 cuda_legacy 的比較

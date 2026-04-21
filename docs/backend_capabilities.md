@@ -44,7 +44,7 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | Linear | ✓ | ✓ | ✓ | ✓ numpy ref |
 | MaxPool2d | ✓ | ✓ | ✓ fixed 2×2 | ✓ numpy ref |
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
-| BatchNorm2d | ✓ | ✓ | ✗ | ✓ forward prototype only |
+| BatchNorm2d | ✓ | ✓ | ✗ | ✓ forward/backward prototype |
 | LayerNorm | ✓ | ✗ | ✗ | ✗ rejected |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ rejected |
 | ResidualBlock | ✓ | ✓ | ✗ | ✗ rejected |
@@ -52,9 +52,9 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | **Activations** | | | | |
 | ReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
 | LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
-| SiLU | ✓ | ✓ | ✗ | ✗ |
-| Sigmoid | ✓ | ✓ | ✗ | ✗ |
-| Tanh | ✓ | ✓ | ✗ | ✗ |
+| SiLU | ✓ | ✓ | ✗ | ✓ numpy ref |
+| Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref |
+| Tanh | ✓ | ✓ | ✗ | ✓ numpy ref |
 | GELU | ✓ | ✗ | ✗ | ✗ |
 | **Losses** | | | | |
 | CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
@@ -63,18 +63,18 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | label_smoothing | ✓ | ✓ | ✗ | ✗ |
 | **Optimizers** | | | | |
 | SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Momentum SGD | ✓ | ✓ | ✓ | ✗ |
+| Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
 | Adam | ✓ | ✓ | Experimental | ✗ |
 | AdamW | ✓ | ✓ | ✗ | ✗ |
 | RMSprop | ✓ | ✓ | ✗ | ✗ |
 | **Schedulers** | | | | |
 | None / disabled | ✓ | ✓ | ✓ | ✓ |
-| StepLR | ✓ | ✓ | ✗ | ✗ |
-| CosineAnnealingLR | ✓ | ✓ | ✗ | ✗ |
-| ReduceLROnPlateau | ✓ | ✓ | partial | ✗ |
+| StepLR | ✓ | ✓ | ✗ | ✓ |
+| CosineAnnealingLR | ✓ | ✓ | ✗ | ✓ |
+| ReduceLROnPlateau | ✓ | ✓ | partial | ✓ |
 | **Regularization** | | | | |
 | weight_decay | ✓ | ✓ | ✓ | ✓ in SGD |
-| gradient clipping | ✓ | ✓ | ✓ | ✗ |
+| gradient clipping | ✓ | ✓ | ✓ | ✓ global norm |
 | AMP | ✓ CUDA only | ✗ | ✗ | ✗ |
 | **Frontend** | | | | |
 | `model.layers[]` YAML | ✓ | ✓ | ✓ fixed pattern | ✓ sequential only |
@@ -129,20 +129,21 @@ Use `minicnn validate-dual-config` before running.
 
 Opt-in via `engine.backend=cuda_native` or `train-native`. Not the default. Not a replacement for `cuda_legacy`.
 
-Supported ops: `BatchNorm2d` (forward prototype; no backward yet), `Conv2d`, `ReLU`, `LeakyReLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`.
+Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`.
 
 Validated train-native contract:
 
 - dataset: `random`, `cifar10`, `mnist`
 - loss: `CrossEntropyLoss`, `MSELoss`
-- optimizer: plain `SGD` only
-- scheduler: unsupported
+- optimizer: `SGD` with optional momentum and global gradient clipping
+- scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
 - `train.amp=false`, `train.grad_accum_steps=1`
 
 Unsupported (rejected at validation): `GroupNorm`, `LayerNorm`, `ResidualBlock`.
 
-Note: backward and training prototypes exist, but `BatchNorm2d` still has no
-backward path. `train-native` therefore rejects BN-containing training configs.
+Note: backward and training prototypes exist, and `BatchNorm2d` now has a
+prototype backward path too. The overall backend remains experimental and not
+production-ready.
 
 Developer tooling (unique to cuda_native):
 
@@ -233,7 +234,7 @@ Debugging order:
 | Linear | ✓ | ✓ | ✓ | ✓ numpy ref |
 | MaxPool2d | ✓ | ✓ | ✓ 固定 2×2 | ✓ numpy ref |
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
-| BatchNorm2d | ✓ | ✓ | ✗ | ✓ 僅 forward prototype |
+| BatchNorm2d | ✓ | ✓ | ✗ | ✓ forward/backward prototype |
 | LayerNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
 | ResidualBlock | ✓ | ✓ | ✗ | ✗ 拒絕 |
@@ -241,9 +242,9 @@ Debugging order:
 | **激活函數** | | | | |
 | ReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
 | LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
-| SiLU | ✓ | ✓ | ✗ | ✗ |
-| Sigmoid | ✓ | ✓ | ✗ | ✗ |
-| Tanh | ✓ | ✓ | ✗ | ✗ |
+| SiLU | ✓ | ✓ | ✗ | ✓ numpy ref |
+| Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref |
+| Tanh | ✓ | ✓ | ✗ | ✓ numpy ref |
 | GELU | ✓ | ✗ | ✗ | ✗ |
 | **損失函數** | | | | |
 | CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
@@ -252,18 +253,18 @@ Debugging order:
 | label_smoothing | ✓ | ✓ | ✗ | ✗ |
 | **優化器** | | | | |
 | SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Momentum SGD | ✓ | ✓ | ✓ | ✗ |
+| Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
 | Adam | ✓ | ✓ | 實驗中 | ✗ |
 | AdamW | ✓ | ✓ | ✗ | ✗ |
 | RMSprop | ✓ | ✓ | ✗ | ✗ |
 | **Scheduler** | | | | |
 | 無 / 停用 | ✓ | ✓ | ✓ | ✓ |
-| StepLR | ✓ | ✓ | ✗ | ✗ |
-| CosineAnnealingLR | ✓ | ✓ | ✗ | ✗ |
-| ReduceLROnPlateau | ✓ | ✓ | 部分支援 | ✗ |
+| StepLR | ✓ | ✓ | ✗ | ✓ |
+| CosineAnnealingLR | ✓ | ✓ | ✗ | ✓ |
+| ReduceLROnPlateau | ✓ | ✓ | 部分支援 | ✓ |
 | **正則化** | | | | |
 | weight_decay | ✓ | ✓ | ✓ | ✓ SGD 內建 |
-| gradient clipping | ✓ | ✓ | ✓ | ✗ |
+| gradient clipping | ✓ | ✓ | ✓ | ✓ global norm |
 | AMP | ✓ CUDA 限定 | ✗ | ✗ | ✗ |
 | **前端便利功能** | | | | |
 | `model.layers[]` YAML | ✓ | ✓ | ✓ 固定 pattern | ✓ sequential only |
@@ -321,16 +322,16 @@ Debugging order:
 
 - dataset：`random`、`cifar10`、`mnist`
 - loss：`CrossEntropyLoss`、`MSELoss`
-- optimizer：僅支援 plain `SGD`
-- scheduler：目前不支援
+- optimizer：支援 `SGD`，可選 momentum 與 global gradient clipping
+- scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
 - `train.amp=false`、`train.grad_accum_steps=1`
 
-支援 op：`Conv2d`、`ReLU`、`LeakyReLU`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`。
+支援 op：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`。
 
 驗證時拒絕的 op：`GroupNorm`、`LayerNorm`、`ResidualBlock`。
 
-注意：雖然已有 backward 與 training prototype，但 `BatchNorm2d` 目前仍沒有
-backward；因此 `train-native` 仍會拒絕含 BN 的訓練設定。
+注意：雖然已有 backward 與 training prototype，且 `BatchNorm2d` 也已有
+prototype 級的 backward，但整體 backend 仍屬實驗性，不是正式訓練後端。
 
 開發者工具（cuda_native 獨有）：
 

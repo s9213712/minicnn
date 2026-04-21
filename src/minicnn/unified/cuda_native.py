@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -27,6 +28,9 @@ from minicnn.cuda_native.graph import NativeGraph
 from minicnn.cuda_native.loss import cross_entropy_loss, mse_loss
 from minicnn.cuda_native.training import sgd_update, train_step
 from minicnn.flex.runtime import create_run_dir, dump_summary
+from minicnn.schedulers.cosine import CosineAnnealingLR
+from minicnn.schedulers.plateau import ReduceLROnPlateau
+from minicnn.schedulers.step import StepLR
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +204,39 @@ def _evaluate(
     }
 
 
+def _make_scheduler(
+    scheduler_cfg: dict[str, Any],
+    optimizer_view: SimpleNamespace,
+):
+    if not bool(scheduler_cfg.get('enabled', False)):
+        return None, None
+    raw_type = str(scheduler_cfg.get('type', 'none') or 'none').lower()
+    if raw_type in {'step', 'steplr'}:
+        scheduler = StepLR(
+            optimizer_view,
+            step_size=int(scheduler_cfg.get('step_size', 10)),
+            gamma=float(scheduler_cfg.get('gamma', 0.5)),
+            min_lr=float(scheduler_cfg.get('min_lr', 0.0)),
+        )
+        return scheduler, 'step'
+    if raw_type in {'cosine', 'cosineannealinglr'}:
+        scheduler = CosineAnnealingLR(
+            optimizer_view,
+            T_max=int(scheduler_cfg.get('T_max', scheduler_cfg.get('t_max', 10))),
+            lr_min=float(scheduler_cfg.get('lr_min', 0.0)),
+        )
+        return scheduler, 'cosine'
+    if raw_type in {'plateau', 'reducelronplateau'}:
+        scheduler = ReduceLROnPlateau(
+            optimizer_view,
+            factor=float(scheduler_cfg.get('factor', 0.5)),
+            patience=int(scheduler_cfg.get('patience', 3)),
+            min_lr=float(scheduler_cfg.get('min_lr', 1e-5)),
+        )
+        return scheduler, 'plateau'
+    return None, None
+
+
 # ---------------------------------------------------------------------------
 # Training loop
 # ---------------------------------------------------------------------------
@@ -221,12 +258,15 @@ def run_cuda_native_training(cfg: dict[str, Any]) -> Path:
     model_cfg = cfg.get('model', {})
     optim_cfg = cfg.get('optimizer', {})
     loss_cfg = cfg.get('loss', {})
+    scheduler_cfg = cfg.get('scheduler', {})
 
     input_shape = tuple(dataset_cfg.get('input_shape', [3, 32, 32]))
     batch_size = int(train_cfg.get('batch_size', 64))
     epochs = int(train_cfg.get('epochs', 1))
     lr = float(optim_cfg.get('lr', 0.01))
     weight_decay = float(optim_cfg.get('weight_decay', 0.0))
+    momentum = float(optim_cfg.get('momentum', 0.0))
+    grad_clip_global = float(optim_cfg.get('grad_clip_global', 0.0))
     init_seed = int(train_cfg.get('init_seed', dataset_cfg.get('seed', 42)))
 
     _loss_map = {'CrossEntropyLoss': 'cross_entropy', 'MSELoss': 'mse'}
@@ -246,6 +286,9 @@ def run_cuda_native_training(cfg: dict[str, Any]) -> Path:
 
     fwd = ForwardExecutor()
     bwd = BackwardExecutor()
+    optimizer_view = SimpleNamespace(lr=lr)
+    scheduler, scheduler_kind = _make_scheduler(scheduler_cfg, optimizer_view)
+    optimizer_state: dict[str, Any] = {}
     best_val_acc = float('-inf')
     best_params = dict(params)
     rng = np.random.default_rng(init_seed)
@@ -263,20 +306,29 @@ def run_cuda_native_training(cfg: dict[str, Any]) -> Path:
                 if xb.shape[0] == 0:
                     continue
                 loss_val, params = train_step(
-                    graph, xb, yb, params, lr=lr,
+                    graph, xb, yb, params, lr=optimizer_view.lr,
                     loss_type=loss_type, weight_decay=weight_decay,
+                    momentum=momentum,
+                    optimizer_state=optimizer_state,
+                    grad_clip_global=grad_clip_global,
                     fwd_executor=fwd, bwd_executor=bwd,
                 )
                 running_loss += loss_val * xb.shape[0]
                 seen += xb.shape[0]
             train_loss = running_loss / max(seen, 1)
             val_metrics = _evaluate(graph, x_val, y_val, params, batch_size, loss_type)
+            if scheduler is not None:
+                if scheduler_kind == 'plateau':
+                    scheduler.step(val_metrics['loss'])
+                else:
+                    scheduler.step()
             epoch_time = time.perf_counter() - t0
             row = {
                 'epoch': epoch,
                 'train_loss': train_loss,
                 'val_loss': val_metrics['loss'],
                 'val_acc': val_metrics['acc'],
+                'lr': float(optimizer_view.lr),
                 'epoch_time_s': epoch_time,
             }
             mf.write(json.dumps(row) + '\n')
@@ -288,6 +340,7 @@ def run_cuda_native_training(cfg: dict[str, Any]) -> Path:
                 f"[cuda_native] Epoch {epoch}/{epochs}: "
                 f"train_loss={train_loss:.4f}, "
                 f"val_acc={val_metrics['acc'] * 100:.2f}%, "
+                f"lr={optimizer_view.lr:.6f}, "
                 f"time={epoch_time:.1f}s"
             )
 
@@ -305,8 +358,13 @@ def run_cuda_native_training(cfg: dict[str, Any]) -> Path:
         'best_val_acc': best_val_acc,
         'input_shape': list(input_shape),
         'model_layers': [layer.get('type') for layer in model_cfg.get('layers', [])],
-        'optimizer': 'SGD',
-        'scheduler': None,
+        'optimizer': {
+            'type': 'SGD',
+            'lr': float(lr),
+            'momentum': float(momentum),
+            'grad_clip_global': float(grad_clip_global),
+        },
+        'scheduler': scheduler_cfg.get('type') if bool(scheduler_cfg.get('enabled', False)) else None,
         'loss': loss_cfg.get('type', 'CrossEntropyLoss'),
         'epochs': epochs,
         'capabilities': get_capability_summary(),

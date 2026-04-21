@@ -16,7 +16,7 @@ The goal is to establish clear design constraints **before** coding starts, so t
 
 ### Problem
 
-Normalization layers are among the most commonly used in modern CNNs. `BatchNorm2d` now has a forward prototype, but backward is still missing and the validated training path still rejects BN-containing models. This RFC defines what full support would require.
+Normalization layers are among the most commonly used in modern CNNs. `BatchNorm2d` now has forward/backward prototype support and can participate in the experimental training path, but normalization support is still incomplete as a whole. This RFC now mainly covers how to stabilize BatchNorm semantics and how to add `GroupNorm` and `LayerNorm` cleanly.
 
 ### Why They Are Hard
 
@@ -473,7 +473,7 @@ Regardless of which RFC is implemented first, the following invariants must be p
 
 ### 問題
 
-正規化層是現代 CNN 最常用的模組之一。`BatchNorm2d` 現在已經有 forward prototype，但 backward 尚未補上，驗證過的訓練路徑仍會拒絕含 BN 的模型。本 RFC 定義完整支援所需的架構條件。
+正規化層是現代 CNN 最常用的模組之一。`BatchNorm2d` 現在已經有 forward/backward prototype，也能進入實驗性訓練路徑，但整體 normalization 支援仍不完整。本 RFC 現在主要聚焦於如何穩定 BatchNorm 語意，以及如何乾淨地加入 `GroupNorm` 與 `LayerNorm`。
 
 ### 為什麼難
 

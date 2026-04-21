@@ -22,12 +22,19 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     'supported_datasets': ['random', 'cifar10', 'mnist'],
     'supported_losses': ['CrossEntropyLoss', 'MSELoss'],
     'supported_optimizers': ['SGD'],
-    'supported_schedulers': [],
+    'supported_schedulers': [
+        'StepLR',
+        'CosineAnnealingLR',
+        'ReduceLROnPlateau',
+    ],
     'supported_ops': [
         'BatchNorm2d',
         'Conv2d',
         'ReLU',
         'LeakyReLU',
+        'Sigmoid',
+        'Tanh',
+        'SiLU',
         'Flatten',
         'Linear',
         'MaxPool2d',
@@ -41,7 +48,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     ],
     'notes': [
         'Backward and training are research prototypes, not production-ready.',
-        'BatchNorm2d forward exists, but backward is not implemented yet.',
+        'BatchNorm2d forward/backward exist as prototypes; training remains experimental.',
         'validate-cuda-native-config enforces the current train-native contract.',
     ],
 }

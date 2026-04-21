@@ -65,10 +65,11 @@ Accepts:
 Accepts:
 
 - dataset type: `cifar10`, `mnist`, or `random`
-- any sequential graph with supported ops: `BatchNorm2d` (forward prototype only), `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`
+- any sequential graph with supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`
 - loss type: `CrossEntropyLoss` or `MSELoss`
-- optimizer: plain `SGD` only
-- requires: `scheduler.enabled=false`, `train.amp=false`, `train.grad_accum_steps=1`
+- optimizer: `SGD` with optional momentum and global gradient clipping
+- scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
+- requires: `train.amp=false`, `train.grad_accum_steps=1`
 - rejects at validation: `GroupNorm`, `LayerNorm`, `ResidualBlock`
 
 ## Variant Selection (cuda_legacy)
@@ -175,7 +176,11 @@ minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 
 接受：
 - 資料集：`cifar10`、`mnist`、`random`
-- 任何 sequential graph，op 限於：`BatchNorm2d`（僅 forward prototype）、`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`
+- 任何 sequential graph，op 限於：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`
+- loss：`CrossEntropyLoss` 或 `MSELoss`
+- optimizer：支援 `SGD`，可選 momentum 與 global gradient clipping
+- scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
+- 仍要求：`train.amp=false`、`train.grad_accum_steps=1`
 - 驗證時拒絕：`GroupNorm`、`LayerNorm`、`ResidualBlock`
 
 ## Variant 選擇（cuda_legacy）

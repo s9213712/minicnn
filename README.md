@@ -90,14 +90,14 @@ A graph-based backend prototype with:
 - memory estimation and reuse (`memory.py` — `memory_footprint()`, `BufferPool`)
 - observability tooling (`debug.py` — `dump_graph()`, `dump_plan()`, `TracingForwardExecutor`)
 
-Supported ops: `BatchNorm2d` (forward prototype; no backward), `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
+Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
 
 Current validated contract:
 
 - datasets: `random`, `cifar10`, `mnist`
 - losses: `CrossEntropyLoss`, `MSELoss`
-- optimizer: plain `SGD` only
-- scheduler: unsupported for `train-native` today
+- optimizer: `SGD` with optional momentum and global gradient clipping
+- scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
 - `train.amp=false`, `train.grad_accum_steps=1`
 
 Backward and training prototypes exist, but the backend is still experimental, sequential-only, and not a replacement for `cuda_legacy`.
@@ -108,12 +108,14 @@ minicnn cuda-native-capabilities
 
 # Validate your config
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml \
-  optimizer.momentum=0 scheduler.enabled=false
+  optimizer.momentum=0.9 optimizer.grad_clip_global=1.0 \
+  scheduler.enabled=true scheduler.type=StepLR scheduler.step_size=5
 
 # Run (research only)
 minicnn train-native --config configs/dual_backend_cnn.yaml \
   dataset.type=random dataset.num_samples=128 dataset.val_samples=32 \
-  optimizer.momentum=0 scheduler.enabled=false
+  optimizer.momentum=0.9 optimizer.grad_clip_global=1.0 \
+  scheduler.enabled=true scheduler.type=StepLR scheduler.step_size=5
 ```
 
 See [docs/cuda_native.md](docs/cuda_native.md) for the full guide.

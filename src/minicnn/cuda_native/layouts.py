@@ -48,6 +48,9 @@ OP_LAYOUT_CONTRACT: dict[str, tuple[str | None, str | None]] = {
     'Conv2d':     (NCHW,  NCHW),
     'ReLU':       (None,  None),   # passthrough
     'LeakyReLU':  (None,  None),   # passthrough
+    'Sigmoid':    (None,  None),   # passthrough
+    'Tanh':       (None,  None),   # passthrough
+    'SiLU':       (None,  None),   # passthrough
     'MaxPool2d':  (NCHW,  NCHW),
     'AvgPool2d':  (NCHW,  NCHW),
     'Flatten':    (NCHW,  NC),

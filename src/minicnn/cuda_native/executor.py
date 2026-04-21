@@ -112,8 +112,15 @@ class ForwardExecutor:
                     cache[f'fwd_{node.name}_in'] = in_val
                     if node.op_type == 'Flatten':
                         cache[f'fwd_{node.name}_in_shape'] = in_val.shape
+                    if node.op_type == 'BatchNorm2d':
+                        cache[f'fwd_{node.name}_mode'] = mode
             # Save params needed for grad computation
-            for key in (f'_w_{node.name}', f'_b_{node.name}'):
+            for key in (
+                f'_w_{node.name}',
+                f'_b_{node.name}',
+                f'_running_mean_{node.name}',
+                f'_running_var_{node.name}',
+            ):
                 if key in ctx:
                     cache[key] = ctx[key]
 

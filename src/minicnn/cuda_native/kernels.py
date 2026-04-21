@@ -152,10 +152,30 @@ def _kernel_relu(node: Node, ctx: dict[str, Any]) -> None:
     ctx[node.outputs[0]] = np.maximum(x, 0.0).astype(np.float32)
 
 
+def _sigmoid(x: np.ndarray) -> np.ndarray:
+    return (1.0 / (1.0 + np.exp(-x))).astype(np.float32)
+
+
 def _kernel_leaky_relu(node: Node, ctx: dict[str, Any]) -> None:
     x = ctx[node.inputs[0]]
     alpha = float(node.attrs.get('negative_slope', 0.01))
     ctx[node.outputs[0]] = np.where(x >= 0, x, alpha * x).astype(np.float32)
+
+
+def _kernel_sigmoid(node: Node, ctx: dict[str, Any]) -> None:
+    x = ctx[node.inputs[0]]
+    ctx[node.outputs[0]] = _sigmoid(x)
+
+
+def _kernel_tanh(node: Node, ctx: dict[str, Any]) -> None:
+    x = ctx[node.inputs[0]]
+    ctx[node.outputs[0]] = np.tanh(x).astype(np.float32)
+
+
+def _kernel_silu(node: Node, ctx: dict[str, Any]) -> None:
+    x = ctx[node.inputs[0]]
+    sig = _sigmoid(x)
+    ctx[node.outputs[0]] = (x * sig).astype(np.float32)
 
 
 def _kernel_flatten(node: Node, ctx: dict[str, Any]) -> None:
@@ -214,6 +234,9 @@ def make_default_registry() -> KernelRegistry:
     reg.register('BatchNorm2d', _kernel_batchnorm2d_eval)
     reg.register('ReLU', _kernel_relu)
     reg.register('LeakyReLU', _kernel_leaky_relu)
+    reg.register('Sigmoid', _kernel_sigmoid)
+    reg.register('Tanh', _kernel_tanh)
+    reg.register('SiLU', _kernel_silu)
     reg.register('Flatten', _kernel_flatten)
     reg.register('Linear', _kernel_linear)
     reg.register('MaxPool2d', _kernel_maxpool2d)

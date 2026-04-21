@@ -20,6 +20,17 @@ _SUPPORTED_LOSS_TYPES = frozenset(
 _SUPPORTED_OPTIMIZERS = frozenset(
     str(item) for item in CUDA_NATIVE_CAPABILITIES['supported_optimizers']
 )
+_SUPPORTED_SCHEDULERS = frozenset(
+    str(item) for item in CUDA_NATIVE_CAPABILITIES['supported_schedulers']
+)
+_SCHEDULER_ALIASES = {
+    'step': 'StepLR',
+    'steplr': 'StepLR',
+    'cosine': 'CosineAnnealingLR',
+    'cosineannealinglr': 'CosineAnnealingLR',
+    'plateau': 'ReduceLROnPlateau',
+    'reducelronplateau': 'ReduceLROnPlateau',
+}
 
 
 def _as_mapping(name: str, value: Any) -> tuple[dict[str, Any], list[str]]:
@@ -82,21 +93,16 @@ def _validate_optimizer_cfg(optim_cfg: dict[str, Any]) -> list[str]:
         optim_cfg.get('momentum', 0.0),
     )
     errors.extend(momentum_errors)
-    if momentum_val is not None and momentum_val != 0.0:
-        errors.append(
-            'cuda_native training uses plain SGD only; set optimizer.momentum=0 '
-            'or use engine.backend=torch.'
-        )
+    if momentum_val is not None and momentum_val < 0.0:
+        errors.append('optimizer.momentum must be >= 0 for cuda_native.')
 
     grad_clip_val, grad_clip_errors = _coerce_float(
         'optimizer.grad_clip_global',
         optim_cfg.get('grad_clip_global', 0.0),
     )
     errors.extend(grad_clip_errors)
-    if grad_clip_val is not None and grad_clip_val != 0.0:
-        errors.append(
-            'cuda_native does not support optimizer.grad_clip_global; set it to 0.'
-        )
+    if grad_clip_val is not None and grad_clip_val < 0.0:
+        errors.append('optimizer.grad_clip_global must be >= 0 for cuda_native.')
 
     for field in ('lr_conv1', 'lr_conv', 'lr_fc'):
         if field not in optim_cfg:
@@ -117,15 +123,80 @@ def _validate_scheduler_cfg(scheduler_cfg: dict[str, Any]) -> list[str]:
     scheduler_type = str(scheduler_cfg.get('type', 'none') or 'none')
     normalized = scheduler_type.lower()
     no_scheduler = normalized in {'none', 'disabled', 'null', ''}
-    if enabled and no_scheduler:
+    if not enabled:
+        return errors
+    if no_scheduler:
+        errors.append('cuda_native expects scheduler.enabled=false when no scheduler is used.')
+        return errors
+
+    canonical = _SCHEDULER_ALIASES.get(normalized, scheduler_type)
+    if canonical not in _SUPPORTED_SCHEDULERS:
+        supported = ', '.join(sorted(_SUPPORTED_SCHEDULERS))
         errors.append(
-            'cuda_native expects scheduler.enabled=false when no scheduler is used.'
+            f'cuda_native does not support scheduler.type={scheduler_type!r}. '
+            f'Supported: {supported}.'
         )
-    elif enabled and not no_scheduler:
-        errors.append(
-            'cuda_native does not support schedulers yet; set scheduler.enabled=false '
-            f'(got scheduler.type={scheduler_type!r}).'
+        return errors
+
+    if canonical == 'StepLR':
+        step_size, step_size_errors = _coerce_int(
+            'scheduler.step_size',
+            scheduler_cfg.get('step_size', 10),
         )
+        gamma, gamma_errors = _coerce_float(
+            'scheduler.gamma',
+            scheduler_cfg.get('gamma', 0.5),
+        )
+        min_lr, min_lr_errors = _coerce_float(
+            'scheduler.min_lr',
+            scheduler_cfg.get('min_lr', 0.0),
+        )
+        errors.extend(step_size_errors)
+        errors.extend(gamma_errors)
+        errors.extend(min_lr_errors)
+        if step_size is not None and step_size <= 0:
+            errors.append('scheduler.step_size must be > 0 for StepLR.')
+        if gamma is not None and gamma < 0.0:
+            errors.append('scheduler.gamma must be >= 0 for StepLR.')
+        if min_lr is not None and min_lr < 0.0:
+            errors.append('scheduler.min_lr must be >= 0 for StepLR.')
+    elif canonical == 'CosineAnnealingLR':
+        t_max, t_max_errors = _coerce_int(
+            'scheduler.T_max',
+            scheduler_cfg.get('T_max', scheduler_cfg.get('t_max', 10)),
+        )
+        lr_min, lr_min_errors = _coerce_float(
+            'scheduler.lr_min',
+            scheduler_cfg.get('lr_min', 0.0),
+        )
+        errors.extend(t_max_errors)
+        errors.extend(lr_min_errors)
+        if t_max is not None and t_max <= 0:
+            errors.append('scheduler.T_max must be > 0 for CosineAnnealingLR.')
+        if lr_min is not None and lr_min < 0.0:
+            errors.append('scheduler.lr_min must be >= 0 for CosineAnnealingLR.')
+    elif canonical == 'ReduceLROnPlateau':
+        factor, factor_errors = _coerce_float(
+            'scheduler.factor',
+            scheduler_cfg.get('factor', 0.5),
+        )
+        patience, patience_errors = _coerce_int(
+            'scheduler.patience',
+            scheduler_cfg.get('patience', 3),
+        )
+        min_lr, min_lr_errors = _coerce_float(
+            'scheduler.min_lr',
+            scheduler_cfg.get('min_lr', 1e-5),
+        )
+        errors.extend(factor_errors)
+        errors.extend(patience_errors)
+        errors.extend(min_lr_errors)
+        if factor is not None and not (0.0 < factor <= 1.0):
+            errors.append('scheduler.factor must be in (0, 1] for ReduceLROnPlateau.')
+        if patience is not None and patience < 0:
+            errors.append('scheduler.patience must be >= 0 for ReduceLROnPlateau.')
+        if min_lr is not None and min_lr < 0.0:
+            errors.append('scheduler.min_lr must be >= 0 for ReduceLROnPlateau.')
     return errors
 
 
@@ -178,12 +249,6 @@ def validate_cuda_native_config(cfg: dict[str, Any]) -> list[str]:
     errors.extend(_validate_scheduler_cfg(scheduler_cfg))
     errors.extend(_validate_train_cfg(train_cfg))
 
-    layers = model_cfg.get('layers', [])
-    if any(str(layer.get('type')) == 'BatchNorm2d' for layer in layers):
-        errors.append(
-            'cuda_native training path does not yet support BatchNorm2d backward. '
-            'BatchNorm2d forward exists, but train-native still rejects BN-containing models.'
-        )
     return errors
 
 

@@ -95,7 +95,7 @@ class TestValidateCudaNativeConfig:
         errors = validate_cuda_native_model_config(cfg['model'])
         assert errors == []
 
-    def test_full_config_rejects_batchnorm2d_until_backward_exists(self):
+    def test_full_config_accepts_batchnorm2d_now_that_backward_exists(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
         cfg = self._minimal_cfg([
             {'type': 'BatchNorm2d'},
@@ -103,7 +103,7 @@ class TestValidateCudaNativeConfig:
             {'type': 'Linear', 'out_features': 2},
         ])
         errors = validate_cuda_native_config(cfg)
-        assert any('BatchNorm2d backward' in e for e in errors)
+        assert errors == []
 
     def test_dataset_type_foo_rejected(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
@@ -135,7 +135,7 @@ class TestValidateCudaNativeConfig:
         errors = validate_cuda_native_config(cfg)
         assert any('optimizer.type' in e for e in errors)
 
-    def test_optimizer_momentum_rejected(self):
+    def test_optimizer_momentum_is_allowed(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
         cfg = self._minimal_cfg([
             {'type': 'Flatten'},
@@ -143,9 +143,9 @@ class TestValidateCudaNativeConfig:
         ])
         cfg['optimizer']['momentum'] = 0.9
         errors = validate_cuda_native_config(cfg)
-        assert any('optimizer.momentum=0' in e for e in errors)
+        assert errors == []
 
-    def test_scheduler_enabled_rejected(self):
+    def test_scheduler_enabled_step_is_allowed(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
         cfg = self._minimal_cfg([
             {'type': 'Flatten'},
@@ -153,7 +153,27 @@ class TestValidateCudaNativeConfig:
         ])
         cfg['scheduler'] = {'enabled': True, 'type': 'StepLR'}
         errors = validate_cuda_native_config(cfg)
-        assert any('does not support schedulers' in e for e in errors)
+        assert errors == []
+
+    def test_scheduler_enabled_cosine_is_allowed(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        cfg['scheduler'] = {'enabled': True, 'type': 'CosineAnnealingLR', 'T_max': 5}
+        errors = validate_cuda_native_config(cfg)
+        assert errors == []
+
+    def test_scheduler_enabled_plateau_is_allowed(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        cfg['scheduler'] = {'enabled': True, 'type': 'ReduceLROnPlateau', 'factor': 0.5, 'patience': 1}
+        errors = validate_cuda_native_config(cfg)
+        assert errors == []
 
     def test_amp_and_grad_accum_rejected(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
@@ -214,7 +234,7 @@ class TestTrainerBridge:
         with pytest.raises(ValueError, match='nonexistent'):
             train_unified_from_config(cfg)
 
-    def test_trainer_rejects_batchnorm2d_until_backward_exists(self):
+    def test_trainer_accepts_batchnorm2d_training_graph(self):
         import warnings
         from minicnn.unified.trainer import train_unified_from_config
         cfg = self._minimal_cfg()
@@ -225,8 +245,9 @@ class TestTrainerBridge:
         ]
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
-            with pytest.raises(ValueError, match='BatchNorm2d.*rejects BN-containing models'):
-                train_unified_from_config(cfg)
+            run_dir = train_unified_from_config(cfg)
+        assert run_dir.exists()
+        assert (run_dir / 'summary.json').exists()
 
     def test_trainer_rejects_unsupported_optimizer_before_runtime(self):
         import warnings
@@ -261,6 +282,17 @@ class TestTrainerBridge:
 
         assert rc == 2
         assert 'optimizer.type' in captured.out
+
+    def test_trainer_accepts_scheduler_and_records_it(self):
+        import warnings
+        from minicnn.unified.trainer import train_unified_from_config
+        cfg = self._minimal_cfg()
+        cfg['scheduler'] = {'enabled': True, 'type': 'StepLR', 'step_size': 1, 'gamma': 0.5}
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            run_dir = train_unified_from_config(cfg)
+        summary = json.loads((run_dir / 'summary.json').read_text())
+        assert summary.get('scheduler') == 'StepLR'
 
 
 # ---------------------------------------------------------------------------

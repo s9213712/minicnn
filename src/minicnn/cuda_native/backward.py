@@ -9,7 +9,8 @@ Each backward kernel receives:
 Returns grad_in: dL/d(node input), same shape as the node's input tensor.
 
 Supported backward ops (Phase 3):
-    Linear, ReLU, LeakyReLU, Flatten, Conv2d, MaxPool2d, AvgPool2d
+    Linear, ReLU, LeakyReLU, Sigmoid, Tanh, SiLU, Flatten, Conv2d,
+    BatchNorm2d, MaxPool2d, AvgPool2d
 """
 from __future__ import annotations
 
@@ -38,6 +39,24 @@ def _bwd_leaky_relu(node: Node, grad_out: np.ndarray, cache: dict, param_grads: 
     alpha = float(node.attrs.get('negative_slope', 0.01))
     mask = np.where(x >= 0, 1.0, alpha).astype(np.float32)
     return (grad_out * mask).astype(np.float32)
+
+
+def _bwd_sigmoid(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    x = cache[f'fwd_{node.name}_in']
+    sig = (1.0 / (1.0 + np.exp(-x))).astype(np.float32)
+    return (grad_out * sig * (1.0 - sig)).astype(np.float32)
+
+
+def _bwd_tanh(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    x = cache[f'fwd_{node.name}_in']
+    y = np.tanh(x).astype(np.float32)
+    return (grad_out * (1.0 - y * y)).astype(np.float32)
+
+
+def _bwd_silu(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    x = cache[f'fwd_{node.name}_in']
+    sig = (1.0 / (1.0 + np.exp(-x))).astype(np.float32)
+    return (grad_out * (sig + x * sig * (1.0 - sig))).astype(np.float32)
 
 
 def _bwd_flatten(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
@@ -100,6 +119,65 @@ def _bwd_conv2d(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict
     if ph or pw:
         return grad_x_pad[:, :, ph:ph + h_in, pw:pw + w_in].astype(np.float32)
     return grad_x_pad.astype(np.float32)
+
+
+def _bwd_batchnorm2d(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    x = cache[f'fwd_{node.name}_in']
+    if x.ndim != 4:
+        raise ValueError(
+            f'BatchNorm2d backward expects 4-D cached input (N,C,H,W), got shape {x.shape}'
+        )
+
+    channels = x.shape[1]
+    eps = float(node.attrs.get('eps', 1e-5))
+    mode = str(cache.get(f'fwd_{node.name}_mode', 'eval'))
+    gamma_key = f'_w_{node.name}'
+    beta_key = f'_b_{node.name}'
+    running_mean_key = f'_running_mean_{node.name}'
+    running_var_key = f'_running_var_{node.name}'
+
+    gamma = np.asarray(
+        cache.get(gamma_key, np.ones(channels, dtype=np.float32)),
+        dtype=np.float32,
+    ).reshape(1, channels, 1, 1)
+
+    if mode == 'train':
+        mean = x.mean(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+        var = x.var(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+    elif mode == 'eval':
+        mean = np.asarray(
+            cache.get(running_mean_key, np.zeros(channels, dtype=np.float32)),
+            dtype=np.float32,
+        ).reshape(1, channels, 1, 1)
+        var = np.asarray(
+            cache.get(running_var_key, np.ones(channels, dtype=np.float32)),
+            dtype=np.float32,
+        ).reshape(1, channels, 1, 1)
+    else:
+        raise ValueError(
+            f'BatchNorm2d backward does not support cached mode {mode!r}; '
+            "expected 'eval' or 'train'"
+        )
+
+    inv_std = (1.0 / np.sqrt(var + eps)).astype(np.float32)
+    x_hat = ((x - mean) * inv_std).astype(np.float32)
+
+    if gamma_key in cache:
+        param_grads[gamma_key] = (grad_out * x_hat).sum(axis=(0, 2, 3)).astype(np.float32)
+    if beta_key in cache:
+        param_grads[beta_key] = grad_out.sum(axis=(0, 2, 3)).astype(np.float32)
+
+    if mode == 'eval':
+        return (grad_out * gamma * inv_std).astype(np.float32)
+
+    norm_elems = float(x.shape[0] * x.shape[2] * x.shape[3])
+    sum_grad = grad_out.sum(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+    sum_grad_xhat = (grad_out * x_hat).sum(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+    grad_in = (
+        (gamma * inv_std / norm_elems)
+        * (norm_elems * grad_out - sum_grad - x_hat * sum_grad_xhat)
+    )
+    return grad_in.astype(np.float32)
 
 
 def _bwd_maxpool2d(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
@@ -171,9 +249,13 @@ def make_default_backward_registry() -> BackwardRegistry:
     reg = BackwardRegistry()
     reg.register('ReLU', _bwd_relu)
     reg.register('LeakyReLU', _bwd_leaky_relu)
+    reg.register('Sigmoid', _bwd_sigmoid)
+    reg.register('Tanh', _bwd_tanh)
+    reg.register('SiLU', _bwd_silu)
     reg.register('Flatten', _bwd_flatten)
     reg.register('Linear', _bwd_linear)
     reg.register('Conv2d', _bwd_conv2d)
+    reg.register('BatchNorm2d', _bwd_batchnorm2d)
     reg.register('MaxPool2d', _bwd_maxpool2d)
     reg.register('AvgPool2d', _bwd_avgpool2d)
     return reg

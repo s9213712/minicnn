@@ -106,6 +106,25 @@ def test_bwd_leaky_relu():
     np.testing.assert_allclose(grad_in, [[1.0, 0.1]], rtol=1e-5)
 
 
+@pytest.mark.parametrize(
+    ('op_type', 'x', 'expected'),
+    [
+        ('Sigmoid', np.array([[0.0]], dtype=np.float32), np.array([[0.25]], dtype=np.float32)),
+        ('Tanh', np.array([[0.0]], dtype=np.float32), np.array([[1.0]], dtype=np.float32)),
+        ('SiLU', np.array([[0.0]], dtype=np.float32), np.array([[0.5]], dtype=np.float32)),
+    ],
+)
+def test_bwd_extra_activations(op_type, x, expected):
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.backward import BackwardExecutor
+    g = build_graph([{'type': op_type}], (1, 1))
+    _, cache = ForwardExecutor().run_with_cache(g, {'input': x})
+    grad_out = np.ones((1, 1), dtype=np.float32)
+    grad_in, _ = BackwardExecutor().run(g, grad_out, cache)
+    np.testing.assert_allclose(grad_in, expected, atol=1e-6)
+
+
 def test_bwd_flatten_restores_shape():
     from minicnn.cuda_native.graph import build_graph
     from minicnn.cuda_native.executor import ForwardExecutor
@@ -228,11 +247,102 @@ def test_bwd_avgpool2d_grad_shape():
     assert grad_in.shape == (1, 2, 4, 4)
 
 
-def test_backward_registry_missing_op_raises():
-    from minicnn.cuda_native.backward import BackwardRegistry
-    reg = BackwardRegistry()
-    with pytest.raises(KeyError, match='No cuda_native backward kernel'):
-        reg.get('BatchNorm2d')
+def test_backward_registry_includes_batchnorm2d():
+    from minicnn.cuda_native.backward import make_default_backward_registry
+    reg = make_default_backward_registry()
+    assert reg.has('BatchNorm2d') is True
+
+
+def test_bwd_batchnorm2d_train_param_grad_shapes():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.backward import BackwardExecutor
+
+    g = build_graph([{'type': 'BatchNorm2d'}], (2, 3, 4, 4))
+    x = np.random.randn(2, 3, 4, 4).astype(np.float32)
+    params = {
+        '_w_batchnorm2d_0': np.ones(3, dtype=np.float32),
+        '_b_batchnorm2d_0': np.zeros(3, dtype=np.float32),
+        '_running_mean_batchnorm2d_0': np.zeros(3, dtype=np.float32),
+        '_running_var_batchnorm2d_0': np.ones(3, dtype=np.float32),
+    }
+
+    _, cache = ForwardExecutor().run_with_cache(g, {'input': x}, params=params, mode='train')
+    grad_out = np.random.randn(2, 3, 4, 4).astype(np.float32)
+    grad_in, param_grads = BackwardExecutor().run(g, grad_out, cache)
+
+    assert grad_in.shape == x.shape
+    assert param_grads['_w_batchnorm2d_0'].shape == (3,)
+    assert param_grads['_b_batchnorm2d_0'].shape == (3,)
+
+
+def test_bwd_batchnorm2d_train_input_grad_matches_numeric():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.backward import BackwardExecutor
+
+    np.random.seed(11)
+    g = build_graph([{'type': 'BatchNorm2d', 'eps': 1e-5}], (2, 2, 2, 2))
+    x = np.random.randn(2, 2, 2, 2).astype(np.float32)
+    params = {
+        '_w_batchnorm2d_0': np.array([1.25, 0.75], dtype=np.float32),
+        '_b_batchnorm2d_0': np.array([0.1, -0.2], dtype=np.float32),
+        '_running_mean_batchnorm2d_0': np.zeros(2, dtype=np.float32),
+        '_running_var_batchnorm2d_0': np.ones(2, dtype=np.float32),
+    }
+
+    fwd = ForwardExecutor()
+    _, cache = fwd.run_with_cache(g, {'input': x}, params=params, mode='train')
+    grad_out = np.random.randn(2, 2, 2, 2).astype(np.float32)
+    grad_in, _ = BackwardExecutor().run(g, grad_out, cache)
+
+    eps = 1e-3
+    x_plus = x.copy()
+    x_minus = x.copy()
+    x_plus[0, 0, 0, 0] += eps
+    x_minus[0, 0, 0, 0] -= eps
+
+    out_plus = fwd.run_inference(g, x_plus, params={
+        '_w_batchnorm2d_0': params['_w_batchnorm2d_0'].copy(),
+        '_b_batchnorm2d_0': params['_b_batchnorm2d_0'].copy(),
+        '_running_mean_batchnorm2d_0': np.zeros(2, dtype=np.float32),
+        '_running_var_batchnorm2d_0': np.ones(2, dtype=np.float32),
+    }, mode='train')
+    out_minus = fwd.run_inference(g, x_minus, params={
+        '_w_batchnorm2d_0': params['_w_batchnorm2d_0'].copy(),
+        '_b_batchnorm2d_0': params['_b_batchnorm2d_0'].copy(),
+        '_running_mean_batchnorm2d_0': np.zeros(2, dtype=np.float32),
+        '_running_var_batchnorm2d_0': np.ones(2, dtype=np.float32),
+    }, mode='train')
+    num_grad = float(((out_plus - out_minus) * grad_out).sum() / (2 * eps))
+    np.testing.assert_allclose(grad_in[0, 0, 0, 0], num_grad, rtol=5e-2, atol=5e-2)
+
+
+def test_train_step_with_batchnorm2d_updates_affine_params():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.training import train_step
+
+    np.random.seed(17)
+    g = build_graph([
+        {'type': 'BatchNorm2d'},
+        {'type': 'Flatten'},
+        {'type': 'Linear', 'out_features': 2},
+    ], (4, 1, 2, 2))
+    x = np.random.randn(4, 1, 2, 2).astype(np.float32)
+    y = np.array([0, 1, 0, 1], dtype=np.int64)
+    params = {
+        '_w_batchnorm2d_0': np.ones(1, dtype=np.float32),
+        '_b_batchnorm2d_0': np.zeros(1, dtype=np.float32),
+        '_running_mean_batchnorm2d_0': np.zeros(1, dtype=np.float32),
+        '_running_var_batchnorm2d_0': np.ones(1, dtype=np.float32),
+        '_w_linear_2': np.random.randn(2, 4).astype(np.float32) * 0.1,
+        '_b_linear_2': np.zeros(2, dtype=np.float32),
+    }
+
+    loss, new_params = train_step(g, x, y, params, lr=0.05)
+    assert np.isfinite(loss)
+    assert not np.allclose(new_params['_w_batchnorm2d_0'], params['_w_batchnorm2d_0'])
+    assert not np.allclose(new_params['_b_batchnorm2d_0'], params['_b_batchnorm2d_0'])
 
 
 # ---------------------------------------------------------------------------
@@ -350,3 +460,22 @@ def test_sgd_update_weight_decay():
     updated = sgd_update(params, grads, lr=1.0, weight_decay=0.1)
     # grad_effective = 0 + 0.1*1.0 = 0.1; updated = 1.0 - 1.0*0.1 = 0.9
     np.testing.assert_allclose(updated['w'], [0.9], rtol=1e-5)
+
+
+def test_sgd_update_momentum():
+    from minicnn.cuda_native.training import sgd_update
+    params = {'w': np.array([1.0], dtype=np.float32)}
+    grads = {'w': np.array([0.5], dtype=np.float32)}
+    state: dict[str, dict[str, np.ndarray]] = {}
+    updated1 = sgd_update(params, grads, lr=0.1, momentum=0.9, optimizer_state=state)
+    updated2 = sgd_update(updated1, grads, lr=0.1, momentum=0.9, optimizer_state=state)
+    assert updated1['w'][0] < params['w'][0]
+    assert updated2['w'][0] < updated1['w'][0]
+
+
+def test_sgd_update_gradient_clipping():
+    from minicnn.cuda_native.training import sgd_update
+    params = {'w': np.array([0.0, 0.0], dtype=np.float32)}
+    grads = {'w': np.array([3.0, 4.0], dtype=np.float32)}
+    updated = sgd_update(params, grads, lr=1.0, grad_clip_global=1.0)
+    np.testing.assert_allclose(updated['w'], np.array([-0.6, -0.8], dtype=np.float32), atol=1e-6)

@@ -1,4 +1,4 @@
-"""BatchNorm2d eval-mode reference tests for cuda_native."""
+"""BatchNorm2d reference tests for cuda_native."""
 from __future__ import annotations
 
 import numpy as np
@@ -84,3 +84,33 @@ def test_batchnorm2d_invalid_mode_raises():
     x = np.ones((1, 1, 2, 2), dtype=np.float32)
     with pytest.raises(ValueError, match='Unsupported cuda_native execution mode'):
         ForwardExecutor().run_inference(graph, x, mode='weird')
+
+
+def test_batchnorm2d_eval_backward_uses_running_stats():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.backward import BackwardExecutor
+
+    graph = build_graph([{'type': 'BatchNorm2d', 'eps': 1e-5}], (1, 2, 2, 2))
+    x = np.array(
+        [[[[1.0, 2.0], [3.0, 4.0]],
+          [[5.0, 6.0], [7.0, 8.0]]]],
+        dtype=np.float32,
+    )
+    params = {
+        '_w_batchnorm2d_0': np.array([2.0, 0.5], dtype=np.float32),
+        '_b_batchnorm2d_0': np.array([0.1, -0.3], dtype=np.float32),
+        '_running_mean_batchnorm2d_0': np.array([1.5, 6.5], dtype=np.float32),
+        '_running_var_batchnorm2d_0': np.array([4.0, 9.0], dtype=np.float32),
+    }
+
+    _, cache = ForwardExecutor().run_with_cache(graph, {'input': x}, params=params, mode='eval')
+    grad_out = np.ones_like(x, dtype=np.float32)
+    grad_in, param_grads = BackwardExecutor().run(graph, grad_out, cache)
+
+    expected = grad_out * params['_w_batchnorm2d_0'].reshape(1, 2, 1, 1) / np.sqrt(
+        params['_running_var_batchnorm2d_0'].reshape(1, 2, 1, 1) + 1e-5
+    )
+    np.testing.assert_allclose(grad_in, expected.astype(np.float32), atol=1e-5)
+    assert param_grads['_w_batchnorm2d_0'].shape == (2,)
+    assert param_grads['_b_batchnorm2d_0'].shape == (2,)

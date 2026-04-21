@@ -209,7 +209,17 @@ def test_kernel_registry_get_missing_raises():
 def test_default_registry_has_minimum_ops():
     from minicnn.cuda_native.kernels import make_default_registry
     reg = make_default_registry()
-    for op in ('BatchNorm2d', 'Conv2d', 'ReLU', 'LeakyReLU', 'Flatten', 'Linear'):
+    for op in (
+        'BatchNorm2d',
+        'Conv2d',
+        'ReLU',
+        'LeakyReLU',
+        'Sigmoid',
+        'Tanh',
+        'SiLU',
+        'Flatten',
+        'Linear',
+    ):
         assert reg.has(op), f'missing kernel for {op}'
 
 
@@ -236,6 +246,23 @@ def test_executor_leaky_relu_forward():
     out = ForwardExecutor().run_inference(g, x)
     expected = np.where(x >= 0, x, 0.1 * x).astype(np.float32)
     np.testing.assert_allclose(out, expected, rtol=1e-6)
+
+
+@pytest.mark.parametrize(
+    ('op_type', 'expected'),
+    [
+        ('Sigmoid', np.array([[0.26894143, 0.5, 0.7310586]], dtype=np.float32)),
+        ('Tanh', np.tanh(np.array([[-1.0, 0.0, 1.0]], dtype=np.float32)).astype(np.float32)),
+        ('SiLU', (np.array([[-1.0, 0.0, 1.0]], dtype=np.float32) / (1.0 + np.exp(-np.array([[-1.0, 0.0, 1.0]], dtype=np.float32)))).astype(np.float32)),
+    ],
+)
+def test_executor_extra_activations_forward(op_type, expected):
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.executor import ForwardExecutor
+    g = build_graph([{'type': op_type}], (1, 3))
+    x = np.array([[-1.0, 0.0, 1.0]], dtype=np.float32)
+    out = ForwardExecutor().run_inference(g, x)
+    np.testing.assert_allclose(out, expected, rtol=1e-6, atol=1e-6)
 
 
 def test_executor_flatten_forward():
