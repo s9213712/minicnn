@@ -1,34 +1,38 @@
 # Dual Backend Guide
 
-This guide explains how the shared dual-backend config works on the current
-branch.
+This guide explains how the shared dual-backend config works.
 
-The stable shared toggle is:
+The stable shared toggles are:
 
 - `engine.backend: torch`
 - `engine.backend: cuda_legacy`
+- `engine.backend: cuda_native` *(experimental)*
 
 ## Same Frontend, Different Backend Boundary
 
 ```bash
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=torch
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
+minicnn train-native --config configs/dual_backend_cnn.yaml   # cuda_native shortcut
 ```
 
-The important nuance is:
+Both commands read the same top-level config shape. Torch can use far more of that frontend surface. `cuda_legacy` and `cuda_native` only accept narrow validated subsets.
 
-- both commands read the same top-level config shape
-- torch can use far more of that frontend surface
-- `cuda_legacy` only accepts a narrow validated subset
+## Validate Before Running
 
-## Validate Before Running CUDA Legacy
+For `cuda_legacy`:
 
 ```bash
 minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 ```
 
-If validation fails, fix the config first. Do not assume the native backend is
-supposed to accept the same full surface as torch.
+For `cuda_native`:
+
+```bash
+minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
+```
+
+Do not assume any backend accepts the same full surface as torch.
 
 ## Inspect The Mapping
 
@@ -36,36 +40,35 @@ supposed to accept the same full surface as torch.
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 ```
 
-This is the fastest way to see how the shared config is compiled into the
-legacy experiment config used by the handwritten CUDA trainer.
+Shows how the shared config is compiled into the legacy experiment config.
 
 ## What The Shared Config Actually Uses
 
-For the public dual-backend path, architecture is described through
-`model.layers[]`.
+Architecture is described through `model.layers[]`.
 
-Torch consumes that list directly through the flex builder.
+- **Torch**: consumes the list directly through the flex builder
+- **cuda_legacy**: validates the list against one fixed pattern, then compiles it into the stage-oriented experiment config
+- **cuda_native**: validates against supported op types, then builds a sequential NativeGraph
 
-`cuda_legacy` does not. It validates the list against one fixed pattern and
-then compiles the result into the older stage-oriented experiment config.
+The same YAML key exists on all sides, but the accepted semantic surface is different.
 
-That means the same YAML key exists on both sides, but the accepted semantic
-surface is different.
+## cuda_legacy Contract
 
-## Current `cuda_legacy` Contract
+Accepts:
 
-On this branch, `cuda_legacy` accepts:
+- dataset type: `cifar10`, input shape `[3, 32, 32]`
+- exactly: `Conv2d → activation → Conv2d → activation → MaxPool2d → Conv2d → activation → Conv2d → activation → MaxPool2d → Flatten → Linear`
+- activations: `ReLU` or `LeakyReLU`
 
-- dataset type `cifar10`
-- input shape `[3, 32, 32]`
-- exactly four `Conv2d` layers
-- `ReLU` or `LeakyReLU`
-- exactly two `MaxPool2d` layers in fixed positions
-- final `Flatten -> Linear`
+## cuda_native Contract
 
-This is why a config may be valid for torch but invalid for `cuda_legacy`.
+Accepts:
 
-## Variant Selection
+- dataset type: `cifar10`, `mnist`, or `random`
+- any sequential graph with supported ops: `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`
+- rejects at validation: `BatchNorm2d`, `GroupNorm`, `LayerNorm`, `ResidualBlock`
+
+## Variant Selection (cuda_legacy)
 
 ```bash
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
@@ -75,71 +78,136 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=handmade
 ```
 
-In-process variant switching resets the cached native handle so repeated scripted
-comparisons still load the requested `.so`.
+In-process variant switching resets the cached native handle so repeated scripted comparisons still load the requested `.so`.
 
 ## Changing Architecture
 
 ### Torch
 
-Most torch-side architecture edits are YAML-only:
+Most torch-side architecture edits are YAML-only. PyTorch autograd owns backward for those components.
 
-- add/remove/reorder `model.layers[]`
-- use registered layers or torch module names
-- use dotted-path custom components
+### cuda_legacy
 
-PyTorch autograd owns backward for those components.
+Safe YAML-only edits: channel widths, `ReLU` vs `LeakyReLU`, classifier output width.
 
-### CUDA Legacy
+Not YAML-only: new layer types, different pool structure, branching topology. Those require backend work across `cuda_legacy.py`, `training/`, `core/`, and `cpp/src/`.
 
-Most `cuda_legacy` architecture edits are only YAML-only if they stay inside the
-existing validated pattern.
+### cuda_native
 
-Examples of safe edits:
-
-- channel widths
-- `ReLU` vs `LeakyReLU`
-- classifier output width, if still compatible with the fixed dataset/output contract
-
-Examples that are not YAML-only:
-
-- new layer types
-- different pool structure
-- branching/residual topology
-- new normalization ops inside the training graph
-
-Those require real backend work across:
-
-- `src/minicnn/unified/cuda_legacy.py`
-- `src/minicnn/training/`
-- `src/minicnn/core/cuda_backend.py`
-- `cpp/src/`
+Add a new op: implement kernel in `kernels.py`, add backward in `backward.py`, register in `capabilities.py` and `validators.py`, add shape inference in `shapes.py`.
 
 ## Change-Impact Table
 
-| Change | Torch path | CUDA legacy path |
-|---|---|---|
-| Change `Conv2d` widths or linear output inside supported shapes | YAML-only | YAML-only if still inside validator boundary |
-| Reorder or add arbitrary layers | Usually YAML-only | Not supported without backend work |
-| Add a torch-only custom block | Add/import it for flex | No effect unless CUDA must also support it |
-| Add a new native training op | No torch change unless frontend parity is desired | Update validator, mapping, workspace, ctypes, and native kernels |
-| Change native backward math | Usually no project change | Update native backward kernel and matching Python call sites |
-| Change optimizer semantics | Torch optimizer/config changes | Native optimizer and CUDA batch path changes |
+| Change | Torch | cuda_legacy | cuda_native |
+|---|---|---|---|
+| Change Conv2d / Linear widths inside supported shapes | YAML-only | YAML-only if inside validator boundary | YAML-only |
+| Add arbitrary layers | Usually YAML-only | Not supported without backend work | Only if op is in supported set |
+| Add new native training op | No torch change needed | Update validator, mapping, workspace, native kernels | Update kernels, backward, shapes, validators |
+| Change optimizer semantics | Torch optimizer/config changes | Native optimizer and CUDA batch path changes | Update `training.py` |
 
-## Legacy Training Layout
+---
 
-The public command is still `minicnn train-dual`, but the legacy backend is
-split internally:
+# Dual Backend 使用指南（中文）
 
-- `src/minicnn/training/train_cuda.py`: orchestration
-- `src/minicnn/training/cuda_batch.py`: per-batch CUDA forward/backward/update
-- `src/minicnn/training/legacy_data.py`: CIFAR-10 load/normalize
-- `src/minicnn/training/loop.py`: shared metrics and LR/early-stop helpers
+本指南說明 shared dual-backend config 的使用方式。
 
-## Custom Components
+穩定的 backend 切換項目：
 
-Custom dotted-path components are a torch-side feature.
+- `engine.backend: torch`
+- `engine.backend: cuda_legacy`
+- `engine.backend: cuda_native` *(實驗中)*
 
-They do not automatically become legal for `cuda_legacy`. If CUDA needs the
-same capability, it must be added through validation, mapping, and native
-execution support.
+## 相同前端，不同 Backend 邊界
+
+```bash
+minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=torch
+minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
+minicnn train-native --config configs/dual_backend_cnn.yaml   # cuda_native 快捷方式
+```
+
+所有指令都讀同一份 config。Torch 能使用最多的前端功能；`cuda_legacy` 和 `cuda_native` 只接受各自驗證過的子集。
+
+## 執行前先驗證
+
+`cuda_legacy` 驗證：
+
+```bash
+minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
+```
+
+`cuda_native` 驗證：
+
+```bash
+minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
+```
+
+不要假設任何 backend 接受和 torch 一樣廣的前端功能。
+
+## 查看 Mapping
+
+```bash
+minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
+```
+
+顯示 shared config 如何被編譯成 legacy experiment config。
+
+## Shared Config 實際使用方式
+
+架構透過 `model.layers[]` 描述：
+
+- **Torch**：透過 flex builder 直接使用
+- **cuda_legacy**：對照固定 pattern 驗證後，編譯成 stage-oriented experiment config
+- **cuda_native**：對照支援 op 列表驗證後，建立 sequential NativeGraph
+
+同一個 YAML key 在各個 backend 的接受範圍不同。
+
+## cuda_legacy 合約
+
+接受：
+- 資料集：`cifar10`，input shape `[3, 32, 32]`
+- 固定 pattern：`Conv2d → activation → Conv2d → activation → MaxPool2d → Conv2d → activation → Conv2d → activation → MaxPool2d → Flatten → Linear`
+- 激活：`ReLU` 或 `LeakyReLU`
+
+## cuda_native 合約
+
+接受：
+- 資料集：`cifar10`、`mnist`、`random`
+- 任何 sequential graph，op 限於：`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`
+- 驗證時拒絕：`BatchNorm2d`、`GroupNorm`、`LayerNorm`、`ResidualBlock`
+
+## Variant 選擇（cuda_legacy）
+
+```bash
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=cublas
+
+minicnn train-dual --config configs/dual_backend_cnn.yaml \
+  engine.backend=cuda_legacy runtime.cuda_variant=handmade
+```
+
+切換 variant 會重置 cached native handle，確保多次比較時正確載入指定的 `.so`。
+
+## 修改架構的影響
+
+### Torch
+
+大多數架構修改只需改 YAML，backward 由 PyTorch autograd 負責。
+
+### cuda_legacy
+
+安全的 YAML-only 修改：channel 寬度、`ReLU` vs `LeakyReLU`、分類器輸出寬度。
+
+非 YAML-only：新層型別、不同 pool 結構、branching topology，需要修改 `cuda_legacy.py`、`training/`、`core/`、`cpp/src/`。
+
+### cuda_native
+
+新增 op：在 `kernels.py` 實作 kernel，在 `backward.py` 加 backward，在 `capabilities.py` 和 `validators.py` 更新支援清單，在 `shapes.py` 加 shape inference。
+
+## 修改影響一覽表
+
+| 修改項目 | Torch | cuda_legacy | cuda_native |
+|---|---|---|---|
+| 改 Conv2d / Linear 寬度 | YAML-only | 在 validator 邊界內 YAML-only | YAML-only |
+| 新增任意層 | 通常 YAML-only | 需要 backend 工作 | 僅限已支援 op |
+| 新增 native 訓練 op | 不需 torch 修改 | 需更新 validator、mapping、workspace、native kernel | 需更新 kernels、backward、shapes、validators |
+| 修改 optimizer 語意 | 改 torch optimizer/config | 改 native optimizer 和 CUDA batch 路徑 | 改 `training.py` |

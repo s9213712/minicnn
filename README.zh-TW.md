@@ -6,8 +6,7 @@
 ![frontend](https://img.shields.io/badge/frontend-YAML%20%2B%20CLI-blue)
 ![native](https://img.shields.io/badge/native-CUDA-green)
 
-MiniCNN 是一個以組態驅動的深度學習專案，用來研究「同一個前端介面」與
-「不同 backend 能力邊界」之間的落差。
+MiniCNN 是一個以組態驅動的深度學習專案，用來研究「同一個前端介面」與「不同 backend 能力邊界」之間的落差。
 
 目前這個 repo 實際提供四條可用路徑：
 
@@ -18,8 +17,7 @@ MiniCNN 是一個以組態驅動的深度學習專案，用來研究「同一個
 
 ## 為什麼有這個專案
 
-大多數框架會刻意把 kernel orchestration、記憶體處理、backend 邊界包在
-平滑的 API 後面。
+大多數框架會刻意把 kernel orchestration、記憶體處理、backend 邊界包在平滑的 API 後面。
 
 MiniCNN 的價值在於把這些邊界攤開來看：
 
@@ -87,7 +85,7 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 - numpy 參考 kernel 與 dispatch（`kernels.py`, `executor.py`）
 - backward 原型與 SGD 訓練迴圈
 
-支援 op：`Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`。
+支援 op：`Conv2d`、`ReLU`、`LeakyReLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`。
 
 非正式 backend，僅支援 sequential graph，不取代 `cuda_legacy`。
 
@@ -135,8 +133,7 @@ cpp/libminimal_cuda_cnn_cublas.so
 cpp/libminimal_cuda_cnn_handmade.so
 ```
 
-native library 採 lazy-load，所以像 `minicnn --help`、`prepare-data`、
-`validate-dual-config`、以及 torch-only 執行都不需要先編好 `.so`。
+native library 採 lazy-load，所以像 `minicnn --help`、`prepare-data`、`validate-dual-config`、以及 torch-only 執行都不需要先編好 `.so`。
 
 ## 準備資料
 
@@ -146,8 +143,7 @@ native library 採 lazy-load，所以像 `minicnn --help`、`prepare-data`、
 minicnn prepare-data
 ```
 
-MNIST 相關 flex/autograd config 則可以用 `dataset.download=true`，
-把資料下載到 `data/mnist/`。
+MNIST 相關 flex/autograd config 則可以用 `dataset.download=true`，把資料下載到 `data/mnist/`。
 
 ## 常用訓練指令
 
@@ -217,20 +213,18 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 
 專案層的 frontend 能力，比 `cuda_legacy` 本身廣很多。
 
-這點很重要：
+這個區別很重要：
 
-- `torch` 是新模型與新想法的預設落點
-- `cuda_legacy` 是有 validator 與 capability boundary 的受限 backend
-- `autograd` 適合學習與小型實驗
-- `cuda_native` 應該作為獨立 backend 成長，而不是把 `cuda_legacy` 硬撐到無限泛用
+- `torch` 是新模型想法的預設家
+- `cuda_legacy` 是有 validator 強制限制的 backend
+- `autograd` 用於學習和精簡實驗
+- `cuda_native` 應該作為獨立 backend 成長，而不是假裝 `cuda_legacy` 能無限延伸
 
-完整支援矩陣請看 [docs/backend_capabilities.md](docs/backend_capabilities.md)，
-較長期的泛用化方向請看
-[docs/generalization_roadmap.md](docs/generalization_roadmap.md)。
+完整支援矩陣見 [docs/backend_capabilities.md](docs/backend_capabilities.md)，長期方向見 [docs/generalization_roadmap.md](docs/generalization_roadmap.md)。
 
-## Config 介面
+## Config 合約
 
-主要 shared-config 介面包含：
+主要的 shared-config 介面：
 
 - `dataset`
 - `model.layers`
@@ -266,16 +260,15 @@ model:
       out_features: 10
 ```
 
-如果這份 config 不符合 `cuda_legacy`，請直接用
-`minicnn validate-dual-config` 看具體錯誤，而不是猜測哪裡不支援。
+如果同一份 config 不符合 `cuda_legacy`，用 `minicnn validate-dual-config` 查看確切的相容性錯誤，而不是猜測。
 
-## 可擴充性
+## 擴展性
 
-### Custom components
+### 自訂元件
 
-Torch/flex 支援在 `model.layers[].type` 中使用 dotted-path layer factory。
+Torch/flex 在 `model.layers[].type` 接受 dotted-path layer factory。
 
-例如：
+範例：
 
 ```yaml
 model:
@@ -287,49 +280,46 @@ model:
       out_channels: 32
 ```
 
-詳見 [docs/custom_components.md](docs/custom_components.md)。
+見 [docs/custom_components.md](docs/custom_components.md)。
 
-## 文件入口
+## 文件索引
 
-建議先看：
+從這裡開始：
 
-- [docs/USAGE.md](docs/USAGE.md)：文件索引
-- [docs/architecture.md](docs/architecture.md)：整體架構與模組地圖
-- [docs/backend_capabilities.md](docs/backend_capabilities.md)：backend 支援矩陣
-- [docs/custom_components.md](docs/custom_components.md)：component 擴充入口
+- [docs/USAGE.md](docs/USAGE.md)：文件總索引
+- [docs/architecture.md](docs/architecture.md)：整體架構與模組圖
+- [docs/backend_capabilities.md](docs/backend_capabilities.md)：Backend 支援矩陣
+- [docs/cuda_native.md](docs/cuda_native.md)：cuda_native 完整指南
+- [docs/custom_components.md](docs/custom_components.md)：dotted-path 元件擴展
 - [docs/08_autograd.md](docs/08_autograd.md)：NumPy autograd stack
-- [docs/09_feature_expansion.md](docs/09_feature_expansion.md)：擴充功能說明
-- [templates/README.md](templates/README.md)：可直接修改的 template configs
+- [docs/09_feature_expansion.md](docs/09_feature_expansion.md)：功能擴展說明
 
-若要看這個 branch 內的 `cuda_native` 規劃脈絡，工作筆記放在
-`comments/cuda_native/`。
-
-## Repository 地圖
+## Repository 目錄結構
 
 ```text
 minicnn/
 ├── cpp/                    # 手寫 CUDA / C++ backend
-├── configs/                # flex、dual、autograd 的範例 configs
-├── docs/                   # 設計文件、指南與 capability docs
-├── examples/               # custom torch component 範例
-├── comments/cuda_native/   # branch 內的 cuda_native 規劃筆記
+├── configs/                # flex、dual、autograd 路徑的範例 config
+├── docs/                   # 設計說明、指南與 capability 文件
+├── examples/               # 自訂 torch 元件範例
+├── comments/cuda_native/   # cuda_native 規劃說明
 ├── src/minicnn/
-│   ├── flex/               # torch/flex frontend、registry、builder、trainer
-│   ├── unified/            # shared-config dispatch 與 backend bridges
-│   ├── training/           # cuda_legacy 與 autograd 訓練程式
-│   ├── cuda_native/        # 實驗性的 graph/planner/executor backend 開發
+│   ├── flex/               # torch/flex 前端、registry、builder、trainer
+│   ├── unified/            # shared-config dispatch 與 backend bridge
+│   ├── training/           # cuda_legacy 與 autograd 訓練程式碼
+│   ├── cuda_native/        # 實驗性 graph/planner/executor backend
 │   ├── nn/ ops/ optim/     # NumPy autograd stack
-│   ├── compiler/ runtime/  # tracing、optimization 與 CPU inference pipeline
+│   ├── compiler/ runtime/  # tracing、optimization 與 CPU inference 流水線
 │   └── core/               # native build helpers 與 ctypes CUDA binding
-└── tests/                  # unit 與 smoke tests
+└── tests/                  # 單元測試與 smoke test
 ```
 
 ## 設計哲學
 
-- backend capability 要明講，不假裝 parity
-- frontend 能共用時才共用，不做虛假的抽象
-- 遇到不支援的 backend 組合就 fail fast
-- 實驗性 backend work 可以公開，但不能包裝成穩定功能
+- 顯式的 backend 能力邊界，而非模糊的對等性宣稱
+- 一個前端合約，在這個範圍內抽象是誠實的
+- 不支援的 backend 組合快速失敗
+- 實驗性 backend 工作維持可見，但不偽裝成穩定
 
 ## License
 
