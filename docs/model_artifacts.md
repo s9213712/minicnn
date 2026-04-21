@@ -47,6 +47,32 @@ Notes:
 - inspecting `.pt` / `.pth` still requires PyTorch
 - inspecting `.npz` does not
 
+## Export To A Generic Torch Checkpoint
+
+For supported sources, MiniCNN can export to a standard PyTorch checkpoint:
+
+```bash
+minicnn export-torch-checkpoint \
+  --path artifacts/models/my_run_autograd_best.npz \
+  --config configs/autograd_tiny.yaml \
+  --output artifacts/models/my_run_autograd_export.pt
+```
+
+Currently supported:
+
+- `autograd` `.npz` -> torch `.pt`
+- `cuda_native` `.npz` -> torch `.pt`
+
+Currently not supported:
+
+- `cuda_legacy` `.npz` -> torch `.pt`
+
+Why `cuda_legacy` is excluded:
+
+- its checkpoint schema is tied to handcrafted runtime geometry
+- it stores runtime-specific training state, not a frontend-level portable model format
+- a safe export path would need an explicit geometry-to-module conversion layer
+
 ## Reuse Examples
 
 ### Torch / flex
@@ -83,6 +109,15 @@ model.load_state_dict({k: ckpt[k] for k in ckpt.files})
 model.eval()
 ```
 
+Or export it once and reuse it as a normal torch checkpoint:
+
+```bash
+minicnn export-torch-checkpoint \
+  --path artifacts/models/my_run_autograd_best.npz \
+  --config configs/autograd_tiny.yaml \
+  --output artifacts/models/my_run_autograd_export.pt
+```
+
 ### cuda_native
 
 `cuda_native` best files are flat NumPy parameter dicts. Reuse means rebuilding
@@ -99,6 +134,16 @@ params_file = np.load('artifacts/models/my_run_best.npz')
 params = {k: params_file[k] for k in params_file.files}
 executor = ForwardExecutor()
 logits = executor.run_inference(graph, x_batch, params=params, mode='eval')
+```
+
+If the config maps cleanly onto the torch/flex model builder, you can also export
+it to torch:
+
+```bash
+minicnn export-torch-checkpoint \
+  --path artifacts/models/my_run_best.npz \
+  --config configs/dual_backend_cnn.yaml \
+  --output artifacts/models/my_run_native_export.pt
 ```
 
 ### cuda_legacy
@@ -118,6 +163,7 @@ cuda_native.
 - `autograd` and `cuda_native` both use `.npz`, but the schemas are different.
 - `cuda_legacy` `.npz` is a handcrafted runtime checkpoint, not a frontend-level model exchange format.
 - if you need cross-backend reuse, add an explicit conversion layer instead of assuming filename parity means compatibility.
+- exported torch checkpoints are only as portable as the config they were built from; use the same architecture config when exporting.
 
 ---
 
@@ -168,6 +214,32 @@ minicnn inspect-checkpoint --path artifacts/models/example_autograd_best.npz
 - 檢查 `.pt` / `.pth` 仍需要 PyTorch
 - 檢查 `.npz` 不需要
 
+## 匯出成通用 torch checkpoint
+
+對支援的來源格式，MiniCNN 現在可以匯出成標準 PyTorch checkpoint：
+
+```bash
+minicnn export-torch-checkpoint \
+  --path artifacts/models/my_run_autograd_best.npz \
+  --config configs/autograd_tiny.yaml \
+  --output artifacts/models/my_run_autograd_export.pt
+```
+
+目前支援：
+
+- `autograd` `.npz` -> torch `.pt`
+- `cuda_native` `.npz` -> torch `.pt`
+
+目前不支援：
+
+- `cuda_legacy` `.npz` -> torch `.pt`
+
+`cuda_legacy` 先不支援的原因：
+
+- 它的 checkpoint schema 綁定手寫 runtime geometry
+- 裡面存的是 runtime-specific training state，不是前端層可攜模型格式
+- 若要安全轉換，需額外實作 geometry-to-module conversion layer
+
 ## 復用示範
 
 ### Torch / flex
@@ -204,6 +276,15 @@ model.load_state_dict({k: ckpt[k] for k in ckpt.files})
 model.eval()
 ```
 
+如果你想把它先轉成一般 torch checkpoint 再交給外部使用：
+
+```bash
+minicnn export-torch-checkpoint \
+  --path artifacts/models/my_run_autograd_best.npz \
+  --config configs/autograd_tiny.yaml \
+  --output artifacts/models/my_run_autograd_export.pt
+```
+
 ### cuda_native
 
 `cuda_native` best 檔是平坦的 NumPy parameter dict。要復用時，需先重建同一張
@@ -222,6 +303,15 @@ executor = ForwardExecutor()
 logits = executor.run_inference(graph, x_batch, params=params, mode='eval')
 ```
 
+若這份 config 能乾淨映射到 torch/flex model builder，也可以匯出成 torch：
+
+```bash
+minicnn export-torch-checkpoint \
+  --path artifacts/models/my_run_best.npz \
+  --config configs/dual_backend_cnn.yaml \
+  --output artifacts/models/my_run_native_export.pt
+```
+
 ### cuda_legacy
 
 `cuda_legacy` checkpoint **不是** generic state dict。它綁定手寫 CUDA 的幾何與
@@ -237,3 +327,4 @@ logits = executor.run_inference(graph, x_batch, params=params, mode='eval')
 - `autograd` 和 `cuda_native` 都用 `.npz`，但 schema 不同。
 - `cuda_legacy` `.npz` 是手寫 runtime checkpoint，不是前端層的模型交換格式。
 - 若你需要跨 backend 復用，請加明確的 conversion layer，不要假設檔名相似就代表相容。
+- 匯出的 torch checkpoint 能否被外部安全使用，仍取決於匯出時使用的架構 config 是否一致。

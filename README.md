@@ -280,6 +280,9 @@ Use `summary.json` to find `best_model_path`, and use:
 
 ```bash
 minicnn inspect-checkpoint --path artifacts/models/example_best.pt
+minicnn export-torch-checkpoint --path artifacts/models/example_autograd_best.npz \
+  --config configs/autograd_tiny.yaml \
+  --output artifacts/models/example_autograd_export.pt
 ```
 
 for a quick schema view.

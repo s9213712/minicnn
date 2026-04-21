@@ -136,6 +136,7 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'train-torch' in help_text
     assert 'train-autograd' in help_text
     assert 'inspect-checkpoint' in help_text
+    assert 'export-torch-checkpoint' in help_text
     assert 'validate-config' in help_text
     assert 'compile' in help_text
     assert '--cuda-arch' in build_help
@@ -272,6 +273,141 @@ def test_cli_inspect_checkpoint_reports_missing_torch_for_pt_without_traceback(t
     assert 'inspect-checkpoint requires PyTorch to read .pt/.pth files.' in proc.stdout
     assert 'pip install -e .[torch]' in proc.stdout
     assert 'Traceback' not in proc.stderr
+
+
+def test_export_autograd_checkpoint_to_torch_pt(tmp_path):
+    import json
+    import torch
+
+    from minicnn.cli import main
+    from minicnn.models.builder import build_model_from_config
+
+    config_path = tmp_path / 'autograd_export.yaml'
+    config_path.write_text(
+        'dataset:\n'
+        '  input_shape: [3, 8, 8]\n'
+        'model:\n'
+        '  layers:\n'
+        '    - type: Conv2d\n'
+        '      out_channels: 4\n'
+        '      kernel_size: 3\n'
+        '      padding: 1\n'
+        '    - type: BatchNorm2d\n'
+        '    - type: ReLU\n'
+        '    - type: Flatten\n'
+        '    - type: Linear\n'
+        '      out_features: 2\n',
+        encoding='utf-8',
+    )
+
+    model, _ = build_model_from_config(
+        {
+            'layers': [
+                {'type': 'Conv2d', 'out_channels': 4, 'kernel_size': 3, 'padding': 1},
+                {'type': 'BatchNorm2d'},
+                {'type': 'ReLU'},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ]
+        },
+        input_shape=(3, 8, 8),
+    )
+    ckpt_path = tmp_path / 'demo_autograd_best.npz'
+    np.savez(ckpt_path, **model.state_dict())
+
+    out_path = tmp_path / 'exported.pt'
+    rc = main([
+        'export-torch-checkpoint',
+        '--path', str(ckpt_path),
+        '--config', str(config_path),
+        '--output', str(out_path),
+    ])
+
+    assert rc == 0
+    payload = torch.load(out_path, map_location='cpu', weights_only=True)
+    assert payload['source_format'] == 'autograd_state_dict'
+    assert tuple(payload['model_state']['4.weight'].shape) == (2, 256)
+    assert payload['model_state']['1.running_mean'].shape[0] == 4
+
+
+def test_export_cuda_native_checkpoint_to_torch_pt(tmp_path):
+    import torch
+
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'native_export.yaml'
+    config_path.write_text(
+        'dataset:\n'
+        '  input_shape: [3, 8, 8]\n'
+        'model:\n'
+        '  layers:\n'
+        '    - type: Conv2d\n'
+        '      out_channels: 4\n'
+        '      kernel_size: 3\n'
+        '      padding: 1\n'
+        '    - type: BatchNorm2d\n'
+        '    - type: ReLU\n'
+        '    - type: Flatten\n'
+        '    - type: Linear\n'
+        '      out_features: 2\n',
+        encoding='utf-8',
+    )
+
+    ckpt_path = tmp_path / 'demo_native_best.npz'
+    np.savez(
+        ckpt_path,
+        _w_conv2d_0=np.zeros((4, 3, 3, 3), dtype=np.float32),
+        _b_conv2d_0=np.zeros((4,), dtype=np.float32),
+        _w_batchnorm2d_1=np.ones((4,), dtype=np.float32),
+        _b_batchnorm2d_1=np.zeros((4,), dtype=np.float32),
+        _running_mean_batchnorm2d_1=np.zeros((4,), dtype=np.float32),
+        _running_var_batchnorm2d_1=np.ones((4,), dtype=np.float32),
+        _w_linear_4=np.zeros((2, 256), dtype=np.float32),
+        _b_linear_4=np.zeros((2,), dtype=np.float32),
+    )
+
+    out_path = tmp_path / 'exported_native.pt'
+    rc = main([
+        'export-torch-checkpoint',
+        '--path', str(ckpt_path),
+        '--config', str(config_path),
+        '--output', str(out_path),
+    ])
+
+    assert rc == 0
+    payload = torch.load(out_path, map_location='cpu', weights_only=True)
+    assert payload['source_format'] == 'cuda_native_param_dict'
+    assert tuple(payload['model_state']['4.weight'].shape) == (2, 256)
+
+
+def test_export_cuda_legacy_checkpoint_is_rejected(capsys, tmp_path):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'legacy_export.yaml'
+    config_path.write_text('dataset:\n  input_shape: [3, 32, 32]\nmodel:\n  layers: []\n', encoding='utf-8')
+    ckpt_path = tmp_path / 'legacy_best.npz'
+    np.savez(
+        ckpt_path,
+        epoch=np.int32(1),
+        val_acc=np.float32(0.1),
+        fc_w=np.zeros((10,), dtype=np.float32),
+        fc_b=np.zeros((1,), dtype=np.float32),
+    )
+
+    try:
+        main([
+            'export-torch-checkpoint',
+            '--path', str(ckpt_path),
+            '--config', str(config_path),
+            '--output', str(tmp_path / 'nope.pt'),
+        ])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:  # pragma: no cover
+        raise AssertionError('expected SystemExit for unsupported export')
+
+    out = capsys.readouterr().out
+    assert 'cuda_legacy checkpoints cannot be exported directly' in out
 
 
 def test_cli_seed_overrides_keep_dataset_init_and_train_seeds_separate():

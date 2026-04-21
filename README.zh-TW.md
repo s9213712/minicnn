@@ -273,6 +273,9 @@ root 下執行 CLI。不過這仍屬 repo-first 便利機制，不是完整 pack
 
 ```bash
 minicnn inspect-checkpoint --path artifacts/models/example_best.pt
+minicnn export-torch-checkpoint --path artifacts/models/example_autograd_best.npz \
+  --config configs/autograd_tiny.yaml \
+  --output artifacts/models/example_autograd_export.pt
 ```
 
 完整格式與復用說明見 [docs/model_artifacts.md](docs/model_artifacts.md)。

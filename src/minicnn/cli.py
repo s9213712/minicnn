@@ -377,6 +377,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser('dual-config-template', help='Print the dual-backend unified config template')
     p_inspect_ckpt = sub.add_parser('inspect-checkpoint', help='Inspect a saved model/checkpoint artifact (.pt/.pth/.npz)')
     p_inspect_ckpt.add_argument('--path', required=True, type=str)
+    p_export_ckpt = sub.add_parser('export-torch-checkpoint', help='Export a supported MiniCNN checkpoint to a generic torch checkpoint (.pt)')
+    p_export_ckpt.add_argument('--path', required=True, type=str)
+    p_export_ckpt.add_argument('--config', required=True, type=str)
+    p_export_ckpt.add_argument('--output', required=True, type=str)
 
     p_flex = sub.add_parser('train-flex', help='Train a configurable PyTorch model from YAML')
     p_flex.add_argument('--config', type=str, default='configs/flex_cnn.yaml')
@@ -541,6 +545,20 @@ def main(argv: list[str] | None = None) -> int:
         try:
             payload = inspect_checkpoint(args.path)
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            _exit_user_error(str(exc))
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    if args.command == 'export-torch-checkpoint':
+        from minicnn.artifacts import export_checkpoint_to_torch
+
+        try:
+            payload = export_checkpoint_to_torch(
+                args.path,
+                config_path=args.config,
+                output_path=args.output,
+            )
+        except (FileNotFoundError, RuntimeError, ValueError, TypeError) as exc:
             _exit_user_error(str(exc))
         print(json.dumps(payload, indent=2))
         return 0
