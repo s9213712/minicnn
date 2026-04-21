@@ -249,6 +249,7 @@ minicnn list-flex-components
 minicnn list-dual-components
 minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
+minicnn inspect-checkpoint --path artifacts/models/example_best.pt
 minicnn cuda-native-capabilities
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
@@ -257,6 +258,24 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 路徑，現在必要時會自動以 project root 為基準解析，所以不一定要在 repo
 root 下執行 CLI。不過這仍屬 repo-first 便利機制，不是完整 packaged-resource
 系統。
+
+## 模型產物
+
+各 backend 的模型檔格式目前**沒有統一**。
+
+- torch 路徑存的是帶 `model_state` 的 `.pt` checkpoint
+- autograd 存的是 `.npz` state dict arrays
+- `cuda_native` 存的是平坦 `.npz` parameter dict
+- `cuda_legacy` 存的是手寫 runtime checkpoint `.npz`
+
+要找最佳模型，先看 `summary.json` 裡的 `best_model_path`。
+若要快速看 schema，可直接用：
+
+```bash
+minicnn inspect-checkpoint --path artifacts/models/example_best.pt
+```
+
+完整格式與復用說明見 [docs/model_artifacts.md](docs/model_artifacts.md)。
 
 執行實驗性 cuda_native 路徑：
 
@@ -348,6 +367,7 @@ model:
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md)：shared-config routing 與 backend 邊界
 - [docs/cuda_native.md](docs/cuda_native.md)：實驗性 `cuda_native` 指南
 - [docs/custom_components.md](docs/custom_components.md)：dotted-path 元件擴展
+- [docs/model_artifacts.md](docs/model_artifacts.md)：checkpoint 格式、復用邊界與示範
 - [templates/README.md](templates/README.md)：可直接修改的 template config
 
 `docs/` 內也保留了一些背景報告與歷史比較文件；現在 [USAGE.md](USAGE.md)

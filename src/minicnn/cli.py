@@ -375,6 +375,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser('list-dual-components', help='List dual-backend components and cuda_legacy subset')
     sub.add_parser('config-template', help='Print the PyTorch-flex config template')
     sub.add_parser('dual-config-template', help='Print the dual-backend unified config template')
+    p_inspect_ckpt = sub.add_parser('inspect-checkpoint', help='Inspect a saved model/checkpoint artifact (.pt/.pth/.npz)')
+    p_inspect_ckpt.add_argument('--path', required=True, type=str)
 
     p_flex = sub.add_parser('train-flex', help='Train a configurable PyTorch model from YAML')
     p_flex.add_argument('--config', type=str, default='configs/flex_cnn.yaml')
@@ -531,6 +533,16 @@ def main(argv: list[str] | None = None) -> int:
         from minicnn.unified.config import dump_unified_template
 
         print(dump_unified_template())
+        return 0
+
+    if args.command == 'inspect-checkpoint':
+        from minicnn.artifacts import inspect_checkpoint
+
+        try:
+            payload = inspect_checkpoint(args.path)
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            _exit_user_error(str(exc))
+        print(json.dumps(payload, indent=2))
         return 0
 
     if args.command == 'train-flex':

@@ -135,6 +135,7 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'train-cuda' in help_text
     assert 'train-torch' in help_text
     assert 'train-autograd' in help_text
+    assert 'inspect-checkpoint' in help_text
     assert 'validate-config' in help_text
     assert 'compile' in help_text
     assert '--cuda-arch' in build_help
@@ -230,6 +231,47 @@ def test_create_run_dir_is_unique_even_when_called_back_to_back(tmp_path):
     assert first != second
     assert first.exists()
     assert second.exists()
+
+
+def test_cli_inspect_checkpoint_reports_npz_schema(capsys, tmp_path):
+    import json
+
+    from minicnn.cli import main
+
+    ckpt = tmp_path / 'demo_autograd_best.npz'
+    np.savez(
+        ckpt,
+        layer0_weight=np.zeros((4, 4), dtype=np.float32),
+        layer0_bias=np.zeros((4,), dtype=np.float32),
+    )
+
+    rc = main(['inspect-checkpoint', '--path', str(ckpt)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['format'] == 'npz'
+    assert payload['kind'] in {'autograd_state_dict', 'numpy_state_dict'}
+    assert payload['num_keys'] == 2
+    assert payload['preview']['layer0_weight']['shape'] == [4, 4]
+
+
+def test_cli_inspect_checkpoint_reports_missing_torch_for_pt_without_traceback(tmp_path):
+    ckpt = tmp_path / 'demo.pt'
+    ckpt.write_bytes(b'not-a-real-torch-checkpoint')
+
+    proc = _run_python_without_torch(
+        tmp_path,
+        '-m',
+        'minicnn.cli',
+        'inspect-checkpoint',
+        '--path',
+        str(ckpt),
+    )
+
+    assert proc.returncode == 2
+    assert 'inspect-checkpoint requires PyTorch to read .pt/.pth files.' in proc.stdout
+    assert 'pip install -e .[torch]' in proc.stdout
+    assert 'Traceback' not in proc.stderr
 
 
 def test_cli_seed_overrides_keep_dataset_init_and_train_seeds_separate():

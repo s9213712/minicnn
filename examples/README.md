@@ -8,7 +8,8 @@ This folder contains small extension examples for the configuration-driven path.
 Most training examples should start from `templates/` rather than editing Python
 directly. The legacy CUDA and Torch baseline trainers share common loop helpers
 under `src/minicnn/training/loop.py`, and best checkpoints are written under
-`artifacts/models/`.
+`artifacts/models/`. Use `minicnn inspect-checkpoint --path <file>` to inspect
+their schema before trying to reuse them.
 
 Current config behavior:
 - `train.init_seed` controls torch/flex model initialization.

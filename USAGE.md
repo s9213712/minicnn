@@ -24,6 +24,7 @@ Read these in order if you want the current, operational picture of the repo:
 
 - [docs/backend_capabilities.md](docs/backend_capabilities.md) — choose the right backend first
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md) — shared-config path and backend routing
+- [docs/model_artifacts.md](docs/model_artifacts.md) — checkpoint formats and reuse boundaries
 - [templates/README.md](templates/README.md) — ready-to-edit config templates
 
 ### I want to work on the handcrafted CUDA path
@@ -68,6 +69,7 @@ minicnn train-autograd --config configs/autograd_tiny.yaml
 minicnn compare --config configs/dual_backend_cnn.yaml
 minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
+minicnn inspect-checkpoint --path artifacts/models/example_best.pt
 minicnn compile --config configs/autograd_tiny.yaml
 ```
 
@@ -132,6 +134,7 @@ These describe the repo as it works today:
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md)
 - [docs/cuda_native.md](docs/cuda_native.md)
 - [docs/custom_components.md](docs/custom_components.md)
+- [docs/model_artifacts.md](docs/model_artifacts.md)
 - [docs/guide_project_structure.md](docs/guide_project_structure.md)
 - [docs/guide_autograd.md](docs/guide_autograd.md)
 - [docs/guide_feature_expansion.md](docs/guide_feature_expansion.md)
@@ -161,6 +164,7 @@ If you are unsure where to go next:
 - Need to understand one shared config across backends: [docs/dual_backend_guide.md](docs/dual_backend_guide.md)
 - Need native build/debug details: [docs/guide_project_structure.md](docs/guide_project_structure.md) and [docs/guide_layout_debug.md](docs/guide_layout_debug.md)
 - Need extension points: [docs/custom_components.md](docs/custom_components.md)
+- Need checkpoint format and model reuse details: [docs/model_artifacts.md](docs/model_artifacts.md)
 - Need experimental native graph backend context: [docs/cuda_native.md](docs/cuda_native.md)
 
 ## Rule Of Thumb
@@ -198,6 +202,7 @@ If you are unsure where to go next:
 
 - [docs/backend_capabilities.md](docs/backend_capabilities.md) — 先選對 backend
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md) — shared-config 路徑與 backend routing
+- [docs/model_artifacts.md](docs/model_artifacts.md) — checkpoint 格式與復用邊界
 - [templates/README.md](templates/README.md) — 可直接修改的 config templates
 
 ### 我想處理手寫 CUDA 路徑
@@ -242,6 +247,7 @@ minicnn train-autograd --config configs/autograd_tiny.yaml
 minicnn compare --config configs/dual_backend_cnn.yaml
 minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
+minicnn inspect-checkpoint --path artifacts/models/example_best.pt
 minicnn compile --config configs/autograd_tiny.yaml
 ```
 
@@ -305,6 +311,7 @@ traceback。
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md)
 - [docs/cuda_native.md](docs/cuda_native.md)
 - [docs/custom_components.md](docs/custom_components.md)
+- [docs/model_artifacts.md](docs/model_artifacts.md)
 - [docs/guide_project_structure.md](docs/guide_project_structure.md)
 - [docs/guide_autograd.md](docs/guide_autograd.md)
 - [docs/guide_feature_expansion.md](docs/guide_feature_expansion.md)
@@ -334,6 +341,7 @@ traceback。
 - 想理解同一份 shared config 如何跨 backend： [docs/dual_backend_guide.md](docs/dual_backend_guide.md)
 - 想看 native build/debug 細節： [docs/guide_project_structure.md](docs/guide_project_structure.md) 與 [docs/guide_layout_debug.md](docs/guide_layout_debug.md)
 - 想看 extension points： [docs/custom_components.md](docs/custom_components.md)
+- 想看 checkpoint 格式與模型復用： [docs/model_artifacts.md](docs/model_artifacts.md)
 - 想看實驗性 native graph backend： [docs/cuda_native.md](docs/cuda_native.md)
 
 ## 簡單原則

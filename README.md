@@ -256,6 +256,7 @@ minicnn list-flex-components
 minicnn list-dual-components
 minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
+minicnn inspect-checkpoint --path artifacts/models/example_best.pt
 minicnn cuda-native-capabilities
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
@@ -265,6 +266,25 @@ Built-in config paths such as `configs/flex_cnn.yaml` and
 needed, so they still work even if you launch the CLI from outside the repo
 root. This is a repo-first convenience layer, not a full packaged-resource
 system.
+
+## Model Artifacts
+
+Model files are not unified across all backends.
+
+- torch paths save `.pt` checkpoints with `model_state`
+- autograd saves `.npz` state dict arrays
+- `cuda_native` saves flat `.npz` parameter dicts
+- `cuda_legacy` saves handcrafted `.npz` runtime checkpoints
+
+Use `summary.json` to find `best_model_path`, and use:
+
+```bash
+minicnn inspect-checkpoint --path artifacts/models/example_best.pt
+```
+
+for a quick schema view.
+
+Full format and reuse guidance lives in [docs/model_artifacts.md](docs/model_artifacts.md).
 
 Train the experimental cuda_native path:
 
@@ -359,6 +379,7 @@ Start here:
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md): shared-config routing and backend boundaries
 - [docs/cuda_native.md](docs/cuda_native.md): experimental `cuda_native` guide
 - [docs/custom_components.md](docs/custom_components.md): dotted-path component extension points
+- [docs/model_artifacts.md](docs/model_artifacts.md): checkpoint formats, reuse boundaries, and examples
 - [templates/README.md](templates/README.md): ready-to-edit template configs
 
 Background and reporting notes live under `docs/`, but [USAGE.md](USAGE.md)
