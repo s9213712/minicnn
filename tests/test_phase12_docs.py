@@ -42,6 +42,6 @@ def test_backend_capabilities_doc_exists():
 
 
 def test_usage_md_links_capabilities():
-    doc = Path(__file__).parent.parent / 'docs' / 'USAGE.md'
+    doc = Path(__file__).parent.parent / 'USAGE.md'
     text = doc.read_text()
     assert 'backend_capabilities.md' in text

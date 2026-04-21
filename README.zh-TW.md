@@ -312,7 +312,7 @@ model:
 
 從這裡開始：
 
-- [docs/USAGE.md](docs/USAGE.md)：完整文件導覽與建議閱讀順序
+- [USAGE.md](USAGE.md)：完整文件導覽與建議閱讀順序
 - [docs/architecture.md](docs/architecture.md)：整體架構與模組圖
 - [docs/backend_capabilities.md](docs/backend_capabilities.md)：Backend 支援矩陣
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md)：shared-config routing 與 backend 邊界
@@ -320,7 +320,7 @@ model:
 - [docs/custom_components.md](docs/custom_components.md)：dotted-path 元件擴展
 - [templates/README.md](templates/README.md)：可直接修改的 template config
 
-`docs/` 內也保留了一些背景報告與歷史比較文件；現在 [docs/USAGE.md](docs/USAGE.md)
+`docs/` 內也保留了一些背景報告與歷史比較文件；現在 [USAGE.md](USAGE.md)
 會把「目前仍是操作主線的文件」和「歷史／報告文件」分開，不再混成同一層。
 
 ## Repository 目錄結構

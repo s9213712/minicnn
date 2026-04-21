@@ -196,5 +196,106 @@ not part of the stable training backend surface.
 
 - [backend_capabilities.md](backend_capabilities.md)
 - [dual_backend_guide.md](dual_backend_guide.md)
-- [08_autograd.md](08_autograd.md)
+- [guide_autograd.md](guide_autograd.md)
+- [custom_components.md](custom_components.md)
+
+---
+
+# 功能擴展說明（中文）
+
+本文整理圍繞原始 MiniCNN 核心所擴展的功能，以及各 backend 路徑目前實際支援哪些功能。
+
+重要區別：功能擴展主要發生在前端、torch/flex 路徑和 NumPy autograd 路徑。`cuda_legacy` 刻意維持狹窄。
+
+## 高層次概覽
+
+| 功能區域 | Torch/flex | Autograd | `cuda_legacy` |
+|---|---|---|---|
+| 更多 activation | ✓ | ✓ | 僅有限子集 |
+| 更多 optimizer | ✓ | ✓ | 僅 `SGD`、`Adam` |
+| Scheduler | ✓ | ✓ | 無共用 scheduler bridge |
+| Label smoothing | ✓ | ✓ | ✗ |
+| Data augmentation | ✓ | ✗ | ✗ |
+| Layer preset / 自訂 factory | ✓ | ✗ | ✗ |
+| 更豐富的正規化層 | ✓ | 部分 | validator 拒絕 |
+
+## Activation
+
+前端與 autograd 擴展新增：
+
+- `LeakyReLU`
+- `SiLU`
+- 既有：`ReLU`、`Sigmoid`、`Tanh`
+
+`cuda_legacy` 只接受已驗證的固定 pattern，且 activation 只允許 `ReLU` 或 `LeakyReLU`。
+
+## Optimizer
+
+Torch/flex 與 autograd 支援更廣的 optimizer：
+
+- `SGD`
+- `Adam`
+- `AdamW`
+- `RMSprop`
+
+`cuda_legacy` 目前支援：
+- `SGD`
+- `Adam`
+
+另外支援 `optimizer.grad_clip_global`，但這是 backend 特定擴展，不是前端通用對等信號。
+
+## Scheduler
+
+Torch/flex 與 autograd 支援：
+
+- `StepLR`
+- `CosineAnnealingLR`
+
+`cuda_legacy` 目前不消費共用的 scheduler 區塊。
+
+## Loss 與正規化
+
+Torch/flex 支援：
+- `CrossEntropyLoss`
+- `MSELoss`
+- `BCEWithLogitsLoss`
+- cross entropy label smoothing
+
+Autograd 支援相同三種 loss 以及 label smoothing。
+
+`cuda_legacy` 支援 `CrossEntropyLoss` 與 `MSELoss`；拒絕 `BCEWithLogitsLoss`，不支援 label smoothing。
+
+## 資料增強
+
+Torch/flex 透過 `minicnn.flex.data.create_dataloaders(...)` 提供輕量增強：
+
+- random crop
+- horizontal flip
+
+此增強層未與 autograd 或 `cuda_legacy` 共用。
+
+## Block Preset 與自訂元件
+
+Torch/flex 透過 flex builder 與 registry 支援 preset 或 dotted-path 擴展：
+
+- `conv_relu`
+- `conv_bn_relu`
+- `conv_bn_silu`
+- 自訂 dotted-path factory
+
+這些是前端便利功能，不會自動對 `cuda_legacy` 合法。
+
+## 正規化與更豐富的 Layer
+
+Torch/flex 可使用：`BatchNorm2d`、`LayerNorm`、`GroupNorm`、`ResidualBlock`
+
+Autograd 目前支援：`BatchNorm2d`、`ResidualBlock`
+
+`cuda_legacy` validator 拒絕：`BatchNorm2d`、`LayerNorm`、`GroupNorm`、`ResidualBlock`
+
+## 相關文件
+
+- [backend_capabilities.md](backend_capabilities.md)
+- [dual_backend_guide.md](dual_backend_guide.md)
+- [guide_autograd.md](guide_autograd.md)
 - [custom_components.md](custom_components.md)

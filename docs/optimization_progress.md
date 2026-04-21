@@ -7,7 +7,7 @@ status to a specific historic PR number or branch name.
 
 See also:
 
-- [USAGE.md](USAGE.md)
+- [../USAGE.md](../USAGE.md)
 - [backend_capabilities.md](backend_capabilities.md)
 - [dual_backend_guide.md](dual_backend_guide.md)
 

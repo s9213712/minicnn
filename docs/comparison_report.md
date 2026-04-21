@@ -26,7 +26,7 @@ For current, backend-scoped information, use:
 - [comparison_completion_report.md](comparison_completion_report.md)
 - [backend_capabilities.md](backend_capabilities.md)
 - [generalization_roadmap.md](generalization_roadmap.md)
-- [USAGE.md](USAGE.md)
+- [../USAGE.md](../USAGE.md)
 
 ## Core Takeaway From The Original Draft
 

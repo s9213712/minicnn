@@ -176,3 +176,127 @@ boundary exposed through `train-dual`.
 - [backend_capabilities.md](backend_capabilities.md)
 - [architecture.md](architecture.md)
 - [custom_components.md](custom_components.md)
+
+---
+
+# MiniCNN Autograd（中文）
+
+MiniCNN 內建一條精簡的 CPU/NumPy autograd 路徑，適合學習、框架層級測試，以及不希望依賴 PyTorch 的小型實驗。
+
+核心模組位置：
+
+- `src/minicnn/nn/tensor.py`：`Tensor`、reverse-mode autodiff、loss 函數
+- `src/minicnn/autograd/function.py`：自訂可微分 `Function` API
+- `src/minicnn/ops/`：NumPy 參考 op
+- `src/minicnn/nn/layers.py`：輕量 layer module
+- `src/minicnn/training/train_autograd.py`：CLI 訓練迴圈
+
+這條路徑刻意設計為教學取向，能展示框架行為，但不以效能為目標。
+
+## 支援功能
+
+### 核心 tensor/autograd 能力
+
+- `Tensor.backward()`：拓撲排序 reverse-mode autodiff
+- 算術運算：`+`、`-`、`*`、`/`、`**`、`@`
+- 支援 broadcast 的梯度
+- `sum`、`mean`、`reshape`
+- `no_grad()` 與 `Tensor.detach()`
+- 透過 `Function.apply(...)` 自訂可微分 op
+
+### Layer
+
+- `Linear`
+- `Conv2d`
+- `MaxPool2d`
+- `AvgPool2d`
+- `BatchNorm2d`
+- `ResidualBlock`
+- `Flatten`
+- `ReLU`
+- `LeakyReLU`
+- `Sigmoid`
+- `Tanh`
+- `SiLU`
+- `Dropout`
+
+### Loss 函數
+
+- `CrossEntropyLoss`
+- `MSELoss`
+- `BCEWithLogitsLoss`
+
+### Optimizer 與 scheduler
+
+- `SGD`
+- `Adam`
+- `AdamW`
+- `RMSprop`
+- Step scheduler
+- Cosine scheduler
+- Per-parameter gradient clipping
+- Weight decay
+
+## 執行方式
+
+使用 NumPy backend 訓練：
+
+```bash
+minicnn train-autograd --config configs/autograd_tiny.yaml
+```
+
+更完整的範例 config：
+
+```text
+configs/autograd_enhanced.yaml
+```
+
+## 支援資料集
+
+`train-autograd` 目前支援：
+
+- `dataset.type=random`
+- `dataset.type=cifar10`
+- `dataset.type=mnist`
+
+## Loss 合約說明
+
+`CrossEntropyLoss` 期望傳入 class index。
+
+`MSELoss` 會把 label 轉換成與輸出 shape 對應的 dense target。
+
+`BCEWithLogitsLoss` 目前當作 binary classification 路徑，輸出層應為每個樣本輸出一個 logit，label 必須為 `0` 或 `1`。
+
+## 最小範例
+
+```python
+import numpy as np
+from minicnn.nn import Parameter, Tensor, cross_entropy
+from minicnn.optim.sgd import SGD
+
+w = Parameter([[0.1, -0.2], [0.3, 0.4]], name="w")
+x = Tensor([[1.0, 2.0]])
+target = np.array([1])
+
+logits = x @ w
+loss = cross_entropy(logits, target)
+loss.backward()
+SGD([w], lr=0.1).step()
+```
+
+## 自訂可微分 Op
+
+繼承 `Function` 並實作 `forward` 與 `backward`，透過 `MyOp.apply(...)` 呼叫，graph 連接會自動完成。
+
+## 目前限制
+
+- 僅支援 CPU/NumPy
+- 不支援 AMP 或 mixed precision
+- 比 `torch` 慢很多，不適合正式 CNN 訓練
+- 適合學習與 parity-style 測試
+
+## 相關文件
+
+- [backend_capabilities.md](backend_capabilities.md)
+- [architecture.md](architecture.md)
+- [custom_components.md](custom_components.md)

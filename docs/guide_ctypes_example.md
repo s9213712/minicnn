@@ -1,8 +1,8 @@
-# Python ctypes 與 MNIST 範例
+# Python ctypes Example (MNIST)
 
-本文說明如何用 Python `ctypes` 載入 `.so`，並用 MNIST 示範一個最小 CNN 訓練流程。
+This guide shows how to load the native `.so` from Python `ctypes` and run a minimal CNN training loop on MNIST.
 
-## 載入 `.so`
+## Loading the `.so`
 
 ```python
 import ctypes
@@ -33,7 +33,6 @@ lib.leaky_relu_forward.argtypes = [c_void_p, c_float, c_int]
 lib.leaky_relu_backward.argtypes = [c_void_p, c_void_p, c_float, c_int]
 lib.dense_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
 lib.dense_backward_full.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
-lib.conv_backward.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int]
 lib.conv_backward_precol.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int]
 lib.apply_sgd_update.argtypes = [c_void_p, c_void_p, c_float, c_int]
 lib.apply_momentum_update.argtypes = [c_void_p, c_void_p, c_void_p, c_float, c_float, c_int]
@@ -41,9 +40,9 @@ lib.conv_update_fused.argtypes = [c_void_p, c_void_p, c_void_p, c_float, c_float
 lib.clip_inplace.argtypes = [c_void_p, c_float, c_int]
 ```
 
-Prefer status-returning native wrappers when they exist. For example, `maxpool_backward_nchw_status(...)` returns `0` on success and a CUDA error code on invalid geometry, which lets Python raise `ValueError` instead of relying on a process-level CUDA check.
+Prefer status-returning native wrappers when they exist. `maxpool_backward_nchw_status(...)` returns `0` on success and a CUDA error code on invalid geometry, letting Python raise `ValueError` instead of relying on a process-level CUDA check.
 
-## Host/device helper
+## Host/Device Helpers
 
 ```python
 def upload(arr):
@@ -68,7 +67,7 @@ def free_all(*ptrs):
             lib.gpu_free(ptr)
 ```
 
-## MNIST 示範網路
+## MNIST Demo Network
 
 ```text
 Input 1x28x28
@@ -78,9 +77,9 @@ FC(8*13*13 -> 10)
 Softmax cross entropy
 ```
 
-完整可執行版本請見 [`examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py`](../examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py)（canonical 版本），以及 [`legacy/train_mnist_so.py`](../examples/mnist_ctypes/legacy/train_mnist_so.py)（最小化參考版）。這些檔案不用 `torchvision`，只用 NumPy 與 Python 標準函式庫解析 MNIST IDX gzip 檔。
+The complete runnable version is in [`examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py`](../examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py) (canonical), and [`legacy/train_mnist_so.py`](../examples/mnist_ctypes/legacy/train_mnist_so.py) (minimal reference). Neither file requires `torchvision`; they parse MNIST IDX gzip files with NumPy and the Python standard library.
 
-## 訓練流程骨架
+## Forward Skeleton
 
 ```python
 BATCH = 64
@@ -116,7 +115,94 @@ def forward(x, d_w_conv, d_w_fc, d_b_fc):
     return logits, cache
 ```
 
-Backward 的主要順序：
+Backward order:
+
+```text
+CPU softmax/cross entropy -> upload grad_logits
+dense_backward_full
+nchw_to_cnhw
+maxpool_backward_use_idx
+leaky_relu_backward
+conv_backward or conv_backward_precol
+apply_momentum_update or conv_update_fused
+```
+
+If the forward stage retained the `d_col` buffer from `im2col_forward`, use `conv_backward_precol` to avoid a redundant im2col pass.
+
+## Momentum SGD
+
+Momentum SGD requires a velocity buffer of the same length as each trainable buffer, zero-initialized before training and retained for the full training run:
+
+```python
+MOMENTUM = 0.9
+d_v_conv = zeros(OUT_C * C_IN * KH * KW)
+d_v_fc = zeros(10 * FC_IN)
+d_v_bias = zeros(10)
+
+lib.apply_momentum_update(d_w_conv, d_grad_conv, d_v_conv, c_float(lr), c_float(MOMENTUM), OUT_C * C_IN * KH * KW)
+```
+
+For weight decay, gradient clipping, and momentum update all on the GPU:
+
+```python
+lib.conv_update_fused(
+    d_w_conv, d_grad_conv, d_v_conv,
+    c_float(lr), c_float(MOMENTUM),
+    c_float(weight_decay), c_float(clip_value), c_float(grad_normalizer),
+    OUT_C * C_IN * KH * KW,
+)
+```
+
+## Complete Example Files
+
+```text
+examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py   ← canonical
+examples/mnist_ctypes/legacy/train_mnist_so.py            ← minimal
+```
+
+Run:
+
+```bash
+cd minicnn
+make -C cpp
+python3 -u examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py --download
+```
+
+Use `--download` on first run to fetch MNIST gzip IDX files into `data/mnist/`.
+
+## Quick Validation
+
+```bash
+cuda-memcheck python3 -u examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py
+```
+
+---
+
+# Python ctypes 與 MNIST 範例（中文）
+
+本文說明如何用 Python `ctypes` 載入 `.so`，並用 MNIST 示範一個最小 CNN 訓練流程。
+
+## 載入 `.so`
+
+參考上方 argtypes 設定。優先使用 status-returning 版本（如 `maxpool_backward_nchw_status`）：成功回傳 `0`，幾何參數錯誤回傳 CUDA error code，讓 Python 可拋出 `ValueError`。
+
+## Host/device helper
+
+`upload(arr)` 上傳 float32 array 到 GPU；`zeros(size)` 配置並清零 GPU buffer；`download(ptr, shape)` 從 GPU 下載；`free_all(*ptrs)` 釋放多個 pointer。
+
+## MNIST 示範網路
+
+```text
+Input 1x28x28
+Conv(1->8, 3x3) -> LeakyReLU
+MaxPool 2x2
+FC(8*13*13 -> 10)
+Softmax cross entropy
+```
+
+完整可執行版本：`examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py`（canonical）與 `legacy/train_mnist_so.py`（最小化版）。不用 `torchvision`，只用 NumPy 與標準函式庫解析 MNIST IDX gzip 檔。
+
+## Backward 主要順序
 
 ```text
 CPU softmax/cross entropy -> upload grad_logits
@@ -128,47 +214,13 @@ conv_backward 或 conv_backward_precol
 apply_momentum_update 或 conv_update_fused
 ```
 
-如果 forward 階段保留了 `im2col_forward` 產生的 `d_col`，backward 建議使用 `conv_backward_precol`，避免重複 im2col 與配置 scratch buffer。`conv_backward` 仍可用於最小範例，因為它會在函式內自行建立 col buffer。
+若 forward 階段保留了 `d_col`，backward 使用 `conv_backward_precol` 避免重複 im2col。
 
-Momentum SGD 需要為每個 trainable buffer 準備同長度的 velocity buffer，訓練開始前設為 0，整個訓練期間保留：
+## Momentum SGD
 
-```python
-MOMENTUM = 0.9
-d_v_conv = zeros(OUT_C * C_IN * KH * KW)
-d_v_fc = zeros(10 * FC_IN)
-d_v_bias = zeros(10)
+Velocity buffer 需與 weight buffer 等長，訓練開始前設為 0，整個訓練期間保留。若需要 weight decay + gradient clipping + momentum 都留在 GPU，改用 `conv_update_fused`。
 
-lib.apply_momentum_update(d_w_conv, d_grad_conv, d_v_conv, c_float(lr), c_float(MOMENTUM), OUT_C * C_IN * KH * KW)
-```
-
-若需要 weight decay、gradient clipping 與 Momentum update 一次留在 GPU 端完成，可改用 `conv_update_fused`：
-
-```python
-lib.conv_update_fused(
-    d_w_conv,
-    d_grad_conv,
-    d_v_conv,
-    c_float(lr),
-    c_float(MOMENTUM),
-    c_float(weight_decay),
-    c_float(clip_value),
-    c_float(grad_normalizer),
-    OUT_C * C_IN * KH * KW,
-)
-```
-
-若只想做最小化測試，也可以繼續使用 `apply_sgd_update`。目前 CIFAR-10 trainer 預設使用 `conv_update_fused`，並用 `BatchWorkspace` 重用固定大小的 batch buffer。CIFAR-10 的 CUDA batch orchestration 已集中在 `src/minicnn/training/cuda_batch.py`；`train_cuda.py` 只負責 epoch、validation、checkpoint 與 final evaluation。
-
-## 完整範例檔
-
-```text
-examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py   ← canonical
-examples/mnist_ctypes/legacy/train_mnist_so.py            ← 最小化版
-```
-
-Canonical 版把 Python orchestration 收斂到 `ConvBlock`、`DenseLayer`、dataclass cache、shape helper 與獨立 `SgdOptimizer`，保留同一組 `.so` C API。`legacy/` 資料夾保留舊版本供閱讀漸進設計過程。
-
-執行：
+## 執行
 
 ```bash
 cd minicnn
@@ -176,17 +228,4 @@ make -C cpp
 python3 -u examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py --download
 ```
 
-第一次執行若本機沒有 MNIST，使用 `--download` 下載 gzip IDX 檔到 `data/mnist/`。如果機器不能連網，請先把四個 MNIST `.gz` 檔放到該目錄。
-
-## 快速驗證
-
-```bash
-cuda-memcheck python3 -u examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py
-```
-
-如果只想驗證 `.so` 函式本身，使用既有 sanity test：
-
-```bash
-python3 -u /tmp/so_function_check.py
-cuda-memcheck python3 -u /tmp/so_function_check.py
-```
+第一次執行若本機沒有 MNIST，使用 `--download` 下載到 `data/mnist/`。

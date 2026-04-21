@@ -5,7 +5,7 @@ This note records the current state of BatchNorm2d for the handcrafted
 
 See also:
 
-- [USAGE.md](USAGE.md)
+- [../USAGE.md](../USAGE.md)
 - [backend_capabilities.md](backend_capabilities.md)
 - [dual_backend_guide.md](dual_backend_guide.md)
 

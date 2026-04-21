@@ -321,7 +321,7 @@ See [docs/custom_components.md](docs/custom_components.md).
 
 Start here:
 
-- [docs/USAGE.md](docs/USAGE.md): full documentation guide and reading order
+- [USAGE.md](USAGE.md): full documentation guide and reading order
 - [docs/architecture.md](docs/architecture.md): overall architecture and module map
 - [docs/backend_capabilities.md](docs/backend_capabilities.md): backend support matrix
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md): shared-config routing and backend boundaries
@@ -329,7 +329,7 @@ Start here:
 - [docs/custom_components.md](docs/custom_components.md): dotted-path component extension points
 - [templates/README.md](templates/README.md): ready-to-edit template configs
 
-Background and reporting notes live under `docs/`, but [docs/USAGE.md](docs/USAGE.md)
+Background and reporting notes live under `docs/`, but [USAGE.md](USAGE.md)
 now separates current operational docs from historical reports so they are not
 all treated as the same kind of document.
 

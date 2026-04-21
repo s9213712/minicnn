@@ -3,7 +3,7 @@ The project now supports both:
 - modern `cpp/CMakeLists.txt`
 
 Python training orchestration lives outside this folder under
-`src/minicnn/training/`; see the repository README and `docs/01_project_files.md`
+`src/minicnn/training/`; see the repository README and `docs/guide_project_structure.md`
 for the current trainer module map.
 
 Current native API notes:

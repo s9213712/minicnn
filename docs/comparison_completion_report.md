@@ -4,7 +4,7 @@ This is the current backend-scoped comparison note for MiniCNN.
 
 See also:
 
-- [USAGE.md](USAGE.md)
+- [../USAGE.md](../USAGE.md)
 - [backend_capabilities.md](backend_capabilities.md)
 - [generalization_roadmap.md](generalization_roadmap.md)
 
