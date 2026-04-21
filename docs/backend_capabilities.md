@@ -59,11 +59,13 @@ float targets before computing the loss. Dense float targets are **not** accepte
 directly by the dataset pipeline. True regression or multilabel targets are not
 supported.
 
-**BCEWithLogitsLoss** — expects integer class labels (0 or 1). The trainer
-converts them to single-column float targets. Only a **single output channel**
-(binary classification) is supported; accuracy uses `logit >= 0` as the positive
-threshold. Multilabel BCE (multiple simultaneous positive classes) is **not**
-supported by this trainer path.
+**BCEWithLogitsLoss** — expects integer class labels strictly in `{0, 1}`. Labels
+outside this set are rejected immediately with `ValueError`. The trainer converts
+them to single-column float targets. Only a **single output channel**
+(`out_features=1`, binary classification) is supported; accuracy uses
+`logit >= 0` as the positive threshold. Multilabel BCE and any non-binary label
+values are **not** accepted. If you have multi-class labels (e.g. 0–9 for
+CIFAR-10), use `CrossEntropyLoss` instead.
 
 ### `compare` subcommand and autograd config contract
 
