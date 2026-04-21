@@ -1,184 +1,144 @@
 # MiniCNN Architecture
 
-MiniCNN has three independent training paths that share a common YAML config format. Choose based on your goal:
+MiniCNN has one broad frontend surface and multiple backend-oriented execution
+paths. The important distinction is that not every backend accepts the full
+frontend contract.
 
-| Path | Command | Backend | GPU | Purpose |
-|---|---|---|---|---|
-| **flex** | `train-flex` | PyTorch | Yes | Research, custom layers, production |
-| **dual** | `train-dual` | PyTorch or hand-written CUDA | Yes | Compare backends, learn CUDA internals |
-| **autograd** | `train-autograd` | Pure NumPy | No | Learn autodiff, no dependencies |
+## Stable User-Facing Paths
 
----
+| Path | Command | Backend | Purpose |
+|---|---|---|---|
+| flex | `train-flex` | PyTorch | broad experimentation, custom components |
+| dual | `train-dual` | `torch` or `cuda_legacy` | compare one shared config across two backends |
+| autograd | `train-autograd` | NumPy | learning and framework-level experiments |
 
-## System diagram
+`cuda_native` exists on this branch under `src/minicnn/cuda_native/`, but it is
+not yet part of the stable `train-dual` backend toggle.
 
-```
-                         YAML config
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-              ▼              ▼              ▼
-         train-flex     train-dual    train-autograd
-              │              │              │
-              │       engine.backend=?      │
-              │         /         \         │
-              │      torch    cuda_legacy   │
-              │        │           │        │
-              ▼        ▼           ▼        ▼
-         PyTorch   PyTorch   hand-written  NumPy
-          model     model    CUDA .so      model
-            │         │         │            │
-            └────┬────┘         │            │
-                 │              │            │
-                 ▼              ▼            ▼
-          flex/trainer    train_cuda.py  train_autograd.py
-                 │              │            │
-                 └──────────────┴────────────┘
-                                │
-                         models/ checkpoint
+## High-Level Layout
+
+```text
+shared YAML / CLI frontend
+        |
+        +--> train-flex ------> torch
+        |
+        +--> train-dual ------> torch | cuda_legacy
+        |
+        +--> train-autograd --> NumPy autograd
+        |
+        +--> branch-local cuda_native modules (experimental backend work)
 ```
 
----
+## Stable Training Flow
 
-## Compiler / Runtime pipeline (static analysis + inference)
-
-Separate from the training paths above, MiniCNN has a lightweight compiler + runtime stack for architecture inspection and NumPy inference:
-
-```
-  YAML model config
-        │
-        ▼
-  compiler/tracer.py          trace_model_config()  →  IRGraph
-        │
-        ▼
-  compiler/optimizer.py       optimize()            →  IRGraph (fused)
-        │
-        ▼
-  runtime/pipeline.py         ir_to_runtime_graph() →  runtime Graph
-        │
-        ▼
-  runtime/executor.py         GraphExecutor.run(x)  →  {node: output}
+```text
+YAML config
+    |
+    +--> flex/config.py --------------------------> flex/trainer.py
+    |
+    +--> unified/config.py --> engine.backend? --> unified/trainer.py
+    |                                              |-> torch path
+    |                                              `-> cuda_legacy path
+    |
+    `--> train_autograd.py
 ```
 
-Use this path for architecture inspection and fast CPU inference without training overhead:
+## Compiler / Runtime Inference Pipeline
 
-```python
-from minicnn.runtime.pipeline import InferencePipeline
-import numpy as np
+Separate from training, MiniCNN also has a lightweight tracing + runtime path
+for architecture inspection and CPU inference:
 
-model_cfg = {
-    'layers': [
-        {'type': 'Linear', 'in_features': 4, 'out_features': 8},
-        {'type': 'ReLU'},
-        {'type': 'Linear', 'in_features': 8, 'out_features': 2},
-    ]
-}
-
-pipeline = InferencePipeline.from_config(model_cfg)
-x = np.random.randn(16, 4).astype('float32')
-logits = pipeline.run_final(x)
+```text
+model config
+    |
+    -> compiler/tracer.py
+    -> compiler/optimizer.py
+    -> runtime/pipeline.py
+    -> runtime/executor.py
 ```
 
-Or trigger via CLI:
+Use this when you want graph inspection or CPU inference without entering the
+training loops.
 
-```bash
-minicnn compile --config configs/autograd_tiny.yaml
-```
+## Branch-Local `cuda_native`
 
----
+This branch contains experimental native-backend work under
+`src/minicnn/cuda_native/`:
 
-## Module map
+- capability descriptor
+- validators
+- sequential graph IR
+- planner
+- reference forward/backward executors
+- minimal backend utilities
 
-```
+But the official capability descriptor still marks it as:
+
+- experimental
+- sequential-only
+- not yet supported as a stable training backend
+
+Treat it as active backend R&D, not as a finished public backend.
+
+## Module Map
+
+```text
 src/minicnn/
-├── nn/                  # autograd primitives
-│   ├── tensor.py        # Tensor, Parameter, backward(), all ops
-│   ├── layers.py        # Linear, Conv2d, BatchNorm2d, ReLU, Sigmoid, Tanh, Dropout, …
-│   └── modules.py       # Module, Sequential base classes
-├── ops/
-│   └── nn_ops.py        # functional forms of all layer ops
-├── autograd/
-│   ├── function.py      # Function API for custom differentiable ops
-│   └── context.py       # Context (save_for_backward)
-├── optim/
-│   ├── sgd.py           # SGD (momentum, weight_decay, grad_clip)
-│   └── adam.py          # Adam (weight_decay, grad_clip)
-│
-├── compiler/            # static analysis pipeline
-│   ├── tracer.py        # YAML config → IRGraph
-│   ├── passes.py        # Conv+BN+ReLU fusion detection
-│   ├── optimizer.py     # compose passes
-│   ├── lowering.py      # IRGraph → backend descriptor
-│   └── ir.py            # IRGraph, IRNode dataclasses
-├── runtime/             # execution pipeline
-│   ├── pipeline.py      # InferencePipeline (compiler → executor)
-│   ├── executor.py      # GraphExecutor (runs a runtime Graph)
-│   ├── graph.py         # runtime Graph, Node
-│   ├── backend.py       # Backend ABC (NumPy, Torch, Cuda stubs)
-│   ├── memory.py        # MemoryPool (buffer reuse)
-│   └── profiler.py      # Profiler (timing context manager)
-│
-├── flex/                # PyTorch train-flex path
-│   ├── config.py        # load_flex_config(), CLI override parsing
-│   ├── builder.py       # build_model() from YAML layers list
-│   ├── trainer.py       # training loop, checkpointing
-│   ├── registry.py      # REGISTRY (flex-path component registration)
-│   └── data.py          # DataLoader helpers
-├── unified/             # train-dual shared entry
-│   ├── config.py        # load_unified_config()
-│   ├── cuda_legacy.py   # compile_to_legacy_experiment() bridge
-│   └── trainer.py       # dispatch to torch or cuda_legacy
-├── training/            # CUDA legacy path internals
-│   ├── train_cuda.py    # epoch loop, evaluation, checkpointing
-│   ├── cuda_batch.py    # per-batch CUDA ops
-│   ├── cuda_arch.py     # CudaNetGeometry (kernel dimensions)
-│   └── train_autograd.py# NumPy autograd training loop
-│
-├── models/
-│   ├── registry.py      # MODEL_REGISTRY (autograd layers)
-│   ├── builder.py       # build_autograd_model() from YAML
-│   └── shape_inference.py# Conv2d output shape helper
-├── config/              # legacy ExperimentConfig loader
-├── data/                # CIFAR-10, MNIST loaders
-└── cli.py               # minicnn CLI entry point
+├── cli.py                 # public CLI entrypoint
+├── flex/                  # torch/flex frontend: config, builder, trainer, registry, data
+├── unified/               # shared-config loader and dispatch to torch/cuda_legacy
+├── training/              # cuda_legacy orchestration and NumPy autograd trainer
+├── framework/             # healthcheck/list-dual-components registry surface on this branch
+├── compiler/              # tracer, optimizer passes, lowering boundary
+├── runtime/               # runtime graph, backend abstraction, executor, memory, profiler
+├── cuda_native/           # experimental native graph/planner/backend work
+├── nn/                    # NumPy autograd modules and layers
+├── ops/                   # differentiable NumPy ops
+├── optim/                 # NumPy-side optimizers
+├── schedulers/            # NumPy-side schedulers
+├── models/                # NumPy model registry, builder, shape inference
+├── config/                # ExperimentConfig schema and legacy settings bridge
+├── core/                  # native build helpers and ctypes CUDA binding
+└── data/                  # CIFAR-10 and MNIST loaders
 ```
 
----
+## Backend Boundaries
 
-## Adding a new layer
+The project frontend is intentionally broader than `cuda_legacy`.
 
-1. Implement the functional op in `ops/nn_ops.py` (forward + `_backward` closure).
-2. Add a `Module` subclass in `nn/layers.py`.
-3. Export from `nn/__init__.py`.
-4. Register in `models/registry.py` `MODEL_REGISTRY` dict.
-5. Add the config key `type: YourLayer` to any YAML config.
+In practice:
 
-The layer is then usable in all three training paths without any other changes.
+- torch/flex is the default home for new layer ideas
+- `cuda_legacy` is a narrow backend with validator-enforced limits
+- the autograd path is for learning and tests, not throughput
+- `cuda_native` should become its own backend, not a hidden extension of `cuda_legacy`
 
----
+See [backend_capabilities.md](backend_capabilities.md) for the support matrix
+and [dual_backend_guide.md](dual_backend_guide.md) for change-impact guidance.
 
-## Adding a custom differentiable op
+## Adding New Functionality
 
-Subclass `Function` and register in `MODEL_REGISTRY`:
+### New torch/flex layer
 
-```python
-from minicnn.autograd.function import Function
-from minicnn.nn.tensor import Tensor
-import numpy as np
+Add or import the layer on the torch/flex side and keep the change scoped there
+unless another backend also needs it.
 
-class Swish(Function):
-    @staticmethod
-    def forward(ctx, x):
-        s = 1.0 / (1.0 + np.exp(-x.data))
-        ctx.save_for_backward(x)
-        ctx.s = s
-        return Tensor(x.data * s, requires_grad=x.requires_grad)
+### New NumPy autograd op
 
-    @staticmethod
-    def backward(ctx, grad):
-        (x,) = ctx.saved_tensors
-        s = ctx.s
-        return grad * (s + x.data * s * (1.0 - s))
-```
+Implement the differentiable op in `src/minicnn/ops/`, add the corresponding
+layer/module in `src/minicnn/nn/`, and register it through the NumPy model
+builder path.
 
-See `docs/08_autograd.md` for the full Function API reference.
+### New `cuda_legacy` training op
+
+Expect to touch both Python and native code:
+
+- `src/minicnn/unified/cuda_legacy.py`
+- `src/minicnn/training/`
+- `src/minicnn/core/cuda_backend.py`
+- `cpp/src/`
+
+### New `cuda_native` capability
+
+Keep it inside the branch-local `src/minicnn/cuda_native/` pipeline until the
+capability descriptor, validation surface, and CLI story are all coherent.

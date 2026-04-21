@@ -2,21 +2,96 @@
 
 [English README](README.md)
 
-MiniCNN 是一個雙後端的小型深度學習框架。它讓同一份模型 config 可以切換到兩條路徑：
+![status](https://img.shields.io/badge/status-experimental-orange)
+![frontend](https://img.shields.io/badge/frontend-YAML%20%2B%20CLI-blue)
+![native](https://img.shields.io/badge/native-CUDA-green)
 
-- **`engine.backend: torch`**：用 PyTorch 快速實驗，支援彈性 layer 與自訂元件。
-- **`engine.backend: cuda_legacy`**：使用本專案內的手寫 CUDA CNN 路徑。
+MiniCNN 是一個以組態驅動的深度學習專案，用來研究「同一個前端介面」與
+「不同 backend 能力邊界」之間的落差。
 
-目標很直接：使用者只要改 config 裡的一個選項，就能切換 backend，同時保留同一份 layer 定義、optimizer、loss 與 training 參數。
+目前這個 repo 實際提供三條可用路徑：
 
-這個 repository 是整理後的 MiniCNN 主線。舊的探索版本已移除，讓後續開發集中在單一穩定目標上。
+- `torch`：透過 `train-flex` / `train-dual` 做較廣泛的模型實驗
+- `cuda_legacy`：透過 `train-dual` 使用手寫 CUDA 的 CIFAR-10 訓練路徑
+- `autograd`：透過 `train-autograd` 使用純 NumPy 的教學型 autograd stack
 
-## 專案內容
+這個 branch 也包含進行中的 `cuda_native` 開發，程式碼位於
+`src/minicnn/cuda_native/`。但它目前仍是實驗性 backend，還不是穩定 CLI
+surface 的一部分。
 
-- `cpp/`：手寫 CUDA/C++ backend
-- `src/minicnn/flex/`：config-driven PyTorch model builder
-- `src/minicnn/unified/`：dual-backend config compiler 與 trainer
-- GitHub-ready 專案結構：CI、docs、examples、tests
+## 為什麼有這個專案
+
+大多數框架會刻意把 kernel orchestration、記憶體處理、backend 邊界包在
+平滑的 API 後面。
+
+MiniCNN 的價值在於把這些邊界攤開來看：
+
+- 同一份 frontend contract 如何映射到不同 backend 現實
+- 狹窄 native backend 何時該嚴格驗證，而不是假裝功能對等
+- 不依賴 torch internals 的小型 autograd stack 會怎麼運作
+- 未來 graph-based native backend 如何在公開 repo 裡逐步長出來
+
+## 定位
+
+MiniCNN 不是要取代 PyTorch。
+
+它比較適合用在這些情境：
+
+- 想要一個 shared YAML/frontend contract 來切不同 backend
+- 想保留一條能力邊界清楚的手寫 CUDA 訓練路徑
+- 想用小型 NumPy autograd stack 做學習或 framework-level 實驗
+- 想原地孵化未來的 graph-based native backend，但不把未完成的東西包裝成已完成
+
+## Backend 狀態
+
+| Backend | 狀態 | 適合用途 |
+|---|---|---|
+| `torch` | 穩定 | 新模型、自訂元件、快速迭代 |
+| `cuda_legacy` | 穩定但刻意狹窄 | 固定 CIFAR-10 契約下的手寫 CUDA 訓練 |
+| `autograd` | 穩定的教學路徑 | CPU-only 學習、可重現測試、小型框架實驗 |
+| `cuda_native` | branch 內實驗性工作 | native graph/planner/backend 研發，尚不適合一般使用 |
+
+高階來看：
+
+```text
+shared YAML / CLI frontend -> torch | cuda_legacy | autograd
+                               \
+                                -> cuda_native (branch 內 backend 開發)
+```
+
+## 目前可以直接跑的東西
+
+### `torch`
+
+- 透過 flex registry 支援較廣的 `model.layers[]`
+- 支援 dotted-path custom component
+- 支援較完整的 scheduler、regularization 與實驗流程
+
+### `cuda_legacy`
+
+- `cpp/` 內的手寫 CUDA / C++ backend
+- 由 `engine.backend=cuda_legacy` 的 shared-config bridge 進入
+- 不支援的組合會直接 validation，不做 silent fallback
+- 契約刻意維持狹窄，核心仍是固定的 CIFAR-10 Conv/Pool/Linear pattern
+
+### `autograd`
+
+- 純 NumPy reverse-mode autodiff
+- 精簡但夠用的 optimizer / layer stack
+- 不依賴 torch 的教學、測試與 CPU inference 實驗
+
+### `cuda_native`
+
+這個 branch 目前已經有分階段的 `cuda_native` 模組，用於：
+
+- graph IR
+- validators
+- planner
+- 參考 executor 與 backend 實驗
+
+但 `src/minicnn/cuda_native/capabilities.py` 的正式 capability descriptor
+仍把它標為 experimental、sequential-only，且尚未作為穩定 training backend
+支援。公開 CLI 目前仍是把 `train-dual` 路由到 `torch` 或 `cuda_legacy`。
 
 ## 快速開始
 
@@ -30,62 +105,60 @@ python -m pip install -e .[torch,dev]
 pytest
 ```
 
-## 編譯手寫 CUDA shared library
+## 編譯 Native CUDA Library
 
 ```bash
 minicnn build --legacy-make --check
 ```
 
-若要同時編譯兩種 native variant 方便比較：
+若要同時編譯兩個 native variant：
 
 ```bash
 minicnn build --legacy-make --variant both --check
 ```
 
-會產生：
+典型輸出：
 
 ```text
 cpp/libminimal_cuda_cnn_cublas.so
 cpp/libminimal_cuda_cnn_handmade.so
 ```
 
-Windows 可用 PowerShell 編譯 DLL：
+native library 採 lazy-load，所以像 `minicnn --help`、`prepare-data`、
+`validate-dual-config`、以及 torch-only 執行都不需要先編好 `.so`。
 
-```powershell
-.\scripts\build_windows_native.ps1 -Variant both
-```
+## 準備資料
 
-也可以走 CMake path：
-
-```bash
-minicnn build --check
-```
-
-## 準備資料集
-
-執行下面的訓練指令前，請先下載 CIFAR-10：
+手寫 CUDA 路徑需要先準備 CIFAR-10：
 
 ```bash
 minicnn prepare-data
 ```
 
-## 使用同一份 config 切換 backend
+MNIST 相關 flex/autograd config 則可以用 `dataset.download=true`，
+把資料下載到 `data/mnist/`。
 
-### 1. PyTorch backend
+## 常用訓練指令
+
+訓練彈性的 torch 路徑：
+
+```bash
+minicnn train-flex --config configs/flex_cnn.yaml
+```
+
+用 shared dual-backend config 跑 torch：
 
 ```bash
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=torch
 ```
 
-### 2. 手寫 CUDA backend
+訓練手寫 CUDA 路徑：
 
 ```bash
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
 ```
 
-上面兩個指令唯一需要切換的是 `engine.backend`。
-
-手寫 CUDA backend 可以指定載入哪個 `.so` variant：
+明確指定 native CUDA variant：
 
 ```bash
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
@@ -95,121 +168,49 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=handmade
 ```
 
-native library 會 lazy-load，所以 `--help`、`prepare-data`、`validate-dual-config`、torch backend 等非 CUDA 指令不需要先編好 `.so`。
-同一個 Python process 內若切換 `runtime.cuda_variant`，MiniCNN 會重設 cached `ctypes` handle，下一次 CUDA 呼叫會載入指定的 library，不會沿用上一個 `.so`。
-
-快速 debug 可直接使用 config override：
+訓練 NumPy autograd 路徑：
 
 ```bash
-minicnn train-dual --config configs/dual_backend_cnn.yaml \
-  engine.backend=cuda_legacy runtime.cuda_variant=cublas \
-  train.epochs=1 train.batch_size=32 \
-  dataset.num_samples=128 dataset.val_samples=32
+minicnn train-autograd --config configs/autograd_tiny.yaml
 ```
 
-legacy trainer 也支援常用環境變數覆蓋，例如 `MINICNN_EPOCHS`、`MINICNN_BATCH`、`MINICNN_N_TRAIN`、`MINICNN_N_VAL`。
-
-訓練產生的最佳模型檔固定寫入：
-
-```text
-src/minicnn/training/models/
-```
-
-PyTorch backend 會寫入 `*_best.pt`；CUDA legacy backend 會寫入 `*_best_model_split.npz`。每次實驗的 metrics 與 summary 仍保留在 `artifacts/`。
-
-## 架構範本
-
-可直接修改的 YAML 範本放在 `templates/`：
+比較 backend：
 
 ```bash
-minicnn train-flex --config templates/mnist/lenet_like.yaml
-minicnn train-flex --config templates/mnist/mlp.yaml
-minicnn train-flex --config templates/cifar10/vgg_mini.yaml
-minicnn train-dual --config templates/cifar10/vgg_mini_cuda.yaml engine.backend=cuda_legacy
+minicnn compare --config configs/dual_backend_cnn.yaml \
+  train.epochs=1 dataset.num_samples=128 dataset.val_samples=32
 ```
 
-MNIST 範本使用 `dataset.type: mnist`，第一次執行可自動下載 IDX gzip 檔到 `data/mnist/`。CIFAR-10 範本預設要先跑 `minicnn prepare-data`，除非把 `dataset.download` 設為 `true`。完整架構與 backend 相容性請看 `templates/README.md`。
-
-## 本機 Smoke Test 結果
-
-2026-04-19 使用 RTX 3050 Laptop GPU 驗證。本次最新快速驗證使用 `features/backend-smoke-matrix/run_smoke_matrix.py`，`128` 筆 train、`32` 筆 validation，batch size `32`，訓練 `1` epoch：
-
-| Backend | Native variant | Train acc | Val acc | Test acc | Epoch time |
-|---|---|---:|---:|---:|---:|
-| `torch` | PyTorch CUDA | `11.72%` | `0.00%` | `10.36%` | `1.3s` |
-| `cuda_legacy` | `cublas` | `7.03%` | `6.25%` | `12.97%` | `0.2s` |
-| `cuda_legacy` | `handmade` | `7.03%` | `6.25%` | `12.97%` | `0.2s` |
-
-Smoke test 的模型檔會寫入 `src/minicnn/training/models/`；若照 docs 的指令執行，run logs 會在 `/tmp/minicnn_backend_compare`。
-
-驗證也包含 `pytest`、沒有 native `.so` 時的 CLI help、config validation、Python compile checks，以及 `minicnn build --legacy-make --variant both --check`。
-
-2026-04-20 的最新維護驗證：`99 passed, 4 warnings`、`compileall` 通過、`git diff --check` 通過，且 cuBLAS/handmade 兩種 native variant 都重新編譯並通過 required symbols 檢查。
-
-## 為什麼有兩個 backend
-
-本專案刻意保留兩種 workflow：
-
-- **Torch backend**：支援較廣的 layer、快速實驗、自訂 dotted-path component。
-- **CUDA backend**：保留手寫 CUDA CNN 路徑，方便低階控制與 backend ownership。
-
-## 文件索引
-
-[docs/USAGE.md](docs/USAGE.md) 是完整文件索引：編譯指南、C API 參考、Python ctypes 教學、C++ linking、layout/debug 說明、Windows build 與 autograd 用法，依建議閱讀順序排列。
-
-## 架構總覽
-
-系統架構圖（三條訓練路徑、compiler/runtime inference pipeline、模組地圖）請見 [docs/architecture.md](docs/architecture.md)。
-
-## 互動式教學
-
-`notebooks/01_autograd_from_scratch.ipynb` 從零講解 autograd 引擎：
+檢查目前 surface：
 
 ```bash
-pip install jupyter
-jupyter notebook notebooks/01_autograd_from_scratch.ipynb
+minicnn info
+minicnn doctor
+minicnn healthcheck
+minicnn list-flex-components
+minicnn list-dual-components
+minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
+minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 ```
 
-不需要 PyTorch。涵蓋：計算圖建構、`backward()`、`Function` API、Dropout、Adam + grad_clip、compiler/runtime pipeline。
+## Backend 邊界
 
-## MiniCNN autograd core
+專案層的 frontend 能力，比 `cuda_legacy` 本身廣很多。
 
-MiniCNN 有自己的 CPU/NumPy autograd stack，位置在 `src/minicnn/nn/tensor.py`、`src/minicnn/ops/` 與 `src/minicnn/nn/layers.py`。它支援：
+這點很重要：
 
-- `Tensor.backward()` 的 reverse-mode autodiff
-- scalar/tensor arithmetic 與 broadcasting-aware gradients
-- matrix multiply、reductions、reshape、`relu`、`sigmoid`、`tanh`、`log_softmax`、`cross_entropy`
-- 可訓練的 `Parameter` 與 `no_grad()` context
-- 帶 `grad_clip` 與 `weight_decay` 的 `SGD`/`Adam` optimizer
-- layers：`Linear`、`Conv2d`、`MaxPool2d`、`BatchNorm2d`、`Flatten`、`ResidualBlock`、`Sigmoid`、`Tanh`、`Dropout`
-- 自訂可微分 op 透過 `Function` API（`apply()` 自動 wire backward hook）
-- 在 random、CIFAR-10 或 MNIST 資料上訓練，透過 `minicnn train-autograd`
-- step-decay LR scheduler 透過 `scheduler.enabled=true`
-- compiler + runtime inference pipeline 透過 `InferencePipeline`（不需跑訓練迴圈）
+- `torch` 是新模型與新想法的預設落點
+- `cuda_legacy` 是有 validator 與 capability boundary 的受限 backend
+- `autograd` 適合學習與小型實驗
+- `cuda_native` 應該作為獨立 backend 成長，而不是把 `cuda_legacy` 硬撐到無限泛用
 
-這個 core 主要用於 framework-level 測試與教學範例。詳細用法請看 [docs/08_autograd.md](docs/08_autograd.md)。Torch backend 仍使用 PyTorch autograd；手寫 CUDA backend 仍使用 CUDA/C++ backward kernels。
+完整支援矩陣請看 [docs/backend_capabilities.md](docs/backend_capabilities.md)，
+較長期的泛用化方向請看
+[docs/generalization_roadmap.md](docs/generalization_roadmap.md)。
 
-### Bug 修正與穩健性改善
+## Config 契約
 
-- **`compile_to_legacy_experiment`**：修正未正確設定 `ModelConfig.c_in` 與 `ModelConfig.conv_layers` 的 bug（之前寫到不存在的 dataclass 屬性，導致實際 CUDA 架構始終使用預設值，不受 YAML 影響）。
-- **`shape_inference`**：Conv2d width 公式修正使用 `kw`（原本誤用 `kh`，非正方形 kernel 時結果錯誤）。
-- **`Function.apply()`**：修正 backward hook 未 wire 的 bug，自訂 `Function` 子類現在可正常反向傳播。
-- **`SGD` / `Adam`**：新增 `grad_clip` 支援，在更新前 clip 每個參數的 gradient norm。
-- **Checkpoint 安全性**：flex trainer 改存純模型權重（不含 config dict），並以 `weights_only=True` 載入。
-- **`train-autograd`**：現在支援 `dataset.type=cifar10` 與 `dataset.type=mnist`（之前直接拋 ValueError）。
-- **`train-autograd`**：新增 step-decay LR scheduler 支援。
-- **`train.init_seed`**：torch/flex 在 `build_model()` 前會先設定 PyTorch seed，重跑相同 config 會從相同初始權重開始。
-- **Config overrides**：dotted CLI override 支援 list index，例如 `model.layers.1.out_features=7`。
-- **Boolean parsing**：`"false"`、`"0"` 等字串在所有布林欄位正確解析。
-- **CUDA library switching**：同 process 切換 `cuda_legacy` native variant 會重設 native handle cache。
-- **CUDA cleanup**：legacy CUDA 訓練即使在 final evaluation 前丟例外，也會釋放 device weights 與 velocity buffers。
-- **`Tensor.__pow__` backward**：`base == 0` 搭配負指數時回傳 `0` 而非 `NaN`。
-- **`flex/builder`**：每層 materialize 後驗證 output shape 所有維度皆為正整數。
-- **`BatchWorkspace.__del__`**：GPU memory cleanup 失敗時發出 `ResourceWarning` 而非靜默丟棄。
-
-## Shared Config Contract
-
-同一份 config 包含：
+主要 shared-config surface 包含：
 
 - `dataset`
 - `model.layers`
@@ -219,97 +220,17 @@ MiniCNN 有自己的 CPU/NumPy autograd stack，位置在 `src/minicnn/nn/tensor
 - `scheduler`
 - `engine.backend`
 
-範例：
+最小範例：
 
 ```yaml
 engine:
   backend: torch
 
-model:
-  layers:
-    - type: Conv2d
-      out_channels: 32
-      kernel_size: 3
-    - type: LeakyReLU
-      negative_slope: 0.1
-    - type: Conv2d
-      out_channels: 32
-      kernel_size: 3
-    - type: LeakyReLU
-      negative_slope: 0.1
-    - type: MaxPool2d
-      kernel_size: 2
-      stride: 2
-    - type: Conv2d
-      out_channels: 64
-      kernel_size: 3
-    - type: LeakyReLU
-      negative_slope: 0.1
-    - type: Conv2d
-      out_channels: 64
-      kernel_size: 3
-    - type: LeakyReLU
-      negative_slope: 0.1
-    - type: MaxPool2d
-      kernel_size: 2
-      stride: 2
-    - type: Flatten
-    - type: Linear
-      out_features: 10
-```
+dataset:
+  type: cifar10
+  input_shape: [3, 32, 32]
+  num_classes: 10
 
-## CUDA Backend 支援範圍
-
-手寫 CUDA 路徑目前支援 `src/minicnn/unified/cuda_legacy.py` 可以編譯的 subset：
-
-- dataset：`cifar10`
-- layers：`Conv2d -> activation -> Conv2d -> activation -> MaxPool2d -> Conv2d -> activation -> Conv2d -> activation -> MaxPool2d -> Flatten -> Linear`
-- activations：`ReLU` 或 `LeakyReLU`，並使用單一 shared negative slope
-- optimizer：`SGD`
-- loss：`CrossEntropyLoss`
-- input shape：`[3, 32, 32]`
-- classes：`10`
-
-如果 config 超出這個 subset，`validate-dual-config` 會說明原因。
-
-## 修改網路架構
-
-兩種 backend 使用不同的 config key 定義架構。
-若要判斷「只改 YAML」或「需要改 Torch registry / native CUDA backward」，
-請看
-[docs/dual_backend_guide.md](docs/dual_backend_guide.md#when-architecture-changes-require-code-changes)
-的檔案對照表。
-
-### CUDA backend（`train-cuda` / `cuda_legacy`）
-
-編輯 `configs/train_cuda.yaml` 裡的 `model.conv_layers`。每個 entry 是一個 `{out_c, pool}` 物件，所有形狀由 `CudaNetGeometry` 自動推算，**不需要修改任何 Python 檔案**。
-
-```yaml
-model:
-  c_in: 3
-  h: 32
-  w: 32
-  kh: 3
-  kw: 3
-  fc_out: 10
-  conv_layers:
-    - {out_c: 32, pool: false}   # conv1
-    - {out_c: 32, pool: true}    # conv2 + pool
-    - {out_c: 64, pool: false}   # conv3
-    - {out_c: 64, pool: true}    # conv4 + pool
-```
-
-注意事項：
-- `pool: true` 會在該 stage 的 conv 後加上 2×2 max-pool。
-- 第一個 stage 的 `in_c` 必須等於 `c_in`；後續 stage 的 `in_c` 自動繼承前一個 stage 的 `out_c`。
-- CUDA kernel 僅支援 `kh == kw == 3`，input 尺寸需可被 pooling stride 整除。
-- 修改後可用 `minicnn validate-dual-config --config configs/train_cuda.yaml` 驗證 config。
-
-### Flex / Torch backend（`train-flex` / `torch`）
-
-編輯 `configs/dual_backend_cnn.yaml`（或你自己的 flex config）裡的 `model.layers`，可以自由增減或調整 layer 順序。`in_channels` / `in_features` 會自動推算。
-
-```yaml
 model:
   layers:
     - type: Conv2d
@@ -325,33 +246,16 @@ model:
       out_features: 10
 ```
 
-兩種 backend 都不需要修改 Python 程式碼，只要改 YAML 即可。
+如果這份 config 不符合 `cuda_legacy`，請直接用
+`minicnn validate-dual-config` 看具體錯誤，而不是猜測哪裡不支援。
 
-## 常用指令
+## 可擴充性
 
-```bash
-minicnn info
-minicnn doctor
-minicnn healthcheck
-minicnn list-flex-components
-minicnn list-dual-components
-minicnn train --config configs/dual_backend_cnn.yaml engine.backend=torch train.epochs=1
-minicnn train-torch --config configs/dual_backend_cnn.yaml train.epochs=1
-minicnn train-cuda --config configs/dual_backend_cnn.yaml train.epochs=1
-minicnn train-autograd --config configs/autograd_tiny.yaml train.epochs=1
-minicnn compare --config configs/dual_backend_cnn.yaml train.epochs=1 dataset.num_samples=128 dataset.val_samples=32
-minicnn dual-config-template
-minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
-minicnn validate-config --config configs/dual_backend_cnn.yaml
-minicnn compile --config configs/autograd_tiny.yaml
-minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
-```
+### Custom components
 
-## 像 PyTorch 一樣使用自訂元件
+Torch/flex 支援在 `model.layers[].type` 中使用 dotted-path layer factory。
 
-Torch backend 允許在 config 中直接指定 dotted-path class。
-
-範例：
+例如：
 
 ```yaml
 model:
@@ -359,153 +263,54 @@ model:
     - type: Flatten
     - type: Linear
       out_features: 32
-    - type: examples.custom_block.CustomHead
-      in_features: 32
-      out_features: 10
+    - type: minicnn.extensions.custom_components.ConvBNReLU
+      out_channels: 32
 ```
 
-執行：
+詳見 [docs/custom_components.md](docs/custom_components.md)。
 
-```bash
-minicnn train-dual --config configs/dual_backend_torch_custom.yaml
-```
+## 文件入口
 
-## 專案結構
+建議先看：
+
+- [docs/USAGE.md](docs/USAGE.md)：文件索引
+- [docs/architecture.md](docs/architecture.md)：整體架構與模組地圖
+- [docs/backend_capabilities.md](docs/backend_capabilities.md)：backend 支援矩陣
+- [docs/custom_components.md](docs/custom_components.md)：component 擴充入口
+- [docs/08_autograd.md](docs/08_autograd.md)：NumPy autograd stack
+- [docs/09_feature_expansion.md](docs/09_feature_expansion.md)：擴充功能說明
+- [templates/README.md](templates/README.md)：可直接修改的 template configs
+
+若要看這個 branch 內的 `cuda_native` 規劃脈絡，工作筆記放在
+`comments/cuda_native/`。
+
+## Repository 地圖
 
 ```text
 minicnn/
-├── configs/
-│   ├── dual_backend_cnn.yaml          # 主要 CIFAR-10 config；在這切 torch/cuda_legacy
-│   ├── dual_backend_torch_custom.yaml # 自訂 dotted-path component 範例
-│   ├── autograd_tiny.yaml             # CPU/NumPy autograd 小型 smoke config
-│   ├── flex_*.yaml                    # PyTorch flex trainer 範例
-│   ├── train_cuda.yaml                # legacy CUDA compatibility config
-│   └── train_torch.yaml               # Torch baseline compatibility config
-├── cpp/
-│   ├── Makefile                       # Linux native .so build，含 cublas/handmade variant
-│   ├── CMakeLists.txt                 # Linux/Windows helper 使用的 CMake build path
-│   ├── include/                       # native public headers
-│   └── src/                           # CUDA/C++ kernels 與 C API 實作
-├── docs/                              # 教學與 reference docs
-├── examples/                          # 自訂 PyTorch component 範例
-├── features/
-│   ├── README.md                      # 隔離 prototype 的規則
-│   └── backend-smoke-matrix/          # 比較 torch/cublas/handmade smoke runs 的範例 feature
-├── scripts/
-│   └── build_windows_native.ps1       # Windows CUDA DLL build helper
+├── cpp/                    # 手寫 CUDA / C++ backend
+├── configs/                # flex、dual、autograd 的範例 configs
+├── docs/                   # 設計文件、指南與 capability docs
+├── examples/               # custom torch component 範例
+├── comments/cuda_native/   # branch 內的 cuda_native 規劃筆記
 ├── src/minicnn/
-│   ├── cli.py                         # minicnn command entrypoint
-│   ├── autograd/                      # Tensor、Function、Context compatibility namespace
-│   ├── compiler/                      # MiniCNN IR、tracer、passes、scheduler、lowering 邊界
-│   ├── config/                        # config schema、loader、legacy settings bridge
-│   ├── core/                          # native build helper 與 lazy ctypes CUDA binding
-│   ├── data/                          # CIFAR-10 準備/載入
-│   ├── flex/                          # config-driven PyTorch model builder 與 trainer
-│   ├── models/                        # CPU/NumPy model registry 與 config builder
-│   ├── nn/                            # MiniCNN Tensor、Parameter 與 CPU/NumPy autograd core
-│   ├── ops/                           # CPU/NumPy differentiable layer ops
-│   ├── optim/                         # MiniCNN SGD 與 Adam optimizer
-│   ├── runtime/                       # graph executor、backend protocol、memory pool、profiler
-│   ├── training/
-│   │   ├── train_cuda.py              # legacy CUDA CIFAR-10 orchestration 入口
-│   │   ├── cuda_batch.py              # CUDA batch forward/loss/backward/update 步驟
-│   │   ├── train_torch_baseline.py    # PyTorch baseline orchestration 入口
-│   │   ├── train_autograd.py          # CPU/NumPy autograd training 入口
-│   │   ├── models/                    # checkpoint 固定輸出資料夾
-│   │   ├── loop.py                    # 共用 metrics/LR/early-stop/epoch summary helper
-│   │   ├── legacy_data.py             # legacy trainer 共用 CIFAR-10 載入/normalize helper
-│   │   ├── cuda_ops.py                # CUDA copy/layout/forward helper wrapper
-│   │   ├── cuda_workspace.py          # 每個 batch 重用的 GPU workspace
-│   │   ├── evaluation.py              # CUDA eval forward/accuracy helper
-│   │   └── checkpoints.py             # CUDA checkpoint save/load/free helper
-│   └── unified/
-│       ├── config.py                  # shared default config 與 override merge
-│       ├── cuda_legacy.py             # 將 shared config 映射到 legacy CUDA settings
-│       └── trainer.py                 # 將 train-dual dispatch 到 torch 或 cuda_legacy
-└── tests/                             # config、import、framework wiring 的 unit/smoke tests
+│   ├── flex/               # torch/flex frontend、registry、builder、trainer
+│   ├── unified/            # shared-config dispatch 與 backend bridges
+│   ├── training/           # cuda_legacy 與 autograd 訓練程式
+│   ├── cuda_native/        # 實驗性的 graph/planner/executor backend 開發
+│   ├── nn/ ops/ optim/     # NumPy autograd stack
+│   ├── compiler/ runtime/  # tracing、optimization 與 CPU inference pipeline
+│   └── core/               # native build helpers 與 ctypes CUDA binding
+└── tests/                  # unit 與 smoke tests
 ```
 
-主要資料夾與檔案用途：
+## 設計哲學
 
-| Path | 用途 |
-|---|---|
-| `configs/` | torch、cuda_legacy、flex、自訂 component、AlexNet-like、ResNet-like 訓練用 YAML config。 |
-| `configs/autograd_tiny.yaml` | CPU/NumPy autograd trainer 的小型 random-data config。 |
-| `cpp/` | 原生 CUDA/C++ source、header、Makefile、CMake build 檔。 |
-| `cpp/include/cuda_check.h` | CUDA runtime 與 kernel launch 檢查；debug build 會定義 `MINICNN_DEBUG_SYNC` 進行同步檢查。 |
-| `cpp/include/network.h` | C++ layer 介面，forward output 用 RAII `std::unique_ptr<CudaTensor>` 表示所有權。 |
-| `cpp/src/cublas_context.cu` | forward/backward CUDA code 共用的 cuBLAS handle。 |
-| `cpp/src/core.cu` | GEMM forward 路徑；用 `USE_CUBLAS` 切換 cuBLAS 或手寫 CUDA。 |
-| `cpp/src/conv_backward.cu` | convolution backward kernel 與 cuBLAS/handmade weight-gradient 路徑。 |
-| `cpp/src/loss_layer.cu` | Softmax、fused softmax cross-entropy loss/gradient/accuracy 與 GEMM backward helper。 |
-| `cpp/src/network.cu` | C++ layer forward 實作；ConvLayer 重用 im2col cache，ReLU 直接 out-of-place 寫入。 |
-| `cpp/src/gpu_monitor.cu` | 使用 CUDA runtime API 的輕量 GPU memory status helper，不啟動 shell。 |
-| `docs/` | 編譯、C API、Python ctypes、C++ linking、layout/debug、Windows build 教學。 |
-| `examples/` | 最小自訂 PyTorch component 範例。 |
-| `features/` | 隔離原型區；正式 production code 預設不應 import 這裡，內含 `backend-smoke-matrix/` 作為範例 feature。 |
-| `scripts/build_windows_native.ps1` | Windows CUDA DLL variant 的 PowerShell build helper。 |
-| `src/minicnn/cli.py` | 主要 CLI entrypoint。 |
-| `src/minicnn/autograd/` | MiniCNN `Tensor`、`Parameter`、`Function`、`Context`、`no_grad`、`backward` 的 compatibility namespace。 |
-| `src/minicnn/compiler/` | 輕量 IR、model-config tracer、optimizer passes、scheduler，以及明確標示的 lowering 邊界。 |
-| `src/minicnn/core/build.py` | `minicnn build` 使用的 native build/check helper。 |
-| `src/minicnn/core/cuda_backend.py` | 原生 CUDA library 的 lazy ctypes loader 與 Python helper。 |
-| `src/minicnn/core/fused_ops.py` | Conv2d + BatchNorm2d + ReLU fusion 語意的 NumPy reference helper。 |
-| `src/minicnn/data/` | CIFAR-10 下載/載入與 random dataset helper。 |
-| `src/minicnn/flex/` | PyTorch config-driven model/loss/optimizer/scheduler builder 與 trainer；包含 torch-only `ResidualBlock` 與 `GlobalAvgPool2d`。 |
-| `src/minicnn/models/` | CPU/NumPy MiniCNN model registry、shape inference、config builder、graph helper。 |
-| `src/minicnn/nn/` | MiniCNN framework layer：`Module`、`Sequential`、`Tensor`、`Parameter` 與 CPU/NumPy autograd functions。 |
-| `src/minicnn/nn/tensor.py` | reverse-mode autograd engine，支援 scalar/tensor ops、broadcasting、matmul、reductions、ReLU、`log_softmax`、`cross_entropy`。 |
-| `src/minicnn/nn/layers.py` | CPU/NumPy MiniCNN layers：`Linear`、`Conv2d`、`MaxPool2d`、`BatchNorm2d`、`Flatten`、`ReLU`、`ResidualBlock`。 |
-| `src/minicnn/ops/` | MiniCNN layers 使用的 differentiable NumPy ops。 |
-| `src/minicnn/optim/` | 輕量 optimizer 介面；`SGD` 與 `Adam` 可更新 MiniCNN `Parameter`，不需要 torch。 |
-| `src/minicnn/runtime/` | 小型 graph executor、backend protocol、tensor memory pool、profiler utilities。 |
-| `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 orchestration 入口：資料、epoch、validation、checkpoint、LR reduction、early stop、final test evaluation。 |
-| `src/minicnn/training/cuda_batch.py` | CUDA backend 的 batch 級步驟：conv forward、FC forward、fused loss/accuracy、FC update、conv backward/update。 |
-| `src/minicnn/training/train_autograd.py` | CPU/NumPy autograd training loop，支援 random/cifar10/mnist 資料，輸出 `*_autograd_best.npz`。 |
-| `src/minicnn/training/models/` | 最佳模型 checkpoint 固定輸出位置；產生的 `*.pt` 與 `*.npz` 檔不進 git。 |
-| `src/minicnn/training/loop.py` | 共用訓練迴圈狀態：running metrics、分層 LR 狀態、best/plateau/early-stop 狀態、epoch timing、LR reduction、epoch summary formatting。 |
-| `src/minicnn/training/legacy_data.py` | legacy CUDA 與 Torch baseline 共用的 CIFAR-10 load/normalize helper。 |
-| `src/minicnn/training/cuda_ops.py` | legacy training loop 使用的小型 CUDA operation wrapper。 |
-| `src/minicnn/training/cuda_workspace.py` | 可重用 batch GPU workspace，含 double-free 保護。 |
-| `src/minicnn/training/evaluation.py` | CUDA evaluation forward path 與 accuracy helper。 |
-| `src/minicnn/training/checkpoints.py` | CUDA checkpoint save/reload 與 GPU pointer cleanup。 |
-| `src/minicnn/training/train_torch_baseline.py` | 對齊手寫 CUDA update 規則的 PyTorch baseline orchestration 與 batch helper。 |
-| `src/minicnn/unified/` | shared config compiler 與 `torch`/`cuda_legacy` dispatcher。 |
-| `tests/` | 不需 GPU 的 unit/smoke tests；真正 GPU 訓練用 CLI 指令另跑。 |
+- backend capability 要明講，不假裝 parity
+- frontend 能共用時才共用，不做虛假的抽象
+- 遇到不支援的 backend 組合就 fail fast
+- 實驗性 backend work 可以公開，但不能包裝成穩定功能
 
-Windows native build 說明在 [docs/07_windows_build.md](docs/07_windows_build.md)。
+## License
 
-## 開發
-
-```bash
-python -m pip install -e .[torch,dev]
-pytest
-python -m compileall -q src
-```
-
-## Feature 隔離研發流程
-
-穩定程式碼放在 `src/minicnn/`，並且 `main` 必須維持可執行。新的或高風險功能先開 Git branch，並放在 `features/` 下隔離研發。
-
-```bash
-git checkout -b feature/native-cuda-class-backend
-mkdir -p features/native-cuda-class-backend
-```
-
-`features/<name>/` 用來放 prototype、notes、探索性測試。正式 CLI 預設不應 import `features/`。功能穩定後，再把支援的實作移到 `src/minicnn/`，測試移到 `tests/`，更新 README/docs，並在合併前跑完整測試。
-
-大型實驗建議使用 worktree，讓穩定版 checkout 保持可用：
-
-```bash
-git worktree add ../minicnn-feature-native -b feature/native-backend
-```
-
-## 備註
-
-- **Torch path 是最彈性的路徑**。
-- **CUDA path 是手寫 backend 路徑**，目前會先驗證 config 是否在支援範圍內。
-- 這樣可以維持統一 config 介面，同時誠實標示不同 backend 的能力邊界。
-
-## 能力邊界說明
-
-這個 package 提供兩個 backend 共用的 config 介面。Torch path 完整彈性較高。手寫 CUDA path 是真的 CUDA backend，但目前只支援上面描述的 CNN subset，並會將該 subset 編譯到 legacy CUDA trainer。
+MIT

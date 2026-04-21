@@ -2,23 +2,99 @@
 
 [繁體中文 README](README.zh-TW.md)
 
-A dual-backend mini deep learning framework that lets one shared model config drive either:
+![status](https://img.shields.io/badge/status-experimental-orange)
+![frontend](https://img.shields.io/badge/frontend-YAML%20%2B%20CLI-blue)
+![native](https://img.shields.io/badge/native-CUDA-green)
 
-- **`engine.backend: torch`** for rapid experimentation and custom components
-- **`engine.backend: cuda_legacy`** for the handcrafted CUDA CNN path already in this repository
+MiniCNN is a configuration-driven deep learning project for studying the gap
+between a flexible frontend and backend-constrained execution paths.
 
-The goal is simple: users should change **one option in the config file** to switch backend, while keeping the same layer definitions, optimizer section, and training parameters.
+Today, the repo gives you three practical ways to work:
 
-This repository is the consolidated MiniCNN line. Older exploratory snapshots were removed so this project has one clear development target.
+- `torch` via `train-flex` / `train-dual` for broad model experimentation
+- `cuda_legacy` via `train-dual` for the handcrafted CUDA CIFAR-10 path
+- `autograd` via `train-autograd` for the pure NumPy teaching stack
 
-## What is in this repo
+This branch also contains ongoing `cuda_native` work under
+`src/minicnn/cuda_native/`, but that backend is still experimental and is not
+yet part of the stable CLI toggle surface.
 
-- Handcrafted CUDA/C++ backend under `cpp/`
-- Config-driven model builder under `src/minicnn/flex/`
-- Dual-backend compiler and trainer under `src/minicnn/unified/`
-- GitHub-ready project files, CI, docs, examples, and tests
+## Why This Exists
 
-## Quick start
+Most frameworks intentionally hide kernel orchestration, memory handling, and
+backend boundaries behind a smooth API.
+
+MiniCNN is useful when you want to look at those boundaries directly:
+
+- how one frontend contract maps into different backend realities
+- where a narrow native backend needs strict validation instead of fake parity
+- how a small autograd stack behaves without relying on torch internals
+- how a future graph-based native backend can be prototyped in public
+
+## Positioning
+
+MiniCNN is not trying to replace PyTorch.
+
+It is useful when you want one of these:
+
+- a shared YAML/frontend contract that can target different backends
+- a narrow handcrafted CUDA training path with explicit capability limits
+- a small NumPy autograd stack for learning and framework-level experiments
+- a place to prototype a future graph-based native backend without pretending it is already finished
+
+## Backend Status
+
+| Backend | Status | Best use |
+|---|---|---|
+| `torch` | stable | new models, custom components, fast iteration |
+| `cuda_legacy` | stable but intentionally narrow | handwritten CUDA training on the fixed CIFAR-10 contract |
+| `autograd` | stable educational path | CPU-only learning, deterministic tests, framework experiments |
+| `cuda_native` | experimental branch-local work | native graph/planner/backend R&D, not general use yet |
+
+At a high level:
+
+```text
+shared YAML / CLI frontend -> torch | cuda_legacy | autograd
+                               \
+                                -> cuda_native (branch-local backend work)
+```
+
+## What You Can Run Today
+
+### `torch`
+
+- broad `model.layers[]` support through the flex registry
+- custom dotted-path components
+- schedulers, regularization, and richer experimentation workflows
+
+### `cuda_legacy`
+
+- handcrafted CUDA / C++ backend in `cpp/`
+- shared-config bridge from `engine.backend=cuda_legacy`
+- strict validation instead of silent fallback
+- narrow, honest contract centered on CIFAR-10 and the fixed Conv/Pool/Linear pattern
+
+### `autograd`
+
+- pure NumPy reverse-mode autodiff
+- small optimizer/layer stack for learning and tests
+- architecture tracing and CPU inference experiments without torch
+
+### `cuda_native`
+
+This branch includes staged `cuda_native` modules for:
+
+- graph IR
+- validators
+- planner
+- reference executors and backend experiments
+
+But the capability descriptor in `src/minicnn/cuda_native/capabilities.py`
+still marks it as experimental, sequential-only, and not yet supported as a
+stable training backend. The public CLI still routes `train-dual` through
+`torch` or `cuda_legacy`.
+
+## Quick Start
 
 ```bash
 git clone https://github.com/s9213712/minicnn.git
@@ -30,62 +106,61 @@ python -m pip install -e .[torch,dev]
 pytest
 ```
 
-## Build the handcrafted CUDA library
+## Build The Native CUDA Library
 
 ```bash
 minicnn build --legacy-make --check
 ```
 
-Build both native variants for comparison:
+Build both native variants:
 
 ```bash
 minicnn build --legacy-make --variant both --check
 ```
 
-This writes:
+Typical outputs:
 
 ```text
 cpp/libminimal_cuda_cnn_cublas.so
 cpp/libminimal_cuda_cnn_handmade.so
 ```
 
-On Windows, build native DLLs with PowerShell:
+The native library is lazy-loaded, so commands such as `minicnn --help`,
+`prepare-data`, `validate-dual-config`, and torch-only runs do not require a
+built `.so`.
 
-```powershell
-.\scripts\build_windows_native.ps1 -Variant both
-```
+## Prepare Data
 
-Or with the CMake path:
-
-```bash
-minicnn build --check
-```
-
-## Prepare Dataset
-
-Download CIFAR-10 before running the training commands below:
+Download CIFAR-10 for the handcrafted CUDA path:
 
 ```bash
 minicnn prepare-data
 ```
 
-## Shared-config training
+MNIST-based flex/autograd configs can use `dataset.download=true` and download
+their own files into `data/mnist/`.
 
-### 1) PyTorch backend
+## Common Training Commands
+
+Train the flexible torch path:
+
+```bash
+minicnn train-flex --config configs/flex_cnn.yaml
+```
+
+Train with the shared dual-backend config on torch:
 
 ```bash
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=torch
 ```
 
-### 2) Handcrafted CUDA backend
+Train the handcrafted CUDA path:
 
 ```bash
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
 ```
 
-The only switch above is `engine.backend`.
-
-For the handcrafted CUDA backend, choose the native `.so` variant with:
+Select the native CUDA variant explicitly:
 
 ```bash
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
@@ -95,147 +170,49 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=handmade
 ```
 
-The native library is lazy-loaded, so non-CUDA commands such as `--help`, `prepare-data`, `validate-dual-config`, and torch backend runs do not require a built `.so`.
-When a Python process switches between `runtime.cuda_variant` values, MiniCNN resets the cached `ctypes` handle so the next CUDA call loads the requested library instead of reusing the previous `.so`.
-
-For quick debug runs, use config overrides:
+Train the NumPy autograd path:
 
 ```bash
-minicnn train-dual --config configs/dual_backend_cnn.yaml \
-  engine.backend=cuda_legacy runtime.cuda_variant=cublas \
-  train.epochs=1 train.batch_size=32 \
-  dataset.num_samples=128 dataset.val_samples=32
+minicnn train-autograd --config configs/autograd_tiny.yaml
 ```
 
-The legacy trainer also accepts environment overrides such as `MINICNN_EPOCHS`, `MINICNN_BATCH`, `MINICNN_N_TRAIN`, and `MINICNN_N_VAL`.
-
-Best model files are always written under:
-
-```text
-src/minicnn/training/models/
-```
-
-PyTorch writes `*_best.pt`; CUDA legacy writes `*_best_model_split.npz`. Per-run metrics and summaries stay under `artifacts/`.
-
-## Architecture Templates
-
-Ready-to-edit YAML examples live under `templates/`:
+Compare backends:
 
 ```bash
-minicnn train-flex --config templates/mnist/lenet_like.yaml
-minicnn train-flex --config templates/mnist/mlp.yaml
-minicnn train-flex --config templates/cifar10/vgg_mini.yaml
-minicnn train-dual --config templates/cifar10/vgg_mini_cuda.yaml engine.backend=cuda_legacy
+minicnn compare --config configs/dual_backend_cnn.yaml \
+  train.epochs=1 dataset.num_samples=128 dataset.val_samples=32
 ```
 
-MNIST templates use `dataset.type: mnist` and can download the IDX gzip files into `data/mnist/` on first run. CIFAR-10 templates expect `minicnn prepare-data` unless `dataset.download: true` is enabled. See `templates/README.md` for the architecture list and backend compatibility.
+Inspect the current surface:
 
-## Local Smoke Test Results
+```bash
+minicnn info
+minicnn doctor
+minicnn healthcheck
+minicnn list-flex-components
+minicnn list-dual-components
+minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
+minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
+```
 
-Validated on 2026-04-19 with an RTX 3050 Laptop GPU. The latest quick verification used `features/backend-smoke-matrix/run_smoke_matrix.py` with `128` train samples, `32` validation samples, batch size `32`, and `1` epoch:
+## Backend Boundary
 
-| Backend | Native variant | Train acc | Val acc | Test acc | Epoch time |
-|---|---|---:|---:|---:|---:|
-| `torch` | PyTorch CUDA | `11.72%` | `0.00%` | `10.36%` | `1.3s` |
-| `cuda_legacy` | `cublas` | `7.03%` | `6.25%` | `12.97%` | `0.2s` |
-| `cuda_legacy` | `handmade` | `7.03%` | `6.25%` | `12.97%` | `0.2s` |
+The project-level frontend is broader than `cuda_legacy`.
 
-The smoke run writes model files to `src/minicnn/training/models/` and run logs to `/tmp/minicnn_backend_compare` when using the commands in the docs.
+That distinction matters:
 
-Verification also covered `pytest`, CLI help without a native `.so`, config validation, Python compile checks, and `minicnn build --legacy-make --variant both --check`.
-
-Latest maintenance verification on 2026-04-20: `99 passed, 4 warnings`, `compileall` clean, `git diff --check` clean, and both cuBLAS/handmade native variants rebuilt with required symbols OK.
-
-## Why two backends?
-
-This repo intentionally supports two workflows:
-
-- **Torch backend**: broad layer coverage, fast experimentation, custom components via dotted-path imports
-- **CUDA backend**: your hand-rolled CUDA CNN path for low-level control and backend ownership
-
-## Documentation index
-
-[docs/USAGE.md](docs/USAGE.md) is the full documentation index: build guide, C API reference, Python ctypes tutorial, C++ linking, layout/debug notes, Windows build, and autograd usage — in recommended reading order.
-
-## Architecture overview
-
-See [docs/architecture.md](docs/architecture.md) for:
-
-- A one-page diagram of all three training paths and how they relate
-- The compiler → runtime inference pipeline
-- A full module map
-- Instructions for adding new layers and custom differentiable ops
-
-## Comparison and roadmap
-
-See [docs/comparison_report.md](docs/comparison_report.md) for the original
-comparison with `llm.c`, `tiny-cuda-nn`, and `neural-network-cuda`.
-
-See [docs/comparison_completion_report.md](docs/comparison_completion_report.md)
-for the backend-scoped completion report. See
-[docs/optimization_progress.md](docs/optimization_progress.md) for the current
-optimization progress snapshot.
+- `torch` is the default place for new model ideas
+- `cuda_legacy` is a constrained backend with a validator and a capability boundary
+- `autograd` is for learning and compact experiments
+- `cuda_native` should grow as a separate backend, not by pretending `cuda_legacy` is infinitely extensible
 
 See [docs/backend_capabilities.md](docs/backend_capabilities.md) for the
-backend-by-backend support matrix. See
-[docs/cuda_batchnorm2d_evaluation.md](docs/cuda_batchnorm2d_evaluation.md) for
-the CUDA legacy BatchNorm2d integration assessment.
+support matrix and [docs/generalization_roadmap.md](docs/generalization_roadmap.md)
+for the longer-term direction.
 
-Use [docs/benchmark_report_template.md](docs/benchmark_report_template.md) when
-recording backend performance results. `minicnn compare` reports elapsed time,
-epoch time, and samples/sec fields that map directly into the template.
+## Config Contract
 
-## Interactive tutorial
-
-`notebooks/01_autograd_from_scratch.ipynb` walks through the autograd engine from first principles:
-
-```bash
-pip install jupyter
-jupyter notebook notebooks/01_autograd_from_scratch.ipynb
-```
-
-No PyTorch required. Covers: computation graph construction, `backward()`, the `Function` API, dropout, Adam with gradient clipping, and the compiler/runtime pipeline.
-
-## MiniCNN autograd core
-
-MiniCNN includes a CPU/NumPy autograd stack in `src/minicnn/nn/tensor.py`, `src/minicnn/ops/`, and `src/minicnn/nn/layers.py`. It supports:
-
-- `Tensor.backward()` with topological reverse-mode autodiff
-- scalar/tensor arithmetic with broadcasting-aware gradients
-- matrix multiply, reductions, reshape, `relu`, `sigmoid`, `tanh`, `log_softmax`, `cross_entropy`
-- trainable `Parameter` and `no_grad()` context
-- `SGD`, `Adam`, `AdamW`, and `RMSprop` optimizers with `grad_clip` and `weight_decay`
-- layers: `Linear`, `Conv2d`, `MaxPool2d`, `AvgPool2d`, `BatchNorm2d`, `Flatten`, `ResidualBlock`, `ReLU`, `LeakyReLU`, `SiLU`, `Sigmoid`, `Tanh`, `Dropout`
-- custom differentiable ops via the `Function` API (backward is automatically wired in `apply()`)
-- training on random, CIFAR-10, or MNIST data via `minicnn train-autograd`
-- `StepLR` and `CosineAnnealingLR` schedulers via `scheduler.enabled=true`
-- `label_smoothing` in `cross_entropy` / `CrossEntropyLoss`
-- weight initialization strategies via `get_initializer()`: kaiming, xavier, normal, zeros
-- compiler + runtime inference pipeline via `InferencePipeline` (no training overhead)
-
-See [docs/08_autograd.md](docs/08_autograd.md) and [docs/09_feature_expansion.md](docs/09_feature_expansion.md) for full usage and feature details.
-
-This core is useful for framework-level tests and educational examples. The Torch backend still uses PyTorch autograd, and the handcrafted CUDA backend uses its own CUDA backward kernels. See [docs/08_autograd.md](docs/08_autograd.md) for full usage.
-
-### Robustness notes
-
-- **`train.init_seed`**: torch/flex model construction seeds PyTorch before `build_model()`, so repeated runs with the same config start from the same weights.
-- **Config overrides**: dotted CLI overrides support list indexes such as `model.layers.1.out_features=7`; malformed CUDA legacy numeric fields are reported as validation errors.
-- **Boolean parsing**: string values such as `"false"` and `"0"` are parsed correctly for all boolean config fields.
-- **CUDA library switching**: in-process `cuda_legacy` runs reset the cached native handle when runtime library settings change.
-- **CUDA cleanup**: legacy CUDA training frees device weights and velocity buffers through an outer cleanup path even if training raises.
-- **`compile_to_legacy_experiment`**: correctly sets `ModelConfig.c_in` and `ModelConfig.conv_layers` from the unified config (bug fix — previously wrote to non-existent dataclass attributes that were silently ignored).
-- **`shape_inference`**: Conv2d width formula now uses `kw` instead of `kh` (bug fix for non-square kernels).
-- **`Function.apply()`**: backward hook is now wired automatically; custom `Function` subclasses work like PyTorch's `torch.autograd.Function`.
-- **`SGD` / `Adam`**: both optimizers now support `grad_clip` to clip per-parameter gradient norms before the update step.
-- **Checkpoint security**: flex trainer saves model weights only (no config dict in the `.pt` file); loads with `weights_only=True`.
-- **`Tensor.__pow__` backward**: gradient at `base == 0` with a negative exponent returns `0` instead of `NaN`.
-- **`flex/builder`**: each layer's inferred output shape is validated for positive dimensions immediately after construction.
-- **`BatchWorkspace.__del__`**: GPU memory cleanup failures emit a `ResourceWarning` instead of being silently discarded.
-
-## Shared config contract
-
-The same config file contains:
+The main shared-config surface is:
 
 - `dataset`
 - `model.layers`
@@ -245,96 +222,17 @@ The same config file contains:
 - `scheduler`
 - `engine.backend`
 
-Example snippet:
+Minimal example:
 
 ```yaml
 engine:
   backend: torch
 
-model:
-  layers:
-    - type: Conv2d
-      out_channels: 32
-      kernel_size: 3
-    - type: LeakyReLU
-      negative_slope: 0.1
-    - type: Conv2d
-      out_channels: 32
-      kernel_size: 3
-    - type: LeakyReLU
-      negative_slope: 0.1
-    - type: MaxPool2d
-      kernel_size: 2
-      stride: 2
-    - type: Conv2d
-      out_channels: 64
-      kernel_size: 3
-    - type: LeakyReLU
-      negative_slope: 0.1
-    - type: Conv2d
-      out_channels: 64
-      kernel_size: 3
-    - type: LeakyReLU
-      negative_slope: 0.1
-    - type: MaxPool2d
-      kernel_size: 2
-      stride: 2
-    - type: Flatten
-    - type: Linear
-      out_features: 10
-```
+dataset:
+  type: cifar10
+  input_shape: [3, 32, 32]
+  num_classes: 10
 
-## CUDA backend support boundary
-
-The handcrafted CUDA route currently supports the subset compiled by `src/minicnn/unified/cuda_legacy.py`:
-
-- dataset: `cifar10`
-- layers: `Conv2d -> activation -> Conv2d -> activation -> MaxPool2d -> Conv2d -> activation -> Conv2d -> activation -> MaxPool2d -> Flatten -> Linear`
-- activations: `ReLU` or `LeakyReLU` with a single shared negative slope
-- optimizer: `SGD`
-- loss: `CrossEntropyLoss`
-- input shape: `[3, 32, 32]`
-- classes: `10`
-
-If a config goes outside this subset, `validate-dual-config` explains why.
-
-## Changing network architecture
-
-The two backends use separate config keys for architecture.
-For a file-by-file decision table covering YAML-only changes versus Torch
-registry changes versus native CUDA backward changes, see
-[docs/dual_backend_guide.md](docs/dual_backend_guide.md#when-architecture-changes-require-code-changes).
-
-### CUDA backend (`train-cuda` / `cuda_legacy`)
-
-Edit `model.conv_layers` in `configs/train_cuda.yaml`. Each entry is a `{out_c, pool}` pair. All shapes are derived automatically by `CudaNetGeometry` — no other file needs to change.
-
-```yaml
-model:
-  c_in: 3
-  h: 32
-  w: 32
-  kh: 3
-  kw: 3
-  fc_out: 10
-  conv_layers:
-    - {out_c: 32, pool: false}   # conv1
-    - {out_c: 32, pool: true}    # conv2 + pool
-    - {out_c: 64, pool: false}   # conv3
-    - {out_c: 64, pool: true}    # conv4 + pool
-```
-
-Rules:
-- `pool: true` inserts a 2×2 max-pool after the convolution at that stage.
-- The first stage must have `in_c == c_in`; subsequent stages infer `in_c` from the previous stage's `out_c`.
-- The CUDA kernel only supports `kh == kw == 3` and input sizes divisible by pooling strides.
-- Run `minicnn validate-dual-config --config configs/train_cuda.yaml` to check your config before training.
-
-### Flex / Torch backend (`train-flex` / `torch`)
-
-Edit `model.layers` in `configs/dual_backend_cnn.yaml` (or your own flex config). Add, remove, or rearrange layer entries freely. `in_channels` / `in_features` are inferred automatically.
-
-```yaml
 model:
   layers:
     - type: Conv2d
@@ -350,31 +248,14 @@ model:
       out_features: 10
 ```
 
-No Python changes are needed for either backend — only the YAML file.
+If that same config does not fit `cuda_legacy`, use `minicnn validate-dual-config`
+to see the exact compatibility errors instead of guessing.
 
-## Useful commands
+## Extensibility
 
-```bash
-minicnn info
-minicnn doctor
-minicnn healthcheck
-minicnn list-flex-components
-minicnn list-dual-components
-minicnn train --config configs/dual_backend_cnn.yaml engine.backend=torch train.epochs=1
-minicnn train-torch --config configs/dual_backend_cnn.yaml train.epochs=1
-minicnn train-cuda --config configs/dual_backend_cnn.yaml train.epochs=1
-minicnn train-autograd --config configs/autograd_tiny.yaml train.epochs=1
-minicnn compare --config configs/dual_backend_cnn.yaml train.epochs=1 dataset.num_samples=128 dataset.val_samples=32
-minicnn dual-config-template
-minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
-minicnn validate-config --config configs/dual_backend_cnn.yaml
-minicnn compile --config configs/autograd_tiny.yaml
-minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
-```
+### Custom components
 
-## Custom components like PyTorch
-
-For the Torch backend, users can point at dotted-path classes directly in the config.
+Torch/flex accepts dotted-path layer factories in `model.layers[].type`.
 
 Example:
 
@@ -384,156 +265,54 @@ model:
     - type: Flatten
     - type: Linear
       out_features: 32
-    - type: examples.custom_block.CustomHead
-      in_features: 32
-      out_features: 10
+    - type: minicnn.extensions.custom_components.ConvBNReLU
+      out_channels: 32
 ```
 
-Run it with:
+See [docs/custom_components.md](docs/custom_components.md).
 
-```bash
-minicnn train-dual --config configs/dual_backend_torch_custom.yaml
-```
+## Documentation
 
-## Project layout
+Start here:
+
+- [docs/USAGE.md](docs/USAGE.md): documentation index
+- [docs/architecture.md](docs/architecture.md): overall architecture and module map
+- [docs/backend_capabilities.md](docs/backend_capabilities.md): backend support matrix
+- [docs/custom_components.md](docs/custom_components.md): dotted-path component extension points
+- [docs/08_autograd.md](docs/08_autograd.md): NumPy autograd stack
+- [docs/09_feature_expansion.md](docs/09_feature_expansion.md): expanded feature notes
+- [templates/README.md](templates/README.md): ready-to-edit template configs
+
+For branch-local `cuda_native` planning context, the working notes live under
+`comments/cuda_native/`.
+
+## Repository Map
 
 ```text
 minicnn/
-├── configs/
-│   ├── dual_backend_cnn.yaml          # main CIFAR-10 config; switch torch/cuda_legacy here
-│   ├── dual_backend_torch_custom.yaml # custom dotted-path component example
-│   ├── autograd_tiny.yaml             # tiny CPU/NumPy autograd training smoke config
-│   ├── flex_*.yaml                    # PyTorch flex trainer examples
-│   ├── train_cuda.yaml                # legacy CUDA compatibility config
-│   └── train_torch.yaml               # Torch baseline compatibility config
-├── cpp/
-│   ├── Makefile                       # Linux native .so build, including cublas/handmade variants
-│   ├── CMakeLists.txt                 # CMake build path used by Linux/Windows helpers
-│   ├── include/                       # native public headers
-│   └── src/                           # CUDA/C++ kernels and C API implementation
-├── docs/                              # tutorials and reference docs
-├── examples/                          # custom PyTorch component examples
-├── features/
-│   ├── README.md                      # rules for isolated prototype work
-│   └── backend-smoke-matrix/          # example feature comparing torch/cublas/handmade smoke runs
-├── scripts/
-│   └── build_windows_native.ps1       # Windows CUDA DLL build helper
+├── cpp/                    # handcrafted CUDA / C++ backend
+├── configs/                # example configs for flex, dual, and autograd paths
+├── docs/                   # design notes, guides, and capability docs
+├── examples/               # custom torch component examples
+├── comments/cuda_native/   # branch-local cuda_native planning notes
 ├── src/minicnn/
-│   ├── cli.py                         # minicnn command entrypoint
-│   ├── autograd/                      # compatibility namespace for Tensor, Function, Context
-│   ├── compiler/                      # lightweight MiniCNN IR, tracer, passes, scheduler, lowering stubs
-│   ├── config/                        # config schema, loader, legacy settings bridge
-│   ├── core/                          # native build helpers and lazy ctypes CUDA binding
-│   ├── data/                          # CIFAR-10 preparation/loading
-│   ├── engine/                        # backend capability declarations and component registry stubs
-│   ├── flex/                          # config-driven PyTorch model builder and trainer
-│   ├── framework/                     # component registry, healthcheck, and list-dual-components wiring
-│   ├── models/                        # MiniCNN CPU/NumPy model registry and config builder
-│   ├── nn/                            # MiniCNN Tensor, Parameter, and CPU/NumPy autograd core
-│   ├── ops/                           # CPU/NumPy differentiable layer ops
-│   ├── optim/                         # MiniCNN SGD and Adam optimizers
-│   ├── runtime/                       # graph executor, backend protocol, memory pool, profiler
-│   ├── training/
-│   │   ├── train_cuda.py              # legacy CUDA CIFAR-10 orchestration entrypoint
-│   │   ├── cuda_batch.py              # CUDA batch forward/loss/backward/update steps
-│   │   ├── train_torch_baseline.py    # PyTorch baseline orchestration entrypoint
-│   │   ├── train_autograd.py          # CPU/NumPy autograd training entrypoint
-│   │   ├── models/                    # fixed checkpoint output folder
-│   │   ├── loop.py                    # shared metrics/LR/early-stop/epoch summary helpers
-│   │   ├── legacy_data.py             # shared CIFAR-10 loading/normalization for legacy trainers
-│   │   ├── cuda_ops.py                # CUDA copy/layout/forward helper wrappers
-│   │   ├── cuda_workspace.py          # reusable per-batch GPU workspace
-│   │   ├── evaluation.py              # CUDA eval forward/accuracy helpers
-│   │   └── checkpoints.py             # CUDA checkpoint save/load/free helpers
-│   └── unified/
-│       ├── config.py                  # shared default config and override merge
-│       ├── cuda_legacy.py             # maps shared config into legacy CUDA settings
-│       └── trainer.py                 # dispatches train-dual to torch or cuda_legacy
-└── tests/                             # unit/smoke tests for config, imports, and framework wiring
+│   ├── flex/               # torch/flex frontend, registries, builder, trainer
+│   ├── unified/            # shared-config dispatch and backend bridges
+│   ├── training/           # cuda_legacy and autograd training code
+│   ├── cuda_native/        # experimental graph/planner/executor backend work
+│   ├── nn/ ops/ optim/     # NumPy autograd stack
+│   ├── compiler/ runtime/  # tracing, optimization, and CPU inference pipeline
+│   └── core/               # native build helpers and ctypes CUDA binding
+└── tests/                  # unit and smoke tests
 ```
 
-Key folder and file responsibilities:
+## Philosophy
 
-| Path | Purpose |
-|---|---|
-| `configs/` | YAML configs for torch, cuda_legacy, flex, custom-component, AlexNet-like, and ResNet-like runs. |
-| `configs/autograd_tiny.yaml` | Small random-data config for the CPU/NumPy autograd trainer. |
-| `cpp/` | Native CUDA/C++ source, headers, Makefile, and CMake build files. |
-| `cpp/include/cuda_check.h` | CUDA runtime and kernel launch checking; debug builds define `MINICNN_DEBUG_SYNC` for synchronizing checks. |
-| `cpp/include/network.h` | Secondary C++ layer API using RAII-owned `std::unique_ptr<CudaTensor>` forward outputs; the default CLI path uses the flat C ABI through `ctypes`. |
-| `cpp/src/cublas_context.cu` | Shared cuBLAS handle used by forward and backward CUDA code. |
-| `cpp/src/core.cu` | GEMM forward path; switches between cuBLAS and handwritten CUDA with `USE_CUBLAS`. |
-| `cpp/src/conv_backward.cu` | Convolution backward kernels and cuBLAS/handmade weight-gradient path. |
-| `cpp/src/loss_layer.cu` | Softmax, fused softmax cross-entropy loss/gradient/accuracy, and GEMM backward helpers. |
-| `cpp/src/network.cu` | C++ layer forward implementations; ConvLayer reuses an im2col cache and ReLU writes out-of-place. |
-| `cpp/src/gpu_monitor.cu` | Lightweight GPU memory status helper using CUDA runtime APIs, without shelling out. |
-| `docs/` | Build, C API, Python ctypes, C++ linking, layout/debug, and Windows build guides. |
-| `examples/` | Minimal custom PyTorch component examples. |
-| `features/` | Isolated prototypes that production code must not import by default; includes `backend-smoke-matrix/` as an example feature. |
-| `scripts/build_windows_native.ps1` | PowerShell helper for building Windows CUDA DLL variants. |
-| `src/minicnn/cli.py` | Main CLI entrypoint. |
-| `src/minicnn/autograd/` | Compatibility namespace for MiniCNN `Tensor`, `Parameter`, `Function`, `Context`, `no_grad`, and `backward`. |
-| `src/minicnn/compiler/` | Lightweight IR, model-config tracer, optimizer passes, scheduler, and explicit lowering boundary. |
-| `src/minicnn/core/build.py` | Native build/check helper used by `minicnn build`. |
-| `src/minicnn/core/cuda_backend.py` | Lazy ctypes loader and Python helpers for the native CUDA library. |
-| `src/minicnn/core/fused_ops.py` | NumPy reference helper for Conv2d + BatchNorm2d + ReLU fusion semantics. |
-| `src/minicnn/data/` | CIFAR-10 download/loading and random dataset helpers. |
-| `src/minicnn/flex/` | PyTorch config-driven model/loss/optimizer/scheduler builder and trainer; includes torch-only `ResidualBlock` and `GlobalAvgPool2d`. |
-| `src/minicnn/models/` | CPU/NumPy MiniCNN model registry, shape inference, config builder, and graph helpers. |
-| `src/minicnn/nn/` | MiniCNN framework layer: `Module`, `Sequential`, `Tensor`, `Parameter`, and the CPU/NumPy autograd functions. |
-| `src/minicnn/nn/tensor.py` | Reverse-mode autograd engine for scalar/tensor ops, broadcasting, matmul, reductions, ReLU, `log_softmax`, and `cross_entropy`. |
-| `src/minicnn/nn/layers.py` | CPU/NumPy MiniCNN layers: `Linear`, `Conv2d`, `MaxPool2d`, `BatchNorm2d`, `Flatten`, `ReLU`, and `ResidualBlock`. |
-| `src/minicnn/ops/` | Differentiable NumPy ops used by MiniCNN layers. |
-| `src/minicnn/optim/` | Lightweight optimizer interfaces; `SGD` and `Adam` update MiniCNN `Parameter` objects without requiring torch. |
-| `src/minicnn/runtime/` | Small graph executor, backend protocol, tensor memory pool, and profiler utilities. |
-| `src/minicnn/training/train_cuda.py` | Legacy CUDA CIFAR-10 orchestration entrypoint: data, epochs, validation, checkpointing, LR reduction, early stop, and final test evaluation. |
-| `src/minicnn/training/cuda_batch.py` | Backend-specific CUDA batch steps: conv forward, FC forward, fused loss/accuracy, FC update, conv backward/update. |
-| `src/minicnn/training/train_autograd.py` | Random-data CPU/NumPy autograd training loop that writes `*_autograd_best.npz`. |
-| `src/minicnn/training/models/` | Fixed output folder for best model checkpoints; generated `*.pt` and `*.npz` files are git-ignored. |
-| `src/minicnn/training/loop.py` | Shared training-loop state: running metrics, per-layer-group LR state, best/plateau/early-stop state, epoch timing, LR reduction, and epoch summary formatting. |
-| `src/minicnn/training/legacy_data.py` | Shared CIFAR-10 load/normalize helper used by legacy CUDA and Torch baseline trainers. |
-| `src/minicnn/training/cuda_ops.py` | Small CUDA operation wrappers used by the legacy training loop. |
-| `src/minicnn/training/cuda_workspace.py` | Reusable per-batch GPU workspace with double-free protection. |
-| `src/minicnn/training/evaluation.py` | CUDA evaluation forward path and accuracy helpers. |
-| `src/minicnn/training/checkpoints.py` | CUDA checkpoint save/reload and GPU pointer cleanup. |
-| `src/minicnn/training/train_torch_baseline.py` | PyTorch baseline orchestration and batch helpers mirroring the handcrafted CUDA update rules. |
-| `src/minicnn/unified/` | Shared-config compiler and dispatcher for `torch` vs `cuda_legacy`. |
-| `tests/` | Unit and smoke tests that avoid requiring GPU unless explicitly run through training commands. |
+- explicit backend capability over vague parity claims
+- one config frontend where that abstraction is actually honest
+- fail fast on unsupported backend combinations
+- keep experimental backend work visible without pretending it is stable
 
-Windows native build notes are in [docs/07_windows_build.md](docs/07_windows_build.md).
+## License
 
-## Development
-
-```bash
-python -m pip install -e .[torch,dev]
-pytest
-python -m compileall -q src
-```
-
-## Feature Isolation Workflow
-
-Stable code lives under `src/minicnn/` and must keep `main` runnable. New or risky work starts in a Git branch and an isolated folder under `features/`.
-
-```bash
-git checkout -b feature/native-cuda-class-backend
-mkdir -p features/native-cuda-class-backend
-```
-
-Use `features/<name>/` for prototypes, notes, and exploratory tests. Production code must not import from `features/` by default. Once a feature is stable, move the supported implementation into `src/minicnn/`, move tests into `tests/`, update docs, and run the full test suite before merging.
-
-For larger experiments, use a separate worktree so the stable checkout remains available:
-
-```bash
-git worktree add ../minicnn-feature-native -b feature/native-backend
-```
-
-## Notes
-
-- The **Torch path is the most flexible path**.
-- The **CUDA path is the handcrafted path** and currently validates a supported subset before running.
-- This keeps the config interface unified while staying honest about backend capabilities.
-
-
-## Honest capability note
-
-This package gives you one shared config interface for both backends. The Torch path is fully flexible. The handcrafted CUDA path is real, but it currently targets the supported CNN subset described above and compiles that config into the legacy CUDA trainer.
+MIT

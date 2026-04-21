@@ -1,26 +1,124 @@
 # MiniCNN Autograd
 
-MiniCNN includes a compact CPU/NumPy autograd stack. The core graph engine is in `src/minicnn/nn/tensor.py`, differentiable layer ops live in `src/minicnn/ops/`, and small layer modules live in `src/minicnn/nn/layers.py`.
+MiniCNN includes a compact CPU/NumPy autograd path for learning, framework
+tests, and small experiments that should not depend on PyTorch.
 
-It is meant for framework-level tests, small examples, and educational experiments that should not depend on PyTorch.
+The core pieces live here:
 
-It supports:
+- `src/minicnn/nn/tensor.py`: `Tensor`, reverse-mode autodiff, losses
+- `src/minicnn/autograd/function.py`: custom differentiable `Function` API
+- `src/minicnn/ops/`: NumPy reference ops
+- `src/minicnn/nn/layers.py`: lightweight layer modules
+- `src/minicnn/training/train_autograd.py`: CLI training loop
+
+This path is intentionally educational. It is broad enough to demonstrate
+framework behavior, but it is not intended to replace `torch` for performance.
+
+## What It Supports
+
+### Core tensor/autograd features
 
 - `Tensor.backward()` with topological reverse-mode autodiff
-- scalar and tensor arithmetic: `+`, `-`, `*`, `/`, `**`
+- arithmetic: `+`, `-`, `*`, `/`, `**`, `@`
 - broadcasting-aware gradients
-- matrix multiply with `@`
-- `sum`, `mean`, and `reshape`
-- `relu`, `log_softmax`, `cross_entropy`, `mse_loss`, and `bce_with_logits_loss`
-- trainable `Parameter`
+- `sum`, `mean`, `reshape`
 - `no_grad()` and `Tensor.detach()`
-- lightweight `SGD` and `Adam` optimizers with optional `grad_clip` and `weight_decay`
-- `Linear`, `ReLU`, `Flatten`, `Conv2d`, `MaxPool2d`, `BatchNorm2d`, and same-channel `ResidualBlock`
-- custom differentiable ops via the `Function` API
-- training on random, CIFAR-10, or MNIST data through `minicnn train-autograd`
-- lightweight config tracing and IR inspection through `minicnn compile`
+- custom differentiable ops through `Function.apply(...)`
 
-## Minimal example
+### Layers
+
+- `Linear`
+- `Conv2d`
+- `MaxPool2d`
+- `AvgPool2d`
+- `BatchNorm2d`
+- `ResidualBlock`
+- `Flatten`
+- `ReLU`
+- `LeakyReLU`
+- `Sigmoid`
+- `Tanh`
+- `SiLU`
+- `Dropout`
+
+### Losses
+
+- `CrossEntropyLoss`
+- `MSELoss`
+- `BCEWithLogitsLoss`
+
+### Optimizers and scheduler support
+
+- `SGD`
+- `Adam`
+- `AdamW`
+- `RMSprop`
+- step scheduler
+- cosine scheduler
+- per-parameter gradient clipping
+- weight decay
+
+## Running It
+
+Train with the NumPy backend:
+
+```bash
+minicnn train-autograd --config configs/autograd_tiny.yaml
+```
+
+A broader example config lives at:
+
+```text
+configs/autograd_enhanced.yaml
+```
+
+## Dataset Support
+
+`train-autograd` currently supports:
+
+- `dataset.type=random`
+- `dataset.type=cifar10`
+- `dataset.type=mnist`
+
+Examples:
+
+```yaml
+dataset:
+  type: random
+  num_samples: 256
+  val_samples: 64
+  input_shape: [1, 4, 4]
+  num_classes: 2
+```
+
+```yaml
+dataset:
+  type: cifar10
+  data_root: data/cifar-10-batches-py
+  num_samples: 1000
+  val_samples: 200
+```
+
+```yaml
+dataset:
+  type: mnist
+  download: true
+  num_samples: 10000
+  val_samples: 2000
+  input_shape: [1, 28, 28]
+```
+
+## Loss Contract Notes
+
+`CrossEntropyLoss` expects class indices.
+
+`MSELoss` converts labels into dense targets that match the output shape.
+
+`BCEWithLogitsLoss` is currently treated as a binary classification path. The
+output layer should produce one logit per example, and labels must be `0` or
+`1`.
+
+## Minimal Example
 
 ```python
 import numpy as np
@@ -39,81 +137,15 @@ loss.backward()
 SGD([w], lr=0.1).step()
 ```
 
-`train-autograd` supports these loss config values:
+## Custom Differentiable Ops
 
-```yaml
-loss:
-  type: CrossEntropyLoss      # class-index targets
-```
-
-```yaml
-loss:
-  type: MSELoss               # labels are converted to dense targets
-```
-
-```yaml
-loss:
-  type: BCEWithLogitsLoss     # labels are converted to dense binary targets
-```
-
-## Tiny training run (random data)
-
-```bash
-minicnn train-autograd \
-  --config configs/autograd_tiny.yaml \
-  train.epochs=5 dataset.num_samples=64 dataset.val_samples=16 train.batch_size=8
-```
-
-## Training on real datasets
-
-The `train-autograd` command supports three dataset types.  Note that the NumPy Conv2d implementation is slow — use `train-flex` or `train-dual` for production CIFAR-10 training.
-
-### Random data (default, fast)
-
-```yaml
-dataset:
-  type: random
-  num_samples: 256
-  val_samples: 64
-  input_shape: [1, 4, 4]
-  num_classes: 2
-```
-
-### CIFAR-10 (requires `minicnn prepare-data` first)
-
-```yaml
-dataset:
-  type: cifar10
-  data_root: data/cifar-10-batches-py
-  num_samples: 1000
-  val_samples: 200
-```
-
-```bash
-minicnn train-autograd --config configs/autograd_tiny.yaml \
-  dataset.type=cifar10 dataset.num_samples=1000 dataset.val_samples=200 \
-  model.layers.0.type=Conv2d model.layers.0.out_channels=16
-```
-
-### MNIST (auto-downloads on first run)
-
-```yaml
-dataset:
-  type: mnist
-  download: true
-  num_samples: 10000
-  val_samples: 2000
-  input_shape: [1, 28, 28]
-```
-
-## Custom differentiable operations (Function API)
-
-Subclass `Function` and implement `forward` and `backward`.  Call via `MyOp.apply(*inputs)`:
+Subclass `Function` and implement `forward` and `backward`. Call the op through
+`MyOp.apply(...)` so the graph wiring happens automatically.
 
 ```python
 from minicnn.autograd.function import Function
 from minicnn.nn.tensor import Tensor
-import numpy as np
+
 
 class Square(Function):
     @staticmethod
@@ -125,225 +157,22 @@ class Square(Function):
     def backward(ctx, grad_output):
         (x,) = ctx.saved_tensors
         return grad_output * 2.0 * x.data
-
-x = Tensor([3.0, -2.0], requires_grad=True)
-y = Square.apply(x)
-y.sum().backward()
-# x.grad == [6.0, -4.0]
 ```
 
-`apply()` automatically wires the backward hook and sets `requires_grad=True` on the output when any input requires a gradient.
+## Current Limits
 
-## Optimizers
+- CPU/NumPy only
+- no AMP or mixed precision
+- much slower than `torch` for realistic CNN training
+- useful for learning and parity-style tests, not for production throughput
 
-Both `SGD` and `Adam` support `weight_decay` and `grad_clip`:
+If you need broad model experimentation, use `train-flex`.
 
-```python
-from minicnn.optim.sgd import SGD
-from minicnn.optim.adam import Adam
+If you need the handwritten CUDA path, stay inside the `cuda_legacy` validator
+boundary exposed through `train-dual`.
 
-# SGD with momentum, weight decay, and gradient clipping
-opt = SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4, grad_clip=5.0)
+## Related Docs
 
-# Adam with weight decay and gradient clipping
-opt = Adam(model.parameters(), lr=1e-3, weight_decay=1e-4, grad_clip=1.0)
-```
-
-Gradient clipping clips each parameter's gradient to unit norm scaled by `grad_clip` before the update step.
-
-In YAML:
-
-```yaml
-optimizer:
-  type: SGD
-  lr: 0.01
-  momentum: 0.9
-  weight_decay: 0.0001
-  grad_clip: 5.0
-```
-
-## LR scheduler (step decay)
-
-The autograd trainer supports a simple step-decay scheduler via the `scheduler` config key:
-
-```yaml
-scheduler:
-  enabled: true
-  step_size: 10    # reduce every N epochs
-  gamma: 0.5       # multiply lr by gamma
-  min_lr: 1e-6     # floor
-```
-
-## Best model output
-
-The trainer writes the best checkpoint (by validation accuracy) to:
-
-```text
-src/minicnn/training/models/<run_name>_autograd_best.npz
-```
-
-Load it back with `numpy.load()`:
-
-```python
-import numpy as np
-data = np.load('path/to/best.npz')
-# data contains named arrays matching model.state_dict() keys
-```
-
-## Layers available in the autograd path
-
-| Layer | Config key `type` | Notes |
-|---|---|---|
-| `Linear` | `Linear` | |
-| `Conv2d` | `Conv2d` | |
-| `MaxPool2d` | `MaxPool2d` | |
-| `BatchNorm2d` | `BatchNorm2d` | |
-| `ReLU` | `ReLU` | |
-| `Sigmoid` | `Sigmoid` | |
-| `Tanh` | `Tanh` | |
-| `Dropout` | `Dropout` | active in `training=True`, pass-through in `eval()` |
-| `Flatten` | `Flatten` | |
-| `ResidualBlock` | `ResidualBlock` | same-channel skip connection |
-
-Add custom layers to `MODEL_REGISTRY` in `src/minicnn/models/registry.py`.
-
-## Compile command and inference pipeline
-
-```bash
-minicnn compile --config configs/autograd_tiny.yaml
-```
-
-This traces the model config into a lightweight IR graph, applies optimization passes (identity removal, Conv+BN+ReLU fusion annotation), and prints a JSON summary.
-
-The compiled graph is also runnable via `InferencePipeline` — no training loop required:
-
-```python
-from minicnn.runtime.pipeline import InferencePipeline
-import numpy as np
-
-model_cfg = {'layers': [
-    {'type': 'Linear', 'in_features': 4, 'out_features': 16},
-    {'type': 'ReLU'},
-    {'type': 'Linear', 'in_features': 16, 'out_features': 3},
-]}
-
-pipeline = InferencePipeline.from_config(model_cfg, profile=True)
-logits = pipeline.run_final(np.random.randn(8, 4).astype('float32'))
-print(pipeline.profile_summary())
-```
-
-`from_config()` internally calls `trace_model_config → optimize → ir_to_runtime_graph → GraphExecutor`.
-
-## Interactive tutorial
-
-`notebooks/01_autograd_from_scratch.ipynb` walks through the engine from first principles — computation graph, backward(), Function API, training loop, and the pipeline — with no PyTorch dependency.
-
-## Limitations
-
-- Thread-safety: the global `_grad_enabled` flag in `nn/tensor.py` is not thread-safe.
-- Performance: NumPy Conv2d is not optimised; large CIFAR-10 runs are much slower than PyTorch.
-- No GPU support in the autograd path.
-
-## 新增功能
-
-### 新激活函數
-
-`LeakyReLU` 和 `SiLU` 已加入 `minicnn.nn.layers`：
-
-```python
-from minicnn.nn.layers import LeakyReLU, SiLU
-
-leaky = LeakyReLU(negative_slope=0.01)
-silu  = SiLU()
-```
-
-YAML：
-
-```yaml
-- type: LeakyReLU
-- type: SiLU
-```
-
-### 新優化器：AdamW 與 RMSprop
-
-```python
-from minicnn.optim.adamw import AdamW
-from minicnn.optim.rmsprop import RMSprop
-```
-
-YAML：
-
-```yaml
-optimizer:
-  type: AdamW
-  lr: 0.001
-  weight_decay: 0.01
-```
-
-```yaml
-optimizer:
-  type: RMSprop
-  lr: 0.01
-  alpha: 0.99
-```
-
-### 新排程器：StepLR 與 CosineAnnealingLR
-
-```python
-from minicnn.schedulers.step import StepLR
-from minicnn.schedulers.cosine import CosineAnnealingLR
-```
-
-YAML：
-
-```yaml
-scheduler:
-  enabled: true
-  type: step
-  step_size: 10
-  gamma: 0.5
-  min_lr: 1.0e-6
-```
-
-```yaml
-scheduler:
-  enabled: true
-  type: cosine
-  T_max: 30
-  min_lr: 1.0e-5
-```
-
-### label_smoothing 支援
-
-`cross_entropy` 接受 `label_smoothing` 參數（預設 `0.0`）：
-
-```python
-from minicnn.nn.tensor import cross_entropy
-loss = cross_entropy(logits, targets, label_smoothing=0.1)
-```
-
-YAML：
-
-```yaml
-loss:
-  type: CrossEntropyLoss
-  label_smoothing: 0.1
-```
-
-### AMP 拒絕
-
-若設定 `train.amp=true`，autograd 路徑會立即拋出 `ValueError` 並提示改用 torch backend。
-
-### 新層：AvgPool2d
-
-```python
-from minicnn.nn.layers import AvgPool2d
-pool = AvgPool2d(kernel_size=2)
-```
-
-YAML：
-
-```yaml
-- type: AvgPool2d
-  kernel_size: 2
-```
+- [backend_capabilities.md](backend_capabilities.md)
+- [architecture.md](architecture.md)
+- [custom_components.md](custom_components.md)

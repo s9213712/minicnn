@@ -33,6 +33,7 @@ minicnn/
 │   ├── cli.py
 │   ├── compiler/
 │   ├── core/
+│   ├── cuda_native/
 │   ├── data/
 │   ├── flex/
 │   ├── framework/
@@ -101,7 +102,8 @@ minicnn/
 | `src/minicnn/core/build.py` | native CUDA shared library build/check wrapper，支援 default、cublas、handmade、both variants。 |
 | `src/minicnn/core/cuda_backend.py` | native CUDA library 的 lazy `ctypes` loader；非 CUDA 指令 import 時不會載入 `.so`。`reset_library_cache()` 供同一 process 切換 native variant 時清掉舊 handle。 |
 | `src/minicnn/core/fused_ops.py` | Conv2d + BatchNorm2d + ReLU fusion 語意的 NumPy reference helper。 |
-| `src/minicnn/data/` | CIFAR-10 準備與資料載入。 |
+| `src/minicnn/cuda_native/` | branch 內實驗性的 native graph / planner / executor backend 工作；目前不是穩定 CLI backend。 |
+| `src/minicnn/data/` | CIFAR-10 與 MNIST 準備/資料載入。 |
 | `src/minicnn/flex/` | PyTorch flexible config-driven model builder、registry、trainer。 |
 | `src/minicnn/models/` | CPU/NumPy MiniCNN model registry、shape inference、config builder 與 graph helper。 |
 | `src/minicnn/nn/` | MiniCNN framework layer，包含 `Module`、`Sequential`、`Tensor`、`Parameter` 與 CPU/NumPy autograd functions。 |
@@ -110,7 +112,7 @@ minicnn/
 | `src/minicnn/ops/` | MiniCNN layers 使用的 differentiable NumPy ops。 |
 | `src/minicnn/optim/` | 輕量 optimizer 介面；`SGD` 與 `Adam` 可在不依賴 torch 的情況下更新 MiniCNN `Parameter`。 |
 | `src/minicnn/runtime/` | 小型 graph executor、backend protocol、tensor memory pool、profiler utilities。 |
-| `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 `torch` 或 `cuda_legacy` backend。 |
+| `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 `torch` 或 `cuda_legacy` backend；`cuda_native` 仍是 branch 內開發中。 |
 | `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 orchestration 入口：資料、epoch、validation、checkpoint、LR reduction、early stop、final test evaluation。 |
 | `src/minicnn/training/cuda_batch.py` | CUDA batch 級 forward/loss/backward/update 步驟。`train_cuda.py` 呼叫這裡，避免訓練控制流程混入 kernel orchestration 細節。 |
 | `src/minicnn/training/train_autograd.py` | random-data CPU/NumPy autograd training loop，輸出 `*_autograd_best.npz`。 |

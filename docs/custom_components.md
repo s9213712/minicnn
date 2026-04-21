@@ -1,27 +1,62 @@
 # Custom Components
 
-MiniCNN V7 supports custom dotted-path imports.
+MiniCNN currently supports custom dotted-path imports on the torch/flex side.
 
-## Example config
+That means:
+
+- `model.layers[].type` may point at an importable Python class or factory
+- model-level `factory` entries may point at an importable Python callable
+- CUDA legacy does not automatically inherit support for those components
+
+## Layer Example
 
 ```yaml
 model:
   layers:
-    - type: examples.custom_block.ConvBNReLU
+    - type: minicnn.extensions.custom_components.ConvBNReLU
       out_channels: 64
       kernel_size: 3
       padding: 1
-    - type: examples.custom_block.Swish
+    - type: minicnn.extensions.custom_components.Swish
 ```
 
-## Example Python file
+The import path is resolved through the flex builder. Local examples live in:
 
-See `examples/custom_block.py`.
+- `src/minicnn/extensions/custom_components.py`
+- `examples/custom_block.py`
+
+## Model Factory Example
+
+If the whole model is easier to build in Python, use `model.factory`:
+
+```yaml
+model:
+  factory: package.module:build_model
+```
+
+The callable receives the full `model` config mapping and is expected to return
+a torch `nn.Module`.
+
+## What This Does Not Mean
+
+Custom dotted-path components are a torch/flex feature.
+
+They do not automatically become valid for:
+
+- `cuda_legacy`
+- the NumPy autograd path
+- branch-local `cuda_native` experiments
+
+If a component also needs to run on `cuda_legacy`, you still have to add:
+
+- validation in `src/minicnn/unified/cuda_legacy.py`
+- any required native kernels in `cpp/src/`
+- ctypes bindings in `src/minicnn/core/cuda_backend.py`
+- training-graph and workspace integration in `src/minicnn/training/`
 
 ## Tips
 
-- Keep custom blocks composable.
-- Prefer constructor arguments that serialize cleanly into YAML.
-- If you add a component often, consider registering it as a built-in.
-- Keep user-facing options compatible with the shared config parser: booleans should parse through the strict true/false rules, and nested layer changes should work with list-index overrides such as `model.layers.1.out_features=64`.
-- Custom components are torch/flex only unless you also add CUDA legacy validation, workspace allocation, ctypes bindings, and native kernels.
+- Keep custom blocks composable and constructor arguments YAML-friendly.
+- Prefer adding built-ins only after a component proves repeatedly useful.
+- Keep user-facing booleans compatible with the strict config parser.
+- Use dotted CLI overrides such as `model.layers.1.out_features=64` for quick experiments.
