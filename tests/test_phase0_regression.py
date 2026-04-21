@@ -66,6 +66,7 @@ def test_cuda_legacy_rejects_bce_with_logits_loss():
 
 
 def test_flex_builder_relu():
+    pytest.importorskip('torch')
     from minicnn.flex.builder import build_model
     cfg = {
         'layers': [
@@ -83,6 +84,7 @@ def test_flex_builder_relu():
 
 
 def test_flex_builder_silu():
+    pytest.importorskip('torch')
     from minicnn.flex.builder import build_model
     cfg = {
         'layers': [
@@ -100,6 +102,7 @@ def test_flex_builder_silu():
 
 
 def test_flex_builder_tanh():
+    pytest.importorskip('torch')
     from minicnn.flex.builder import build_model
     cfg = {
         'layers': [

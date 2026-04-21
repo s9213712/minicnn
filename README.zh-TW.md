@@ -135,6 +135,35 @@ pytest
 config、跑一次小型 compiler trace，並驗證 `cuda_legacy` 與
 `cuda_native` 的 config contract。
 
+## 最小依賴矩陣
+
+| 指令 / 功能 | 需要 PyTorch | 需要 native `.so` | 需要 CIFAR-10 data |
+|---|---:|---:|---:|
+| `minicnn --help` | 否 | 否 | 否 |
+| `minicnn validate-dual-config` | 否 | 否 | 否 |
+| `minicnn show-cuda-mapping` | 否 | 否 | 否 |
+| `minicnn compile` | 否 | 否 | 否 |
+| `minicnn train-flex` | 是 | 否 | 視 dataset 而定 |
+| `minicnn train-dual engine.backend=torch` | 是 | 否 | 視 dataset 而定 |
+| `minicnn train-dual engine.backend=cuda_legacy` | 否 | 是 | 是 |
+| `minicnn train-autograd` | 否 | 否 | 視 dataset 而定 |
+| `minicnn train-native` | 否 | 否 | 視 dataset 而定 |
+
+若某個指令需要 PyTorch，CLI 現在會輸出簡短且可操作的依賴訊息，不再在 import
+階段直接丟 traceback。
+
+## Repo-First 資源模型
+
+MiniCNN 目前仍以 repo checkout 為主要使用模型。像
+`configs/flex_cnn.yaml`、`configs/dual_backend_cnn.yaml` 這些內建 config，
+必要時會自動以 project root 為基準解析，但它們還不是完整的安裝包內建資源。
+
+這代表：
+
+- 主要支援 workflow 仍是 repo 內的 editable install
+- 真正可攜的內建內容是 `config-template` 與 `dual-config-template`
+- 若要做完整 packaged toolchain，請顯式傳入 config 路徑，不要假設 repo 檔案會出現在 site-packages
+
 ## 編譯 Native CUDA Library
 
 ```bash
@@ -226,7 +255,8 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 
 像 `configs/flex_cnn.yaml`、`configs/dual_backend_cnn.yaml` 這類內建 config
 路徑，現在必要時會自動以 project root 為基準解析，所以不一定要在 repo
-root 下執行 CLI。
+root 下執行 CLI。不過這仍屬 repo-first 便利機制，不是完整 packaged-resource
+系統。
 
 執行實驗性 cuda_native 路徑：
 

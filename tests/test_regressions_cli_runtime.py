@@ -1,10 +1,39 @@
 """CLI, build, checkpoint, and runtime regression tests."""
 
+import os
 import numpy as np
 from pathlib import Path
+import subprocess
+import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = REPO_ROOT / 'src'
+
+
+def _run_python_without_torch(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    sitecustomize = tmp_path / 'sitecustomize.py'
+    sitecustomize.write_text(
+        'import importlib.abc\n'
+        'import sys\n'
+        'class _BlockTorch(importlib.abc.MetaPathFinder):\n'
+        '    def find_spec(self, fullname, path=None, target=None):\n'
+        "        if fullname == 'torch' or fullname.startswith('torch.'):\n"
+        "            raise ImportError('torch intentionally blocked for this test')\n"
+        '        return None\n'
+        'sys.meta_path.insert(0, _BlockTorch())\n',
+        encoding='utf-8',
+    )
+    env = os.environ.copy()
+    env['PYTHONPATH'] = os.pathsep.join([str(tmp_path), str(SRC_ROOT)])
+    return subprocess.run(
+        [sys.executable, *args],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 def test_plateau_scheduler_reduces_after_configured_patience():
@@ -134,6 +163,73 @@ def test_cli_smoke_returns_structured_json(capsys):
     assert payload['ok'] is True
     assert isinstance(payload['checks'], list)
     assert any(check['name'] == 'compiler_trace' for check in payload['checks'])
+    assert all('severity' in check for check in payload['checks'])
+
+
+def test_cli_help_still_works_without_torch(tmp_path):
+    proc = _run_python_without_torch(tmp_path, '-m', 'minicnn.cli', '--help')
+
+    assert proc.returncode == 0
+    assert 'train-flex' in proc.stdout
+    assert 'Traceback' not in proc.stderr
+
+
+def test_unified_cuda_legacy_import_still_works_without_torch(tmp_path):
+    proc = _run_python_without_torch(
+        tmp_path,
+        '-c',
+        'from minicnn.unified.cuda_legacy import validate_cuda_legacy_compatibility; print("ok")',
+    )
+
+    assert proc.returncode == 0
+    assert proc.stdout.strip() == 'ok'
+    assert 'Traceback' not in proc.stderr
+
+
+def test_cli_reports_missing_torch_for_train_flex_without_traceback(tmp_path):
+    proc = _run_python_without_torch(
+        tmp_path,
+        '-m',
+        'minicnn.cli',
+        'train-flex',
+        '--config',
+        'configs/flex_cnn.yaml',
+    )
+
+    assert proc.returncode == 2
+    assert 'train-flex requires PyTorch.' in proc.stdout
+    assert 'pip install -e .[torch]' in proc.stdout
+    assert 'Traceback' not in proc.stderr
+
+
+def test_cli_reports_missing_torch_for_train_dual_torch_without_traceback(tmp_path):
+    proc = _run_python_without_torch(
+        tmp_path,
+        '-m',
+        'minicnn.cli',
+        'train-dual',
+        '--config',
+        'configs/dual_backend_cnn.yaml',
+        'engine.backend=torch',
+    )
+
+    assert proc.returncode == 2
+    assert 'train-dual with engine.backend=torch requires PyTorch.' in proc.stdout
+    assert 'pip install -e .[torch]' in proc.stdout
+    assert 'Traceback' not in proc.stderr
+
+
+def test_create_run_dir_is_unique_even_when_called_back_to_back(tmp_path):
+    from minicnn.flex.runtime import create_run_dir
+
+    cfg = {'project': {'artifacts_root': str(tmp_path), 'run_name': 'collision-test'}}
+
+    first = create_run_dir(cfg)
+    second = create_run_dir(cfg)
+
+    assert first != second
+    assert first.exists()
+    assert second.exists()
 
 
 def test_cli_seed_overrides_keep_dataset_init_and_train_seeds_separate():

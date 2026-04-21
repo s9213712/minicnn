@@ -137,6 +137,37 @@ pytest
 repo layout, parses built-in configs, runs a small compiler trace, and validates
 both the `cuda_legacy` and `cuda_native` config contracts.
 
+## Minimum Dependency Matrix
+
+| Command / feature | PyTorch | native `.so` | CIFAR-10 data |
+|---|---:|---:|---:|
+| `minicnn --help` | no | no | no |
+| `minicnn validate-dual-config` | no | no | no |
+| `minicnn show-cuda-mapping` | no | no | no |
+| `minicnn compile` | no | no | no |
+| `minicnn train-flex` | yes | no | depends on dataset |
+| `minicnn train-dual engine.backend=torch` | yes | no | depends on dataset |
+| `minicnn train-dual engine.backend=cuda_legacy` | no | yes | yes |
+| `minicnn train-autograd` | no | no | depends on dataset |
+| `minicnn train-native` | no | no | depends on dataset |
+
+If a command needs PyTorch, the CLI now fails with a short dependency message
+instead of an import-time traceback.
+
+## Repo-First Resource Model
+
+MiniCNN is still a repo-first tool. Built-in configs such as
+`configs/flex_cnn.yaml` and `configs/dual_backend_cnn.yaml` resolve relative to
+the project root when needed, but they are not packaged as a standalone
+resource bundle yet.
+
+That means:
+
+- editable installs inside a repo checkout are the primary supported workflow
+- `config-template` and `dual-config-template` are the portable built-ins
+- if you need a fully packaged toolchain, use explicit config paths instead of
+  assuming repo files exist in site-packages
+
 ## Build The Native CUDA Library
 
 ```bash
@@ -232,7 +263,8 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 Built-in config paths such as `configs/flex_cnn.yaml` and
 `configs/dual_backend_cnn.yaml` are resolved relative to the project root when
 needed, so they still work even if you launch the CLI from outside the repo
-root.
+root. This is a repo-first convenience layer, not a full packaged-resource
+system.
 
 Train the experimental cuda_native path:
 

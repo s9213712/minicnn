@@ -72,8 +72,13 @@ _PASSTHROUGH_LAYERS = {
 }
 
 
-class ConfigurableSequential(nn.Sequential):
+_SEQUENTIAL_BASE = nn.Sequential if nn is not None else object
+
+
+class ConfigurableSequential(_SEQUENTIAL_BASE):
     def __init__(self, *modules: nn.Module, input_shape: tuple[int, ...] | None = None, inferred_shapes: list[tuple[int, ...]] | None = None):
+        if nn is None:  # pragma: no cover - guarded by build_model
+            raise RuntimeError('PyTorch is required for configurable model building')
         super().__init__(*modules)
         self.input_shape = input_shape
         self.inferred_shapes = inferred_shapes or []

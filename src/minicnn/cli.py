@@ -1,24 +1,52 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import time
 from pathlib import Path
 from typing import Any
 
 from minicnn.core.build import build_native, check_native
-from minicnn.flex.config import load_flex_config, dump_template
-from minicnn.flex.registry import describe_registries
-from minicnn.flex.trainer import train_from_config
-from minicnn.framework.health import doctor, healthcheck
 from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
-from minicnn.unified.config import load_unified_config, dump_unified_template
-from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED, summarize_legacy_mapping, validate_cuda_legacy_compatibility
-from minicnn.cuda_native.api import validate_cuda_native_config, get_capability_summary as get_cuda_native_summary
-from minicnn.unified.trainer import train_unified_from_config
 
 
 _COMPARE_BACKENDS = {'torch', 'cuda_legacy', 'autograd'}
+_TORCH_INSTALL_HINT = 'Install it with:\n  pip install -e .[torch]'
+
+
+def _exit_user_error(message: str) -> None:
+    print(message)
+    raise SystemExit(2)
+
+
+def _ensure_torch_or_exit(command_name: str) -> None:
+    try:
+        importlib.import_module('torch')
+    except Exception:
+        _exit_user_error(f'{command_name} requires PyTorch.\n{_TORCH_INSTALL_HINT}')
+
+
+def _ensure_cuda_legacy_prereqs_or_exit(cfg: dict[str, Any]) -> None:
+    from minicnn.core.cuda_backend import resolve_library_path
+    from minicnn.data.cifar10 import cifar10_ready
+
+    library_path = Path(resolve_library_path())
+    if not library_path.exists():
+        _exit_user_error(
+            'cuda_legacy training requires a native CUDA shared library.\n'
+            'Build it with:\n'
+            '  minicnn build --legacy-make --check'
+        )
+    dataset_cfg = cfg.get('dataset', {})
+    if str(dataset_cfg.get('type', 'cifar10')) == 'cifar10':
+        data_root = Path(dataset_cfg.get('data_root', DATA_ROOT))
+        if not cifar10_ready(data_root):
+            _exit_user_error(
+                'cuda_legacy training requires prepared CIFAR-10 data.\n'
+                'Prepare it with:\n'
+                '  minicnn prepare-data'
+            )
 
 
 def _resolve_cli_config_path(config_path: str | None) -> str | None:
@@ -35,29 +63,31 @@ def _resolve_cli_config_path(config_path: str | None) -> str | None:
 
 
 def _load_flex_config_or_exit(config_path: str, overrides: list[str]) -> dict:
+    from minicnn.flex.config import load_flex_config
+
     resolved_path = _resolve_cli_config_path(config_path)
     try:
         return load_flex_config(resolved_path, overrides)
     except FileNotFoundError:
-        print(
+        _exit_user_error(
             f"Config file not found: {config_path}\n"
             "Create a template with:\n"
             "  minicnn config-template > configs/my_config.yaml"
         )
-        raise SystemExit(2)
 
 
 def _load_unified_config_or_exit(config_path: str, overrides: list[str]) -> dict:
+    from minicnn.unified.config import load_unified_config
+
     resolved_path = _resolve_cli_config_path(config_path)
     try:
         return load_unified_config(resolved_path, overrides)
     except FileNotFoundError:
-        print(
+        _exit_user_error(
             f"Config file not found: {config_path}\n"
             "Create a template with:\n"
             "  minicnn dual-config-template > configs/my_config.yaml"
         )
-        raise SystemExit(2)
 
 
 def _add_common_train_args(parser: argparse.ArgumentParser) -> None:
@@ -192,16 +222,32 @@ def _compare_backends_and_overrides(args) -> tuple[list[str], list[str]]:
     return backends, args.overrides
 
 
-def _smoke_check(name: str, ok: bool, *, required: bool = True, details: dict[str, Any] | None = None) -> dict[str, Any]:
+def _smoke_check(
+    name: str,
+    ok: bool,
+    *,
+    required: bool = True,
+    details: dict[str, Any] | None = None,
+    suggested_fix: str | None = None,
+) -> dict[str, Any]:
     return {
         'name': name,
         'ok': bool(ok),
         'required': required,
+        'severity': 'info' if ok else ('error' if required else 'warning'),
         'details': details or {},
+        'suggested_fix': suggested_fix or '',
     }
 
 
 def _run_smoke_checks() -> dict[str, Any]:
+    from minicnn.compiler import optimize, trace_model_config
+    from minicnn.cuda_native.api import validate_cuda_native_config
+    from minicnn.flex.config import load_flex_config
+    from minicnn.framework.health import healthcheck
+    from minicnn.unified.config import load_unified_config
+    from minicnn.unified.cuda_legacy import validate_cuda_legacy_compatibility
+
     health = healthcheck()
     checks: list[dict[str, Any]] = []
 
@@ -230,6 +276,7 @@ def _run_smoke_checks() -> dict[str, Any]:
             'shared_objects': shared_objects,
             'hint': 'Run minicnn build --legacy-make --check if you need cuda_legacy.',
         },
+        suggested_fix='Run minicnn build --legacy-make --check if you need cuda_legacy.',
     ))
 
     cifar10_ready = bool(health.get('data_root_exists'))
@@ -241,6 +288,7 @@ def _run_smoke_checks() -> dict[str, Any]:
             'data_root': str(DATA_ROOT),
             'hint': 'Run minicnn prepare-data if you want the handcrafted CUDA CIFAR-10 path.',
         },
+        suggested_fix='Run minicnn prepare-data if you want the handcrafted CUDA CIFAR-10 path.',
     ))
 
     flex_config_path = _resolve_cli_config_path('configs/flex_cnn.yaml')
@@ -250,8 +298,6 @@ def _run_smoke_checks() -> dict[str, Any]:
         True,
         details={'config': flex_config_path},
     ))
-
-    from minicnn.compiler import optimize, trace_model_config
 
     graph = optimize(trace_model_config(flex_cfg.get('model', {})))
     checks.append(_smoke_check(
@@ -421,6 +467,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == 'info':
         from minicnn.config import settings
         from minicnn.core.cuda_backend import resolve_library_path
+        from minicnn.flex.registry import describe_registries
+        from minicnn.framework.health import healthcheck
+        from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED
+
         cuda_library = resolve_library_path()
         print(f'PROJECT_ROOT={PROJECT_ROOT}')
         print(f'CPP_ROOT={CPP_ROOT}')
@@ -437,6 +487,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == 'healthcheck':
+        from minicnn.framework.health import healthcheck
+
         print(healthcheck())
         return 0
 
@@ -446,14 +498,22 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if result['ok'] else 2
 
     if args.command == 'doctor':
+        from minicnn.framework.health import doctor
+
         print(json.dumps(doctor(), indent=2, default=str))
         return 0
 
     if args.command == 'list-flex-components':
+        from minicnn.flex.registry import describe_registries
+
         print(json.dumps(describe_registries(), indent=2))
         return 0
 
     if args.command == 'list-dual-components':
+        from minicnn.cuda_native.api import get_capability_summary as get_cuda_native_summary
+        from minicnn.flex.registry import describe_registries
+        from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED
+
         print(json.dumps({
             'registries': describe_registries(),
             'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
@@ -462,20 +522,29 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == 'config-template':
+        from minicnn.flex.config import dump_template
+
         print(dump_template())
         return 0
 
     if args.command == 'dual-config-template':
+        from minicnn.unified.config import dump_unified_template
+
         print(dump_unified_template())
         return 0
 
     if args.command == 'train-flex':
+        _ensure_torch_or_exit('train-flex')
+        from minicnn.flex.trainer import train_from_config
+
         cfg = _load_flex_config_or_exit(args.config, [*_common_train_overrides(args), *args.overrides])
         run_dir = train_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
 
     if args.command == 'validate-dual-config':
+        from minicnn.unified.cuda_legacy import validate_cuda_legacy_compatibility
+
         cfg = _load_unified_config_or_exit(args.config, args.overrides)
         errors = validate_cuda_legacy_compatibility(cfg)
         if errors:
@@ -485,12 +554,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == 'show-cuda-mapping':
+        from minicnn.unified.cuda_legacy import summarize_legacy_mapping
+
         cfg = _load_unified_config_or_exit(args.config, args.overrides)
         print(json.dumps(summarize_legacy_mapping(cfg), indent=2))
         return 0
 
     if args.command in {'train', 'train-dual'}:
         cfg = _load_unified_config_or_exit(args.config, [*_common_train_overrides(args), *args.overrides])
+        backend = str(cfg.get('engine', {}).get('backend', 'torch'))
+        if backend == 'torch':
+            _ensure_torch_or_exit('train-dual with engine.backend=torch')
+        elif backend == 'cuda_legacy':
+            _ensure_cuda_legacy_prereqs_or_exit(cfg)
+        from minicnn.unified.trainer import train_unified_from_config
+
         run_dir = train_unified_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
@@ -498,6 +576,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in {'train-cuda', 'train-torch'}:
         backend = 'cuda_legacy' if args.command == 'train-cuda' else 'torch'
         cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *_common_train_overrides(args), *args.overrides])
+        if backend == 'torch':
+            _ensure_torch_or_exit('train-dual with engine.backend=torch')
+        else:
+            _ensure_cuda_legacy_prereqs_or_exit(cfg)
+        from minicnn.unified.trainer import train_unified_from_config
+
         run_dir = train_unified_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
@@ -523,6 +607,11 @@ def main(argv: list[str] | None = None) -> int:
                 run_dir = train_autograd_from_config(cfg)
             else:
                 cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *_common_train_overrides(args), *compare_overrides])
+                if backend == 'torch':
+                    _ensure_torch_or_exit('compare with engine.backend=torch')
+                elif backend == 'cuda_legacy':
+                    _ensure_cuda_legacy_prereqs_or_exit(cfg)
+                from minicnn.unified.trainer import train_unified_from_config
                 run_dir = train_unified_from_config(cfg)
             elapsed = time.perf_counter() - t0
             summary_path = run_dir / 'summary.json'
@@ -539,6 +628,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == 'validate-config':
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        from minicnn.unified.cuda_legacy import validate_cuda_legacy_compatibility
+
         cfg = _load_unified_config_or_exit(args.config, args.overrides)
         backend = cfg.get('engine', {}).get('backend')
         if backend == 'cuda_legacy':
@@ -551,6 +643,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if not errors else 2
 
     if args.command == 'validate-cuda-native-config':
+        from minicnn.cuda_native.api import validate_cuda_native_config
+
         cfg = _load_unified_config_or_exit(args.config, args.overrides)
         errors = validate_cuda_native_config(cfg)
         if errors:
@@ -564,17 +658,27 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == 'cuda-native-capabilities':
+        from minicnn.cuda_native.api import get_capability_summary as get_cuda_native_summary
+
         print(json.dumps(get_cuda_native_summary(), indent=2))
         return 0
 
     if args.command == 'train-native':
         import warnings
+        from minicnn.cuda_native.api import get_capability_summary as get_cuda_native_summary
+        from minicnn.unified.trainer import train_unified_from_config
+
         cfg = _load_unified_config_or_exit(args.config, ['engine.backend=cuda_native', *_common_train_overrides(args), *args.overrides])
         warnings.warn(
             '[EXPERIMENTAL] cuda_native backend: backward/training prototypes exist, '
             'but the validated contract remains narrow and not production-ready.',
             stacklevel=1,
         )
+        print(json.dumps({
+            'backend': 'cuda_native',
+            'status': 'experimental',
+            'validated_contract': get_cuda_native_summary().get('validated_training_contract', {}),
+        }, indent=2))
         run_dir = train_unified_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0

@@ -7,6 +7,7 @@ That means:
 - `model.layers[].type` may point at an importable Python class or factory
 - model-level `factory` entries may point at an importable Python callable
 - CUDA legacy does not automatically inherit support for those components
+- the examples in `src/minicnn/extensions/custom_components.py` are torch-only
 
 ## Layer Example
 
@@ -24,6 +25,9 @@ The import path is resolved through the flex builder. Local examples live in:
 
 - `src/minicnn/extensions/custom_components.py`
 - `examples/custom_block.py`
+
+If torch is not installed, importing those example components will now fail with
+a short torch-only dependency message instead of a raw import traceback.
 
 ## Model Factory Example
 

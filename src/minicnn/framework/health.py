@@ -10,8 +10,45 @@ from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
 from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED
 
 
+def _check(name: str, ok: bool, *, required: bool = True, details: dict[str, object] | None = None, suggested_fix: str | None = None) -> dict[str, object]:
+    return {
+        'name': name,
+        'ok': bool(ok),
+        'required': required,
+        'severity': 'info' if ok else ('error' if required else 'warning'),
+        'details': details or {},
+        'suggested_fix': suggested_fix or '',
+    }
+
+
 def healthcheck() -> dict[str, object]:
     shared_candidates = sorted([p.name for p in CPP_ROOT.glob('*.so')])
+    checks = [
+        _check(
+            'project_root',
+            PROJECT_ROOT.exists(),
+            details={'project_root': str(PROJECT_ROOT)},
+        ),
+        _check(
+            'cpp_root',
+            CPP_ROOT.exists(),
+            details={'cpp_root': str(CPP_ROOT)},
+        ),
+        _check(
+            'native_cuda_artifacts',
+            bool(shared_candidates),
+            required=False,
+            details={'shared_objects': shared_candidates},
+            suggested_fix='Run minicnn build --legacy-make --check if you need cuda_legacy.',
+        ),
+        _check(
+            'cifar10_data',
+            DATA_ROOT.exists(),
+            required=False,
+            details={'data_root': str(DATA_ROOT)},
+            suggested_fix='Run minicnn prepare-data if you need the handcrafted CIFAR-10 path.',
+        ),
+    ]
     return {
         'project_root_exists': PROJECT_ROOT.exists(),
         'data_root_exists': DATA_ROOT.exists(),
@@ -19,6 +56,7 @@ def healthcheck() -> dict[str, object]:
         'shared_objects': shared_candidates,
         'flex_registries': describe_registries(),
         'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
+        'checks': checks,
     }
 
 
@@ -27,6 +65,22 @@ def doctor() -> dict[str, object]:
     cuda = check_cuda_ready(native_path)
     from minicnn.cuda_native.api import get_capability_summary
     cuda_native_caps = get_capability_summary()
+    checks = [
+        _check(
+            'native_cuda_library',
+            Path(native_path).exists(),
+            required=False,
+            details={'path': native_path},
+            suggested_fix='Run minicnn build --legacy-make --check if you want the handcrafted CUDA backend.',
+        ),
+        _check(
+            'cifar10_data',
+            cifar10_ready(DATA_ROOT),
+            required=False,
+            details={'data_root': str(DATA_ROOT)},
+            suggested_fix='Run minicnn prepare-data to enable the handcrafted CIFAR-10 backend.',
+        ),
+    ]
     return {
         'project': {
             'project_root': str(PROJECT_ROOT),
@@ -48,4 +102,5 @@ def doctor() -> dict[str, object]:
         'settings': settings.summarize(),
         'flex_registries': describe_registries(),
         'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
+        'checks': checks,
     }

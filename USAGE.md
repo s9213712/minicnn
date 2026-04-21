@@ -98,9 +98,28 @@ minicnn list-dual-components
 - the compiler can trace a default flex model
 - both `cuda_legacy` and `cuda_native` validators still accept their reference configs
 
+## Minimum Dependency Matrix
+
+| Command / feature | PyTorch | native `.so` | CIFAR-10 data |
+|---|---:|---:|---:|
+| `minicnn --help` | no | no | no |
+| `minicnn validate-dual-config` | no | no | no |
+| `minicnn show-cuda-mapping` | no | no | no |
+| `minicnn compile` | no | no | no |
+| `minicnn train-flex` | yes | no | depends on dataset |
+| `minicnn train-dual engine.backend=torch` | yes | no | depends on dataset |
+| `minicnn train-dual engine.backend=cuda_legacy` | no | yes | yes |
+| `minicnn train-autograd` | no | no | depends on dataset |
+| `minicnn train-native` | no | no | depends on dataset |
+
+Torch-only commands fail with a short CLI dependency message instead of an
+import-time traceback.
+
 Built-in config paths such as `configs/flex_cnn.yaml` and
 `configs/dual_backend_cnn.yaml` fall back to project-root-relative resolution,
 so they still work when `minicnn` is launched from outside the repo root.
+This is still a repo-first convenience model, not a full packaged-resource
+distribution.
 
 ## Document Roles
 
@@ -253,9 +272,27 @@ minicnn list-dual-components
 - compiler 能 trace 預設 flex 模型
 - `cuda_legacy` 與 `cuda_native` validator 仍接受各自的參考 config
 
+## 最小依賴矩陣
+
+| 指令 / 功能 | 需要 PyTorch | 需要 native `.so` | 需要 CIFAR-10 data |
+|---|---:|---:|---:|
+| `minicnn --help` | 否 | 否 | 否 |
+| `minicnn validate-dual-config` | 否 | 否 | 否 |
+| `minicnn show-cuda-mapping` | 否 | 否 | 否 |
+| `minicnn compile` | 否 | 否 | 否 |
+| `minicnn train-flex` | 是 | 否 | 視 dataset 而定 |
+| `minicnn train-dual engine.backend=torch` | 是 | 否 | 視 dataset 而定 |
+| `minicnn train-dual engine.backend=cuda_legacy` | 否 | 是 | 是 |
+| `minicnn train-autograd` | 否 | 否 | 視 dataset 而定 |
+| `minicnn train-native` | 否 | 否 | 視 dataset 而定 |
+
+torch-only 指令現在會輸出簡短的 CLI 依賴訊息，不再在 import 階段直接丟
+traceback。
+
 像 `configs/flex_cnn.yaml`、`configs/dual_backend_cnn.yaml` 這類內建 config
 路徑，必要時會自動以 project root 為基準解析，所以不必強制在 repo root
 下執行 `minicnn`。
+但這仍是 repo-first 的便利模型，不是完整 packaged-resource 發行方式。
 
 ## 文件角色
 
