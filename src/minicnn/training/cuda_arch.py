@@ -7,6 +7,7 @@ weight shapes, checkpoint keys, forward/backward loop bounds — is derived from
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -103,6 +104,15 @@ class CudaNetGeometry:
         fc_in = cur_c * cur_h * cur_w
         if fc_in <= 0:
             raise ValueError(f"Computed FC input size {fc_in} ≤ 0")
+        if any(s.layer_norm for s in stages):
+            warnings.warn(
+                "layer_norm=True: LayerNorm gamma/beta are initialised to 1/0 but are NOT "
+                "updated during CUDA training. Gradient flow through the layer is correct, "
+                "but the affine parameters stay frozen. Use batch_norm=True for trainable "
+                "normalisation.",
+                UserWarning,
+                stacklevel=2,
+            )
         return cls(stages, fc_in, fc_out)
 
     @property
@@ -111,7 +121,7 @@ class CudaNetGeometry:
 
     def ln_param_idx(self, stage_idx: int) -> int:
         """Return the index into DeviceWeights.ln_gamma/ln_beta for a LN stage."""
-        return sum(1 for i in range(stage_idx) if self.conv_stages[i].layer_norm and not self.conv_stages[i].pool)
+        return sum(1 for i in range(stage_idx) if self.conv_stages[i].layer_norm)
 
     def bn_param_idx(self, stage_idx: int) -> int:
         """Return the index into DeviceWeights.bn_gamma/bn_beta/bn_running_* for a BN stage."""

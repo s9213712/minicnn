@@ -100,15 +100,19 @@ class Tensor:
         topo: list[Tensor] = []
         visited: set[Tensor] = set()
 
-        def build(node: Tensor) -> None:
+        stack: list[tuple[Tensor, bool]] = [(self, False)]
+        while stack:
+            node, processed = stack.pop()
+            if processed:
+                topo.append(node)
+                continue
             if node in visited:
-                return
+                continue
             visited.add(node)
+            stack.append((node, True))
             for child in node._prev:
-                build(child)
-            topo.append(node)
-
-        build(self)
+                if child not in visited:
+                    stack.append((child, False))
         self.grad = grad
         for node in reversed(topo):
             node._backward()

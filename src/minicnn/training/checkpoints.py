@@ -1,6 +1,8 @@
 """Weight checkpointing and device pointer management."""
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Iterator
 
 import numpy as np
@@ -192,8 +194,10 @@ def save_checkpoint(
         bn_data[f'bn_running_mean{i + 1}'] = g2h(device_weights.bn_running_mean[bn_idx], s.out_c)
         bn_data[f'bn_running_var{i + 1}']  = g2h(device_weights.bn_running_var[bn_idx], s.out_c)
         bn_idx += 1
+    p = Path(path)
+    tmp = p.with_name(p.stem + '.tmp.npz')
     np.savez(
-        path,
+        str(tmp),
         epoch=np.int32(epoch),
         val_acc=np.float32(val_acc),
         lr_conv1=np.float32(lr_conv1),
@@ -205,6 +209,7 @@ def save_checkpoint(
         **conv_data,
         **bn_data,
     )
+    os.replace(str(tmp), path)
 
 
 def reload_weights_from_checkpoint(

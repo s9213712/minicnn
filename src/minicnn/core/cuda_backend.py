@@ -2,6 +2,7 @@
 
 import ctypes
 import os
+import threading
 from pathlib import Path
 from ctypes import c_float, c_int, c_void_p
 
@@ -94,6 +95,7 @@ def load_library(path: str | os.PathLike[str] | None = None):
 
 
 _lib: ctypes.CDLL | None = None
+_lib_lock = threading.Lock()
 
 
 def _bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
@@ -196,7 +198,9 @@ def _bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
 def get_lib() -> ctypes.CDLL:
     global _lib
     if _lib is None:
-        _lib = _bind_symbols(load_library())
+        with _lib_lock:
+            if _lib is None:
+                _lib = _bind_symbols(load_library())
     return _lib
 
 
