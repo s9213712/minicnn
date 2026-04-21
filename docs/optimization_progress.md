@@ -5,6 +5,12 @@ Last updated: 2026-04-21
 This file tracks the current technical direction of MiniCNN without binding the
 status to a specific historic PR number or branch name.
 
+See also:
+
+- [USAGE.md](USAGE.md)
+- [backend_capabilities.md](backend_capabilities.md)
+- [dual_backend_guide.md](dual_backend_guide.md)
+
 ## Current Project Shape
 
 MiniCNN currently has four relevant paths:

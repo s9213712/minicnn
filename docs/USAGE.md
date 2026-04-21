@@ -1,41 +1,65 @@
-# MiniCNN Usage Guide
+# MiniCNN Documentation Guide
 
-This file is the documentation index for the current repo.
+This page is the documentation entrypoint for the current repo.
 
-If you are starting from scratch, read in this order.
+If you only read one file inside `docs/`, make it this one.
 
-## 1. Project Orientation
+## Start Here
 
-- [architecture.md](architecture.md): overall layout, stable paths, and experimental `cuda_native` status
-- [backend_capabilities.md](backend_capabilities.md): what each backend really supports
-- [dual_backend_guide.md](dual_backend_guide.md): how one shared config maps into torch vs `cuda_legacy`
+Read these in order if you want the current, operational picture of the repo:
 
-## 2. Native CUDA Library
+1. [architecture.md](architecture.md) — overall structure, execution paths, and module boundaries
+2. [backend_capabilities.md](backend_capabilities.md) — what each backend really supports
+3. [dual_backend_guide.md](dual_backend_guide.md) — how one shared config maps into `torch`, `cuda_legacy`, and `cuda_native`
 
-- [01_project_files.md](01_project_files.md): file-by-file map of the native and Python sides
-- [02_build_shared_library.md](02_build_shared_library.md): build the shared library
-- [03_c_api_reference.md](03_c_api_reference.md): exported C API surface
-- [06_layout_and_debug.md](06_layout_and_debug.md): layout rules and debugging workflow
-- [07_windows_build.md](07_windows_build.md): Windows build path
+## By Task
 
-## 3. Language Bindings / Examples
+### I want to install MiniCNN and check that it works
 
-- [04_python_ctypes_mnist.md](04_python_ctypes_mnist.md): Python `ctypes` example
-- [05_cpp_linking.md](05_cpp_linking.md): C++ linking path
+- Run `minicnn smoke`
+- See [../README.md](../README.md) for quick start
+- See [architecture.md](architecture.md) and [backend_capabilities.md](backend_capabilities.md) if the result is unclear
 
-## 4. Higher-Level Frontend / Autograd
+### I want to train a model right now
 
-- [08_autograd.md](08_autograd.md): NumPy autograd stack and `train-autograd`
-- [09_feature_expansion.md](09_feature_expansion.md): broader feature notes
-- [custom_components.md](custom_components.md): torch/flex dotted-path component extension points
-- [generalization_roadmap.md](generalization_roadmap.md): how frontend generalization should relate to backend honesty
+- [backend_capabilities.md](backend_capabilities.md) — choose the right backend first
+- [dual_backend_guide.md](dual_backend_guide.md) — shared-config path and backend routing
+- [../templates/README.md](../templates/README.md) — ready-to-edit config templates
 
-## Stable CLI Surface
+### I want to work on the handcrafted CUDA path
 
-The stable user-facing commands on this branch are:
+- [01_project_files.md](01_project_files.md) — repo map of the native and Python sides
+- [02_build_shared_library.md](02_build_shared_library.md) — build the shared library
+- [03_c_api_reference.md](03_c_api_reference.md) — exported C API reference
+- [06_layout_and_debug.md](06_layout_and_debug.md) — layout rules and debugging workflow
+- [07_windows_build.md](07_windows_build.md) — Windows-specific build path
+- [cuda_batchnorm2d_evaluation.md](cuda_batchnorm2d_evaluation.md) — focused note on one unresolved `cuda_legacy` extension area
+
+### I want Python `ctypes` or C++ embedding examples
+
+- [04_python_ctypes_mnist.md](04_python_ctypes_mnist.md) — Python `ctypes` example against the native library
+- [05_cpp_linking.md](05_cpp_linking.md) — C++ linking path for the secondary C++ API
+
+### I want to work on autograd or the broader frontend
+
+- [08_autograd.md](08_autograd.md) — NumPy autograd stack and `train-autograd`
+- [09_feature_expansion.md](09_feature_expansion.md) — wider feature-surface notes
+- [custom_components.md](custom_components.md) — dotted-path component and dataset extension points
+- [generalization_roadmap.md](generalization_roadmap.md) — how frontend breadth should relate to backend honesty
+
+### I want to work on `cuda_native`
+
+- [cuda_native.md](cuda_native.md) — full guide to the current experimental backend
+- [cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md) — future extension RFCs
+- [backend_capabilities.md](backend_capabilities.md) — current validated contract
+
+## CLI Surface
+
+### Stable commands
 
 ```bash
 minicnn build --legacy-make --check
+minicnn smoke
 minicnn prepare-data
 minicnn train-flex --config configs/flex_cnn.yaml
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=torch
@@ -47,7 +71,7 @@ minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 minicnn compile --config configs/autograd_tiny.yaml
 ```
 
-The experimental but public `cuda_native` commands are:
+### Experimental but public commands
 
 ```bash
 minicnn train-native --config configs/dual_backend_cnn.yaml
@@ -56,98 +80,69 @@ minicnn cuda-native-capabilities
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_native
 ```
 
-Useful inspection commands:
+### Inspection commands
 
 ```bash
 minicnn info
+minicnn smoke
 minicnn doctor
 minicnn healthcheck
 minicnn list-flex-components
 minicnn list-dual-components
 ```
 
-## Backend Routing
+`minicnn smoke` is the fastest first-run check. It confirms that:
 
-Today, `train-dual` is the shared-config entry for:
+- the repo layout is intact
+- built-in configs parse
+- the compiler can trace a default flex model
+- both `cuda_legacy` and `cuda_native` validators still accept their reference configs
 
-- `engine.backend=torch`
-- `engine.backend=cuda_legacy`
-- `engine.backend=cuda_native` *(experimental)*
+Built-in config paths such as `configs/flex_cnn.yaml` and
+`configs/dual_backend_cnn.yaml` fall back to project-root-relative resolution,
+so they still work when `minicnn` is launched from outside the repo root.
 
-`train-autograd` remains a separate path with its own training loop and partly
-overlapping config contract.
+## Document Roles
 
-`train-native` is the clearest explicit entry for `cuda_native`, while
-`train-dual engine.backend=cuda_native` routes through the same shared config
-surface. Both remain experimental.
+### Current operational docs
 
-## Quick Commands
+These describe the repo as it works today:
 
-Torch/flex:
+- [architecture.md](architecture.md)
+- [backend_capabilities.md](backend_capabilities.md)
+- [dual_backend_guide.md](dual_backend_guide.md)
+- [cuda_native.md](cuda_native.md)
+- [custom_components.md](custom_components.md)
+- [01_project_files.md](01_project_files.md)
+- [08_autograd.md](08_autograd.md)
+- [09_feature_expansion.md](09_feature_expansion.md)
 
-```bash
-minicnn train-flex --config configs/flex_broad.yaml
-```
+### Focused technical notes
 
-Torch through the shared dual config:
+These are narrower deep dives, still useful, but not the best first read:
 
-```bash
-minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=torch
-```
+- [06_layout_and_debug.md](06_layout_and_debug.md)
+- [cuda_batchnorm2d_evaluation.md](cuda_batchnorm2d_evaluation.md)
+- [cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 
-Handwritten CUDA:
+### Historical or reporting documents
 
-```bash
-minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy
-```
+These are reference material, not primary onboarding docs:
 
-Native CUDA variant selection:
+- [comparison_report.md](comparison_report.md)
+- [comparison_completion_report.md](comparison_completion_report.md)
+- [optimization_progress.md](optimization_progress.md)
+- [benchmark_report_template.md](benchmark_report_template.md)
 
-```bash
-minicnn train-dual --config configs/dual_backend_cnn.yaml \
-  engine.backend=cuda_legacy runtime.cuda_variant=cublas
+## Quick Navigation
 
-minicnn train-dual --config configs/dual_backend_cnn.yaml \
-  engine.backend=cuda_legacy runtime.cuda_variant=handmade
-```
+If you are unsure where to go next:
 
-NumPy autograd:
-
-```bash
-minicnn train-autograd --config configs/autograd_enhanced.yaml
-```
-
-## Build / Runtime Notes
-
-- The native `.so` is lazy-loaded, so `--help`, `prepare-data`, validation, and torch-only flows do not require a built library.
-- `runtime.cuda_variant` switching resets the cached native library handle inside one Python process.
-- Best model files are written under `artifacts/models/`.
-- Per-run metrics and summaries are written under `artifacts/`.
-
-## Templates And Example Configs
-
-Ready-to-edit templates live under `templates/`:
-
-```bash
-minicnn train-flex --config templates/mnist/lenet_like.yaml
-minicnn train-flex --config templates/mnist/mlp.yaml
-minicnn train-flex --config templates/cifar10/vgg_mini.yaml
-minicnn train-dual --config templates/cifar10/vgg_mini_cuda.yaml engine.backend=cuda_legacy
-```
-
-Other useful example configs:
-
-- `configs/flex_broad.yaml`
-- `configs/autograd_enhanced.yaml`
-- `configs/cuda_legacy_strict.yaml`
-
-## Benchmarking
-
-Use [benchmark_report_template.md](benchmark_report_template.md) when recording
-results.
-
-If you want a repeatable smoke benchmark workflow, inspect
-`features/backend-smoke-matrix/`.
+- Need the truth about support boundaries: [backend_capabilities.md](backend_capabilities.md)
+- Need to understand one shared config across backends: [dual_backend_guide.md](dual_backend_guide.md)
+- Need native build/debug details: [01_project_files.md](01_project_files.md) and [06_layout_and_debug.md](06_layout_and_debug.md)
+- Need extension points: [custom_components.md](custom_components.md)
+- Need experimental native graph backend context: [cuda_native.md](cuda_native.md)
 
 ## Rule Of Thumb
 

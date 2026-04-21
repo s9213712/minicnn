@@ -1,4 +1,4 @@
-"""Regression tests for fixes from comments/new_findings review."""
+"""Training-contract and validator regression tests."""
 from __future__ import annotations
 
 import json

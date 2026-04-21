@@ -1,4 +1,4 @@
-"""Tests for fixes from code review."""
+"""Tensor-op and optimizer regression tests."""
 from __future__ import annotations
 
 import warnings

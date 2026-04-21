@@ -129,8 +129,13 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
 python -m pip install -e .[torch,dev]
+minicnn smoke
 pytest
 ```
+
+`minicnn smoke` is the recommended first check after install. It verifies the
+repo layout, parses built-in configs, runs a small compiler trace, and validates
+both the `cuda_legacy` and `cuda_native` config contracts.
 
 ## Build The Native CUDA Library
 
@@ -213,6 +218,7 @@ Inspect the current surface:
 
 ```bash
 minicnn info
+minicnn smoke
 minicnn doctor
 minicnn healthcheck
 minicnn list-flex-components
@@ -222,6 +228,11 @@ minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 minicnn cuda-native-capabilities
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
+
+Built-in config paths such as `configs/flex_cnn.yaml` and
+`configs/dual_backend_cnn.yaml` are resolved relative to the project root when
+needed, so they still work even if you launch the CLI from outside the repo
+root.
 
 Train the experimental cuda_native path:
 
@@ -310,13 +321,17 @@ See [docs/custom_components.md](docs/custom_components.md).
 
 Start here:
 
-- [docs/USAGE.md](docs/USAGE.md): documentation index
+- [docs/USAGE.md](docs/USAGE.md): full documentation guide and reading order
 - [docs/architecture.md](docs/architecture.md): overall architecture and module map
 - [docs/backend_capabilities.md](docs/backend_capabilities.md): backend support matrix
+- [docs/dual_backend_guide.md](docs/dual_backend_guide.md): shared-config routing and backend boundaries
+- [docs/cuda_native.md](docs/cuda_native.md): experimental `cuda_native` guide
 - [docs/custom_components.md](docs/custom_components.md): dotted-path component extension points
-- [docs/08_autograd.md](docs/08_autograd.md): NumPy autograd stack
-- [docs/09_feature_expansion.md](docs/09_feature_expansion.md): expanded feature notes
 - [templates/README.md](templates/README.md): ready-to-edit template configs
+
+Background and reporting notes live under `docs/`, but [docs/USAGE.md](docs/USAGE.md)
+now separates current operational docs from historical reports so they are not
+all treated as the same kind of document.
 
 ## Repository Map
 

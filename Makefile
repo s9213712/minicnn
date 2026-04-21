@@ -1,4 +1,4 @@
-.PHONY: install develop build build-legacy prepare-data train-cuda train-torch test info
+.PHONY: install develop build build-legacy prepare-data train-cuda train-torch test info smoke
 
 install:
 	python -m pip install -e .
@@ -26,3 +26,6 @@ test:
 
 info:
 	minicnn info
+
+smoke:
+	minicnn smoke

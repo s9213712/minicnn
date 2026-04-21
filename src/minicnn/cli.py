@@ -21,9 +21,23 @@ from minicnn.unified.trainer import train_unified_from_config
 _COMPARE_BACKENDS = {'torch', 'cuda_legacy', 'autograd'}
 
 
+def _resolve_cli_config_path(config_path: str | None) -> str | None:
+    if not config_path:
+        return config_path
+    raw_path = Path(config_path)
+    if raw_path.exists():
+        return str(raw_path)
+    if not raw_path.is_absolute():
+        project_relative = PROJECT_ROOT / raw_path
+        if project_relative.exists():
+            return str(project_relative)
+    return config_path
+
+
 def _load_flex_config_or_exit(config_path: str, overrides: list[str]) -> dict:
+    resolved_path = _resolve_cli_config_path(config_path)
     try:
-        return load_flex_config(config_path, overrides)
+        return load_flex_config(resolved_path, overrides)
     except FileNotFoundError:
         print(
             f"Config file not found: {config_path}\n"
@@ -34,8 +48,9 @@ def _load_flex_config_or_exit(config_path: str, overrides: list[str]) -> dict:
 
 
 def _load_unified_config_or_exit(config_path: str, overrides: list[str]) -> dict:
+    resolved_path = _resolve_cli_config_path(config_path)
     try:
-        return load_unified_config(config_path, overrides)
+        return load_unified_config(resolved_path, overrides)
     except FileNotFoundError:
         print(
             f"Config file not found: {config_path}\n"
@@ -177,6 +192,117 @@ def _compare_backends_and_overrides(args) -> tuple[list[str], list[str]]:
     return backends, args.overrides
 
 
+def _smoke_check(name: str, ok: bool, *, required: bool = True, details: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        'name': name,
+        'ok': bool(ok),
+        'required': required,
+        'details': details or {},
+    }
+
+
+def _run_smoke_checks() -> dict[str, Any]:
+    health = healthcheck()
+    checks: list[dict[str, Any]] = []
+
+    checks.append(_smoke_check(
+        'project_paths',
+        bool(health.get('project_root_exists')) and bool(health.get('cpp_root_exists')),
+        details={
+            'project_root': str(PROJECT_ROOT),
+            'cpp_root': str(CPP_ROOT),
+        },
+    ))
+
+    flex_registries = health.get('flex_registries', {})
+    checks.append(_smoke_check(
+        'flex_registry_surface',
+        bool(flex_registries.get('layers')) and bool(flex_registries.get('optimizers')),
+        details={'registries': flex_registries},
+    ))
+
+    shared_objects = list(health.get('shared_objects', []))
+    checks.append(_smoke_check(
+        'native_cuda_artifacts',
+        bool(shared_objects),
+        required=False,
+        details={
+            'shared_objects': shared_objects,
+            'hint': 'Run minicnn build --legacy-make --check if you need cuda_legacy.',
+        },
+    ))
+
+    cifar10_ready = bool(health.get('data_root_exists'))
+    checks.append(_smoke_check(
+        'cifar10_data',
+        cifar10_ready,
+        required=False,
+        details={
+            'data_root': str(DATA_ROOT),
+            'hint': 'Run minicnn prepare-data if you want the handcrafted CUDA CIFAR-10 path.',
+        },
+    ))
+
+    flex_config_path = _resolve_cli_config_path('configs/flex_cnn.yaml')
+    flex_cfg = load_flex_config(flex_config_path)
+    checks.append(_smoke_check(
+        'flex_config_parse',
+        True,
+        details={'config': flex_config_path},
+    ))
+
+    from minicnn.compiler import optimize, trace_model_config
+
+    graph = optimize(trace_model_config(flex_cfg.get('model', {})))
+    checks.append(_smoke_check(
+        'compiler_trace',
+        True,
+        details={
+            'config': flex_config_path,
+            'summary': graph.summary(),
+        },
+    ))
+
+    legacy_config_path = _resolve_cli_config_path('configs/cuda_legacy_strict.yaml')
+    legacy_cfg = load_unified_config(legacy_config_path)
+    legacy_errors = validate_cuda_legacy_compatibility(legacy_cfg)
+    checks.append(_smoke_check(
+        'cuda_legacy_validation',
+        not legacy_errors,
+        details={
+            'config': legacy_config_path,
+            'errors': legacy_errors,
+        },
+    ))
+
+    native_config_path = _resolve_cli_config_path('configs/dual_backend_cnn.yaml')
+    native_cfg = load_unified_config(native_config_path, ['engine.backend=cuda_native'])
+    native_errors = validate_cuda_native_config(native_cfg)
+    checks.append(_smoke_check(
+        'cuda_native_validation',
+        not native_errors,
+        details={
+            'config': native_config_path,
+            'errors': native_errors,
+        },
+    ))
+
+    overall_ok = all(check['ok'] for check in checks if check['required'])
+    next_steps: list[str] = []
+    if not shared_objects:
+        next_steps.append('minicnn build --legacy-make --check')
+    if not cifar10_ready:
+        next_steps.append('minicnn prepare-data')
+    if overall_ok:
+        next_steps.append('minicnn train-flex --config configs/flex_cnn.yaml')
+
+    return {
+        'ok': overall_ok,
+        'checks': checks,
+        'next_steps': next_steps,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='minicnn', description='MiniCNN dual-backend CLI (pure handcrafted CUDA + PyTorch)')
     sub = parser.add_subparsers(dest='command', required=True)
@@ -198,6 +324,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser('info', help='Show important project paths and summary')
     sub.add_parser('doctor', help='Run first-run diagnostics for paths, data, and native CUDA')
     sub.add_parser('healthcheck', help='Validate framework wiring and native artifacts')
+    sub.add_parser('smoke', help='Run a compact first-run self-check across configs, compiler, and backend validation')
     sub.add_parser('list-flex-components', help='List configurable built-in components')
     sub.add_parser('list-dual-components', help='List dual-backend components and cuda_legacy subset')
     sub.add_parser('config-template', help='Print the PyTorch-flex config template')
@@ -313,6 +440,11 @@ def main(argv: list[str] | None = None) -> int:
         print(healthcheck())
         return 0
 
+    if args.command == 'smoke':
+        result = _run_smoke_checks()
+        print(json.dumps(result, indent=2))
+        return 0 if result['ok'] else 2
+
     if args.command == 'doctor':
         print(json.dumps(doctor(), indent=2, default=str))
         return 0
@@ -372,7 +504,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == 'train-autograd':
         from minicnn.training.train_autograd import train_autograd_from_config
-        cfg = load_flex_config(args.config if args.config else None, [*_common_train_overrides(args), *args.overrides])
+        cfg = _load_flex_config_or_exit(args.config if args.config else None, [*_common_train_overrides(args), *args.overrides])
         run_dir = train_autograd_from_config(cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
@@ -387,7 +519,7 @@ def main(argv: list[str] | None = None) -> int:
             t0 = time.perf_counter()
             if backend == 'autograd':
                 from minicnn.training.train_autograd import train_autograd_from_config
-                cfg = load_flex_config(args.config if args.config else None, [*_common_train_overrides(args), *compare_overrides])
+                cfg = _load_flex_config_or_exit(args.config if args.config else None, [*_common_train_overrides(args), *compare_overrides])
                 run_dir = train_autograd_from_config(cfg)
             else:
                 cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *_common_train_overrides(args), *compare_overrides])

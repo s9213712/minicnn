@@ -127,8 +127,13 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
 python -m pip install -e .[torch,dev]
+minicnn smoke
 pytest
 ```
+
+`minicnn smoke` 是安裝後最推薦先跑的自檢。它會檢查 repo 結構、解析內建
+config、跑一次小型 compiler trace，並驗證 `cuda_legacy` 與
+`cuda_native` 的 config contract。
 
 ## 編譯 Native CUDA Library
 
@@ -208,6 +213,7 @@ minicnn compare --config configs/dual_backend_cnn.yaml \
 
 ```bash
 minicnn info
+minicnn smoke
 minicnn doctor
 minicnn healthcheck
 minicnn list-flex-components
@@ -217,6 +223,10 @@ minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 minicnn cuda-native-capabilities
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
+
+像 `configs/flex_cnn.yaml`、`configs/dual_backend_cnn.yaml` 這類內建 config
+路徑，現在必要時會自動以 project root 為基準解析，所以不一定要在 repo
+root 下執行 CLI。
 
 執行實驗性 cuda_native 路徑：
 
@@ -302,13 +312,16 @@ model:
 
 從這裡開始：
 
-- [docs/USAGE.md](docs/USAGE.md)：文件總索引
+- [docs/USAGE.md](docs/USAGE.md)：完整文件導覽與建議閱讀順序
 - [docs/architecture.md](docs/architecture.md)：整體架構與模組圖
 - [docs/backend_capabilities.md](docs/backend_capabilities.md)：Backend 支援矩陣
-- [docs/cuda_native.md](docs/cuda_native.md)：cuda_native 完整指南
+- [docs/dual_backend_guide.md](docs/dual_backend_guide.md)：shared-config routing 與 backend 邊界
+- [docs/cuda_native.md](docs/cuda_native.md)：實驗性 `cuda_native` 指南
 - [docs/custom_components.md](docs/custom_components.md)：dotted-path 元件擴展
-- [docs/08_autograd.md](docs/08_autograd.md)：NumPy autograd stack
-- [docs/09_feature_expansion.md](docs/09_feature_expansion.md)：功能擴展說明
+- [templates/README.md](templates/README.md)：可直接修改的 template config
+
+`docs/` 內也保留了一些背景報告與歷史比較文件；現在 [docs/USAGE.md](docs/USAGE.md)
+會把「目前仍是操作主線的文件」和「歷史／報告文件」分開，不再混成同一層。
 
 ## Repository 目錄結構
 

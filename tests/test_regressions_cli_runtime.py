@@ -1,3 +1,5 @@
+"""CLI, build, checkpoint, and runtime regression tests."""
+
 import numpy as np
 from pathlib import Path
 
@@ -99,6 +101,7 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     build_help = subparsers.choices['build'].format_help()
 
     assert 'doctor' in help_text
+    assert 'smoke' in help_text
     assert 'compare' in help_text
     assert 'train-cuda' in help_text
     assert 'train-torch' in help_text
@@ -106,6 +109,31 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'validate-config' in help_text
     assert 'compile' in help_text
     assert '--cuda-arch' in build_help
+
+
+def test_cli_config_resolution_falls_back_to_project_root():
+    from minicnn.cli import _resolve_cli_config_path
+
+    resolved = _resolve_cli_config_path('configs/flex_cnn.yaml')
+
+    assert resolved is not None
+    assert Path(resolved).exists()
+    assert resolved.endswith('configs/flex_cnn.yaml')
+
+
+def test_cli_smoke_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['smoke'])
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+
+    assert rc == 0
+    assert payload['ok'] is True
+    assert isinstance(payload['checks'], list)
+    assert any(check['name'] == 'compiler_trace' for check in payload['checks'])
 
 
 def test_cli_seed_overrides_keep_dataset_init_and_train_seeds_separate():

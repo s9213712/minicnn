@@ -3,6 +3,12 @@
 This note records the current state of BatchNorm2d for the handcrafted
 `cuda_legacy` backend.
 
+See also:
+
+- [USAGE.md](USAGE.md)
+- [backend_capabilities.md](backend_capabilities.md)
+- [dual_backend_guide.md](dual_backend_guide.md)
+
 ## Current Status
 
 BatchNorm2d is supported by the Torch/flex backend and by the CPU/NumPy autograd
@@ -55,4 +61,3 @@ BatchNorm2d is a medium-high risk CUDA legacy change. It touches model
 validation, native kernels, workspace allocation, update semantics, checkpoint
 compatibility, and numerical parity. It should not be mixed into the same patch
 as unrelated optimizer or benchmark changes.
-
