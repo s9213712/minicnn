@@ -318,9 +318,6 @@ Start here:
 - [docs/09_feature_expansion.md](docs/09_feature_expansion.md): expanded feature notes
 - [templates/README.md](templates/README.md): ready-to-edit template configs
 
-For branch-local `cuda_native` planning context, the working notes live under
-`comments/cuda_native/`.
-
 ## Repository Map
 
 ```text
@@ -329,7 +326,6 @@ minicnn/
 ├── configs/                # example configs for flex, dual, and autograd paths
 ├── docs/                   # design notes, guides, and capability docs
 ├── examples/               # custom torch component examples
-├── comments/cuda_native/   # branch-local cuda_native planning notes
 ├── src/minicnn/
 │   ├── flex/               # torch/flex frontend, registries, builder, trainer
 │   ├── unified/            # shared-config dispatch and backend bridges

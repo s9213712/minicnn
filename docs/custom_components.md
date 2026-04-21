@@ -37,6 +37,21 @@ model:
 The callable receives the full `model` config mapping and is expected to return
 a torch `nn.Module`.
 
+## Dataset Factory Example
+
+The torch/flex path also accepts custom dataset factories via `dataset.type`:
+
+```yaml
+dataset:
+  type: minicnn.extensions.custom_datasets:checkerboard_dataset
+  input_shape: [1, 8, 8]
+  num_classes: 2
+```
+
+The callable receives `(dataset_cfg, train_cfg)` and is expected to return a
+dict with `train`, `val`, and optional `test` splits, where each split is
+`(x, y)` as NumPy arrays.
+
 ## What This Does Not Mean
 
 Custom dotted-path components are a torch/flex feature.
@@ -45,7 +60,7 @@ They do not automatically become valid for:
 
 - `cuda_legacy`
 - the NumPy autograd path
-- branch-local `cuda_native` experiments
+- the experimental `cuda_native` backend
 
 If a component also needs to run on `cuda_legacy`, you still have to add:
 

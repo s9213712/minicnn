@@ -318,7 +318,6 @@ minicnn/
 ├── configs/                # flex、dual、autograd 路徑的範例 config
 ├── docs/                   # 設計說明、指南與 capability 文件
 ├── examples/               # 自訂 torch 元件範例
-├── comments/cuda_native/   # cuda_native 規劃說明
 ├── src/minicnn/
 │   ├── flex/               # torch/flex 前端、registry、builder、trainer
 │   ├── unified/            # shared-config dispatch 與 backend bridge

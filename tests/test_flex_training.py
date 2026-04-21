@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from minicnn.flex.trainer import train_from_config
 from minicnn.paths import BEST_MODELS_ROOT
 
@@ -134,6 +136,50 @@ def test_train_loader_parses_string_false_for_horizontal_flip():
     train_loader, _ = create_dataloaders(dataset_cfg, {'batch_size': 4, 'num_workers': 0})
 
     assert train_loader.dataset.horizontal_flip is False
+
+
+def test_custom_dataset_factory_is_supported():
+    from minicnn.flex.data import create_dataloaders, create_test_dataloader
+
+    dataset_cfg = {
+        'type': 'minicnn.extensions.custom_datasets:checkerboard_dataset',
+        'input_shape': [1, 8, 8],
+        'num_classes': 2,
+        'num_samples': 8,
+        'val_samples': 4,
+        'test_samples': 4,
+        'seed': 3,
+    }
+    train_cfg = {'batch_size': 4, 'num_workers': 0, 'seed': 5}
+
+    train_loader, val_loader = create_dataloaders(dataset_cfg, train_cfg)
+    test_loader = create_test_dataloader(dataset_cfg, train_cfg)
+
+    xb, yb = next(iter(train_loader))
+    xv, yv = next(iter(val_loader))
+    xt, yt = next(iter(test_loader))
+
+    assert tuple(xb.shape) == (4, 1, 8, 8)
+    assert tuple(xv.shape) == (4, 1, 8, 8)
+    assert tuple(xt.shape) == (4, 1, 8, 8)
+    assert set(yb.tolist()) <= {0, 1}
+    assert set(yv.tolist()) <= {0, 1}
+    assert set(yt.tolist()) <= {0, 1}
+
+
+def test_custom_dataset_factory_requires_dotted_import_path():
+    from minicnn.flex.data import create_dataloaders
+
+    dataset_cfg = {
+        'type': 'checkerboard_dataset',
+        'input_shape': [1, 8, 8],
+        'num_classes': 2,
+        'num_samples': 8,
+        'val_samples': 4,
+    }
+
+    with pytest.raises(ValueError, match='package.module:factory'):
+        create_dataloaders(dataset_cfg, {'batch_size': 4, 'num_workers': 0})
 
 
 def test_train_from_config_applies_init_seed_before_model_build(tmp_path: Path, monkeypatch):

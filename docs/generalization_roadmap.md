@@ -17,7 +17,7 @@ Today the repo already has:
 - a useful NumPy autograd path
 - a shared-config `train-dual` entrypoint
 - a validator that makes `cuda_legacy` limits explicit
-- experimental `cuda_native` work on this branch
+- an experimental `cuda_native` backend on the public CLI surface
 
 The narrow part is mainly `cuda_legacy`, not the entire project.
 
@@ -84,7 +84,7 @@ planning, and backend-level capability promotion.
 - stretching `cuda_legacy` far beyond its fixed training graph
 - adding broad graph semantics into a backend that was designed around staged
   CIFAR-10 training
-- promoting branch-local native experiments before the capability table,
+- promoting native experiments before the capability table,
   validators, and CLI all agree
 
 ## Decision Rule

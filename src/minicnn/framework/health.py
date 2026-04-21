@@ -5,8 +5,9 @@ from pathlib import Path
 from minicnn.config import settings
 from minicnn.core.cuda_backend import check_cuda_ready, resolve_library_path
 from minicnn.data.cifar10 import cifar10_ready
-from minicnn.framework.registry import GLOBAL_REGISTRY
+from minicnn.flex.registry import describe_registries
 from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
+from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED
 
 
 def healthcheck() -> dict[str, object]:
@@ -16,7 +17,8 @@ def healthcheck() -> dict[str, object]:
         'data_root_exists': DATA_ROOT.exists(),
         'cpp_root_exists': CPP_ROOT.exists(),
         'shared_objects': shared_candidates,
-        'registered_components': GLOBAL_REGISTRY.summary(),
+        'flex_registries': describe_registries(),
+        'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
     }
 
 
@@ -44,5 +46,6 @@ def doctor() -> dict[str, object]:
             'cifar10_ready': cifar10_ready(DATA_ROOT),
         },
         'settings': settings.summarize(),
-        'registries': GLOBAL_REGISTRY.summary(),
+        'flex_registries': describe_registries(),
+        'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
     }

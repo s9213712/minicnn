@@ -36,7 +36,6 @@ minicnn/
 │   ├── cuda_native/
 │   ├── data/
 │   ├── flex/
-│   ├── framework/
 │   ├── models/
 │   ├── nn/
 │   ├── ops/
@@ -47,15 +46,14 @@ minicnn/
 │   │   ├── legacy_data.py
 │   │   ├── loop.py
 │   │   ├── train_cuda.py
-│   │   ├── train_torch_baseline.py
-│   │   └── models/
+│   │   └── train_torch_baseline.py
 │   └── unified/
 ├── configs/
 ├── tests/
 └── docs/
 ```
 
-`data/cifar-10-batches-py/`、`cpp/*.so`、`src/minicnn/training/models/*`、`__pycache__/`、`.pytest_cache/` 與 runtime artifacts 都是本機檔案，不屬於 Git 版本內容。
+`data/cifar-10-batches-py/`、`cpp/*.so`、`artifacts/models/*`、`__pycache__/`、`.pytest_cache/` 與其他 runtime artifacts 都是本機檔案，不屬於 Git 版本內容。
 
 ## include
 
@@ -97,12 +95,12 @@ minicnn/
 |---|---|
 | `src/minicnn/cli.py` | `minicnn` CLI entrypoint，提供 build、prepare-data、train-flex、train-dual、train-autograd、compare、validate-config、compile 等命令。 |
 | `src/minicnn/autograd/` | `Tensor`、`Parameter`、`Function`、`Context`、`no_grad` 與 `backward` compatibility namespace。 |
-| `src/minicnn/compiler/` | 輕量 MiniCNN IR、config tracer、fusion 標記 pass、scheduler 與明確的 lowering 邊界。 |
+| `src/minicnn/compiler/` | 輕量 MiniCNN IR、config tracer 與 fusion/cleanup pass；目前 `compile` 指令停在 IR summary，不做獨立 lowering 階段。 |
 | `src/minicnn/config/parsing.py` | CLI/config scalar parser、strict boolean parser、以及支援 list-index 的 dotted override 寫入 helper。 |
 | `src/minicnn/core/build.py` | native CUDA shared library build/check wrapper，支援 default、cublas、handmade、both variants。 |
 | `src/minicnn/core/cuda_backend.py` | native CUDA library 的 lazy `ctypes` loader；非 CUDA 指令 import 時不會載入 `.so`。`reset_library_cache()` 供同一 process 切換 native variant 時清掉舊 handle。 |
 | `src/minicnn/core/fused_ops.py` | Conv2d + BatchNorm2d + ReLU fusion 語意的 NumPy reference helper。 |
-| `src/minicnn/cuda_native/` | branch 內實驗性的 native graph / planner / executor backend 工作；目前不是穩定 CLI backend。 |
+| `src/minicnn/cuda_native/` | 實驗性的 native graph / planner / executor backend；已經有公開 CLI 入口，但仍屬 research prototype。 |
 | `src/minicnn/data/` | CIFAR-10 與 MNIST 準備/資料載入。 |
 | `src/minicnn/flex/` | PyTorch flexible config-driven model builder、registry、trainer。 |
 | `src/minicnn/models/` | CPU/NumPy MiniCNN model registry、shape inference、config builder 與 graph helper。 |
@@ -111,8 +109,8 @@ minicnn/
 | `src/minicnn/nn/layers.py` | CPU/NumPy MiniCNN layers：`Linear`、`Conv2d`、`MaxPool2d`、`BatchNorm2d`、`Flatten`、`ReLU`、`ResidualBlock`。 |
 | `src/minicnn/ops/` | MiniCNN layers 使用的 differentiable NumPy ops。 |
 | `src/minicnn/optim/` | 輕量 optimizer 介面；`SGD` 與 `Adam` 可在不依賴 torch 的情況下更新 MiniCNN `Parameter`。 |
-| `src/minicnn/runtime/` | 小型 graph executor、backend protocol、tensor memory pool、profiler utilities。 |
-| `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 `torch` 或 `cuda_legacy` backend；`cuda_native` 仍是 branch 內開發中。 |
+| `src/minicnn/runtime/` | 小型 graph executor、tensor memory pool、profiler utilities 與 CPU inference pipeline。 |
+| `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 `torch`、`cuda_legacy` 或實驗性的 `cuda_native` backend。 |
 | `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 orchestration 入口：資料、epoch、validation、checkpoint、LR reduction、early stop、final test evaluation。 |
 | `src/minicnn/training/cuda_batch.py` | CUDA batch 級 forward/loss/backward/update 步驟。`train_cuda.py` 呼叫這裡，避免訓練控制流程混入 kernel orchestration 細節。 |
 | `src/minicnn/training/train_autograd.py` | random-data CPU/NumPy autograd training loop，輸出 `*_autograd_best.npz`。 |
@@ -123,7 +121,7 @@ minicnn/
 | `src/minicnn/training/evaluation.py` | CUDA evaluation forward path 與 accuracy helper。 |
 | `src/minicnn/training/checkpoints.py` | CUDA checkpoint save/reload 與 GPU pointer cleanup。 |
 | `src/minicnn/training/train_torch_baseline.py` | 對齊 CUDA update 規則的 PyTorch baseline orchestration 與 batch helper。 |
-| `src/minicnn/training/models/` | 最佳模型固定輸出位置；PyTorch 寫 `*.pt`，CUDA legacy 寫 `*.npz`。 |
+| `artifacts/models/` | 最佳模型輸出位置；PyTorch 寫 `*.pt`，CUDA legacy 與 `cuda_native`/autograd 寫 `*.npz`。 |
 
 ## Current reliability contracts
 

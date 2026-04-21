@@ -43,7 +43,7 @@ The script runs tiny one-epoch smoke jobs and writes artifacts under:
 Best model files still go to:
 
 ```text
-src/minicnn/training/models/
+artifacts/models/
 ```
 
 ## Expected Use

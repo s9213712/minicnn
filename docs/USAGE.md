@@ -6,7 +6,7 @@ If you are starting from scratch, read in this order.
 
 ## 1. Project Orientation
 
-- [architecture.md](architecture.md): overall layout, stable paths, and branch-local `cuda_native` status
+- [architecture.md](architecture.md): overall layout, stable paths, and experimental `cuda_native` status
 - [backend_capabilities.md](backend_capabilities.md): what each backend really supports
 - [dual_backend_guide.md](dual_backend_guide.md): how one shared config maps into torch vs `cuda_legacy`
 
@@ -47,6 +47,15 @@ minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 minicnn compile --config configs/autograd_tiny.yaml
 ```
 
+The experimental but public `cuda_native` commands are:
+
+```bash
+minicnn train-native --config configs/dual_backend_cnn.yaml
+minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
+minicnn cuda-native-capabilities
+minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_native
+```
+
 Useful inspection commands:
 
 ```bash
@@ -59,16 +68,18 @@ minicnn list-dual-components
 
 ## Backend Routing
 
-Today, `train-dual` is the stable shared-config entry for:
+Today, `train-dual` is the shared-config entry for:
 
 - `engine.backend=torch`
 - `engine.backend=cuda_legacy`
+- `engine.backend=cuda_native` *(experimental)*
 
 `train-autograd` remains a separate path with its own training loop and partly
 overlapping config contract.
 
-This branch also contains `src/minicnn/cuda_native/`, but that backend is still
-experimental and is not yet part of the stable `train-dual` toggle surface.
+`train-native` is the clearest explicit entry for `cuda_native`, while
+`train-dual engine.backend=cuda_native` routes through the same shared config
+surface. Both remain experimental.
 
 ## Quick Commands
 
@@ -110,7 +121,7 @@ minicnn train-autograd --config configs/autograd_enhanced.yaml
 
 - The native `.so` is lazy-loaded, so `--help`, `prepare-data`, validation, and torch-only flows do not require a built library.
 - `runtime.cuda_variant` switching resets the cached native library handle inside one Python process.
-- Best model files are written under `src/minicnn/training/models/`.
+- Best model files are written under `artifacts/models/`.
 - Per-run metrics and summaries are written under `artifacts/`.
 
 ## Templates And Example Configs
@@ -143,4 +154,4 @@ If you want a repeatable smoke benchmark workflow, inspect
 - If you want the broadest stable feature set, use torch/flex.
 - If you want the handwritten CUDA path, stay inside the `cuda_legacy` validator boundary.
 - If you want framework learning without torch, use `train-autograd`.
-- If you want to push native backend generalization, treat `cuda_native` as experimental branch work until its CLI and capability surface are promoted together.
+- If you want to push native backend generalization, treat `cuda_native` as an experimental backend with a narrow validated contract, not as a drop-in stable replacement.

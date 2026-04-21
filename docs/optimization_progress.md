@@ -12,15 +12,15 @@ MiniCNN currently has four relevant paths:
 - `train-flex`: broad torch-backed experimentation
 - `train-dual`: shared-config routing to `torch` or `cuda_legacy`
 - `train-autograd`: CPU/NumPy educational training path
-- branch-local `cuda_native` work under `src/minicnn/cuda_native/`
+- `train-native` / experimental `engine.backend=cuda_native`
 
-The stable public backend toggle is still:
+The stable default backend toggle is still:
 
 - `engine.backend=torch`
 - `engine.backend=cuda_legacy`
 
-`cuda_native` is present in this branch, but it is not yet a stable public
-training backend.
+`cuda_native` is already public and CLI-visible, but it remains experimental and
+prototype-level rather than a stable training backend.
 
 ## What Is In Good Shape
 

@@ -12,7 +12,7 @@
 #           → Conv(16,3×3) → 16×11×11 → Pool(2) → 16×5×5
 #           → Flatten → 400 → Linear(10)
 #
-# Best checkpoints are written to src/minicnn/training/models/.
+# Best checkpoints are written to artifacts/models/.
 # See templates/README.md for the trainer file map.
 
 project:

@@ -14,7 +14,7 @@
 # Validate before training:
 #   minicnn validate-dual-config --config templates/cifar10/vgg_mini_cuda.yaml
 #
-# Best checkpoints are written to src/minicnn/training/models/.
+# Best checkpoints are written to artifacts/models/.
 # CUDA batch internals live in src/minicnn/training/cuda_batch.py.
 
 project:

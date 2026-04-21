@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 import numpy as np
@@ -129,18 +130,75 @@ def _mnist_dataset(cfg: dict, train_cfg: dict):
     return normalize_mnist(x_train), y_train, normalize_mnist(x_val), y_val
 
 
-def create_dataloaders(dataset_cfg: dict, train_cfg: dict, augmentation_cfg: dict | None = None):
-    if torch is None:
-        raise RuntimeError('PyTorch is required for train-flex')
+def _load_custom_dataset_factory(factory_path: str):
+    if ':' not in factory_path:
+        raise ValueError(
+            'Custom dataset.type must use dotted import syntax "package.module:factory", '
+            f'got {factory_path!r}'
+        )
+    module_name, factory_name = factory_path.split(':', 1)
+    if not module_name or not factory_name:
+        raise ValueError(
+            'Custom dataset.type must use dotted import syntax "package.module:factory", '
+            f'got {factory_path!r}'
+        )
+    module = importlib.import_module(module_name)
+    try:
+        factory = getattr(module, factory_name)
+    except AttributeError as exc:
+        raise ValueError(
+            f'Custom dataset factory {factory_path!r} could not be resolved: '
+            f'{module_name!r} has no attribute {factory_name!r}'
+        ) from exc
+    if not callable(factory):
+        raise ValueError(f'Custom dataset factory {factory_path!r} is not callable')
+    return factory
+
+
+def _load_dataset_arrays(dataset_cfg: dict, train_cfg: dict):
     dtype = dataset_cfg.get('type', 'cifar10')
     if dtype == 'random':
         x_train, y_train, x_val, y_val = _random_dataset(dataset_cfg, train_cfg)
-    elif dtype == 'cifar10':
+        return x_train, y_train, x_val, y_val, None, None
+    if dtype == 'cifar10':
         x_train, y_train, x_val, y_val = _cifar_dataset(dataset_cfg, train_cfg)
-    elif dtype == 'mnist':
+        return x_train, y_train, x_val, y_val, None, None
+    if dtype == 'mnist':
         x_train, y_train, x_val, y_val = _mnist_dataset(dataset_cfg, train_cfg)
-    else:
-        raise ValueError(f'Unsupported dataset.type: {dtype}')
+        return x_train, y_train, x_val, y_val, None, None
+
+    factory = _load_custom_dataset_factory(str(dtype))
+    splits = factory(dataset_cfg, train_cfg)
+    if not isinstance(splits, dict):
+        raise ValueError(
+            f'Custom dataset factory {dtype!r} must return a dict with train/val/test splits'
+        )
+
+    def _split(name: str):
+        value = splits.get(name)
+        if value is None:
+            return None, None
+        if not isinstance(value, tuple) or len(value) != 2:
+            raise ValueError(
+                f'Custom dataset factory {dtype!r} split {name!r} must be a tuple (x, y)'
+            )
+        x, y = value
+        return np.asarray(x, dtype=np.float32), np.asarray(y, dtype=np.int64)
+
+    x_train, y_train = _split('train')
+    x_val, y_val = _split('val')
+    x_test, y_test = _split('test')
+    if x_train is None or y_train is None or x_val is None or y_val is None:
+        raise ValueError(
+            f'Custom dataset factory {dtype!r} must provide at least train and val splits'
+        )
+    return x_train, y_train, x_val, y_val, x_test, y_test
+
+
+def create_dataloaders(dataset_cfg: dict, train_cfg: dict, augmentation_cfg: dict | None = None):
+    if torch is None:
+        raise RuntimeError('PyTorch is required for train-flex')
+    x_train, y_train, x_val, y_val, _x_test, _y_test = _load_dataset_arrays(dataset_cfg, train_cfg)
     batch_size = int(train_cfg.get('batch_size', 64))
     num_workers = int(train_cfg.get('num_workers', 0))
     seed = int(train_cfg.get('seed', dataset_cfg.get('seed', 42)))
@@ -176,6 +234,11 @@ def create_test_dataloader(dataset_cfg: dict, train_cfg: dict):
     batch_size = int(train_cfg.get('batch_size', 64))
     num_workers = int(train_cfg.get('num_workers', 0))
     seed = int(train_cfg.get('seed', dataset_cfg.get('seed', 42)))
+    if ':' in str(dtype):
+        _x_train, _y_train, _x_val, _y_val, x_test, y_test = _load_dataset_arrays(dataset_cfg, train_cfg)
+        if x_test is None or y_test is None:
+            return None
+        return _make_loader(x_test, y_test, batch_size=batch_size, shuffle=False, num_workers=num_workers, seed=seed + 20_000)
     if dtype == 'cifar10':
         data_root = dataset_cfg.get('data_root', 'data/cifar-10-batches-py')
         x_test, y_test = load_cifar10_test(

@@ -80,9 +80,9 @@ src/minicnn/
 ├── flex/                  # torch/flex frontend: config, builder, trainer, registry, data
 ├── unified/               # shared-config loader and dispatch to torch/cuda_legacy/cuda_native
 ├── training/              # cuda_legacy orchestration and NumPy autograd trainer
-├── framework/             # healthcheck / diagnostics / registry surface
-├── compiler/              # tracer, optimizer passes, lowering boundary
-├── runtime/               # runtime graph, backend abstraction, executor, memory, profiler
+├── framework/             # healthcheck / diagnostics surface
+├── compiler/              # tracer and optimizer passes
+├── runtime/               # runtime graph, executor, memory, profiler
 ├── cuda_native/           # experimental graph/planner/numpy-executor backend
 ├── nn/                    # NumPy autograd modules and layers
 ├── ops/                   # differentiable NumPy ops
@@ -210,9 +210,9 @@ src/minicnn/
 ├── flex/                  # torch/flex 前端：config、builder、trainer、registry、data
 ├── unified/               # shared-config 載入器，分發至 torch/cuda_legacy/cuda_native
 ├── training/              # cuda_legacy orchestration 與 NumPy autograd trainer
-├── framework/             # healthcheck / diagnostics / registry surface
-├── compiler/              # tracer、optimizer passes、lowering boundary
-├── runtime/               # runtime graph、backend 抽象、executor、memory、profiler
+├── framework/             # healthcheck / diagnostics surface
+├── compiler/              # tracer 與 optimizer pass
+├── runtime/               # runtime graph、executor、memory、profiler
 ├── cuda_native/           # 實驗性 graph/planner/numpy-executor backend
 ├── nn/                    # NumPy autograd modules 與 layers
 ├── ops/                   # 可微分 NumPy ops

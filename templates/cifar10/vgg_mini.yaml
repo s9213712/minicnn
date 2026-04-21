@@ -10,7 +10,7 @@
 # Run with handcrafted CUDA backend (use vgg_mini_cuda.yaml for the native path):
 #   minicnn train-dual --config templates/cifar10/vgg_mini.yaml engine.backend=cuda_legacy
 #
-# Best checkpoints are written to src/minicnn/training/models/.
+# Best checkpoints are written to artifacts/models/.
 # See templates/README.md for the modular trainer file map.
 
 project:

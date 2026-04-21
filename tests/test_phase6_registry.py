@@ -4,54 +4,51 @@ import pytest
 
 
 def test_get_supported_components_returns_dict():
-    from minicnn.framework.components import get_supported_components
-    result = get_supported_components()
+    from minicnn.flex.registry import describe_registries
+    result = describe_registries()
     assert isinstance(result, dict)
 
 
 def test_optimizers_registered():
-    from minicnn.framework.components import get_supported_components
-    result = get_supported_components()
-    assert 'optimizer' in result
-    opts = result['optimizer']
-    for name in ('sgd', 'adam', 'adamw', 'rmsprop'):
+    from minicnn.flex.registry import describe_registries
+    result = describe_registries()
+    assert 'optimizers' in result
+    opts = result['optimizers']
+    for name in ('SGD', 'Adam', 'AdamW'):
         assert name in opts, f"optimizer '{name}' not registered"
 
 
 def test_schedulers_registered():
-    from minicnn.framework.components import get_supported_components
-    result = get_supported_components()
-    assert 'scheduler' in result
-    scheds = result['scheduler']
-    for name in ('plateau', 'step', 'cosine'):
+    from minicnn.flex.registry import describe_registries
+    result = describe_registries()
+    assert 'schedulers' in result
+    scheds = result['schedulers']
+    for name in ('StepLR', 'CosineAnnealingLR', 'ReduceLROnPlateau'):
         assert name in scheds, f"scheduler '{name}' not registered"
 
 
 def test_activations_registered():
-    from minicnn.framework.components import get_supported_components
-    result = get_supported_components()
-    assert 'activation' in result
-    acts = result['activation']
-    for name in ('relu', 'leaky_relu', 'silu', 'tanh', 'sigmoid'):
+    from minicnn.flex.registry import describe_registries
+    result = describe_registries()
+    assert 'activations' in result
+    acts = result['activations']
+    for name in ('ReLU', 'LeakyReLU', 'SiLU', 'Tanh', 'Sigmoid'):
         assert name in acts, f"activation '{name}' not registered"
 
 
-def test_backends_registered():
-    from minicnn.framework.components import get_supported_components
-    result = get_supported_components()
-    assert 'backend' in result
-    backends = result['backend']
-    assert 'cuda' in backends
-    assert 'torch' in backends
+def test_layers_registered():
+    from minicnn.flex.registry import describe_registries
+    result = describe_registries()
+    assert 'layers' in result
+    layers = result['layers']
+    for name in ('Conv2d', 'Linear', 'BatchNorm2d', 'ResidualBlock'):
+        assert name in layers
 
 
-def test_registry_class_references():
-    from minicnn.framework.components import register_builtin_components
-    from minicnn.framework.registry import GLOBAL_REGISTRY
-    from minicnn.optim.adamw import AdamW
-    from minicnn.optim.rmsprop import RMSprop
-    register_builtin_components()
-    adamw_spec = GLOBAL_REGISTRY.get('optimizer', 'adamw')
-    assert adamw_spec.factory is AdamW
-    rmsprop_spec = GLOBAL_REGISTRY.get('optimizer', 'rmsprop')
-    assert rmsprop_spec.factory is RMSprop
+def test_registry_factories_are_real_callables():
+    from minicnn.flex.registry import REGISTRY, describe_registries
+
+    describe_registries()
+
+    assert callable(REGISTRY.get('optimizers', 'AdamW'))
+    assert callable(REGISTRY.get('activations', 'Sigmoid'))
