@@ -243,3 +243,107 @@ print(pipeline.profile_summary())
 - Thread-safety: the global `_grad_enabled` flag in `nn/tensor.py` is not thread-safe.
 - Performance: NumPy Conv2d is not optimised; large CIFAR-10 runs are much slower than PyTorch.
 - No GPU support in the autograd path.
+
+## 新增功能
+
+### 新激活函數
+
+`LeakyReLU` 和 `SiLU` 已加入 `minicnn.nn.layers`：
+
+```python
+from minicnn.nn.layers import LeakyReLU, SiLU
+
+leaky = LeakyReLU(negative_slope=0.01)
+silu  = SiLU()
+```
+
+YAML：
+
+```yaml
+- type: LeakyReLU
+- type: SiLU
+```
+
+### 新優化器：AdamW 與 RMSprop
+
+```python
+from minicnn.optim.adamw import AdamW
+from minicnn.optim.rmsprop import RMSprop
+```
+
+YAML：
+
+```yaml
+optimizer:
+  type: AdamW
+  lr: 0.001
+  weight_decay: 0.01
+```
+
+```yaml
+optimizer:
+  type: RMSprop
+  lr: 0.01
+  alpha: 0.99
+```
+
+### 新排程器：StepLR 與 CosineAnnealingLR
+
+```python
+from minicnn.schedulers.step import StepLR
+from minicnn.schedulers.cosine import CosineAnnealingLR
+```
+
+YAML：
+
+```yaml
+scheduler:
+  enabled: true
+  type: step
+  step_size: 10
+  gamma: 0.5
+  min_lr: 1.0e-6
+```
+
+```yaml
+scheduler:
+  enabled: true
+  type: cosine
+  T_max: 30
+  min_lr: 1.0e-5
+```
+
+### label_smoothing 支援
+
+`cross_entropy` 接受 `label_smoothing` 參數（預設 `0.0`）：
+
+```python
+from minicnn.nn.tensor import cross_entropy
+loss = cross_entropy(logits, targets, label_smoothing=0.1)
+```
+
+YAML：
+
+```yaml
+loss:
+  type: CrossEntropyLoss
+  label_smoothing: 0.1
+```
+
+### AMP 拒絕
+
+若設定 `train.amp=true`，autograd 路徑會立即拋出 `ValueError` 並提示改用 torch backend。
+
+### 新層：AvgPool2d
+
+```python
+from minicnn.nn.layers import AvgPool2d
+pool = AvgPool2d(kernel_size=2)
+```
+
+YAML：
+
+```yaml
+- type: AvgPool2d
+  kernel_size: 2
+```

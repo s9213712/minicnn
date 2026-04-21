@@ -204,12 +204,16 @@ MiniCNN includes a CPU/NumPy autograd stack in `src/minicnn/nn/tensor.py`, `src/
 - scalar/tensor arithmetic with broadcasting-aware gradients
 - matrix multiply, reductions, reshape, `relu`, `sigmoid`, `tanh`, `log_softmax`, `cross_entropy`
 - trainable `Parameter` and `no_grad()` context
-- `SGD` and `Adam` optimizers with `grad_clip` and `weight_decay`
-- layers: `Linear`, `Conv2d`, `MaxPool2d`, `BatchNorm2d`, `Flatten`, `ResidualBlock`, `Sigmoid`, `Tanh`, `Dropout`
+- `SGD`, `Adam`, `AdamW`, and `RMSprop` optimizers with `grad_clip` and `weight_decay`
+- layers: `Linear`, `Conv2d`, `MaxPool2d`, `AvgPool2d`, `BatchNorm2d`, `Flatten`, `ResidualBlock`, `ReLU`, `LeakyReLU`, `SiLU`, `Sigmoid`, `Tanh`, `Dropout`
 - custom differentiable ops via the `Function` API (backward is automatically wired in `apply()`)
 - training on random, CIFAR-10, or MNIST data via `minicnn train-autograd`
-- step-decay LR scheduler via `scheduler.enabled=true`
+- `StepLR` and `CosineAnnealingLR` schedulers via `scheduler.enabled=true`
+- `label_smoothing` in `cross_entropy` / `CrossEntropyLoss`
+- weight initialization strategies via `get_initializer()`: kaiming, xavier, normal, zeros
 - compiler + runtime inference pipeline via `InferencePipeline` (no training overhead)
+
+See [docs/08_autograd.md](docs/08_autograd.md) and [docs/09_feature_expansion.md](docs/09_feature_expansion.md) for full usage and feature details.
 
 This core is useful for framework-level tests and educational examples. The Torch backend still uses PyTorch autograd, and the handcrafted CUDA backend uses its own CUDA backward kernels. See [docs/08_autograd.md](docs/08_autograd.md) for full usage.
 
