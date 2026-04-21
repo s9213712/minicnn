@@ -14,6 +14,9 @@ from minicnn.cuda_native.api import (
 from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.executor import ForwardExecutor
 from minicnn.cuda_native.planner import ExecutionPlan, BufferPlan, make_naive_plan
+from minicnn.cuda_native.backward import BackwardExecutor, make_default_backward_registry
+from minicnn.cuda_native.loss import cross_entropy_loss, mse_loss
+from minicnn.cuda_native.training import train_step, sgd_update
 
 __all__ = [
     'CUDA_NATIVE_CAPABILITIES',
@@ -27,4 +30,10 @@ __all__ = [
     'ExecutionPlan',
     'BufferPlan',
     'make_naive_plan',
+    'BackwardExecutor',
+    'make_default_backward_registry',
+    'cross_entropy_loss',
+    'mse_loss',
+    'train_step',
+    'sgd_update',
 ]

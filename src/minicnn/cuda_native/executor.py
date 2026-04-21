@@ -71,3 +71,44 @@ class ForwardExecutor:
         ctx = self.run(graph, {graph.input_spec.name: x}, params=params)
         out_name = graph.output_spec.name if graph.output_spec else graph.nodes[-1].outputs[0]
         return ctx[out_name]
+
+    def run_with_cache(
+        self,
+        graph: NativeGraph,
+        feeds: dict[str, Any],
+        params: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Forward pass that also builds a backward cache.
+
+        The cache stores, for each node:
+          - 'fwd_{node.name}_in':       the input tensor (needed by most bwd kernels)
+          - 'fwd_{node.name}_in_shape': original shape before Flatten
+          - '_w_{node.name}' / '_b_{node.name}': weight copies for grad computation
+
+        Returns:
+            (ctx, cache) where ctx is the full tensor context and cache has the
+            backward-specific entries.
+        """
+        ctx: dict[str, Any] = dict(feeds)
+        if params:
+            ctx.update(params)
+
+        cache: dict[str, Any] = {}
+
+        for node in graph.topological_order():
+            # Save input tensor before kernel mutates ctx
+            if node.inputs:
+                in_val = ctx.get(node.inputs[0])
+                if in_val is not None:
+                    cache[f'fwd_{node.name}_in'] = in_val
+                    if node.op_type == 'Flatten':
+                        cache[f'fwd_{node.name}_in_shape'] = in_val.shape
+            # Save params needed for grad computation
+            for key in (f'_w_{node.name}', f'_b_{node.name}'):
+                if key in ctx:
+                    cache[key] = ctx[key]
+
+            kernel = self.registry.get(node.op_type)
+            kernel(node, ctx)
+
+        return ctx, cache
