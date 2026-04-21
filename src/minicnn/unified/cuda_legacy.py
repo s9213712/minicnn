@@ -18,7 +18,7 @@ CUDA_LEGACY_SUPPORTED = {
         ['Flatten'], ['Linear'],
     ],
     'optimizer': ['SGD', 'Adam'],
-    'loss': ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss'],
+    'loss': ['CrossEntropyLoss', 'MSELoss'],
     'dataset': ['cifar10'],
 }
 
@@ -110,15 +110,15 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
     if str(optim.get('type', 'SGD')) not in CUDA_LEGACY_SUPPORTED['optimizer']:
         errors.append('cuda_legacy only supports optimizer.type=SGD or Adam')
     loss_type = str(loss.get('type', 'CrossEntropyLoss'))
-    if loss_type not in CUDA_LEGACY_SUPPORTED['loss']:
+    if loss_type == 'BCEWithLogitsLoss':
+        errors.append(
+            'cuda_legacy does not support BCEWithLogitsLoss: binary classification '
+            'is incompatible with the required 10-class CIFAR-10 output. '
+            'Use loss.type=CrossEntropyLoss for multi-class classification.'
+        )
+    elif loss_type not in CUDA_LEGACY_SUPPORTED['loss']:
         supported = ', '.join(CUDA_LEGACY_SUPPORTED['loss'])
         errors.append(f'cuda_legacy only supports loss.type in [{supported}]')
-    elif loss_type == 'BCEWithLogitsLoss':
-        errors.append(
-            'cuda_legacy BCEWithLogitsLoss requires out_features=1 (binary classification), '
-            'which is incompatible with the required 10-class output; '
-            'use loss.type=CrossEntropyLoss for CIFAR-10'
-        )
     grad_accum_steps = _coerce_int(train.get('grad_accum_steps', 1), 'train.grad_accum_steps', errors)
     if grad_accum_steps is not None and grad_accum_steps != 1:
         errors.append('cuda_legacy does not support grad_accum_steps != 1')

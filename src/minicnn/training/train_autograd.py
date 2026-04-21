@@ -110,6 +110,14 @@ def _dense_targets(labels: np.ndarray, logits_shape: tuple[int, ...], loss_type:
     if labels.shape[0] != batch:
         raise ValueError(f'target batch size {labels.shape[0]} does not match logits batch size {batch}')
     if outputs == 1:
+        if loss_type == 'BCEWithLogitsLoss':
+            bad = labels[(labels < 0) | (labels > 1)]
+            if len(bad) > 0:
+                raise ValueError(
+                    f'BCEWithLogitsLoss binary classification contract: labels must be in {{0, 1}}, '
+                    f'but got values including {sorted(set(int(v) for v in bad[:5]))}. '
+                    'Use CrossEntropyLoss for multi-class classification.'
+                )
         return labels.reshape(batch, 1).astype(np.float32)
     dense = np.zeros((batch, outputs), dtype=np.float32)
     dense[np.arange(batch), labels.astype(np.int64)] = 1.0

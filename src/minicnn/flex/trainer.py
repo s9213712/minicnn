@@ -49,6 +49,14 @@ def _adapt_targets(yb, logits, loss_type: str):
                 f'but the model outputs {out} logits. '
                 'Use CrossEntropyLoss for multi-class classification.'
             )
+        yb_int = yb.long()
+        if int(yb_int.min().item()) < 0 or int(yb_int.max().item()) > 1:
+            bad_min, bad_max = int(yb_int.min().item()), int(yb_int.max().item())
+            raise ValueError(
+                f'BCEWithLogitsLoss binary classification contract: labels must be in {{0, 1}}, '
+                f'but got min={bad_min}, max={bad_max}. '
+                'Use CrossEntropyLoss for multi-class classification.'
+            )
         return yb.float().reshape(n, 1)
     return yb
 
