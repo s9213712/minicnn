@@ -125,7 +125,8 @@ Config
 | Phase 2 | Planner, pooling support | Done |
 | Phase 3 | Backward prototype, loss, training loop | Done |
 | Phase 4 | MVP stabilization, CLI, doctor, docs | Done |
-| Phase 5 | Autograd, optimizer stack, broader op coverage | Future |
+| Phase 5 | BatchNorm/Residual/Concat/Memory reuse RFCs | RFC written |
+| Phase 6 | Autograd, optimizer stack, broader op coverage | Future |
 
 ---
 
@@ -256,4 +257,5 @@ Config
 | Phase 2 | Planner、pooling 支援 | 完成 |
 | Phase 3 | Backward prototype、loss、training loop | 完成 |
 | Phase 4 | MVP 穩定化、CLI、doctor、docs | 完成 |
-| Phase 5 | Autograd、optimizer stack、更廣的 op 覆蓋 | 未來 |
+| Phase 5 | BatchNorm/Residual/Concat/Memory reuse RFC | RFC 已完成 |
+| Phase 6 | Autograd、optimizer stack、更廣的 op 覆蓋 | 未來 |
