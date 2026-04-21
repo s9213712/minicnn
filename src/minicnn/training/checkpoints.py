@@ -181,6 +181,10 @@ def save_checkpoint(
     device_weights: DeviceWeights,
     geom: CudaNetGeometry,
 ) -> None:
+    path_obj = Path(path)
+    if path_obj.suffix != '.npz':
+        path_obj = path_obj.with_suffix('.npz')
+    tmp = path_obj.with_suffix('.tmp.npz')
     conv_data = {
         f'w_conv{i + 1}': g2h(dw, s.weight_numel)
         for i, (dw, s) in enumerate(zip(device_weights.conv_weights, geom.conv_stages))
@@ -194,22 +198,25 @@ def save_checkpoint(
         bn_data[f'bn_running_mean{i + 1}'] = g2h(device_weights.bn_running_mean[bn_idx], s.out_c)
         bn_data[f'bn_running_var{i + 1}']  = g2h(device_weights.bn_running_var[bn_idx], s.out_c)
         bn_idx += 1
-    p = Path(path)
-    tmp = p.with_name(p.stem + '.tmp.npz')
-    np.savez(
-        str(tmp),
-        epoch=np.int32(epoch),
-        val_acc=np.float32(val_acc),
-        lr_conv1=np.float32(lr_conv1),
-        lr_conv=np.float32(lr_conv),
-        lr_fc=np.float32(lr_fc),
-        n_conv=np.int32(geom.n_conv),
-        fc_w=g2h(device_weights.fc_w, geom.fc_out * geom.fc_in),
-        fc_b=g2h(device_weights.fc_b, geom.fc_out),
-        **conv_data,
-        **bn_data,
-    )
-    os.replace(str(tmp), path)
+    try:
+        np.savez(
+            str(tmp),
+            epoch=np.int32(epoch),
+            val_acc=np.float32(val_acc),
+            lr_conv1=np.float32(lr_conv1),
+            lr_conv=np.float32(lr_conv),
+            lr_fc=np.float32(lr_fc),
+            n_conv=np.int32(geom.n_conv),
+            fc_w=g2h(device_weights.fc_w, geom.fc_out * geom.fc_in),
+            fc_b=g2h(device_weights.fc_b, geom.fc_out),
+            **conv_data,
+            **bn_data,
+        )
+        os.replace(str(tmp), str(path_obj))
+    except Exception:
+        if tmp.exists():
+            tmp.unlink()
+        raise
 
 
 def reload_weights_from_checkpoint(

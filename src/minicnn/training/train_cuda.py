@@ -126,6 +126,8 @@ def run_cuda_epoch(
             train_rng, RANDOM_CROP_PADDING, HORIZONTAL_FLIP,
         )
         y = y_train[indices[idx_s:idx_e]]
+        prev_loss_sum = metrics.loss_sum
+        prev_correct = metrics.correct
         train_cuda_batch(
             runtime,
             workspace,
@@ -138,9 +140,11 @@ def run_cuda_epoch(
         )
 
         if (batch_idx + 1) % 100 == 0:
+            batch_loss = (metrics.loss_sum - prev_loss_sum) / max(n, 1)
+            batch_acc = (metrics.correct - prev_correct) / max(n, 1) * 100.0
             print(f"  Batch {batch_idx+1}/{nbatches}: "
-                  f"loss={metrics.loss:.4f}, "
-                  f"acc={metrics.acc_percent:.1f}%")
+                  f"loss={batch_loss:.4f}, "
+                  f"acc={batch_acc:.1f}%")
 
     return metrics
 

@@ -104,14 +104,12 @@ class Tensor:
         while stack:
             node, processed = stack.pop()
             if processed:
-                topo.append(node)
-                continue
-            if node in visited:
-                continue
-            visited.add(node)
-            stack.append((node, True))
-            for child in node._prev:
-                if child not in visited:
+                if node not in visited:
+                    visited.add(node)
+                    topo.append(node)
+            elif node not in visited:
+                stack.append((node, True))
+                for child in node._prev:
                     stack.append((child, False))
         self.grad = grad
         for node in reversed(topo):
@@ -285,13 +283,13 @@ class Tensor:
         return out
 
     def log(self) -> 'Tensor':
-        out = Tensor(np.log(self.data), requires_grad=_requires_grad(self))
+        out = Tensor(np.log(self.data + 1e-10), requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'log'
 
         def _backward() -> None:
             if out.grad is not None:
-                self._add_grad(out.grad / self.data)
+                self._add_grad(out.grad / (self.data + 1e-10))
 
         out._backward = _backward
         return out
