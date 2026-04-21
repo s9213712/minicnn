@@ -14,6 +14,7 @@ from minicnn.framework.health import doctor, healthcheck
 from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
 from minicnn.unified.config import load_unified_config, dump_unified_template
 from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED, summarize_legacy_mapping, validate_cuda_legacy_compatibility
+from minicnn.cuda_native.api import validate_cuda_native_config, get_capability_summary as get_cuda_native_summary
 from minicnn.unified.trainer import train_unified_from_config
 
 
@@ -255,6 +256,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_compile = sub.add_parser('compile', help='Trace and optimize a model config into MiniCNN IR')
     p_compile.add_argument('--config', type=str, default='configs/autograd_tiny.yaml')
     p_compile.add_argument('overrides', nargs='*')
+
+    p_train_native = sub.add_parser('train-native', help='[EXPERIMENTAL] Train with cuda_native backend (forward-only prototype)')
+    p_train_native.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
+    p_train_native.add_argument('overrides', nargs='*')
+
+    p_validate_native = sub.add_parser('validate-cuda-native-config', help='[EXPERIMENTAL] Validate config against cuda_native constraints')
+    p_validate_native.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
+    p_validate_native.add_argument('overrides', nargs='*')
+
+    sub.add_parser('cuda-native-capabilities', help='[EXPERIMENTAL] Print cuda_native capability descriptor')
+
     return parser
 
 
@@ -310,7 +322,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == 'list-dual-components':
-        print(json.dumps({'registries': describe_registries(), 'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED}, indent=2))
+        print(json.dumps({
+            'registries': describe_registries(),
+            'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
+            'cuda_native_capabilities': get_cuda_native_summary(),
+        }, indent=2))
         return 0
 
     if args.command == 'config-template':
@@ -392,9 +408,36 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == 'validate-config':
         cfg = _load_unified_config_or_exit(args.config, args.overrides)
-        errors = validate_cuda_legacy_compatibility(cfg) if cfg.get('engine', {}).get('backend') == 'cuda_legacy' else []
-        print(json.dumps({'ok': not errors, 'errors': errors, 'backend': cfg.get('engine', {}).get('backend')}, indent=2))
+        backend = cfg.get('engine', {}).get('backend')
+        if backend == 'cuda_legacy':
+            errors = validate_cuda_legacy_compatibility(cfg)
+        elif backend == 'cuda_native':
+            errors = validate_cuda_native_config(cfg)
+        else:
+            errors = []
+        print(json.dumps({'ok': not errors, 'errors': errors, 'backend': backend}, indent=2))
         return 0 if not errors else 2
+
+    if args.command == 'validate-cuda-native-config':
+        cfg = _load_unified_config_or_exit(args.config, args.overrides)
+        errors = validate_cuda_native_config(cfg)
+        if errors:
+            print(json.dumps({'ok': False, 'errors': errors, 'backend': 'cuda_native'}, indent=2))
+            return 2
+        print(json.dumps({'ok': True, 'backend': 'cuda_native', 'note': 'experimental — forward-only'}, indent=2))
+        return 0
+
+    if args.command == 'cuda-native-capabilities':
+        print(json.dumps(get_cuda_native_summary(), indent=2))
+        return 0
+
+    if args.command == 'train-native':
+        import warnings
+        cfg = _load_unified_config_or_exit(args.config, ['engine.backend=cuda_native', *_common_train_overrides(args), *args.overrides])
+        warnings.warn('[EXPERIMENTAL] cuda_native backend: forward-only prototype, not production-ready.', stacklevel=1)
+        run_dir = train_unified_from_config(cfg)
+        print(f'Artifacts written to: {run_dir}')
+        return 0
 
     if args.command == 'compile':
         from minicnn.compiler import optimize, trace_model_config

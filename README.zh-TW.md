@@ -9,15 +9,12 @@
 MiniCNN 是一個以組態驅動的深度學習專案，用來研究「同一個前端介面」與
 「不同 backend 能力邊界」之間的落差。
 
-目前這個 repo 實際提供三條可用路徑：
+目前這個 repo 實際提供四條可用路徑：
 
 - `torch`：透過 `train-flex` / `train-dual` 做較廣泛的模型實驗
 - `cuda_legacy`：透過 `train-dual` 使用手寫 CUDA 的 CIFAR-10 訓練路徑
 - `autograd`：透過 `train-autograd` 使用純 NumPy 的教學型 autograd stack
-
-這個 branch 也包含進行中的 `cuda_native` 開發，程式碼位於
-`src/minicnn/cuda_native/`。但它目前仍是實驗性 backend，還不是穩定 CLI
-surface 的一部分。
+- `cuda_native`：透過 `train-native` 使用實驗性 graph-based backend（非正式）
 
 ## 為什麼有這個專案
 
@@ -49,14 +46,14 @@ MiniCNN 不是要取代 PyTorch。
 | `torch` | 穩定 | 新模型、自訂元件、快速迭代 |
 | `cuda_legacy` | 穩定但刻意狹窄 | 以固定 CIFAR-10 組態為前提的手寫 CUDA 訓練 |
 | `autograd` | 穩定的教學路徑 | CPU-only 學習、可重現測試、小型框架實驗 |
-| `cuda_native` | branch 內實驗性工作 | native graph/planner/backend 研發，尚不適合一般使用 |
+| `cuda_native` | 實驗性 — 僅 forward prototype | graph IR / planner / numpy executor 研發，非正式 |
 
 高階來看：
 
 ```text
 shared YAML / CLI frontend -> torch | cuda_legacy | autograd
                                \
-                                -> cuda_native (branch 內 backend 開發)
+                                -> cuda_native [實驗] (graph IR, planner, numpy executor)
 ```
 
 ## 目前可以直接跑的東西
@@ -80,18 +77,32 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 - 精簡但夠用的 optimizer / layer stack
 - 不依賴 torch 的教學、測試與 CPU inference 實驗
 
-### `cuda_native`
+### `cuda_native`（實驗性）
 
-這個 branch 目前已經有分階段的 `cuda_native` 模組，用於：
+以 graph-based 架構設計的實驗 backend，包含：
 
-- graph IR
-- validators
-- planner
-- 參考 executor 與 backend 實驗
+- 明確的 graph IR（`graph.py`, `nodes.py`）
+- 嚴格驗證層（`validators.py`, `shapes.py`）
+- 保守記憶體規劃（`planner.py`）
+- numpy 參考 kernel 與 dispatch（`kernels.py`, `executor.py`）
+- backward 原型與 SGD 訓練迴圈
 
-但 `src/minicnn/cuda_native/capabilities.py` 的正式 capability descriptor
-仍把它標為 experimental、sequential-only，且尚未作為穩定 training backend
-支援。公開 CLI 目前仍是把 `train-dual` 路由到 `torch` 或 `cuda_legacy`。
+支援 op：`Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`。
+
+非正式 backend，僅支援 sequential graph，不取代 `cuda_legacy`。
+
+```bash
+# 查看 cuda_native 支援能力
+minicnn cuda-native-capabilities
+
+# 驗證 config 是否相容
+minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
+
+# 執行（研究用）
+minicnn train-native --config configs/dual_backend_cnn.yaml train.epochs=1 dataset.num_samples=128
+```
+
+完整說明請見 [docs/cuda_native.md](docs/cuda_native.md)。
 
 ## 快速開始
 
@@ -191,6 +202,15 @@ minicnn list-flex-components
 minicnn list-dual-components
 minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
+minicnn cuda-native-capabilities
+minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
+```
+
+執行實驗性 cuda_native 路徑：
+
+```bash
+minicnn train-native --config configs/dual_backend_cnn.yaml \
+  train.epochs=1 dataset.num_samples=128 dataset.val_samples=32
 ```
 
 ## Backend 邊界

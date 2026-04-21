@@ -23,6 +23,8 @@ def healthcheck() -> dict[str, object]:
 def doctor() -> dict[str, object]:
     native_path = resolve_library_path()
     cuda = check_cuda_ready(native_path)
+    from minicnn.cuda_native.api import get_capability_summary
+    cuda_native_caps = get_capability_summary()
     return {
         'project': {
             'project_root': str(PROJECT_ROOT),
@@ -37,6 +39,7 @@ def doctor() -> dict[str, object]:
             'artifact_present': Path(native_path).exists(),
             **cuda,
         },
+        'cuda_native': cuda_native_caps,
         'data': {
             'cifar10_ready': cifar10_ready(DATA_ROOT),
         },

@@ -111,4 +111,14 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
         dump_summary(run_dir, cuda_summary)
         return run_dir
 
-    raise ValueError(f'Unknown engine.backend={backend!r}; expected torch or cuda_legacy')
+    if backend == 'cuda_native':
+        from minicnn.unified.cuda_native import run_cuda_native_training
+        import warnings
+        warnings.warn(
+            'engine.backend=cuda_native is experimental and forward-only. '
+            'Training loop is a research prototype, not production-ready.',
+            stacklevel=2,
+        )
+        return run_cuda_native_training(cfg)
+
+    raise ValueError(f'Unknown engine.backend={backend!r}; expected torch, cuda_legacy, or cuda_native')

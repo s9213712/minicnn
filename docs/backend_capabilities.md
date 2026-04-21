@@ -4,55 +4,60 @@ Read MiniCNN capability by backend, not as one global checklist.
 
 The frontend surface is broader than the narrowest backend. That is expected.
 
-## Stable Execution Paths
+## Execution Paths
 
-| Capability | Torch/flex | CPU/NumPy autograd | CUDA legacy |
-|---|---:|---:|---:|
-| **Datasets** | | | |
-| CIFAR-10 | ✓ | ✓ slow | ✓ |
-| MNIST | ✓ | ✓ slow | ✗ |
-| Random toy data | ✓ | ✓ | ✗ |
-| **Layers** | | | |
-| Conv2d | ✓ | ✓ | ✓ fixed 3x3, stride 1, pad 0 |
-| Linear | ✓ | ✓ | ✓ |
-| MaxPool2d | ✓ | ✓ | ✓ fixed 2x2 |
-| AvgPool2d | ✓ | ✓ | ✗ |
-| BatchNorm2d | ✓ | ✓ | ✗ training graph |
-| LayerNorm | ✓ via torch module name | ✗ | ✗ |
-| GroupNorm | ✓ via torch module name | ✗ | ✗ |
-| ResidualBlock | ✓ built-in | ✓ same-channel path | ✗ |
-| Dropout | ✓ | ✓ | ✗ |
-| **Activations** | | | |
-| ReLU | ✓ | ✓ | ✓ |
-| LeakyReLU | ✓ | ✓ | ✓ shared slope across conv blocks |
-| SiLU | ✓ | ✓ | ✗ |
-| Sigmoid | ✓ | ✓ | ✗ |
-| Tanh | ✓ | ✓ | ✗ |
-| GELU | ✓ | ✗ | ✗ |
-| **Losses** | | | |
-| CrossEntropyLoss | ✓ | ✓ | ✓ |
-| MSELoss | ✓ | ✓ | Experimental |
-| BCEWithLogitsLoss | ✓ binary only | ✓ binary only | ✗ |
-| label_smoothing | ✓ | ✓ | ✗ |
-| **Optimizers** | | | |
-| SGD | ✓ | ✓ | ✓ |
-| Momentum SGD | ✓ | ✓ | ✓ |
-| Adam | ✓ | ✓ | Experimental |
-| AdamW | ✓ | ✓ | ✗ |
-| RMSprop | ✓ | ✓ | ✗ |
-| **Schedulers** | | | |
-| None / disabled | ✓ | ✓ | ✓ |
-| StepLR | ✓ | ✓ | ✗ shared-config bridge |
-| CosineAnnealingLR | ✓ | ✓ | ✗ shared-config bridge |
-| ReduceLROnPlateau | ✓ | ✓ | legacy internal LR reduction only |
-| **Regularization / precision** | | | |
-| weight_decay | ✓ | ✓ | ✓ |
-| gradient clipping | ✓ | ✓ per-parameter | ✓ global + per-buffer rules |
-| AMP | ✓ on CUDA | ✗ | ✗ |
-| **Frontend conveniences** | | | |
-| `model.layers[]` YAML | ✓ | ✓ | ✓ validated fixed pattern only |
-| dotted-path custom components | ✓ | ✗ | ✗ |
-| block presets (`conv_relu`, `conv_bn_relu`, `conv_bn_silu`) | ✓ | ✗ | ✗ |
+| Capability | Torch/flex | CPU/NumPy autograd | CUDA legacy | cuda_native (experimental) |
+|---|---:|---:|---:|---:|
+| **Datasets** | | | | |
+| CIFAR-10 | ✓ | ✓ slow | ✓ | ✓ |
+| MNIST | ✓ | ✓ slow | ✗ | ✓ |
+| Random toy data | ✓ | ✓ | ✗ | ✓ |
+| **Layers** | | | | |
+| Conv2d | ✓ | ✓ | ✓ fixed 3x3, stride 1, pad 0 | ✓ numpy ref |
+| Linear | ✓ | ✓ | ✓ | ✓ numpy ref |
+| MaxPool2d | ✓ | ✓ | ✓ fixed 2x2 | ✓ numpy ref |
+| AvgPool2d | ✓ | ✓ | ✗ | ✓ numpy ref |
+| BatchNorm2d | ✓ | ✓ | ✗ training graph | ✗ rejected |
+| LayerNorm | ✓ via torch module name | ✗ | ✗ | ✗ rejected |
+| GroupNorm | ✓ via torch module name | ✗ | ✗ | ✗ rejected |
+| ResidualBlock | ✓ built-in | ✓ same-channel path | ✗ | ✗ rejected |
+| Dropout | ✓ | ✓ | ✗ | ✗ |
+| **Activations** | | | | |
+| ReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
+| LeakyReLU | ✓ | ✓ | ✓ shared slope across conv blocks | ✓ numpy ref |
+| SiLU | ✓ | ✓ | ✗ | ✗ |
+| Sigmoid | ✓ | ✓ | ✗ | ✗ |
+| Tanh | ✓ | ✓ | ✗ | ✗ |
+| GELU | ✓ | ✗ | ✗ | ✗ |
+| **Losses** | | | | |
+| CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
+| MSELoss | ✓ | ✓ | Experimental | ✓ numpy |
+| BCEWithLogitsLoss | ✓ binary only | ✓ binary only | ✗ | ✗ |
+| label_smoothing | ✓ | ✓ | ✗ | ✗ |
+| **Optimizers** | | | | |
+| SGD | ✓ | ✓ | ✓ | ✓ numpy (prototype) |
+| Momentum SGD | ✓ | ✓ | ✓ | ✗ |
+| Adam | ✓ | ✓ | Experimental | ✗ |
+| AdamW | ✓ | ✓ | ✗ | ✗ |
+| RMSprop | ✓ | ✓ | ✗ | ✗ |
+| **Schedulers** | | | | |
+| None / disabled | ✓ | ✓ | ✓ | ✓ |
+| StepLR | ✓ | ✓ | ✗ shared-config bridge | ✗ |
+| CosineAnnealingLR | ✓ | ✓ | ✗ shared-config bridge | ✗ |
+| ReduceLROnPlateau | ✓ | ✓ | legacy internal LR reduction only | ✗ |
+| **Regularization / precision** | | | | |
+| weight_decay | ✓ | ✓ | ✓ | ✓ in SGD update |
+| gradient clipping | ✓ | ✓ per-parameter | ✓ global + per-buffer rules | ✗ |
+| AMP | ✓ on CUDA | ✗ | ✗ | ✗ |
+| **Frontend conveniences** | | | | |
+| `model.layers[]` YAML | ✓ | ✓ | ✓ validated fixed pattern only | ✓ validated sequential only |
+| dotted-path custom components | ✓ | ✗ | ✗ | ✗ |
+| block presets (`conv_relu`, `conv_bn_relu`, `conv_bn_silu`) | ✓ | ✗ | ✗ | ✗ |
+| **Training** | | | | |
+| Forward pass | ✓ | ✓ | ✓ | ✓ |
+| Backward / gradients | ✓ | ✓ | ✓ | Prototype only |
+| Full training loop | ✓ | ✓ | ✓ | Prototype only |
+| Production-ready | ✓ | ✓ | ✓ | ✗ experimental |
 
 ## Torch/Flex
 
@@ -118,26 +123,35 @@ currently supported `cuda_legacy` training contract. For example:
 Those do not automatically mean the stable `cuda_legacy` training path supports
 them. The validator and the actual training bridge are the source of truth.
 
-## Branch-Local `cuda_native`
+## cuda_native (Experimental)
 
-`cuda_native` is not a stable public backend yet, but this branch does include a
-capability descriptor in `src/minicnn/cuda_native/capabilities.py`.
+`cuda_native` is an experimental graph-based backend.
 
-Current descriptor summary:
+It is explicitly opt-in via `engine.backend=cuda_native` or the `train-native` CLI command.
+It must not become the default backend and is not a replacement for `cuda_legacy`.
+
+Current capability descriptor:
 
 | Capability | `cuda_native` status |
 |---|---|
 | status | experimental |
 | graph shape | sequential only |
-| forward | descriptor says yes |
-| backward | descriptor says not yet supported |
-| training | descriptor says not yet supported |
+| forward | yes (numpy reference) |
+| backward | prototype — not stable |
+| training | prototype — not production-ready |
 | dynamic shapes | no |
 | branching graph | no |
 | supported ops | `Conv2d`, `ReLU`, `LeakyReLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d` |
+| unsupported ops | `BatchNorm2d`, `GroupNorm`, `LayerNorm`, `ResidualBlock` |
 
-Treat the modules under `src/minicnn/cuda_native/` as backend-development work
-until the CLI surface and capability descriptor are promoted together.
+Check current state:
+
+```bash
+minicnn cuda-native-capabilities
+minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
+```
+
+See [docs/cuda_native.md](cuda_native.md) for the full guide.
 
 ## Reading Validation Errors
 

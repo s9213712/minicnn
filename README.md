@@ -9,15 +9,12 @@
 MiniCNN is a configuration-driven deep learning project for studying the gap
 between a flexible frontend and backend-constrained execution paths.
 
-Today, the repo gives you three practical ways to work:
+Today, the repo gives you four ways to work:
 
 - `torch` via `train-flex` / `train-dual` for broad model experimentation
 - `cuda_legacy` via `train-dual` for the handcrafted CUDA CIFAR-10 path
 - `autograd` via `train-autograd` for the pure NumPy teaching stack
-
-This branch also contains ongoing `cuda_native` work under
-`src/minicnn/cuda_native/`, but that backend is still experimental and is not
-yet part of the stable CLI toggle surface.
+- `cuda_native` via `train-native` — experimental graph-based backend (not production-ready)
 
 ## Why This Exists
 
@@ -49,14 +46,14 @@ It is useful when you want one of these:
 | `torch` | stable | new models, custom components, fast iteration |
 | `cuda_legacy` | stable but intentionally narrow | handwritten CUDA training on the fixed CIFAR-10 contract |
 | `autograd` | stable educational path | CPU-only learning, deterministic tests, framework experiments |
-| `cuda_native` | experimental branch-local work | native graph/planner/backend R&D, not general use yet |
+| `cuda_native` | experimental — forward-only prototype | native graph IR / planner R&D; not production-ready |
 
 At a high level:
 
 ```text
 shared YAML / CLI frontend -> torch | cuda_legacy | autograd
                                \
-                                -> cuda_native (branch-local backend work)
+                                -> cuda_native [EXPERIMENTAL] (graph IR, planner, numpy executor)
 ```
 
 ## What You Can Run Today
@@ -80,19 +77,32 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 - small optimizer/layer stack for learning and tests
 - architecture tracing and CPU inference experiments without torch
 
-### `cuda_native`
+### `cuda_native` (Experimental)
 
-This branch includes staged `cuda_native` modules for:
+A graph-based backend prototype with:
 
-- graph IR
-- validators
-- planner
-- reference executors and backend experiments
+- explicit graph IR (`graph.py`, `nodes.py`)
+- strict validation (`validators.py`, `shapes.py`)
+- conservative buffer planning (`planner.py`)
+- numpy reference kernels (`kernels.py`, `executor.py`)
+- backward prototype and SGD training loop
 
-But the capability descriptor in `src/minicnn/cuda_native/capabilities.py`
-still marks it as experimental, sequential-only, and not yet supported as a
-stable training backend. The public CLI still routes `train-dual` through
-`torch` or `cuda_legacy`.
+Supported ops: `Conv2d`, `ReLU`, `LeakyReLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
+
+Not production-ready. Sequential graphs only. Not a replacement for `cuda_legacy`.
+
+```bash
+# Check what cuda_native supports
+minicnn cuda-native-capabilities
+
+# Validate your config
+minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
+
+# Run (research only)
+minicnn train-native --config configs/dual_backend_cnn.yaml train.epochs=1 dataset.num_samples=128
+```
+
+See [docs/cuda_native.md](docs/cuda_native.md) for the full guide.
 
 ## Quick Start
 
@@ -193,6 +203,15 @@ minicnn list-flex-components
 minicnn list-dual-components
 minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
+minicnn cuda-native-capabilities
+minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
+```
+
+Train the experimental cuda_native path:
+
+```bash
+minicnn train-native --config configs/dual_backend_cnn.yaml \
+  train.epochs=1 dataset.num_samples=128 dataset.val_samples=32
 ```
 
 ## Backend Boundary
