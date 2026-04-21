@@ -26,7 +26,7 @@ surface 的一部分。
 
 MiniCNN 的價值在於把這些邊界攤開來看：
 
-- 同一份 frontend contract 如何映射到不同 backend 現實
+- 同一份前端設定介面如何映射到不同 backend 現實
 - 狹窄 native backend 何時該嚴格驗證，而不是假裝功能對等
 - 不依賴 torch internals 的小型 autograd stack 會怎麼運作
 - 未來 graph-based native backend 如何在公開 repo 裡逐步長出來
@@ -37,7 +37,7 @@ MiniCNN 不是要取代 PyTorch。
 
 它比較適合用在這些情境：
 
-- 想要一個 shared YAML/frontend contract 來切不同 backend
+- 想要一個共用的 YAML 前端介面來切不同 backend
 - 想保留一條能力邊界清楚的手寫 CUDA 訓練路徑
 - 想用小型 NumPy autograd stack 做學習或 framework-level 實驗
 - 想原地孵化未來的 graph-based native backend，但不把未完成的東西包裝成已完成
@@ -47,7 +47,7 @@ MiniCNN 不是要取代 PyTorch。
 | Backend | 狀態 | 適合用途 |
 |---|---|---|
 | `torch` | 穩定 | 新模型、自訂元件、快速迭代 |
-| `cuda_legacy` | 穩定但刻意狹窄 | 固定 CIFAR-10 契約下的手寫 CUDA 訓練 |
+| `cuda_legacy` | 穩定但刻意狹窄 | 以固定 CIFAR-10 組態為前提的手寫 CUDA 訓練 |
 | `autograd` | 穩定的教學路徑 | CPU-only 學習、可重現測試、小型框架實驗 |
 | `cuda_native` | branch 內實驗性工作 | native graph/planner/backend 研發，尚不適合一般使用 |
 
@@ -72,7 +72,7 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 - `cpp/` 內的手寫 CUDA / C++ backend
 - 由 `engine.backend=cuda_legacy` 的 shared-config bridge 進入
 - 不支援的組合會直接 validation，不做 silent fallback
-- 契約刻意維持狹窄，核心仍是固定的 CIFAR-10 Conv/Pool/Linear pattern
+- 支援範圍刻意維持狹窄，核心仍是固定的 CIFAR-10 Conv/Pool/Linear pattern
 
 ### `autograd`
 
@@ -208,9 +208,9 @@ minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 較長期的泛用化方向請看
 [docs/generalization_roadmap.md](docs/generalization_roadmap.md)。
 
-## Config 契約
+## Config 介面
 
-主要 shared-config surface 包含：
+主要 shared-config 介面包含：
 
 - `dataset`
 - `model.layers`
