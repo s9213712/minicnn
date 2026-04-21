@@ -1,6 +1,8 @@
 """Weight checkpointing and device pointer cleanup."""
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterator
 
 import numpy as np
@@ -64,21 +66,31 @@ def init_velocity_buffers():
 
 
 def save_checkpoint(path, epoch, val_acc, lr_conv1, lr_conv, lr_fc, device_weights):
+    path = Path(path)
+    if path.suffix != '.npz':
+        path = path.with_suffix('.npz')
+    tmp = path.with_suffix('.tmp.npz')
     d_w_conv1, d_w_conv2, d_w_conv3, d_w_conv4, d_fc_w, d_fc_b = device_weights
-    np.savez(
-        path,
-        epoch=np.int32(epoch),
-        val_acc=np.float32(val_acc),
-        lr_conv1=np.float32(lr_conv1),
-        lr_conv=np.float32(lr_conv),
-        lr_fc=np.float32(lr_fc),
-        w_conv1=g2h(d_w_conv1, C1_OUT * C1_IN * KH * KW),
-        w_conv2=g2h(d_w_conv2, C2_OUT * C2_IN * KH * KW),
-        w_conv3=g2h(d_w_conv3, C3_OUT * C3_IN * KH * KW),
-        w_conv4=g2h(d_w_conv4, C4_OUT * C4_IN * KH * KW),
-        fc_w=g2h(d_fc_w, 10 * FC_IN),
-        fc_b=g2h(d_fc_b, 10),
-    )
+    try:
+        np.savez(
+            str(tmp),
+            epoch=np.int32(epoch),
+            val_acc=np.float32(val_acc),
+            lr_conv1=np.float32(lr_conv1),
+            lr_conv=np.float32(lr_conv),
+            lr_fc=np.float32(lr_fc),
+            w_conv1=g2h(d_w_conv1, C1_OUT * C1_IN * KH * KW),
+            w_conv2=g2h(d_w_conv2, C2_OUT * C2_IN * KH * KW),
+            w_conv3=g2h(d_w_conv3, C3_OUT * C3_IN * KH * KW),
+            w_conv4=g2h(d_w_conv4, C4_OUT * C4_IN * KH * KW),
+            fc_w=g2h(d_fc_w, 10 * FC_IN),
+            fc_b=g2h(d_fc_b, 10),
+        )
+        os.replace(str(tmp), str(path))
+    except Exception:
+        if tmp.exists():
+            tmp.unlink()
+        raise
 
 
 def reload_weights_from_checkpoint(path, device_weights):

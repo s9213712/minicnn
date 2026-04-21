@@ -16,15 +16,11 @@ class SGD(Optimizer):
         for i, p in enumerate(self.params):
             if p.grad is None:
                 continue
-            try:
-                grad = p.grad + self.weight_decay * p.data if self.weight_decay else p.grad
-                if self.momentum:
-                    self.velocities[i] = self.momentum * self.velocities[i] - self.lr * grad
-                    p.data = p.data + self.velocities[i]
-                else:
-                    p.data = p.data - self.lr * grad
-                updated += 1
-            except Exception:
-                # Keep optimizer layer non-fatal for metadata-only parameters.
-                continue
+            grad = p.grad + self.weight_decay * p.data if self.weight_decay else p.grad
+            if self.momentum:
+                self.velocities[i] = self.momentum * self.velocities[i] - self.lr * grad
+                p.data = p.data + self.velocities[i]
+            else:
+                p.data = p.data - self.lr * grad
+            updated += 1
         return {'updated': updated, 'lr': self.lr, 'momentum': self.momentum, 'weight_decay': self.weight_decay}

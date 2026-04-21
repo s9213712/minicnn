@@ -7,7 +7,7 @@ from minicnn.config.settings import C1_IN, C1_OUT, C2_IN, C2_OUT, C3_IN, C3_OUT,
 
 def he_init(size, fan_in, rng=None):
     rng = rng or np.random.default_rng()
-    return (rng.standard_normal(size).astype(np.float32) * np.sqrt(2.0 / fan_in)).astype(np.float32)
+    return (rng.standard_normal(size) * np.sqrt(2.0 / fan_in)).astype(np.float32)
 
 
 def init_weights(seed):

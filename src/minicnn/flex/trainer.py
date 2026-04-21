@@ -207,7 +207,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
     test_metrics = None
     if test_loader is not None and best_model_path.exists():
         try:
-            checkpoint = torch.load(best_model_path, map_location=device, weights_only=False)
+            checkpoint = torch.load(best_model_path, map_location=device, weights_only=True)
         except TypeError:  # pragma: no cover - older torch
             checkpoint = torch.load(best_model_path, map_location=device)
         model.load_state_dict(checkpoint['model_state'])

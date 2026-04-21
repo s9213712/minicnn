@@ -5,6 +5,7 @@ import numpy as np
 from minicnn.core.cuda_backend import (
     download_int_scalar,
     lib,
+    upload_int,
     zero_bytes,
 )
 from minicnn.config.settings import (
