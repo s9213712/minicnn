@@ -1,255 +1,35 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import time
 from pathlib import Path
 from typing import Any
 
-import yaml
-
+from minicnn._cli_config import (
+    _ensure_cuda_legacy_prereqs_or_exit,
+    _load_flex_config_or_exit,
+    _load_unified_config_or_exit,
+    _resolve_cli_config_path,
+)
+from minicnn._cli_errors import (
+    _ensure_torch_device_supported_or_exit,
+    _ensure_torch_or_exit,
+    _exit_user_error,
+    _run_user_operation_or_exit,
+)
+from minicnn._cli_output import (
+    _add_format_arg,
+    _print_diagnostic,
+    _print_generic_payload,
+    _print_json,
+    _print_validation_result,
+)
 from minicnn.core.build import build_native, check_native
 from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
 
 
 _COMPARE_BACKENDS = {'torch', 'cuda_legacy', 'autograd'}
-_TORCH_INSTALL_HINT = 'Install it with:\n  pip install -e .[torch]'
-
-
-def _exit_user_error(message: str) -> None:
-    print(message)
-    raise SystemExit(2)
-
-
-def _import_torch_or_exit(command_name: str):
-    try:
-        return importlib.import_module('torch')
-    except ModuleNotFoundError as exc:
-        if exc.name == 'torch':
-            _exit_user_error(f'{command_name} requires PyTorch.\n{_TORCH_INSTALL_HINT}')
-        _exit_user_error(
-            f'{command_name} could not import PyTorch because a dependency is missing: {exc.name}.\n'
-            f'Reinstall PyTorch for this environment.\n{_TORCH_INSTALL_HINT}'
-        )
-    except Exception as exc:
-        _exit_user_error(
-            f'{command_name} could not import PyTorch from this environment.\n'
-            f'Import failed with: {exc.__class__.__name__}: {exc}\n'
-            f'Reinstall PyTorch or use a no-torch command.\n{_TORCH_INSTALL_HINT}'
-        )
-
-
-def _ensure_torch_or_exit(command_name: str):
-    return _import_torch_or_exit(command_name)
-
-
-def _ensure_torch_device_supported_or_exit(cfg: dict[str, Any], command_name: str) -> None:
-    torch = _import_torch_or_exit(command_name)
-    train_cfg = cfg.get('train', {})
-    device = str(train_cfg.get('device', 'auto'))
-    if device == 'cuda' and not torch.cuda.is_available():
-        _exit_user_error(
-            'Requested train.device=cuda, but CUDA is not available in this PyTorch runtime.\n'
-            'Use train.device=auto or train.device=cpu.'
-        )
-
-
-def _missing_config_message(config_path: str | None, template_cmd: str) -> str:
-    shown_path = config_path or '<unspecified>'
-    return (
-        f'Config file not found: {shown_path}\n'
-        'MiniCNN is repo-first. If built-in configs are unavailable, pass --config <path> '
-        'inside a repo checkout.\n'
-        f'Create a template with:\n  {template_cmd}'
-    )
-
-
-def _config_error_message(
-    config_path: str | None,
-    overrides: list[str],
-    exc: Exception,
-    *,
-    template_cmd: str,
-) -> str:
-    if isinstance(exc, FileNotFoundError):
-        return _missing_config_message(config_path, template_cmd)
-    detail = str(exc).strip() or exc.__class__.__name__
-    if isinstance(exc, yaml.YAMLError):
-        shown_path = config_path or '<unspecified>'
-        return f'Failed to parse config file: {shown_path}\n{detail}'
-    if 'mapping at the top level' in detail:
-        shown_path = config_path or '<unspecified>'
-        return f'Failed to parse config file: {shown_path}\n{detail}'
-    if (
-        'Override must look like key=value' in detail
-        or detail.startswith('Override path ')
-        or detail.startswith('Override key cannot be empty')
-    ):
-        if overrides:
-            return f'Invalid config override: {overrides[-1]}\n{detail}'
-        return f'Invalid config override.\n{detail}'
-    shown_path = config_path or '<unspecified>'
-    return f'Invalid config file or override for: {shown_path}\n{detail}'
-
-
-def _run_user_operation_or_exit(func, *args, **kwargs):
-    try:
-        return func(*args, **kwargs)
-    except (RuntimeError, ValueError, TypeError, IndexError) as exc:
-        _exit_user_error(str(exc))
-
-
-def _print_json(payload: Any) -> None:
-    print(json.dumps(payload, indent=2, default=str))
-
-
-def _add_format_arg(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument('--format', choices=['json', 'text'], default='json')
-
-
-def _text_block(title: str, payload: Any) -> str:
-    rendered = json.dumps(payload, indent=2, default=str)
-    return f'{title}:\n{rendered}'
-
-
-def _print_diagnostic(payload: dict[str, Any], *, command: str, output_format: str) -> None:
-    if output_format == 'json':
-        enriched = {'command': command, **payload}
-        _print_json(enriched)
-        return
-
-    status = payload.get('status', 'ok')
-    checks = payload.get('checks', [])
-    warnings = payload.get('warnings', [])
-    errors = payload.get('errors', [])
-    print(f'{command}: {status}')
-    if checks:
-        for check in checks:
-            marker = 'ok' if check.get('ok') else ('warn' if not check.get('required') else 'error')
-            print(f"- [{marker}] {check.get('name')}")
-            suggested_fix = check.get('suggested_fix')
-            if suggested_fix and not check.get('ok'):
-                print(f"  fix: {suggested_fix}")
-    if warnings:
-        print(_text_block('warnings', warnings))
-    if errors:
-        print(_text_block('errors', errors))
-
-
-def _print_validation_result(payload: dict[str, Any], *, command: str, output_format: str) -> None:
-    if output_format == 'json':
-        _print_json({'command': command, **payload})
-        return
-
-    status = payload.get('status', 'ok' if payload.get('ok', False) else 'error')
-    print(f'{command}: {status}')
-    backend = payload.get('backend')
-    if backend:
-        print(f'backend: {backend}')
-    note = payload.get('note')
-    if note:
-        print(f'note: {note}')
-    errors = payload.get('errors', [])
-    if errors:
-        print(_text_block('errors', errors))
-
-
-def _print_generic_payload(payload: dict[str, Any], *, command: str, output_format: str) -> None:
-    if output_format == 'json':
-        _print_json({'command': command, **payload})
-        return
-
-    headline = payload.get('status') or payload.get('kind') or payload.get('format') or 'ok'
-    print(f'{command}: {headline}')
-    for key in ('path', 'format', 'kind', 'backend', 'note'):
-        value = payload.get(key)
-        if value not in (None, '', [], {}):
-            print(f'{key}: {value}')
-    for key in (
-        'compatible_backends',
-        'top_level_keys',
-        'state_keys',
-        'keys',
-        'preview',
-        'project',
-        'model',
-        'optim',
-        'train',
-        'runtime',
-        'warnings',
-        'errors',
-    ):
-        value = payload.get(key)
-        if value not in (None, '', [], {}):
-            print(_text_block(key, value))
-
-
-def _load_config_or_exit(loader, config_path: str | None, overrides: list[str], *, template_cmd: str) -> dict:
-    resolved_path = _resolve_cli_config_path(config_path)
-    try:
-        return loader(resolved_path, overrides)
-    except (FileNotFoundError, TypeError, ValueError, IndexError, yaml.YAMLError) as exc:
-        _exit_user_error(
-            _config_error_message(config_path, overrides, exc, template_cmd=template_cmd)
-        )
-
-
-def _load_flex_config_or_exit(config_path: str | None, overrides: list[str]) -> dict:
-    from minicnn.flex.config import load_flex_config
-
-    return _load_config_or_exit(
-        load_flex_config,
-        config_path,
-        overrides,
-        template_cmd='minicnn config-template > configs/my_config.yaml',
-    )
-
-
-def _load_unified_config_or_exit(config_path: str | None, overrides: list[str]) -> dict:
-    from minicnn.unified.config import load_unified_config
-
-    return _load_config_or_exit(
-        load_unified_config,
-        config_path,
-        overrides,
-        template_cmd='minicnn dual-config-template > configs/my_config.yaml',
-    )
-
-
-def _ensure_cuda_legacy_prereqs_or_exit(cfg: dict[str, Any]) -> None:
-    from minicnn.core.cuda_backend import resolve_library_path
-    from minicnn.data.cifar10 import cifar10_ready
-
-    library_path = Path(resolve_library_path())
-    if not library_path.exists():
-        _exit_user_error(
-            'cuda_legacy training requires a native CUDA shared library.\n'
-            'Build it with:\n'
-            '  minicnn build --legacy-make --check'
-        )
-    dataset_cfg = cfg.get('dataset', {})
-    if str(dataset_cfg.get('type', 'cifar10')) == 'cifar10':
-        data_root = Path(dataset_cfg.get('data_root', DATA_ROOT))
-        if not cifar10_ready(data_root):
-            _exit_user_error(
-                'cuda_legacy training requires prepared CIFAR-10 data.\n'
-                'Prepare it with:\n'
-                '  minicnn prepare-data'
-            )
-
-
-def _resolve_cli_config_path(config_path: str | None) -> str | None:
-    if not config_path:
-        return config_path
-    raw_path = Path(config_path)
-    if raw_path.exists():
-        return str(raw_path)
-    if not raw_path.is_absolute():
-        project_relative = PROJECT_ROOT / raw_path
-        if project_relative.exists():
-            return str(project_relative)
-    return config_path
 
 
 def _add_common_train_args(parser: argparse.ArgumentParser) -> None:
