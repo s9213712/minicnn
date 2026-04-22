@@ -154,6 +154,11 @@ both the `cuda_legacy` and `cuda_native` config validation boundaries.
 If a command needs PyTorch, the CLI now fails with a short dependency message
 instead of an import-time traceback.
 
+Config and override mistakes also fail with a short message and exit code `2`
+instead of a Python traceback. `healthcheck`, `doctor`, and `smoke` now emit
+JSON-friendly output, and `train.device=cuda` fails early with guidance to use
+`train.device=auto` or `train.device=cpu` when CUDA is unavailable.
+
 ## Repo-First Resource Model
 
 MiniCNN is still a repo-first tool. Built-in configs such as

@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from minicnn.core.build import build_native, check_native
 from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
 
@@ -20,11 +22,118 @@ def _exit_user_error(message: str) -> None:
     raise SystemExit(2)
 
 
-def _ensure_torch_or_exit(command_name: str) -> None:
+def _import_torch_or_exit(command_name: str):
     try:
-        importlib.import_module('torch')
-    except Exception:
-        _exit_user_error(f'{command_name} requires PyTorch.\n{_TORCH_INSTALL_HINT}')
+        return importlib.import_module('torch')
+    except ModuleNotFoundError as exc:
+        if exc.name == 'torch':
+            _exit_user_error(f'{command_name} requires PyTorch.\n{_TORCH_INSTALL_HINT}')
+        _exit_user_error(
+            f'{command_name} could not import PyTorch because a dependency is missing: {exc.name}.\n'
+            f'Reinstall PyTorch for this environment.\n{_TORCH_INSTALL_HINT}'
+        )
+    except Exception as exc:
+        _exit_user_error(
+            f'{command_name} could not import PyTorch from this environment.\n'
+            f'Import failed with: {exc.__class__.__name__}: {exc}\n'
+            f'Reinstall PyTorch or use a no-torch command.\n{_TORCH_INSTALL_HINT}'
+        )
+
+
+def _ensure_torch_or_exit(command_name: str):
+    return _import_torch_or_exit(command_name)
+
+
+def _ensure_torch_device_supported_or_exit(cfg: dict[str, Any], command_name: str) -> None:
+    torch = _import_torch_or_exit(command_name)
+    train_cfg = cfg.get('train', {})
+    device = str(train_cfg.get('device', 'auto'))
+    if device == 'cuda' and not torch.cuda.is_available():
+        _exit_user_error(
+            'Requested train.device=cuda, but CUDA is not available in this PyTorch runtime.\n'
+            'Use train.device=auto or train.device=cpu.'
+        )
+
+
+def _missing_config_message(config_path: str | None, template_cmd: str) -> str:
+    shown_path = config_path or '<unspecified>'
+    return (
+        f'Config file not found: {shown_path}\n'
+        'MiniCNN is repo-first. If built-in configs are unavailable, pass --config <path> '
+        'inside a repo checkout.\n'
+        f'Create a template with:\n  {template_cmd}'
+    )
+
+
+def _config_error_message(
+    config_path: str | None,
+    overrides: list[str],
+    exc: Exception,
+    *,
+    template_cmd: str,
+) -> str:
+    if isinstance(exc, FileNotFoundError):
+        return _missing_config_message(config_path, template_cmd)
+    detail = str(exc).strip() or exc.__class__.__name__
+    if isinstance(exc, yaml.YAMLError):
+        shown_path = config_path or '<unspecified>'
+        return f'Failed to parse config file: {shown_path}\n{detail}'
+    if 'mapping at the top level' in detail:
+        shown_path = config_path or '<unspecified>'
+        return f'Failed to parse config file: {shown_path}\n{detail}'
+    if (
+        'Override must look like key=value' in detail
+        or detail.startswith('Override path ')
+        or detail.startswith('Override key cannot be empty')
+    ):
+        if overrides:
+            return f'Invalid config override: {overrides[-1]}\n{detail}'
+        return f'Invalid config override.\n{detail}'
+    shown_path = config_path or '<unspecified>'
+    return f'Invalid config file or override for: {shown_path}\n{detail}'
+
+
+def _run_user_operation_or_exit(func, *args, **kwargs):
+    try:
+        return func(*args, **kwargs)
+    except (RuntimeError, ValueError, TypeError, IndexError) as exc:
+        _exit_user_error(str(exc))
+
+
+def _print_json(payload: Any) -> None:
+    print(json.dumps(payload, indent=2, default=str))
+
+
+def _load_config_or_exit(loader, config_path: str | None, overrides: list[str], *, template_cmd: str) -> dict:
+    resolved_path = _resolve_cli_config_path(config_path)
+    try:
+        return loader(resolved_path, overrides)
+    except (FileNotFoundError, TypeError, ValueError, IndexError, yaml.YAMLError) as exc:
+        _exit_user_error(
+            _config_error_message(config_path, overrides, exc, template_cmd=template_cmd)
+        )
+
+
+def _load_flex_config_or_exit(config_path: str | None, overrides: list[str]) -> dict:
+    from minicnn.flex.config import load_flex_config
+
+    return _load_config_or_exit(
+        load_flex_config,
+        config_path,
+        overrides,
+        template_cmd='minicnn config-template > configs/my_config.yaml',
+    )
+
+
+def _load_unified_config_or_exit(config_path: str | None, overrides: list[str]) -> dict:
+    from minicnn.unified.config import load_unified_config
+
+    return _load_config_or_exit(
+        load_unified_config,
+        config_path,
+        overrides,
+        template_cmd='minicnn dual-config-template > configs/my_config.yaml',
+    )
 
 
 def _ensure_cuda_legacy_prereqs_or_exit(cfg: dict[str, Any]) -> None:
@@ -60,34 +169,6 @@ def _resolve_cli_config_path(config_path: str | None) -> str | None:
         if project_relative.exists():
             return str(project_relative)
     return config_path
-
-
-def _load_flex_config_or_exit(config_path: str, overrides: list[str]) -> dict:
-    from minicnn.flex.config import load_flex_config
-
-    resolved_path = _resolve_cli_config_path(config_path)
-    try:
-        return load_flex_config(resolved_path, overrides)
-    except FileNotFoundError:
-        _exit_user_error(
-            f"Config file not found: {config_path}\n"
-            "Create a template with:\n"
-            "  minicnn config-template > configs/my_config.yaml"
-        )
-
-
-def _load_unified_config_or_exit(config_path: str, overrides: list[str]) -> dict:
-    from minicnn.unified.config import load_unified_config
-
-    resolved_path = _resolve_cli_config_path(config_path)
-    try:
-        return load_unified_config(resolved_path, overrides)
-    except FileNotFoundError:
-        _exit_user_error(
-            f"Config file not found: {config_path}\n"
-            "Create a template with:\n"
-            "  minicnn dual-config-template > configs/my_config.yaml"
-        )
 
 
 def _add_common_train_args(parser: argparse.ArgumentParser) -> None:
@@ -485,34 +566,35 @@ def main(argv: list[str] | None = None) -> int:
         print(f'Native library present={Path(cuda_library).exists()}')
         print('Resolved legacy settings:')
         print(json.dumps(settings.summarize(), indent=2))
-        print(f'Health={healthcheck()}')
+        print('Health:')
+        _print_json(healthcheck())
         print('Flexible registries:')
-        print(json.dumps(describe_registries(), indent=2))
+        _print_json(describe_registries())
         print('Dual-backend handcrafted CUDA supported subset:')
-        print(json.dumps(CUDA_LEGACY_SUPPORTED, indent=2))
+        _print_json(CUDA_LEGACY_SUPPORTED)
         return 0
 
     if args.command == 'healthcheck':
         from minicnn.framework.health import healthcheck
 
-        print(healthcheck())
+        _print_json(healthcheck())
         return 0
 
     if args.command == 'smoke':
         result = _run_smoke_checks()
-        print(json.dumps(result, indent=2))
+        _print_json(result)
         return 0 if result['ok'] else 2
 
     if args.command == 'doctor':
         from minicnn.framework.health import doctor
 
-        print(json.dumps(doctor(), indent=2, default=str))
+        _print_json(doctor())
         return 0
 
     if args.command == 'list-flex-components':
         from minicnn.flex.registry import describe_registries
 
-        print(json.dumps(describe_registries(), indent=2))
+        _print_json(describe_registries())
         return 0
 
     if args.command == 'list-dual-components':
@@ -520,11 +602,11 @@ def main(argv: list[str] | None = None) -> int:
         from minicnn.flex.registry import describe_registries
         from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED
 
-        print(json.dumps({
+        _print_json({
             'registries': describe_registries(),
             'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
             'cuda_native_capabilities': get_cuda_native_summary(),
-        }, indent=2))
+        })
         return 0
 
     if args.command == 'config-template':
@@ -546,7 +628,7 @@ def main(argv: list[str] | None = None) -> int:
             payload = inspect_checkpoint(args.path)
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
             _exit_user_error(str(exc))
-        print(json.dumps(payload, indent=2))
+        _print_json(payload)
         return 0
 
     if args.command == 'export-torch-checkpoint':
@@ -560,15 +642,15 @@ def main(argv: list[str] | None = None) -> int:
             )
         except (FileNotFoundError, RuntimeError, ValueError, TypeError) as exc:
             _exit_user_error(str(exc))
-        print(json.dumps(payload, indent=2))
+        _print_json(payload)
         return 0
 
     if args.command == 'train-flex':
-        _ensure_torch_or_exit('train-flex')
         from minicnn.flex.trainer import train_from_config
 
         cfg = _load_flex_config_or_exit(args.config, [*_common_train_overrides(args), *args.overrides])
-        run_dir = train_from_config(cfg)
+        _ensure_torch_device_supported_or_exit(cfg, 'train-flex')
+        run_dir = _run_user_operation_or_exit(train_from_config, cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
 
@@ -578,28 +660,28 @@ def main(argv: list[str] | None = None) -> int:
         cfg = _load_unified_config_or_exit(args.config, args.overrides)
         errors = validate_cuda_legacy_compatibility(cfg)
         if errors:
-            print(json.dumps({'ok': False, 'errors': errors}, indent=2))
+            _print_json({'ok': False, 'errors': errors})
             return 2
-        print(json.dumps({'ok': True, 'backend': 'cuda_legacy'}, indent=2))
+        _print_json({'ok': True, 'backend': 'cuda_legacy'})
         return 0
 
     if args.command == 'show-cuda-mapping':
         from minicnn.unified.cuda_legacy import summarize_legacy_mapping
 
         cfg = _load_unified_config_or_exit(args.config, args.overrides)
-        print(json.dumps(summarize_legacy_mapping(cfg), indent=2))
+        _print_json(summarize_legacy_mapping(cfg))
         return 0
 
     if args.command in {'train', 'train-dual'}:
         cfg = _load_unified_config_or_exit(args.config, [*_common_train_overrides(args), *args.overrides])
         backend = str(cfg.get('engine', {}).get('backend', 'torch'))
         if backend == 'torch':
-            _ensure_torch_or_exit('train-dual with engine.backend=torch')
+            _ensure_torch_device_supported_or_exit(cfg, 'train-dual with engine.backend=torch')
         elif backend == 'cuda_legacy':
             _ensure_cuda_legacy_prereqs_or_exit(cfg)
         from minicnn.unified.trainer import train_unified_from_config
 
-        run_dir = train_unified_from_config(cfg)
+        run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
 
@@ -607,19 +689,19 @@ def main(argv: list[str] | None = None) -> int:
         backend = 'cuda_legacy' if args.command == 'train-cuda' else 'torch'
         cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *_common_train_overrides(args), *args.overrides])
         if backend == 'torch':
-            _ensure_torch_or_exit('train-dual with engine.backend=torch')
+            _ensure_torch_device_supported_or_exit(cfg, 'train-dual with engine.backend=torch')
         else:
             _ensure_cuda_legacy_prereqs_or_exit(cfg)
         from minicnn.unified.trainer import train_unified_from_config
 
-        run_dir = train_unified_from_config(cfg)
+        run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
 
     if args.command == 'train-autograd':
         from minicnn.training.train_autograd import train_autograd_from_config
         cfg = _load_flex_config_or_exit(args.config if args.config else None, [*_common_train_overrides(args), *args.overrides])
-        run_dir = train_autograd_from_config(cfg)
+        run_dir = _run_user_operation_or_exit(train_autograd_from_config, cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
 
@@ -634,15 +716,15 @@ def main(argv: list[str] | None = None) -> int:
             if backend == 'autograd':
                 from minicnn.training.train_autograd import train_autograd_from_config
                 cfg = _load_flex_config_or_exit(args.config if args.config else None, [*_common_train_overrides(args), *compare_overrides])
-                run_dir = train_autograd_from_config(cfg)
+                run_dir = _run_user_operation_or_exit(train_autograd_from_config, cfg)
             else:
                 cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *_common_train_overrides(args), *compare_overrides])
                 if backend == 'torch':
-                    _ensure_torch_or_exit('compare with engine.backend=torch')
+                    _ensure_torch_device_supported_or_exit(cfg, 'compare with engine.backend=torch')
                 elif backend == 'cuda_legacy':
                     _ensure_cuda_legacy_prereqs_or_exit(cfg)
                 from minicnn.unified.trainer import train_unified_from_config
-                run_dir = train_unified_from_config(cfg)
+                run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
             elapsed = time.perf_counter() - t0
             summary_path = run_dir / 'summary.json'
             summary = json.loads(summary_path.read_text(encoding='utf-8')) if summary_path.exists() else {}
@@ -654,7 +736,7 @@ def main(argv: list[str] | None = None) -> int:
             }
             row.update(_benchmark_fields(backend, cfg, run_dir, elapsed))
             rows.append(row)
-        print(json.dumps({'runs': rows}, indent=2))
+        _print_json({'runs': rows})
         return 0
 
     if args.command == 'validate-config':
@@ -669,7 +751,7 @@ def main(argv: list[str] | None = None) -> int:
             errors = validate_cuda_native_config(cfg)
         else:
             errors = []
-        print(json.dumps({'ok': not errors, 'errors': errors, 'backend': backend}, indent=2))
+        _print_json({'ok': not errors, 'errors': errors, 'backend': backend})
         return 0 if not errors else 2
 
     if args.command == 'validate-cuda-native-config':
@@ -678,19 +760,19 @@ def main(argv: list[str] | None = None) -> int:
         cfg = _load_unified_config_or_exit(args.config, args.overrides)
         errors = validate_cuda_native_config(cfg)
         if errors:
-            print(json.dumps({'ok': False, 'errors': errors, 'backend': 'cuda_native'}, indent=2))
+            _print_json({'ok': False, 'errors': errors, 'backend': 'cuda_native'})
             return 2
-        print(json.dumps({
+        _print_json({
             'ok': True,
             'backend': 'cuda_native',
             'note': 'experimental — backward/training prototypes present, strict boundary validation applied',
-        }, indent=2))
+        })
         return 0
 
     if args.command == 'cuda-native-capabilities':
         from minicnn.cuda_native.api import get_capability_summary as get_cuda_native_summary
 
-        print(json.dumps(get_cuda_native_summary(), indent=2))
+        _print_json(get_cuda_native_summary())
         return 0
 
     if args.command == 'train-native':
@@ -705,7 +787,7 @@ def main(argv: list[str] | None = None) -> int:
             stacklevel=1,
         )
         summary = get_cuda_native_summary()
-        print(json.dumps({
+        _print_json({
             'backend': 'cuda_native',
             'status': 'experimental',
             'validated_support_boundary': {
@@ -715,8 +797,8 @@ def main(argv: list[str] | None = None) -> int:
                 'schedulers': summary.get('supported_schedulers', []),
                 'ops': summary.get('supported_ops', []),
             },
-        }, indent=2))
-        run_dir = train_unified_from_config(cfg)
+        })
+        run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
         print(f'Artifacts written to: {run_dir}')
         return 0
 
@@ -724,7 +806,7 @@ def main(argv: list[str] | None = None) -> int:
         from minicnn.compiler import optimize, trace_model_config
         cfg = _load_flex_config_or_exit(args.config, args.overrides)
         graph = optimize(trace_model_config(cfg.get('model', {})))
-        print(json.dumps(graph.summary(), indent=2))
+        _print_json(graph.summary())
         return 0
 
     parser.print_help()

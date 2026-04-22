@@ -18,6 +18,18 @@ def test_unified_config_override_supports_layer_list_index():
     assert cfg['model']['layers'][1]['out_features'] == 7
 
 
+def test_unified_config_type_override_clears_stale_optimizer_fields():
+    cfg = load_unified_config(None, ['optimizer.type=Adam'])
+
+    assert cfg['optimizer'] == {'type': 'Adam'}
+
+
+def test_unified_config_sorts_type_override_before_other_fields():
+    cfg = load_unified_config(None, ['optimizer.lr=0.001', 'optimizer.type=Adam'])
+
+    assert cfg['optimizer'] == {'type': 'Adam', 'lr': 0.001}
+
+
 def test_compile_supported_dual_config():
     cfg = {
         'project': {'name': 'x', 'run_name': 'y', 'artifacts_root': 'artifacts'},

@@ -25,11 +25,16 @@ def load_unified_config(path: str | Path | None = None, overrides: list[str] | N
             raise TypeError('Config file must contain a mapping at the top level')
         _deep_update(data, loaded)
     if overrides:
+        parsed_overrides: list[tuple[list[str], Any]] = []
         for item in overrides:
             if '=' not in item:
                 raise ValueError(f'Override must look like key=value, got: {item}')
             key, raw = item.split('=', 1)
-            set_nested_value(data, key.split('.'), parse_scalar(raw))
+            parsed_overrides.append((key.split('.'), parse_scalar(raw)))
+
+        parsed_overrides.sort(key=lambda item: 0 if item[0][-1] == 'type' else 1)
+        for parts, value in parsed_overrides:
+            set_nested_value(data, parts, value, clear_on_type_change=True)
     return data
 
 

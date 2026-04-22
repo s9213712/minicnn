@@ -12,18 +12,46 @@ SRC_ROOT = REPO_ROOT / 'src'
 
 
 def _run_python_without_torch(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    sitecustomize = tmp_path / 'sitecustomize.py'
-    sitecustomize.write_text(
-        'import importlib.abc\n'
-        'import sys\n'
-        'class _BlockTorch(importlib.abc.MetaPathFinder):\n'
-        '    def find_spec(self, fullname, path=None, target=None):\n'
-        "        if fullname == 'torch' or fullname.startswith('torch.'):\n"
-        "            raise ImportError('torch intentionally blocked for this test')\n"
-        '        return None\n'
-        'sys.meta_path.insert(0, _BlockTorch())\n',
-        encoding='utf-8',
+    return _run_python_with_sitecustomize(
+        tmp_path,
+        (
+            'import importlib.abc\n'
+            'import sys\n'
+            'class _BlockTorch(importlib.abc.MetaPathFinder):\n'
+            '    def find_spec(self, fullname, path=None, target=None):\n'
+            "        if fullname == 'torch' or fullname.startswith('torch.'):\n"
+            "            raise ModuleNotFoundError(\"No module named 'torch'\", name='torch')\n"
+            '        return None\n'
+            'sys.meta_path.insert(0, _BlockTorch())\n'
+        ),
+        *args,
     )
+
+
+def _run_python_with_broken_torch(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return _run_python_with_sitecustomize(
+        tmp_path,
+        (
+            'import importlib.abc\n'
+            'import sys\n'
+            'class _BrokenTorch(importlib.abc.MetaPathFinder):\n'
+            '    def find_spec(self, fullname, path=None, target=None):\n'
+            "        if fullname == 'torch':\n"
+            "            raise ImportError('broken torch install for test')\n"
+            '        return None\n'
+            'sys.meta_path.insert(0, _BrokenTorch())\n'
+        ),
+        *args,
+    )
+
+
+def _run_python_with_sitecustomize(
+    tmp_path: Path,
+    source: str,
+    *args: str,
+) -> subprocess.CompletedProcess[str]:
+    sitecustomize = tmp_path / 'sitecustomize.py'
+    sitecustomize.write_text(source, encoding='utf-8')
     env = os.environ.copy()
     env['PYTHONPATH'] = os.pathsep.join([str(tmp_path), str(SRC_ROOT)])
     return subprocess.run(
@@ -168,6 +196,20 @@ def test_cli_smoke_returns_structured_json(capsys):
     assert all('severity' in check for check in payload['checks'])
 
 
+def test_cli_healthcheck_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['healthcheck'])
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+
+    assert rc == 0
+    assert isinstance(payload['checks'], list)
+    assert 'flex_registries' in payload
+
+
 def test_cli_help_still_works_without_torch(tmp_path):
     proc = _run_python_without_torch(tmp_path, '-m', 'minicnn.cli', '--help')
 
@@ -219,6 +261,124 @@ def test_cli_reports_missing_torch_for_train_dual_torch_without_traceback(tmp_pa
     assert 'train-dual with engine.backend=torch requires PyTorch.' in proc.stdout
     assert 'pip install -e .[torch]' in proc.stdout
     assert 'Traceback' not in proc.stderr
+
+
+def test_cli_reports_broken_torch_import_without_traceback(tmp_path):
+    proc = _run_python_with_broken_torch(
+        tmp_path,
+        '-m',
+        'minicnn.cli',
+        'train-flex',
+        '--config',
+        'configs/flex_cnn.yaml',
+    )
+
+    assert proc.returncode == 2
+    assert 'could not import PyTorch from this environment' in proc.stdout
+    assert 'broken torch install for test' in proc.stdout
+    assert 'Traceback' not in proc.stderr
+
+
+def test_cli_reports_invalid_override_without_traceback(tmp_path):
+    proc = _run_python_with_sitecustomize(
+        tmp_path,
+        '',
+        '-m',
+        'minicnn.cli',
+        'validate-dual-config',
+        'model.layers.foo=1',
+    )
+
+    assert proc.returncode == 2
+    assert 'Invalid config override' in proc.stdout
+    assert 'model.layers.foo=1' in proc.stdout
+    assert 'must end with a numeric list index' in proc.stdout
+    assert 'Traceback' not in proc.stderr
+
+
+def test_cli_reports_bad_yaml_without_traceback(tmp_path):
+    bad_cfg = tmp_path / 'bad.yaml'
+    bad_cfg.write_text('dataset: [1, 2\n', encoding='utf-8')
+
+    proc = _run_python_with_sitecustomize(
+        tmp_path,
+        '',
+        '-m',
+        'minicnn.cli',
+        'validate-dual-config',
+        '--config',
+        str(bad_cfg),
+    )
+
+    assert proc.returncode == 2
+    assert 'Failed to parse config file' in proc.stdout
+    assert str(bad_cfg) in proc.stdout
+    assert 'Traceback' not in proc.stderr
+
+
+def test_cli_reports_non_mapping_top_level_config_without_traceback(tmp_path):
+    bad_cfg = tmp_path / 'bad-top-level.yaml'
+    bad_cfg.write_text('- just\n- a\n- list\n', encoding='utf-8')
+
+    proc = _run_python_with_sitecustomize(
+        tmp_path,
+        '',
+        '-m',
+        'minicnn.cli',
+        'validate-dual-config',
+        '--config',
+        str(bad_cfg),
+    )
+
+    assert proc.returncode == 2
+    assert 'Failed to parse config file' in proc.stdout
+    assert 'mapping at the top level' in proc.stdout
+    assert 'Traceback' not in proc.stderr
+
+
+def test_cli_reports_cuda_device_unavailable_without_traceback(monkeypatch, tmp_path):
+    from minicnn.cli import main
+    import minicnn.flex.trainer as trainer
+
+    config_path = tmp_path / 'flex_cpu_only.yaml'
+    config_path.write_text(
+        'dataset:\n'
+        '  type: random\n'
+        '  num_samples: 8\n'
+        '  val_samples: 4\n'
+        '  num_classes: 2\n'
+        '  input_shape: [2]\n'
+        'model:\n'
+        '  layers:\n'
+        '    - type: Linear\n'
+        '      in_features: 2\n'
+        '      out_features: 1\n'
+        'loss:\n'
+        '  type: BCEWithLogitsLoss\n'
+        'train:\n'
+        '  epochs: 1\n'
+        '  batch_size: 4\n'
+        '  device: cuda\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(trainer.torch.cuda, 'is_available', lambda: False)
+
+    try:
+        main(['train-flex', '--config', str(config_path)])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:  # pragma: no cover
+        raise AssertionError('expected SystemExit for unavailable CUDA runtime')
+
+
+def test_choose_device_auto_uses_cpu_when_cuda_unavailable(monkeypatch):
+    import minicnn.flex.trainer as trainer
+
+    monkeypatch.setattr(trainer.torch.cuda, 'is_available', lambda: False)
+
+    device = trainer._choose_device('auto')
+
+    assert device.type == 'cpu'
 
 
 def test_create_run_dir_is_unique_even_when_called_back_to_back(tmp_path):

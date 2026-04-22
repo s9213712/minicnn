@@ -118,6 +118,11 @@ minicnn list-dual-components
 Torch-only commands fail with a short CLI dependency message instead of an
 import-time traceback.
 
+Config and override mistakes also fail with a short message and exit code `2`
+instead of a Python traceback. `healthcheck`, `doctor`, and `smoke` emit
+JSON-friendly output. If your PyTorch runtime has no CUDA support,
+`train.device=cuda` fails early and tells you to switch to `auto` or `cpu`.
+
 Built-in config paths such as `configs/flex_cnn.yaml` and
 `configs/dual_backend_cnn.yaml` fall back to project-root-relative resolution,
 so they still work when `minicnn` is launched from outside the repo root.
@@ -296,6 +301,11 @@ minicnn list-dual-components
 
 torch-only 指令現在會輸出簡短的 CLI 依賴訊息，不再在 import 階段直接丟
 traceback。
+
+config 或 override 寫錯時，也會以簡短訊息和 exit code `2` 失敗，而不是吐出
+Python traceback。`healthcheck`、`doctor`、`smoke` 都會輸出
+JSON-friendly 結果；若目前 PyTorch runtime 不支援 CUDA，
+`train.device=cuda` 也會提早失敗並提示改用 `auto` 或 `cpu`。
 
 像 `configs/flex_cnn.yaml`、`configs/dual_backend_cnn.yaml` 這類內建 config
 路徑，必要時會自動以 project root 為基準解析，所以不必強制在 repo root
