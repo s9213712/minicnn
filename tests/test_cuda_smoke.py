@@ -4,6 +4,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SUBPROCESS_ENV = {**os.environ, 'PYTHONPATH': str(REPO_ROOT / 'src')}
@@ -87,3 +89,44 @@ def test_settings_env_overrides(monkeypatch):
     monkeypatch.delenv('MINICNN_RANDOM_CROP_PADDING')
     monkeypatch.delenv('MINICNN_HORIZONTAL_FLIP')
     importlib.reload(settings)
+
+
+def test_settings_repeated_apply_updates_legacy_snapshot():
+    from minicnn.config import settings
+    from minicnn.config.schema import ExperimentConfig
+
+    cfg = ExperimentConfig()
+    cfg.train.batch_size = 16
+    settings.apply_experiment_config(cfg)
+    first_snapshot = dict(settings.legacy_values())
+
+    cfg2 = ExperimentConfig()
+    cfg2.train.batch_size = 32
+    settings.apply_experiment_config(cfg2)
+    second_snapshot = dict(settings.legacy_values())
+
+    assert first_snapshot['BATCH'] == 16
+    assert second_snapshot['BATCH'] == 32
+    assert settings.BATCH == 32
+
+
+def test_settings_summarize_includes_override_provenance(monkeypatch):
+    monkeypatch.setenv('MINICNN_BATCH', '11')
+    from minicnn.config import settings
+
+    importlib.reload(settings)
+
+    assert settings.override_provenance()['BATCH'] == 'MINICNN_BATCH'
+    assert settings.summarize()['override_provenance']['BATCH'] == 'MINICNN_BATCH'
+
+    monkeypatch.delenv('MINICNN_BATCH')
+    importlib.reload(settings)
+
+
+def test_settings_get_arch_requires_apply(monkeypatch):
+    from minicnn.config import settings
+
+    monkeypatch.setattr(settings, '_arch', None)
+
+    with pytest.raises(RuntimeError, match='apply_experiment_config'):
+        settings.get_arch()

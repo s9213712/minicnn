@@ -11,6 +11,7 @@ first four stages so that `train_torch_baseline.py` continues to work unchanged.
 from __future__ import annotations
 
 import os
+from types import MappingProxyType
 from typing import Any
 
 from minicnn.config.parsing import parse_bool
@@ -18,6 +19,8 @@ from .schema import ExperimentConfig
 
 _current_config: ExperimentConfig | None = None
 _arch = None  # CudaNetGeometry, set by apply_experiment_config
+_legacy_values: dict[str, Any] = {}
+_override_provenance: dict[str, str] = {}
 
 
 def _parse_bool(value: str) -> bool:
@@ -48,11 +51,14 @@ _ENV_OVERRIDES = {
 }
 
 
-def _apply_env_overrides(values: dict[str, Any]) -> None:
+def _apply_env_overrides(values: dict[str, Any]) -> dict[str, str]:
+    provenance: dict[str, str] = {}
     for key, (env_name, parser) in _ENV_OVERRIDES.items():
         raw = os.environ.get(env_name)
         if raw not in {None, ""}:
             values[key] = parser(raw)
+            provenance[key] = env_name
+    return provenance
 
 
 def get_arch():
@@ -62,8 +68,18 @@ def get_arch():
     return _arch
 
 
+def legacy_values() -> MappingProxyType[str, Any]:
+    """Read-only snapshot of the legacy module-level settings."""
+    return MappingProxyType(dict(_legacy_values))
+
+
+def override_provenance() -> MappingProxyType[str, str]:
+    """Return which settings keys were overridden by environment variables."""
+    return MappingProxyType(dict(_override_provenance))
+
+
 def apply_experiment_config(cfg: ExperimentConfig) -> None:
-    global _current_config, _arch
+    global _current_config, _arch, _legacy_values, _override_provenance
     _current_config = cfg
 
     from minicnn.training.cuda_arch import CudaNetGeometry
@@ -114,7 +130,7 @@ def apply_experiment_config(cfg: ExperimentConfig) -> None:
         "FC_IN": arch.fc_in,
         "FC_OUT": arch.fc_out,
     }
-    _apply_env_overrides(values)
+    _override_provenance = _apply_env_overrides(values)
 
     # Backward-compat per-stage aliases used by train_torch_baseline.py and others.
     # Named aliases are generated for up to 4 stages; stage counting is 1-based.
@@ -132,6 +148,7 @@ def apply_experiment_config(cfg: ExperimentConfig) -> None:
         if n >= 4:
             break  # only alias up to 4 stages for compat
 
+    _legacy_values = dict(values)
     globals().update(values)
 
 
@@ -142,6 +159,7 @@ def current_config() -> ExperimentConfig | None:
 def summarize() -> dict[str, Any]:
     arch = get_arch()
     return {
+        "mode": "legacy_compatibility_layer",
         "train": {
             "batch_size": BATCH,
             "epochs": EPOCHS,
@@ -173,6 +191,7 @@ def summarize() -> dict[str, Any]:
             "kernel_hw": [KH, KW],
             "fc_in": arch.fc_in,
         },
+        "override_provenance": dict(_override_provenance),
     }
 
 
