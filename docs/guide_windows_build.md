@@ -157,6 +157,24 @@ Treat these as the manual success criteria:
 - both `runtime.cuda_variant=cublas` and `runtime.cuda_variant=handmade` load
   in separate smoke runs
 
+## DLL Usage Code
+
+The repo now includes a direct Python ctypes smoke example for `.dll` loading:
+
+```powershell
+python -u examples\mnist_ctypes\check_native_library.py --variant handmade
+python -u examples\mnist_ctypes\check_native_library.py --path cpp\minimal_cuda_cnn_cublas.dll
+```
+
+For a fuller training-oriented example, use:
+
+```powershell
+python -u examples\mnist_ctypes\train_mnist_so_full_cnn_frame.py --download
+```
+
+The smoke script goes through MiniCNN's own DLL resolver and binding layer,
+checks the required symbols, then performs a GPU upload/download round-trip.
+
 ---
 
 # Windows Native Build（中文）
@@ -311,3 +329,21 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_le
 - 兩個 variant 都匯出 `maxpool_backward_nchw_status`
 - `minicnn validate-dual-config` 與 `minicnn healthcheck` 通過
 - `runtime.cuda_variant=cublas` 與 `runtime.cuda_variant=handmade` 都能各自完成 smoke run
+
+## DLL 使用程式碼
+
+repo 內現在也有可直接跑的 Python ctypes `.dll` smoke example：
+
+```powershell
+python -u examples\mnist_ctypes\check_native_library.py --variant handmade
+python -u examples\mnist_ctypes\check_native_library.py --path cpp\minimal_cuda_cnn_cublas.dll
+```
+
+如果要看帶訓練流程的完整範例，使用：
+
+```powershell
+python -u examples\mnist_ctypes\train_mnist_so_full_cnn_frame.py --download
+```
+
+這個 smoke script 會走 MiniCNN 自己的 DLL resolver 與 binding layer，
+先檢查必要 symbol，再做一次 GPU upload/download round-trip。

@@ -1,8 +1,9 @@
 # Python ctypes Example (MNIST)
 
-This guide shows how to load the native `.so` from Python `ctypes` and run a minimal CNN training loop on MNIST.
+This guide shows how to load the native library (`.so` on Linux, `.dll` on
+Windows) from Python `ctypes` and run a minimal CNN training loop on MNIST.
 
-## Loading the `.so`
+## Loading the Native Library
 
 ```python
 import ctypes
@@ -11,7 +12,8 @@ import numpy as np
 from ctypes import c_float, c_int, c_void_p
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-lib = ctypes.CDLL(os.path.join(ROOT, "cpp", "libminimal_cuda_cnn.so"))
+lib_name = "minimal_cuda_cnn.dll" if os.name == "nt" else "libminimal_cuda_cnn.so"
+lib = ctypes.CDLL(os.path.join(ROOT, "cpp", lib_name))
 
 lib.gpu_malloc.argtypes = [ctypes.c_size_t]
 lib.gpu_malloc.restype = c_void_p
@@ -78,6 +80,9 @@ Softmax cross entropy
 ```
 
 The complete runnable version is in [`examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py`](../examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py) (canonical), and [`legacy/train_mnist_so.py`](../examples/mnist_ctypes/legacy/train_mnist_so.py) (minimal reference). Neither file requires `torchvision`; they parse MNIST IDX gzip files with NumPy and the Python standard library.
+
+For a smaller library-load sanity check, use
+[`examples/mnist_ctypes/check_native_library.py`](../examples/mnist_ctypes/check_native_library.py).
 
 ## Forward Skeleton
 
@@ -168,6 +173,13 @@ make -C cpp
 python3 -u examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py --download
 ```
 
+Windows PowerShell:
+
+```powershell
+python -u examples\mnist_ctypes\check_native_library.py --variant handmade
+python -u examples\mnist_ctypes\train_mnist_so_full_cnn_frame.py --download
+```
+
 Use `--download` on first run to fetch MNIST gzip IDX files into `data/mnist/`.
 
 ## Quick Validation
@@ -180,9 +192,10 @@ cuda-memcheck python3 -u examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py
 
 # Python ctypes 與 MNIST 範例（中文）
 
-本文說明如何用 Python `ctypes` 載入 `.so`，並用 MNIST 示範一個最小 CNN 訓練流程。
+本文說明如何用 Python `ctypes` 載入 native library（Linux 用 `.so`，
+Windows 用 `.dll`），並用 MNIST 示範一個最小 CNN 訓練流程。
 
-## 載入 `.so`
+## 載入 Native Library
 
 參考上方 argtypes 設定。優先使用 status-returning 版本（如 `maxpool_backward_nchw_status`）：成功回傳 `0`，幾何參數錯誤回傳 CUDA error code，讓 Python 可拋出 `ValueError`。
 
@@ -201,6 +214,9 @@ Softmax cross entropy
 ```
 
 完整可執行版本：`examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py`（canonical）與 `legacy/train_mnist_so.py`（最小化版）。不用 `torchvision`，只用 NumPy 與標準函式庫解析 MNIST IDX gzip 檔。
+
+若只想先確認 `.dll`/`.so` 可被載入，直接跑
+`examples/mnist_ctypes/check_native_library.py`。
 
 ## Backward 主要順序
 
@@ -229,3 +245,10 @@ python3 -u examples/mnist_ctypes/train_mnist_so_full_cnn_frame.py --download
 ```
 
 第一次執行若本機沒有 MNIST，使用 `--download` 下載到 `data/mnist/`。
+
+Windows PowerShell：
+
+```powershell
+python -u examples\mnist_ctypes\check_native_library.py --variant handmade
+python -u examples\mnist_ctypes\train_mnist_so_full_cnn_frame.py --download
+```

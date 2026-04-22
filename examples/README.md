@@ -4,6 +4,7 @@ This folder contains small extension examples for the configuration-driven path.
 
 - `custom_block.py`: custom activation and custom block classes usable from YAML via dotted import paths.
 - `mnist_ctypes/`: self-contained MNIST ctypes examples for the handcrafted CUDA shared library.
+  This folder also contains `check_native_library.py` for direct `.so`/`.dll` smoke tests.
 
 Most training examples should start from `templates/` rather than editing Python
 directly. The legacy CUDA and Torch baseline trainers share common loop helpers

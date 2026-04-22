@@ -99,6 +99,20 @@ def test_train_torch_baseline_import_does_not_create_run_dir(tmp_path):
     assert not run_dir.exists()
 
 
+def test_native_library_smoke_example_help():
+    script = REPO_ROOT / 'examples' / 'mnist_ctypes' / 'check_native_library.py'
+    result = subprocess.run(
+        [sys.executable, str(script), '--help'],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=SUBPROCESS_ENV,
+    )
+    assert '--variant' in result.stdout
+    assert '--path' in result.stdout
+    assert 'Smoke-test MiniCNN native CUDA library loading' in result.stdout
+
+
 def test_settings_shape_fields_match_model_geometry():
     from minicnn.config import settings
 

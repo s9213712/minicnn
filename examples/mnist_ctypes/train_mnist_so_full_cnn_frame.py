@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refactored MNIST CNN example using cpp/libminimal_cuda_cnn_handmade.so via ctypes.
+"""Refactored MNIST CNN example using the handcrafted MiniCNN native library via ctypes.
 
 Architecture:
     Input NCHW 1x28x28
@@ -12,7 +12,7 @@ Goals of this version:
 - reusable ConvBlock / DenseLayer
 - dataclass caches instead of tuple-position coupling
 - programmatic shape inference
-- keep the existing .so ABI unchanged
+- keep the existing native ABI unchanged
 - prefer status-returning native wrappers when available while preserving the
   legacy void ABI
 """
@@ -23,6 +23,7 @@ import argparse
 import ctypes
 import gzip
 import json
+import os
 import shutil
 import struct
 import urllib.request
@@ -34,7 +35,9 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_LIB = ROOT / "cpp" / "libminimal_cuda_cnn_handmade.so"
+DEFAULT_LIB = ROOT / "cpp" / (
+    "minimal_cuda_cnn_handmade.dll" if os.name == "nt" else "libminimal_cuda_cnn_handmade.so"
+)
 DEFAULT_DATA = ROOT / "data" / "mnist"
 DEFAULT_RUNS = ROOT / "runs" / "mnist_so_refactor"
 
