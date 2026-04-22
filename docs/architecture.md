@@ -6,23 +6,39 @@ MiniCNN has one broad frontend surface and multiple backend-oriented execution p
 
 | Path | Command | Backend | Purpose |
 |---|---|---|---|
-| flex | `train-flex` | PyTorch | broad experimentation, custom components |
-| dual | `train-dual` | `torch` or `cuda_legacy` | compare one shared config across two backends |
-| autograd | `train-autograd` | NumPy | learning and framework-level experiments |
-| native | `train-native` | `cuda_native` | experimental graph-based backend prototype |
+| flex | `train-flex` | PyTorch | reference implementation and first stop for new features |
+| dual | `train-dual` | `torch` or `cuda_legacy` | compare shared configs against the historical native path |
+| autograd | `train-autograd` | NumPy | correctness oracle and framework-level experiments |
+| native | `train-native` | `cuda_native` | primary native backend direction, still experimental |
+
+## Backend Roles
+
+- `torch/flex` is the reference implementation
+- `cuda_native` is the primary native backend direction
+- `autograd` is the internal correctness oracle
+- `cuda_legacy` is the maintenance-only historical backend
+
+## Feature Rollout Order
+
+Default order for new capability work:
+
+1. `torch/flex`
+2. `autograd` when a correctness reference is useful
+3. `cuda_native`
+4. `cuda_legacy` only for maintenance and compatibility fixes
 
 ## High-Level Layout
 
 ```text
 shared YAML / CLI frontend
         |
-        +--> train-flex -------> torch
+        +--> train-flex -------> torch [REFERENCE]
         |
-        +--> train-dual -------> torch | cuda_legacy
+        +--> train-dual -------> torch | cuda_legacy [HISTORICAL]
         |
-        +--> train-autograd ---> NumPy autograd
+        +--> train-autograd ---> NumPy autograd [ORACLE]
         |
-        +--> train-native -----> cuda_native [EXPERIMENTAL]
+        +--> train-native -----> cuda_native [PRIMARY NATIVE, EXPERIMENTAL]
 ```
 
 ## Training Flow
@@ -55,7 +71,7 @@ model config
 
 ## cuda_native Backend
 
-A staged, modular experimental backend under `src/minicnn/cuda_native/`:
+A staged, modular experimental backend under `src/minicnn/cuda_native/`. This is the main native growth path in the repo:
 
 - `graph.py`, `nodes.py` — graph IR (NativeGraph, Node, TensorSpec)
 - `validators.py`, `shapes.py` — shape inference and legality checks
@@ -77,13 +93,13 @@ See [backend_capabilities.md](backend_capabilities.md) for the full support matr
 ```text
 src/minicnn/
 ├── cli.py                 # public CLI entrypoint
-├── flex/                  # torch/flex frontend: config, builder, trainer, registry, data
+├── flex/                  # torch/flex reference implementation: config, builder, trainer, registry, data
 ├── unified/               # shared-config loader and dispatch to torch/cuda_legacy/cuda_native
-├── training/              # cuda_legacy orchestration and NumPy autograd trainer
+├── training/              # cuda_legacy orchestration and NumPy autograd oracle trainer
 ├── framework/             # healthcheck / diagnostics surface
 ├── compiler/              # tracer and optimizer passes
 ├── runtime/               # runtime graph, executor, memory, profiler
-├── cuda_native/           # experimental graph/planner/numpy-executor backend
+├── cuda_native/           # primary native backend direction: graph/planner/numpy-executor
 ├── nn/                    # NumPy autograd modules and layers
 ├── ops/                   # differentiable NumPy ops
 ├── optim/                 # NumPy-side optimizers
@@ -96,10 +112,10 @@ src/minicnn/
 
 ## Backend Boundaries
 
-- `torch/flex` is the default home for new layer ideas
-- `cuda_legacy` is a narrow backend with validator-enforced limits
-- `autograd` is for learning and tests, not throughput
-- `cuda_native` is a graph-based research prototype, not a drop-in replacement for any stable backend
+- `torch/flex` is the default home for new layer ideas and backend-agnostic feature work
+- `autograd` is the oracle path for deterministic checks and learning, not throughput
+- `cuda_native` is the primary native direction and should absorb future native growth
+- `cuda_legacy` is a narrow historical backend with validator-enforced limits and maintenance-only scope
 - `healthcheck`, `doctor`, and `smoke` are JSON-friendly CLI surfaces for automation
 - those diagnostics also support `--format text` while keeping `json` as the default
 - config and override mistakes fail at the CLI boundary with short exit-code-2 messages instead of Python tracebacks
@@ -139,23 +155,39 @@ MiniCNN 有一個廣泛的前端介面，對應多條以 backend 為導向的執
 
 | 路徑 | 指令 | Backend | 用途 |
 |---|---|---|---|
-| flex | `train-flex` | PyTorch | 廣泛模型實驗、自訂元件 |
-| dual | `train-dual` | `torch` 或 `cuda_legacy` | 同一份 config 跨兩個 backend 比較 |
-| autograd | `train-autograd` | NumPy | 框架學習與實驗 |
-| native | `train-native` | `cuda_native` | 實驗性 graph-based backend prototype |
+| flex | `train-flex` | PyTorch | reference implementation，也是新功能第一站 |
+| dual | `train-dual` | `torch` 或 `cuda_legacy` | 用 shared config 對照歷史 native 路徑 |
+| autograd | `train-autograd` | NumPy | correctness oracle 與框架實驗 |
+| native | `train-native` | `cuda_native` | 主要 native backend 方向，但仍屬實驗性 |
+
+## Backend 角色
+
+- `torch/flex` 是 reference implementation
+- `cuda_native` 是主要 native backend 方向
+- `autograd` 是內部 correctness oracle
+- `cuda_legacy` 是 maintenance-only 的歷史 backend
+
+## 新功能 rollout 順序
+
+新增能力時，預設順序是：
+
+1. `torch/flex`
+2. 若需要 correctness 對照，再補 `autograd`
+3. 再推進 `cuda_native`
+4. `cuda_legacy` 只做維護與相容性修補
 
 ## 高層次架構圖
 
 ```text
 shared YAML / CLI frontend
         |
-        +--> train-flex -------> torch
+        +--> train-flex -------> torch [REFERENCE]
         |
-        +--> train-dual -------> torch | cuda_legacy
+        +--> train-dual -------> torch | cuda_legacy [HISTORICAL]
         |
-        +--> train-autograd ---> NumPy autograd
+        +--> train-autograd ---> NumPy autograd [ORACLE]
         |
-        +--> train-native -----> cuda_native [實驗]
+        +--> train-native -----> cuda_native [PRIMARY NATIVE, 實驗]
 ```
 
 ## 訓練流程
@@ -188,7 +220,7 @@ model config
 
 ## cuda_native Backend
 
-分階段設計的實驗性 backend，位於 `src/minicnn/cuda_native/`：
+分階段設計的實驗性 backend，位於 `src/minicnn/cuda_native/`，也是目前 repo 裡主要的 native 成長方向：
 
 - `graph.py`, `nodes.py` — graph IR（NativeGraph、Node、TensorSpec）
 - `validators.py`, `shapes.py` — shape inference 與合法性檢查
@@ -210,13 +242,13 @@ Capability descriptor 標記為：實驗性、僅支援 sequential graph、numpy
 ```text
 src/minicnn/
 ├── cli.py                 # 公開 CLI 入口
-├── flex/                  # torch/flex 前端：config、builder、trainer、registry、data
+├── flex/                  # torch/flex reference implementation：config、builder、trainer、registry、data
 ├── unified/               # shared-config 載入器，分發至 torch/cuda_legacy/cuda_native
-├── training/              # cuda_legacy orchestration 與 NumPy autograd trainer
+├── training/              # cuda_legacy orchestration 與 NumPy autograd oracle trainer
 ├── framework/             # healthcheck / diagnostics surface
 ├── compiler/              # tracer 與 optimizer pass
 ├── runtime/               # runtime graph、executor、memory、profiler
-├── cuda_native/           # 實驗性 graph/planner/numpy-executor backend
+├── cuda_native/           # 主要 native backend 方向：graph/planner/numpy-executor
 ├── nn/                    # NumPy autograd modules 與 layers
 ├── ops/                   # 可微分 NumPy ops
 ├── optim/                 # NumPy 端 optimizers
@@ -229,10 +261,10 @@ src/minicnn/
 
 ## Backend 邊界
 
-- `torch/flex` 是新層想法的預設家
-- `cuda_legacy` 是有 validator 強制限制的窄 backend
-- `autograd` 用於學習和測試，不追求吞吐量
-- `cuda_native` 是 graph-based 研究 prototype，不是任何穩定 backend 的直接替代品
+- `torch/flex` 是新 layer 想法與 backend-agnostic 功能的預設落點
+- `autograd` 是 deterministic 檢查與學習用途的 oracle 路徑，不追求吞吐量
+- `cuda_native` 是主要 native 成長方向，後續 native 能力應優先長在這裡
+- `cuda_legacy` 是有 validator 強制限制的歷史 backend，定位為 maintenance-only
 - `healthcheck`、`doctor`、`smoke` 目前都是適合 automation 的 JSON-friendly CLI 介面
 - 這些診斷命令也支援 `--format text`，但仍以 `json` 作為預設格式
 - config 或 override 錯誤會在 CLI 邊界以簡短訊息和 exit code 2 失敗，不再直接吐出 Python traceback

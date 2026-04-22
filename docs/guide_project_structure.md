@@ -2,6 +2,13 @@
 
 This document maps the responsibilities of files under `cpp/include`, `cpp/src`, and the Python package. The default training path calls `.so` exports through the flat C ABI via `ctypes`. The C++ layer classes are a secondary API for C++ examples and experiments.
 
+## Backend Role Map
+
+- `src/minicnn/flex/` is the torch reference implementation
+- `src/minicnn/cuda_native/` is the primary native backend direction
+- `src/minicnn/autograd/`, `src/minicnn/nn/`, and `src/minicnn/ops/` form the CPU-side correctness oracle
+- `src/minicnn/training/` and parts of `src/minicnn/core/` keep the historical `cuda_legacy` path running within its maintenance boundary
+
 ## Directory Layout
 
 ```text
@@ -99,14 +106,14 @@ The primary Python/CLI training path uses the flat C ABI and `ctypes`. `network.
 | `src/minicnn/config/parsing.py` | CLI/config scalar parser, strict boolean parser, and dotted-override list-index write helper. |
 | `src/minicnn/core/build.py` | Native CUDA shared library build/check wrapper supporting default, cublas, handmade, and both variants. |
 | `src/minicnn/core/cuda_backend.py` | Lazy `ctypes` loader for the native CUDA library; does not load `.so` on non-CUDA command imports. `reset_library_cache()` clears the cached handle when switching native variants in the same process. |
-| `src/minicnn/cuda_native/` | Experimental native graph/planner/executor backend; has public CLI commands but remains a research prototype. |
+| `src/minicnn/cuda_native/` | Primary native backend direction; public CLI surface exists, but the implementation remains experimental. |
 | `src/minicnn/data/` | CIFAR-10 and MNIST preparation and data loading. |
-| `src/minicnn/flex/` | PyTorch flexible config-driven model builder, registry, and trainer. |
-| `src/minicnn/training/train_cuda.py` | Legacy CUDA CIFAR-10 orchestration: data, epoch, validation, checkpoint, LR reduction, early stop, final test evaluation. |
+| `src/minicnn/flex/` | PyTorch reference implementation: flexible config-driven model builder, registry, and trainer. |
+| `src/minicnn/training/train_cuda.py` | Historical `cuda_legacy` CIFAR-10 orchestration: data, epoch, validation, checkpoint, LR reduction, early stop, final test evaluation. |
 | `src/minicnn/training/cuda_batch.py` | CUDA batch-level forward/loss/backward/update steps; called by `train_cuda.py` to isolate kernel orchestration from training control flow. |
-| `src/minicnn/unified/` | Shared config compiler mapping supported configs to `torch`, `cuda_legacy`, or experimental `cuda_native` backends. |
+| `src/minicnn/unified/` | Shared config compiler mapping supported configs to the torch reference path, the historical `cuda_legacy` path, or the experimental `cuda_native` path. |
 
-## Current Reliability Contracts
+## Current Reliability Guarantees
 
 - `train.init_seed` controls torch/flex model initialization; CUDA legacy and CPU/NumPy autograd use their own seeded init paths.
 - String booleans are parsed strictly: `"false"` and `"0"` do not become true through Python `bool()`.
@@ -122,6 +129,13 @@ The primary Python/CLI training path uses the flat C ABI and `ctypes`. `network.
 # 專案結構說明（中文）
 
 本文整理 `cpp/include`、`cpp/src` 與 Python package 中各檔案的責任。預設訓練流程主要透過 `extern "C"` 匯出的 C API 呼叫 `.so`，C++ layer 類別是 secondary API，供 C++ 端範例與實驗直接使用。
+
+## Backend 角色對照
+
+- `src/minicnn/flex/` 是 torch reference implementation
+- `src/minicnn/cuda_native/` 是主要 native backend 方向
+- `src/minicnn/autograd/`、`src/minicnn/nn/`、`src/minicnn/ops/` 共同形成 CPU 側 correctness oracle
+- `src/minicnn/training/` 與 `src/minicnn/core/` 的部分模組維持歷史 `cuda_legacy` 路徑在維護邊界內可用
 
 ## 目錄結構
 
@@ -218,10 +232,10 @@ minicnn/
 | `src/minicnn/compiler/` | 輕量 MiniCNN IR、config tracer 與 fusion/cleanup pass。 |
 | `src/minicnn/core/build.py` | native CUDA shared library build/check wrapper。 |
 | `src/minicnn/core/cuda_backend.py` | native CUDA library 的 lazy `ctypes` loader；`reset_library_cache()` 供同一 process 切換 native variant 時清掉舊 handle。 |
-| `src/minicnn/cuda_native/` | 實驗性的 native graph/planner/executor backend。 |
+| `src/minicnn/cuda_native/` | 主要 native backend 方向；已有公開 CLI 介面，但實作仍屬實驗性。 |
 | `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 orchestration 入口。 |
 | `src/minicnn/training/cuda_batch.py` | CUDA batch 級 forward/loss/backward/update 步驟。 |
-| `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 `torch`、`cuda_legacy` 或 `cuda_native` backend。 |
+| `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 torch reference 路徑、歷史 `cuda_legacy` 路徑或實驗中的 `cuda_native` 路徑。 |
 
 ## 目前可靠性邊界
 

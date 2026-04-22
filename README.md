@@ -9,12 +9,12 @@
 MiniCNN is a configuration-driven deep learning project for studying the gap
 between a flexible frontend and backend-constrained execution paths.
 
-Today, the repo gives you four ways to work:
+Today, the repo gives you four backend roles:
 
-- `torch` via `train-flex` / `train-dual` for broad model experimentation
-- `cuda_legacy` via `train-dual` for the handcrafted CUDA CIFAR-10 path
-- `autograd` via `train-autograd` for the pure NumPy teaching stack
-- `cuda_native` via `train-native` — experimental graph-based backend (not production-ready)
+- `torch` via `train-flex` / `train-dual` as the broad reference implementation
+- `cuda_native` via `train-native` as the primary native backend direction
+- `autograd` via `train-autograd` as the internal correctness oracle
+- `cuda_legacy` via `train-dual` as the maintenance-only historical CUDA path
 
 ## Why This Exists
 
@@ -34,38 +34,51 @@ MiniCNN is not trying to replace PyTorch.
 
 It is useful when you want one of these:
 
-- a shared YAML/frontend interface that can target different backends
-- a narrow handcrafted CUDA training path with explicit capability limits
-- a small NumPy autograd stack for learning and framework-level experiments
-- a place to prototype a future graph-based native backend without pretending it is already finished
+- a shared YAML/frontend interface that can target different backend roles
+- a broad torch reference path for trying new ideas first
+- a small NumPy autograd stack for correctness checks and framework-level experiments
+- a place to grow a native backend in public without pretending every older path must keep up
 
-## Backend Status
+## Backend Roles
 
-| Backend | Status | Best use |
+| Backend | Role | Current status |
 |---|---|---|
-| `torch` | stable | new models, custom components, fast iteration |
-| `cuda_legacy` | stable but intentionally narrow | handwritten CUDA training on the fixed CIFAR-10 setup |
-| `autograd` | stable educational path | CPU-only learning, deterministic tests, framework experiments |
-| `cuda_native` | experimental research prototype | native graph IR / planner / numpy executor R&D; not production-ready |
+| `torch` | reference implementation | stable, broadest feature surface, first destination for new model work |
+| `cuda_native` | primary native backend | experimental, graph-based, sequential-only, active growth path |
+| `autograd` | correctness oracle | stable, CPU-only, useful for deterministic checks and framework learning |
+| `cuda_legacy` | historical native backend | stable inside a narrow boundary, maintenance-only, not the target for new feature growth |
+
+## Feature Rollout Order
+
+When a new capability is added, the default rollout order is:
+
+1. `torch/flex` first
+2. `autograd` when a correctness reference adds value
+3. `cuda_native` when the native graph path is ready for it
+4. `cuda_legacy` only when maintenance requires it, not as the default expansion target
 
 At a high level:
 
 ```text
-shared YAML / CLI frontend -> torch | cuda_legacy | autograd
+shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
                                \
-                                -> cuda_native [EXPERIMENTAL] (graph IR, planner, numpy executor)
+                                -> cuda_native [PRIMARY NATIVE] (experimental graph IR, planner, numpy executor)
+                               \
+                                -> cuda_legacy [MAINTENANCE ONLY] (historical handwritten CUDA path)
 ```
 
 ## What You Can Run Today
 
 ### `torch`
 
+- reference implementation for new frontend ideas
 - broad `model.layers[]` support through the flex registry
 - custom dotted-path components
 - schedulers, regularization, and richer experimentation workflows
 
 ### `cuda_legacy`
 
+- maintenance-only historical backend
 - handcrafted CUDA / C++ backend in `cpp/`
 - shared-config bridge from `engine.backend=cuda_legacy`
 - strict validation instead of silent fallback
@@ -73,13 +86,14 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 
 ### `autograd`
 
+- internal correctness oracle for CPU-side reference checks
 - pure NumPy reverse-mode autodiff
 - small optimizer/layer stack for learning and tests
 - architecture tracing and CPU inference experiments without torch
 
-### `cuda_native` (Experimental)
+### `cuda_native` (Primary Native Direction, Experimental)
 
-A graph-based backend prototype with:
+The active native growth path in the repo, built as a graph-based backend with:
 
 - explicit graph IR (`graph.py`, `nodes.py`)
 - strict validation (`validators.py`, `shapes.py`)
@@ -100,7 +114,7 @@ Current validated support boundary:
 - scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
 - `train.amp=false`, `train.grad_accum_steps=1`
 
-Backward and training prototypes exist, but the backend is still experimental, sequential-only, and not a replacement for `cuda_legacy`.
+Backward and training prototypes exist, but the backend is still experimental, sequential-only, and not production-ready yet. It is the backend that should grow next; `cuda_legacy` remains a narrow maintenance path.
 
 ```bash
 # Check what cuda_native supports
@@ -330,15 +344,16 @@ The project-level frontend is broader than `cuda_legacy`.
 That distinction matters:
 
 - `torch` is the default place for new model ideas
-- `cuda_legacy` is a constrained backend with a validator and a capability boundary
-- `autograd` is for learning and compact experiments
-- `cuda_native` should grow as a separate backend, not by pretending `cuda_legacy` is infinitely extensible
+- `torch/flex` is the reference implementation and first stop for new features
+- `autograd` is the internal oracle for correctness-oriented checks
+- `cuda_native` is the primary native direction, but still experimental
+- `cuda_legacy` is kept for maintenance inside its validator-enforced boundary, not as the default place for new capability growth
 
 See [docs/backend_capabilities.md](docs/backend_capabilities.md) for the
 support matrix and [docs/generalization_roadmap.md](docs/generalization_roadmap.md)
 for the longer-term direction.
 
-## Config Contract
+## Config Interface
 
 The main shared-config surface is:
 
@@ -407,7 +422,7 @@ Start here:
 - [docs/architecture.md](docs/architecture.md): overall architecture and module map
 - [docs/backend_capabilities.md](docs/backend_capabilities.md): backend support matrix
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md): shared-config routing and backend boundaries
-- [docs/cuda_native.md](docs/cuda_native.md): experimental `cuda_native` guide
+- [docs/cuda_native.md](docs/cuda_native.md): primary native backend guide
 - [docs/custom_components.md](docs/custom_components.md): dotted-path component extension points
 - [docs/model_artifacts.md](docs/model_artifacts.md): checkpoint formats, reuse boundaries, and examples
 - [templates/README.md](templates/README.md): ready-to-edit template configs

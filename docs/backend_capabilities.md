@@ -4,6 +4,24 @@ Read MiniCNN capability by backend, not as one global checklist.
 
 The frontend surface is broader than the narrowest backend. That is expected.
 
+## Backend Roles
+
+| Backend | Role | Practical meaning |
+|---|---|---|
+| `torch/flex` | reference implementation | first destination for new frontend features, broadest stable surface |
+| `cuda_native` | primary native backend | the native path that should grow next, still experimental |
+| `autograd` | correctness oracle | CPU-side reference path for deterministic checks and framework learning |
+| `cuda_legacy` | maintenance-only historical backend | narrow stable path, kept for compatibility and maintenance, not the default feature-expansion target |
+
+## Feature Rollout Policy
+
+Default order for new capability work:
+
+1. `torch/flex`
+2. `autograd` when a correctness reference is useful
+3. `cuda_native`
+4. `cuda_legacy` only for maintenance or compatibility needs
+
 ---
 
 ## What cuda_native Adds Over cuda_legacy (✗ → ✓)
@@ -99,21 +117,21 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 
 ## Torch/Flex
 
-Broadest stable path. Use it for new model ideas, custom Python components, fast iteration, and most experiments that do not specifically need a handcrafted CUDA path.
+Broadest stable path and the repo's reference implementation. Use it for new model ideas, custom Python components, fast iteration, and most experiments that do not specifically need a native backend constraint.
 
 Accepts torch module names beyond the built-in registry through the flex builder fallback to `torch.nn`.
 
 ## CPU/NumPy Autograd
 
-Intentionally educational and CPU-only.
+Intentionally educational, CPU-only, and used as the internal correctness oracle.
 
-Use it for framework learning, deterministic tests, and small experiments without torch dependency.
+Use it for framework learning, deterministic tests, parity checks, and small experiments without torch dependency.
 
 Limitations: Conv2d is much slower than torch; no AMP; no LayerNorm / GroupNorm; no dotted-path custom components.
 
 ## CUDA Legacy
 
-Real training backend, intentionally narrow.
+Historical native backend, intentionally narrow and maintenance-only.
 
 Stable support boundary:
 
@@ -126,9 +144,9 @@ Stable support boundary:
 Use `minicnn validate-dual-config` before running.
 Validation failures now return short CLI messages or JSON payloads instead of raw tracebacks.
 
-## cuda_native (Experimental)
+## cuda_native (Primary Native Direction, Experimental)
 
-Opt-in via `engine.backend=cuda_native` or `train-native`. Not the default. Not a replacement for `cuda_legacy`.
+Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work, but it is still experimental and not production-ready.
 
 Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`.
 
@@ -142,9 +160,7 @@ Validated train-native support boundary:
 
 Unsupported (rejected at validation): `GroupNorm`, `LayerNorm`, `ResidualBlock`.
 
-Note: backward and training prototypes exist, and `BatchNorm2d` now has a
-prototype backward path too. The overall backend remains experimental and not
-production-ready.
+Note: backward and training prototypes exist, and `BatchNorm2d` now has a prototype backward path too. The overall backend remains experimental and not production-ready. New native capability work should usually land here, not in `cuda_legacy`.
 
 Developer tooling (unique to cuda_native):
 
@@ -197,6 +213,24 @@ Debugging order:
 依 backend 閱讀 MiniCNN 的能力範圍，不要把它當成一份全局清單。
 
 前端支援的功能本來就比最窄的 backend 更廣，這是預期中的設計。
+
+## Backend 角色
+
+| Backend | 角色 | 實際意義 |
+|---|---|---|
+| `torch/flex` | reference implementation | 新 frontend 功能的第一站，也是最廣、最穩的路徑 |
+| `cuda_native` | 主要 native backend | 後續 native 能力應優先長在這裡，但目前仍屬實驗性 |
+| `autograd` | correctness oracle | CPU 側的參考路徑，適合 deterministic 檢查與框架學習 |
+| `cuda_legacy` | 歷史維護 backend | 在窄邊界內穩定，但主要用途是相容與維護，不是預設擴充目標 |
+
+## 新功能 rollout 順序
+
+新增能力時，預設順序是：
+
+1. `torch/flex`
+2. 若 correctness 參考有價值，再補 `autograd`
+3. 再推進 `cuda_native`
+4. `cuda_legacy` 只在維護或相容需求下補修
 
 ---
 
@@ -293,21 +327,21 @@ Debugging order:
 
 ## Torch/Flex
 
-最廣泛的穩定路徑。適合新模型想法、自訂 Python 元件、快速迭代，以及大多數不需要手寫 CUDA 的實驗。
+最廣泛的穩定路徑，也是這個 repo 的 reference implementation。適合新模型想法、自訂 Python 元件、快速迭代，以及大多數不需要 native backend 約束的實驗。
 
 透過 flex builder fallback 到 `torch.nn`，可使用 built-in registry 以外的 torch module 名稱。
 
 ## CPU/NumPy Autograd
 
-刻意設計為教學用途，CPU-only。
+刻意維持教學取向、CPU-only，並作為內部 correctness oracle。
 
-適合框架學習、可重現測試，以及不依賴 torch 的小型實驗。
+適合框架學習、可重現測試、對照驗證，以及不依賴 torch 的小型實驗。
 
 限制：Conv2d 比 torch 慢很多；不支援 AMP、LayerNorm、GroupNorm、dotted-path 自訂元件。
 
 ## CUDA Legacy
 
-真正的訓練 backend，刻意維持狹窄。
+歷史 native backend，刻意維持狹窄，定位為 maintenance-only。
 
 穩定支援範圍：
 - 資料集：`cifar10`，input shape `[3, 32, 32]`
@@ -319,9 +353,9 @@ Debugging order:
 訓練前請先執行 `minicnn validate-dual-config`。
 驗證失敗現在會回傳簡短 CLI 訊息或 JSON payload，而不是直接丟出 raw traceback。
 
-## cuda_native（實驗）
+## cuda_native（主要 native 方向，仍屬實驗）
 
-透過 `engine.backend=cuda_native` 或 `train-native` 明確啟用。不是預設 backend，不取代 `cuda_legacy`。
+透過 `engine.backend=cuda_native` 或 `train-native` 明確啟用。這是目前 repo 裡主要的 native 發展方向，但仍不適合正式環境。
 
 目前通過驗證的 train-native 支援範圍：
 
@@ -335,8 +369,7 @@ Debugging order:
 
 驗證時拒絕的 op：`GroupNorm`、`LayerNorm`、`ResidualBlock`。
 
-注意：雖然已有 backward 與 training prototype，且 `BatchNorm2d` 也已有
-prototype 級的 backward，但整體 backend 仍屬實驗性，不是正式訓練後端。
+注意：雖然已有 backward 與 training prototype，且 `BatchNorm2d` 也已有 prototype 級的 backward，但整體 backend 仍屬實驗性，不是正式訓練後端。後續 native 能力通常也應優先長在這裡，而不是回填到 `cuda_legacy`。
 
 開發者工具（cuda_native 獨有）：
 

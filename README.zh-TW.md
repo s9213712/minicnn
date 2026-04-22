@@ -8,12 +8,12 @@
 
 MiniCNN 是一個以組態驅動的深度學習專案，用來研究「同一個前端介面」與「不同 backend 能力邊界」之間的落差。
 
-目前這個 repo 實際提供四條可用路徑：
+目前這個 repo 實際提供四種 backend 角色：
 
-- `torch`：透過 `train-flex` / `train-dual` 做較廣泛的模型實驗
-- `cuda_legacy`：透過 `train-dual` 使用手寫 CUDA 的 CIFAR-10 訓練路徑
-- `autograd`：透過 `train-autograd` 使用純 NumPy 的教學型 autograd stack
-- `cuda_native`：透過 `train-native` 使用實驗性 graph-based backend（非正式）
+- `torch`：透過 `train-flex` / `train-dual` 扮演最廣、最穩的 reference implementation
+- `cuda_native`：透過 `train-native` 扮演主要的 native backend 發展方向
+- `autograd`：透過 `train-autograd` 扮演內部 correctness oracle
+- `cuda_legacy`：透過 `train-dual` 保留手寫 CUDA 的歷史維護路徑
 
 ## 為什麼有這個專案
 
@@ -32,38 +32,51 @@ MiniCNN 不是要取代 PyTorch。
 
 它比較適合用在這些情境：
 
-- 想要一個共用的 YAML 前端介面來切不同 backend
-- 想保留一條能力邊界清楚的手寫 CUDA 訓練路徑
-- 想用小型 NumPy autograd stack 做學習或 framework-level 實驗
-- 想原地孵化未來的 graph-based native backend，但不把未完成的東西包裝成已完成
+- 想要一個共用的 YAML 前端介面來切不同 backend 角色
+- 想先在 torch reference path 驗證新想法
+- 想用小型 NumPy autograd stack 做 correctness 檢查或 framework-level 實驗
+- 想在公開 repo 裡推進 native backend，但不強迫歷史路徑跟著一起膨脹
 
-## Backend 狀態
+## Backend 角色
 
-| Backend | 狀態 | 適合用途 |
+| Backend | 角色 | 目前狀態 |
 |---|---|---|
-| `torch` | 穩定 | 新模型、自訂元件、快速迭代 |
-| `cuda_legacy` | 穩定但刻意狹窄 | 以固定 CIFAR-10 組態為前提的手寫 CUDA 訓練 |
-| `autograd` | 穩定的教學路徑 | CPU-only 學習、可重現測試、小型框架實驗 |
-| `cuda_native` | 實驗性研究 prototype | graph IR / planner / numpy executor 研發，非正式 |
+| `torch` | reference implementation | 穩定，功能最廣，新模型功能優先落這裡 |
+| `cuda_native` | 主要 native backend | 實驗中、graph-based、僅支援 sequential graph，是目前主成長方向 |
+| `autograd` | correctness oracle | 穩定、CPU-only，適合 deterministic 檢查與框架學習 |
+| `cuda_legacy` | 歷史 native backend | 在窄邊界內穩定，但屬 maintenance-only，不是新功能擴充主戰場 |
+
+## 新功能 rollout 順序
+
+新增能力時，預設順序是：
+
+1. 先做 `torch/flex`
+2. 如果 correctness 驗證有價值，再補 `autograd`
+3. 再視情況推進 `cuda_native`
+4. `cuda_legacy` 只做維護必要修補，不作為預設擴充目標
 
 高階來看：
 
 ```text
-shared YAML / CLI frontend -> torch | cuda_legacy | autograd
+shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
                                \
-                                -> cuda_native [實驗] (graph IR, planner, numpy executor)
+                                -> cuda_native [PRIMARY NATIVE] (experimental graph IR, planner, numpy executor)
+                               \
+                                -> cuda_legacy [MAINTENANCE ONLY] (historical handwritten CUDA path)
 ```
 
 ## 目前可以直接跑的東西
 
 ### `torch`
 
+- 新 frontend / layer 想法的 reference implementation
 - 透過 flex registry 支援較廣的 `model.layers[]`
 - 支援 dotted-path custom component
 - 支援較完整的 scheduler、regularization 與實驗流程
 
 ### `cuda_legacy`
 
+- maintenance-only 的歷史 backend
 - `cpp/` 內的手寫 CUDA / C++ backend
 - 由 `engine.backend=cuda_legacy` 的 shared-config bridge 進入
 - 不支援的組合會直接 validation，不做 silent fallback
@@ -71,13 +84,14 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 
 ### `autograd`
 
+- 內部 correctness oracle，方便做 CPU 參考檢查
 - 純 NumPy reverse-mode autodiff
 - 精簡但夠用的 optimizer / layer stack
 - 不依賴 torch 的教學、測試與 CPU inference 實驗
 
-### `cuda_native`（實驗性）
+### `cuda_native`（主要 native 方向，仍屬實驗性）
 
-以 graph-based 架構設計的實驗 backend，包含：
+目前 repo 裡主要的 native backend 成長方向，採 graph-based 架構，包含：
 
 - 明確的 graph IR（`graph.py`, `nodes.py`）
 - 嚴格驗證層（`validators.py`, `shapes.py`）
@@ -98,7 +112,7 @@ shared YAML / CLI frontend -> torch | cuda_legacy | autograd
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
 - `train.amp=false`、`train.grad_accum_steps=1`
 
-雖然已經有 backward 與 training prototype，但這條 backend 仍屬實驗性、只支援 sequential graph，也不取代 `cuda_legacy`。
+雖然已經有 backward 與 training prototype，但這條 backend 仍屬實驗性、只支援 sequential graph，也還不適合正式使用。後續 native 功能應優先往這條線發展；`cuda_legacy` 則維持窄邊界維護。
 
 ```bash
 # 查看 cuda_native 支援能力
@@ -318,9 +332,10 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 這個區別很重要：
 
 - `torch` 是新模型想法的預設家
-- `cuda_legacy` 是有 validator 強制限制的 backend
-- `autograd` 用於學習和精簡實驗
-- `cuda_native` 應該作為獨立 backend 成長，而不是假裝 `cuda_legacy` 能無限延伸
+- `torch/flex` 是 reference implementation，也是新功能第一站
+- `autograd` 是內部 correctness oracle
+- `cuda_native` 是主要 native 方向，但仍屬實驗性
+- `cuda_legacy` 保留在 validator 定義的邊界內做維護，不是新功能預設成長點
 
 完整支援矩陣見 [docs/backend_capabilities.md](docs/backend_capabilities.md)，長期方向見 [docs/generalization_roadmap.md](docs/generalization_roadmap.md)。
 
@@ -392,7 +407,7 @@ model:
 - [docs/architecture.md](docs/architecture.md)：整體架構與模組圖
 - [docs/backend_capabilities.md](docs/backend_capabilities.md)：Backend 支援矩陣
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md)：shared-config routing 與 backend 邊界
-- [docs/cuda_native.md](docs/cuda_native.md)：實驗性 `cuda_native` 指南
+- [docs/cuda_native.md](docs/cuda_native.md)：主要 native backend 指南
 - [docs/custom_components.md](docs/custom_components.md)：dotted-path 元件擴展
 - [docs/model_artifacts.md](docs/model_artifacts.md)：checkpoint 格式、復用邊界與示範
 - [templates/README.md](templates/README.md)：可直接修改的 template config

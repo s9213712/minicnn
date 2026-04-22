@@ -5,8 +5,8 @@ This guide explains how the shared dual-backend config works.
 The stable shared toggles are:
 
 - `engine.backend: torch`
-- `engine.backend: cuda_legacy`
-- `engine.backend: cuda_native` *(experimental)*
+- `engine.backend: cuda_legacy` *(historical maintenance path)*
+- `engine.backend: cuda_native` *(primary native direction, still experimental)*
 
 ## Same Frontend, Different Backend Boundary
 
@@ -16,7 +16,7 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_le
 minicnn train-native --config configs/dual_backend_cnn.yaml   # cuda_native shortcut
 ```
 
-Both commands read the same top-level config shape. Torch can use far more of that frontend surface. `cuda_legacy` and `cuda_native` only accept narrow validated subsets.
+Both commands read the same top-level config shape. Torch is the reference implementation and can use far more of that frontend surface. `cuda_native` is the main native growth path. `cuda_legacy` remains a narrower maintenance-only subset.
 
 ## Validate Before Running
 
@@ -57,7 +57,7 @@ Architecture is described through `model.layers[]`.
 
 The same YAML key exists on all sides, but the accepted semantic surface is different.
 
-## cuda_legacy Contract
+## cuda_legacy Support Boundary
 
 Accepts:
 
@@ -65,7 +65,7 @@ Accepts:
 - exactly: `Conv2d → activation → Conv2d → activation → MaxPool2d → Conv2d → activation → Conv2d → activation → MaxPool2d → Flatten → Linear`
 - activations: `ReLU` or `LeakyReLU`
 
-## cuda_native Contract
+## cuda_native Support Boundary
 
 Accepts:
 
@@ -123,8 +123,8 @@ Add a new op: implement kernel in `kernels.py`, add backward in `backward.py`, r
 穩定的 backend 切換項目：
 
 - `engine.backend: torch`
-- `engine.backend: cuda_legacy`
-- `engine.backend: cuda_native` *(實驗中)*
+- `engine.backend: cuda_legacy` *(歷史維護路徑)*
+- `engine.backend: cuda_native` *(主要 native 方向，但仍屬實驗中)*
 
 ## 相同前端，不同 Backend 邊界
 
@@ -134,7 +134,7 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_le
 minicnn train-native --config configs/dual_backend_cnn.yaml   # cuda_native 快捷方式
 ```
 
-所有指令都讀同一份 config。Torch 能使用最多的前端功能；`cuda_legacy` 和 `cuda_native` 只接受各自驗證過的子集。
+所有指令都讀同一份 config。Torch 是 reference implementation，也能使用最多的前端功能；`cuda_native` 是主要 native 成長方向；`cuda_legacy` 則保留為更窄的維護型子集。
 
 ## 執行前先驗證
 

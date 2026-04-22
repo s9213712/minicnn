@@ -10,7 +10,7 @@ Read these in order if you want the current, operational picture of the repo:
 
 1. [docs/architecture.md](docs/architecture.md) — overall structure, execution paths, and module boundaries
 2. [docs/backend_capabilities.md](docs/backend_capabilities.md) — what each backend really supports
-3. [docs/dual_backend_guide.md](docs/dual_backend_guide.md) — how one shared config maps into `torch`, `cuda_legacy`, and `cuda_native`
+3. [docs/dual_backend_guide.md](docs/dual_backend_guide.md) — how one shared config maps into the reference, native, oracle, and maintenance roles
 
 ## By Task
 
@@ -34,7 +34,7 @@ Read these in order if you want the current, operational picture of the repo:
 - [docs/guide_c_api.md](docs/guide_c_api.md) — exported C API reference
 - [docs/guide_layout_debug.md](docs/guide_layout_debug.md) — layout rules and debugging workflow
 - [docs/guide_windows_build.md](docs/guide_windows_build.md) — unverified Windows build notes
-- [docs/cuda_batchnorm2d_evaluation.md](docs/cuda_batchnorm2d_evaluation.md) — focused note on one unresolved `cuda_legacy` extension area
+- [docs/cuda_batchnorm2d_evaluation.md](docs/cuda_batchnorm2d_evaluation.md) — focused note on one unresolved `cuda_legacy` maintenance area
 
 ### I want Python `ctypes` or C++ embedding examples
 
@@ -43,14 +43,14 @@ Read these in order if you want the current, operational picture of the repo:
 
 ### I want to work on autograd or the broader frontend
 
-- [docs/guide_autograd.md](docs/guide_autograd.md) — NumPy autograd stack and `train-autograd`
+- [docs/guide_autograd.md](docs/guide_autograd.md) — NumPy autograd stack as the internal correctness oracle
 - [docs/guide_feature_expansion.md](docs/guide_feature_expansion.md) — wider feature-surface notes
 - [docs/custom_components.md](docs/custom_components.md) — dotted-path component and dataset extension points
 - [docs/generalization_roadmap.md](docs/generalization_roadmap.md) — how frontend breadth should relate to backend honesty
 
 ### I want to work on `cuda_native`
 
-- [docs/cuda_native.md](docs/cuda_native.md) — full guide to the current experimental backend
+- [docs/cuda_native.md](docs/cuda_native.md) — full guide to the primary native backend direction
 - [docs/cuda_native_phase5_rfc.md](docs/cuda_native_phase5_rfc.md) — future extension RFCs
 - [docs/backend_capabilities.md](docs/backend_capabilities.md) — current validated support boundary
 
@@ -190,10 +190,10 @@ If you are unsure where to go next:
 
 ## Rule Of Thumb
 
-- If you want the broadest stable feature set, use torch/flex.
-- If you want the handwritten CUDA path, stay inside the `cuda_legacy` validator boundary.
-- If you want framework learning without torch, use `train-autograd`.
-- If you want to push native backend generalization, treat `cuda_native` as an experimental backend with a narrow validated support boundary, not as a drop-in stable replacement.
+- Use `torch/flex` as the reference implementation and first stop for new features.
+- Use `train-autograd` when you need a CPU-side correctness oracle or framework-level learning path.
+- Use `cuda_native` when you are pushing the native backend forward; it is the main native growth path, but still experimental.
+- Use `cuda_legacy` only inside its validator boundary and treat it as maintenance-only historical code.
 
 ---
 
@@ -209,7 +209,7 @@ If you are unsure where to go next:
 
 1. [docs/architecture.md](docs/architecture.md) — 整體結構、執行路徑與模組邊界
 2. [docs/backend_capabilities.md](docs/backend_capabilities.md) — 各 backend 真正支援的能力
-3. [docs/dual_backend_guide.md](docs/dual_backend_guide.md) — 同一份 shared config 如何映射到 `torch`、`cuda_legacy`、`cuda_native`
+3. [docs/dual_backend_guide.md](docs/dual_backend_guide.md) — 同一份 shared config 如何映射到 reference、native、oracle、maintenance 這些角色
 
 ## 依任務找文件
 
@@ -233,7 +233,7 @@ If you are unsure where to go next:
 - [docs/guide_c_api.md](docs/guide_c_api.md) — 匯出的 C API 參考
 - [docs/guide_layout_debug.md](docs/guide_layout_debug.md) — layout 規則與 debug 流程
 - [docs/guide_windows_build.md](docs/guide_windows_build.md) — 尚未驗證的 Windows 建置備忘
-- [docs/cuda_batchnorm2d_evaluation.md](docs/cuda_batchnorm2d_evaluation.md) — `cuda_legacy` 尚未完成的 BatchNorm2d 擴充評估
+- [docs/cuda_batchnorm2d_evaluation.md](docs/cuda_batchnorm2d_evaluation.md) — `cuda_legacy` 尚未完成的維護型 BatchNorm2d 評估
 
 ### 我想看 Python `ctypes` 或 C++ embedding 範例
 
@@ -242,14 +242,14 @@ If you are unsure where to go next:
 
 ### 我想處理 autograd 或更廣的 frontend
 
-- [docs/guide_autograd.md](docs/guide_autograd.md) — NumPy autograd stack 與 `train-autograd`
+- [docs/guide_autograd.md](docs/guide_autograd.md) — 作為內部 correctness oracle 的 NumPy autograd stack
 - [docs/guide_feature_expansion.md](docs/guide_feature_expansion.md) — 更廣的 feature surface 說明
 - [docs/custom_components.md](docs/custom_components.md) — dotted-path component / dataset extension points
 - [docs/generalization_roadmap.md](docs/generalization_roadmap.md) — frontend 廣度該如何和 backend 邊界保持誠實
 
 ### 我想處理 `cuda_native`
 
-- [docs/cuda_native.md](docs/cuda_native.md) — 目前實驗性 backend 的完整指南
+- [docs/cuda_native.md](docs/cuda_native.md) — 主要 native backend 方向的完整指南
 - [docs/cuda_native_phase5_rfc.md](docs/cuda_native_phase5_rfc.md) — 後續擴充 RFC
 - [docs/backend_capabilities.md](docs/backend_capabilities.md) — 目前已驗證的支援邊界
 
@@ -381,7 +381,7 @@ Python traceback。`healthcheck`、`doctor`、`smoke`、`validate-*`、
 
 ## 簡單原則
 
-- 想用最廣、最穩定的功能集，優先用 torch/flex。
-- 想走手寫 CUDA 路徑，就留在 `cuda_legacy` validator 定義的邊界內。
-- 想在不依賴 torch 的情況下學習框架行為，用 `train-autograd`。
-- 想推進 native backend 泛化，請把 `cuda_native` 視為實驗性 backend，而不是穩定替代品。
+- `torch/flex` 是 reference implementation，也是新功能的第一站。
+- `train-autograd` 適合當 CPU 側 correctness oracle，也適合框架學習。
+- `cuda_native` 是主要 native 成長方向，但目前仍屬實驗性。
+- `cuda_legacy` 請視為歷史維護路徑，只在 validator 定義的邊界內使用與修補。

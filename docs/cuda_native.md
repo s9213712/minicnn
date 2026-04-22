@@ -1,8 +1,10 @@
 # cuda_native Backend
 
-`cuda_native` is an experimental graph-based backend for MiniCNN.
+`cuda_native` is MiniCNN's primary native backend direction.
 
-It is **not** a replacement for `cuda_legacy` and is **not** production-ready. It is a research prototype for graph IR, explicit memory planning, and backend-extensibility work.
+It is still experimental and not production-ready. The purpose of this backend
+is to grow the native graph/planner/executor stack in public, while
+`cuda_legacy` remains the narrow maintenance-only historical path.
 
 ## What cuda_native Is
 
@@ -21,7 +23,6 @@ A staged, modular backend structured in layers:
 
 ## What cuda_native Is Not
 
-- Not a replacement for `cuda_legacy`
 - Not a production training backend
 - Not backed by real CUDA kernels (uses numpy reference implementations)
 - Not general-purpose (sequential graphs only, no branching)
@@ -79,6 +80,7 @@ Validated `train-native` support boundary today:
 
 | | cuda_legacy | cuda_native |
 |---|---|---|
+| Role | maintenance-only historical backend | primary native backend direction |
 | Kernel type | Real CUDA / cuBLAS | NumPy reference |
 | Graph | Fixed handcrafted pipeline | Explicit graph IR |
 | Validation | Strict boundary check | Graph-level shape and op check |
@@ -217,9 +219,11 @@ Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 
 # cuda_native Backend（中文）
 
-`cuda_native` 是 MiniCNN 的一個實驗性 graph-based backend。
+`cuda_native` 是 MiniCNN 目前主要的 native backend 方向。
 
-它**不是** `cuda_legacy` 的替代品，也**不適合**正式環境使用。它是一個用於研究 graph IR、顯式記憶體規劃和 backend 擴展性的 prototype。
+它目前仍屬實驗性，也**不適合**正式環境使用。這條 backend 的目的是把
+native graph/planner/executor 能力公開地逐步長出來；`cuda_legacy`
+則維持為窄邊界的歷史維護路徑。
 
 ## cuda_native 是什麼
 
@@ -238,7 +242,6 @@ Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 
 ## cuda_native 不是什麼
 
-- 不是 `cuda_legacy` 的替代品
 - 不是正式環境的訓練 backend
 - 不使用真正的 CUDA kernel（使用 numpy 參考實作）
 - 不支援通用 graph（僅限 sequential graph，不支援 branching）
@@ -296,6 +299,7 @@ Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 
 | | cuda_legacy | cuda_native |
 |---|---|---|
+| 角色 | 歷史維護 backend | 主要 native backend 方向 |
 | Kernel 類型 | 真正 CUDA / cuBLAS | NumPy 參考實作 |
 | Graph | 固定手寫流水線 | 顯式 graph IR |
 | 驗證 | 嚴格邊界檢查 | Graph 層級 shape 與 op 檢查 |
