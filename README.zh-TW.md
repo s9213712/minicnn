@@ -169,7 +169,7 @@ config、跑一次小型 compiler trace，並驗證 `cuda_legacy` 與
 
 ## 最小依賴矩陣
 
-| 指令 / 功能 | 需要 PyTorch | 需要 native `.so` | 需要 CIFAR-10 data |
+| 指令 / 功能 | 需要 PyTorch | 需要 native library（`.so`/`.dll`） | 需要 CIFAR-10 data |
 |---|---:|---:|---:|
 | `minicnn --help` | 否 | 否 | 否 |
 | `minicnn validate-dual-config` | 否 | 否 | 否 |
@@ -239,7 +239,18 @@ cpp/libminimal_cuda_cnn_cublas.so
 cpp/libminimal_cuda_cnn_handmade.so
 ```
 
-native library 採 lazy-load，所以像 `minicnn --help`、`prepare-data`、`validate-dual-config`、以及 torch-only 執行都不需要先編好 `.so`。
+native library 採 lazy-load，所以像 `minicnn --help`、`prepare-data`、
+`validate-dual-config`、以及 torch-only 執行都不需要先編好 `.so`。
+
+Windows 路徑請看已手動驗證的
+[docs/guide_windows_build.md](docs/guide_windows_build.md)。目前記錄下來的
+腳本流程會把 DLL 輸出到 `cpp\Release\`。
+
+如果只想先確認 ctypes 載入是否正常，可直接跑：
+
+```bash
+python3 -u examples/mnist_ctypes/check_native_library.py --variant handmade
+```
 
 ## 準備資料
 
@@ -279,6 +290,13 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
 
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=handmade
+```
+
+Windows 使用者若想先驗證 DLL 可載入，再開始訓練，可直接跑：
+
+```powershell
+python -u examples\mnist_ctypes\check_native_library.py --variant handmade
+python -u examples\mnist_ctypes\check_native_library.py --path cpp\minimal_cuda_cnn_cublas.dll
 ```
 
 訓練 NumPy autograd 路徑：

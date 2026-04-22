@@ -172,7 +172,7 @@ both the `cuda_legacy` and `cuda_native` config validation boundaries.
 
 ## Minimum Dependency Matrix
 
-| Command / feature | PyTorch | native `.so` | CIFAR-10 data |
+| Command / feature | PyTorch | native library (`.so`/`.dll`) | CIFAR-10 data |
 |---|---:|---:|---:|
 | `minicnn --help` | no | no | no |
 | `minicnn validate-dual-config` | no | no | no |
@@ -251,6 +251,16 @@ The native library is lazy-loaded, so commands such as `minicnn --help`,
 `prepare-data`, `validate-dual-config`, and torch-only runs do not require a
 built `.so`.
 
+For the manually validated Windows path, see
+[docs/guide_windows_build.md](docs/guide_windows_build.md). The recorded helper
+workflow emits DLLs under `cpp\Release\`.
+
+For a direct ctypes load check before training, use:
+
+```bash
+python3 -u examples/mnist_ctypes/check_native_library.py --variant handmade
+```
+
 ## Prepare Data
 
 Download CIFAR-10 for the handcrafted CUDA path:
@@ -290,6 +300,13 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
 
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=handmade
+```
+
+Windows users can verify a built DLL directly before training:
+
+```powershell
+python -u examples\mnist_ctypes\check_native_library.py --variant handmade
+python -u examples\mnist_ctypes\check_native_library.py --path cpp\minimal_cuda_cnn_cublas.dll
 ```
 
 Train the NumPy autograd path:

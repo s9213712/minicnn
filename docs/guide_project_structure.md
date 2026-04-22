@@ -1,6 +1,6 @@
 # Project Structure Reference
 
-This document maps the responsibilities of files under `cpp/include`, `cpp/src`, and the Python package. The default training path calls `.so` exports through the flat C ABI via `ctypes`. The C++ layer classes are a secondary API for C++ examples and experiments.
+This document maps the responsibilities of files under `cpp/include`, `cpp/src`, and the Python package. The default training path calls native-library exports (`.so` on Linux, `.dll` on Windows) through the flat C ABI via `ctypes`. The C++ layer classes are a secondary API for C++ examples and experiments.
 
 ## Backend Role Map
 
@@ -60,7 +60,9 @@ minicnn/
 └── docs/
 ```
 
-`data/cifar-10-batches-py/`, `cpp/*.so`, `artifacts/models/*`, `__pycache__/`, `.pytest_cache/`, and other runtime artifacts are local files not tracked in Git.
+`data/cifar-10-batches-py/`, `cpp/*.so`, `cpp/*.dll`, `cpp/*.lib`,
+`cpp/Release/*`, `artifacts/models/*`, `__pycache__/`, `.pytest_cache/`, and
+other runtime artifacts are local files not tracked in Git.
 
 ## include
 
@@ -105,7 +107,7 @@ The primary Python/CLI training path uses the flat C ABI and `ctypes`. `network.
 | `src/minicnn/compiler/` | Lightweight MiniCNN IR, config tracer, and fusion/cleanup passes; `compile` command currently stops at IR summary without an independent lowering stage. |
 | `src/minicnn/config/parsing.py` | CLI/config scalar parser, strict boolean parser, and dotted-override list-index write helper. |
 | `src/minicnn/core/build.py` | Native CUDA shared library build/check wrapper supporting default, cublas, handmade, and both variants. |
-| `src/minicnn/core/cuda_backend.py` | Lazy `ctypes` loader for the native CUDA library; does not load `.so` on non-CUDA command imports. `reset_library_cache()` clears the cached handle when switching native variants in the same process. |
+| `src/minicnn/core/cuda_backend.py` | Lazy `ctypes` loader for the native CUDA library; does not load `.so`/`.dll` on non-CUDA command imports. `reset_library_cache()` clears the cached handle when switching native variants in the same process. |
 | `src/minicnn/cuda_native/` | Primary native backend direction; public CLI surface exists, but the implementation remains experimental. |
 | `src/minicnn/data/` | CIFAR-10 and MNIST preparation and data loading. |
 | `src/minicnn/flex/` | PyTorch reference implementation: flexible config-driven model builder, registry, and trainer. |
@@ -128,7 +130,7 @@ The primary Python/CLI training path uses the flat C ABI and `ctypes`. `network.
 
 # 專案結構說明（中文）
 
-本文整理 `cpp/include`、`cpp/src` 與 Python package 中各檔案的責任。預設訓練流程主要透過 `extern "C"` 匯出的 C API 呼叫 `.so`，C++ layer 類別是 secondary API，供 C++ 端範例與實驗直接使用。
+本文整理 `cpp/include`、`cpp/src` 與 Python package 中各檔案的責任。預設訓練流程主要透過 `extern "C"` 匯出的 C API 呼叫 native library（Linux 用 `.so`，Windows 用 `.dll`），C++ layer 類別是 secondary API，供 C++ 端範例與實驗直接使用。
 
 ## Backend 角色對照
 
@@ -188,7 +190,9 @@ minicnn/
 └── docs/
 ```
 
-`data/cifar-10-batches-py/`、`cpp/*.so`、`artifacts/models/*`、`__pycache__/`、`.pytest_cache/` 與其他 runtime artifacts 都是本機檔案，不屬於 Git 版本內容。
+`data/cifar-10-batches-py/`、`cpp/*.so`、`cpp/*.dll`、`cpp/*.lib`、
+`cpp/Release/*`、`artifacts/models/*`、`__pycache__/`、`.pytest_cache/`
+與其他 runtime artifacts 都是本機檔案，不屬於 Git 版本內容。
 
 ## include
 
@@ -231,7 +235,7 @@ minicnn/
 | `src/minicnn/autograd/` | `Tensor`、`Parameter`、`Function`、`Context`、`no_grad` 與 `backward` compatibility namespace。 |
 | `src/minicnn/compiler/` | 輕量 MiniCNN IR、config tracer 與 fusion/cleanup pass。 |
 | `src/minicnn/core/build.py` | native CUDA shared library build/check wrapper。 |
-| `src/minicnn/core/cuda_backend.py` | native CUDA library 的 lazy `ctypes` loader；`reset_library_cache()` 供同一 process 切換 native variant 時清掉舊 handle。 |
+| `src/minicnn/core/cuda_backend.py` | native CUDA library 的 lazy `ctypes` loader；非 CUDA 指令 import 時不會主動載入 `.so`/`.dll`，`reset_library_cache()` 供同一 process 切換 native variant 時清掉舊 handle。 |
 | `src/minicnn/cuda_native/` | 主要 native backend 方向；已有公開 CLI 介面，但實作仍屬實驗性。 |
 | `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 orchestration 入口。 |
 | `src/minicnn/training/cuda_batch.py` | CUDA batch 級 forward/loss/backward/update 步驟。 |

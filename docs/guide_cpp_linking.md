@@ -1,12 +1,15 @@
 # C++ Linking Guide
 
-This guide explains how to link `cpp/libminimal_cuda_cnn.so` from a C++ program.
+This guide explains how to link the MiniCNN native library from a C++ program.
+
+- Linux: `cpp/libminimal_cuda_cnn.so`
+- Windows: `cpp\\Release\\minimal_cuda_cnn.lib` with the matching `.dll`
 
 The default training path uses Python `ctypes` against the flat C ABI. `network.h`, `dense_layer.h`, and `tensor.h` provide a secondary C++ API for C++ examples and experiments. For CIFAR-10 training, prefer `minicnn train-dual`.
 
 ## Basic Approach
 
-Because the `.so` exports a C ABI, C++ programs can declare the same prototypes directly:
+Because the native library exports a C ABI, C++ programs can declare the same prototypes directly:
 
 ```cpp
 extern "C" {
@@ -106,6 +109,13 @@ Run:
 ./examples/mnist_infer_demo
 ```
 
+Windows note:
+
+- build the DLL/import-library pair with `scripts/build_windows_native.ps1`
+- link against the generated `.lib`
+- keep the matching `.dll` beside the executable or on `PATH`
+- see [guide_windows_build.md](guide_windows_build.md) for the validated build flow
+
 ## Full C++ Training Flow
 
 For a complete C++ training loop, the sequence mirrors Python:
@@ -152,7 +162,7 @@ Set `weight_decay=0.0` for bias updates.
 
 ## Runtime Library Path
 
-The most common linking problem is the runtime failing to find the `.so`. Three options:
+On Linux, the most common linking problem is the runtime failing to find the `.so`. Three options:
 
 ```bash
 # Option 1: embed rpath at compile time
@@ -166,15 +176,18 @@ export LD_LIBRARY_PATH="$PWD/cpp:${LD_LIBRARY_PATH:-}"
 
 ---
 
-# C++ 連結與使用 `.so`（中文）
+# C++ 連結與使用 Native Library（中文）
 
-本文說明如何從 C++ 程式連結 `cpp/libminimal_cuda_cnn.so`。
+本文說明如何從 C++ 程式連結 MiniCNN 的 native library。
+
+- Linux：`cpp/libminimal_cuda_cnn.so`
+- Windows：`cpp\\Release\\minimal_cuda_cnn.lib`，搭配對應 `.dll`
 
 預設訓練流程走 Python `ctypes` 呼叫 flat C ABI。`network.h`、`dense_layer.h`、`tensor.h` 提供的是 secondary C++ API，適合 C++ 範例與實驗；若只是要訓練 CIFAR-10，優先使用 `minicnn train-dual`。
 
 ## 基本方式
 
-因為 `.so` 主要匯出 C ABI，C++ 程式可直接宣告相同 prototype（參考上方 `extern "C"` 區塊）。
+因為 native library 主要匯出 C ABI，C++ 程式可直接宣告相同 prototype（參考上方 `extern "C"` 區塊）。
 
 有 status-returning 版本時，優先使用它（如 `maxpool_backward_nchw_status`），方便在 host 端做錯誤處理。
 
@@ -192,6 +205,13 @@ g++ examples/mnist_infer_demo.cpp \
   -o examples/mnist_infer_demo
 ```
 
+Windows 補充：
+
+- 先用 `scripts/build_windows_native.ps1` 產出 `.dll` / `.lib`
+- 連結時使用對應 `.lib`
+- 執行時把配對的 `.dll` 放在可搜尋的位置
+- 具體建置流程請看 [guide_windows_build.md](guide_windows_build.md)
+
 ## C++ 完整訓練流程
 
 流程和 Python 相同：
@@ -208,7 +228,7 @@ Python 端的 CIFAR-10 CUDA orchestration 集中在 `src/minicnn/training/cuda_b
 
 ## 注意事項
 
-連結時最常見問題是 runtime 找不到 `.so`。三種解法：
+在 Linux 上，連結時最常見問題是 runtime 找不到 `.so`。三種解法：
 
 ```bash
 # 方式 1：編譯時寫 rpath

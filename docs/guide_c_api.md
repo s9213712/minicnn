@@ -1,6 +1,14 @@
 # C API Reference
 
-`libminimal_cuda_cnn.so` exports functions through `extern "C"`, making them accessible from Python `ctypes`, C/C++, or any FFI.
+The native library exports functions through `extern "C"`, making them
+accessible from Python `ctypes`, C/C++, or any FFI.
+
+- Linux: `cpp/libminimal_cuda_cnn.so`
+- Windows: `cpp/minimal_cuda_cnn.dll` or the variant-specific DLL names
+
+For the manually validated Windows build path, see
+[guide_windows_build.md](guide_windows_build.md). For a direct Python load
+check, use [`../examples/mnist_ctypes/check_native_library.py`](../examples/mnist_ctypes/check_native_library.py).
 
 ## GPU Memory
 
@@ -167,7 +175,15 @@ correct_count = number of argmax(logits) == label
 
 # C API 參考（中文）
 
-`libminimal_cuda_cnn.so` 主要透過 `extern "C"` 匯出函式，適合 Python `ctypes`、C/C++ 或其他 FFI 呼叫。
+native library 主要透過 `extern "C"` 匯出函式，適合 Python `ctypes`、C/C++
+或其他 FFI 呼叫。
+
+- Linux：`cpp/libminimal_cuda_cnn.so`
+- Windows：`cpp/minimal_cuda_cnn.dll`，或各 variant 對應的 DLL 檔名
+
+Windows 的手動驗證建置流程請看
+[guide_windows_build.md](guide_windows_build.md)；若只想先確認 Python 載入，
+可直接跑 [`../examples/mnist_ctypes/check_native_library.py`](../examples/mnist_ctypes/check_native_library.py)。
 
 ## GPU 記憶體
 
