@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+
+def _checkpoint_fingerprint(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _array_summary(value: Any) -> dict[str, Any]:
@@ -27,6 +36,33 @@ def _detect_npz_kind(path: Path, keys: list[str]) -> str:
     return 'numpy_state_dict'
 
 
+def _torch_tool_import_error(command_name: str, *, action: str) -> RuntimeError:
+    try:
+        import torch
+        return torch  # type: ignore[return-value]
+    except ModuleNotFoundError as exc:
+        if exc.name == 'torch':
+            raise RuntimeError(
+                f'{command_name} requires PyTorch to {action}.\n'
+                'Install it with:\n'
+                '  pip install -e .[torch]'
+            ) from exc
+        raise RuntimeError(
+            f'{command_name} could not import PyTorch because a dependency is missing: {exc.name}.\n'
+            'Reinstall PyTorch for this environment.\n'
+            'Install it with:\n'
+            '  pip install -e .[torch]'
+        ) from exc
+    except Exception as exc:
+        raise RuntimeError(
+            f'{command_name} could not import PyTorch from this environment.\n'
+            f'Import failed with: {exc.__class__.__name__}: {exc}\n'
+            'Reinstall PyTorch or use a no-torch workflow.\n'
+            'Install it with:\n'
+            '  pip install -e .[torch]'
+        ) from exc
+
+
 def inspect_npz_checkpoint(path: str | Path) -> dict[str, Any]:
     path_obj = Path(path)
     with np.load(path_obj) as ckpt:
@@ -42,27 +78,32 @@ def inspect_npz_checkpoint(path: str | Path) -> dict[str, Any]:
         'cuda_native_param_dict': ['cuda_native'],
         'numpy_state_dict': ['numpy_state_dict_only'],
     }.get(kind, ['unknown'])
+    warnings: list[str] = []
+    if kind == 'cuda_legacy_checkpoint':
+        warnings.append(
+            'This checkpoint is tied to the handcrafted cuda_legacy runtime schema and cannot be exported directly to torch.'
+        )
+    elif kind == 'numpy_state_dict':
+        warnings.append(
+            'This NPZ file does not match a recognized MiniCNN training artifact schema.'
+        )
     return {
+        'schema_version': 1,
         'path': str(path_obj),
         'format': 'npz',
         'kind': kind,
+        'fingerprint': _checkpoint_fingerprint(path_obj),
         'compatible_backends': compatibility,
         'keys': keys,
         'num_keys': len(keys),
         'preview': preview,
+        'warnings': warnings,
     }
 
 
 def inspect_torch_checkpoint(path: str | Path) -> dict[str, Any]:
     path_obj = Path(path)
-    try:
-        import torch
-    except Exception as exc:  # pragma: no cover - exercised via CLI subprocess
-        raise RuntimeError(
-            'inspect-checkpoint requires PyTorch to read .pt/.pth files.\n'
-            'Install it with:\n'
-            '  pip install -e .[torch]'
-        ) from exc
+    torch = _torch_tool_import_error('inspect-checkpoint', action='read .pt/.pth files')
 
     try:
         payload = torch.load(path_obj, map_location='cpu', weights_only=True)
@@ -70,12 +111,18 @@ def inspect_torch_checkpoint(path: str | Path) -> dict[str, Any]:
         payload = torch.load(path_obj, map_location='cpu')
     if not isinstance(payload, dict):
         return {
+            'schema_version': 1,
             'path': str(path_obj),
             'format': 'torch_pickle',
             'kind': 'unknown_torch_payload',
+            'fingerprint': _checkpoint_fingerprint(path_obj),
+            'compatible_backends': [],
             'top_level_type': type(payload).__name__,
+            'preview': {},
+            'warnings': ['Torch payload is not a dictionary; inspection is limited.'],
         }
     model_state = payload.get('model_state')
+    warnings: list[str] = []
     if isinstance(model_state, dict):
         state_keys = sorted(model_state.keys())
         preview = {
@@ -85,15 +132,19 @@ def inspect_torch_checkpoint(path: str | Path) -> dict[str, Any]:
     else:
         state_keys = []
         preview = {}
+        warnings.append("Torch checkpoint does not contain a 'model_state' dictionary.")
     return {
+        'schema_version': 1,
         'path': str(path_obj),
         'format': 'pt',
         'kind': 'torch_state_dict_checkpoint',
+        'fingerprint': _checkpoint_fingerprint(path_obj),
         'compatible_backends': ['torch', 'train-flex', 'train-dual(engine.backend=torch)'],
         'top_level_keys': sorted(payload.keys()),
         'state_keys': state_keys,
         'num_state_keys': len(state_keys),
         'preview': preview,
+        'warnings': warnings,
     }
 
 
@@ -113,23 +164,13 @@ def inspect_checkpoint(path: str | Path) -> dict[str, Any]:
 
 
 def _load_config_for_export(config_path: str | Path) -> dict[str, Any]:
-    import yaml
+    from minicnn.flex.config import load_flex_config
 
-    cfg = yaml.safe_load(Path(config_path).read_text(encoding='utf-8')) or {}
-    if not isinstance(cfg, dict):
-        raise TypeError('Config file must contain a mapping at the top level')
-    return cfg
+    return load_flex_config(config_path)
 
 
 def _build_torch_model_for_export(config_path: str | Path):
-    try:
-        import torch
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError(
-            'export-torch-checkpoint requires PyTorch.\n'
-            'Install it with:\n'
-            '  pip install -e .[torch]'
-        ) from exc
+    torch = _torch_tool_import_error('export-torch-checkpoint', action='export MiniCNN checkpoints to torch')
 
     from minicnn.flex.builder import build_model
 
@@ -154,6 +195,8 @@ def _export_autograd_npz_to_torch(
     converted: dict[str, Any] = {}
     defaulted: list[str] = []
     missing: list[str] = []
+    transposed: list[str] = []
+    consumed_source_keys: set[str] = set()
 
     for key, target_tensor in target_state.items():
         if key in arrays:
@@ -161,12 +204,14 @@ def _export_autograd_npz_to_torch(
             # autograd Linear stores weights as (in_features, out_features)
             if arr.ndim == 2 and tuple(arr.shape[::-1]) == tuple(target_tensor.shape):
                 arr = arr.T
+                transposed.append(key)
             if tuple(arr.shape) != tuple(target_tensor.shape):
                 raise ValueError(
                     f'Cannot export autograd checkpoint: key {key!r} has shape {tuple(arr.shape)} '
                     f'but torch model expects {tuple(target_tensor.shape)}'
                 )
             converted[key] = torch.from_numpy(np.asarray(arr)).to(dtype=target_tensor.dtype)
+            consumed_source_keys.add(key)
         elif key.endswith('running_mean'):
             converted[key] = torch.zeros_like(target_tensor)
             defaulted.append(key)
@@ -187,6 +232,12 @@ def _export_autograd_npz_to_torch(
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
+    conversion_report = {
+        'transposed_keys': transposed,
+        'defaulted_keys': defaulted,
+        'skipped_source_keys': sorted(set(arrays) - consumed_source_keys),
+        'source_checkpoint_fingerprint': _checkpoint_fingerprint(checkpoint_path),
+    }
     torch.save({
         'model_state': converted,
         'source_format': 'autograd_state_dict',
@@ -194,6 +245,7 @@ def _export_autograd_npz_to_torch(
         'config_path': str(config_path),
         'defaulted_keys': defaulted,
         'backend_hint': 'torch',
+        'conversion_report': conversion_report,
     }, output)
     return {
         'ok': True,
@@ -202,6 +254,7 @@ def _export_autograd_npz_to_torch(
         'defaulted_keys': defaulted,
         'num_keys': len(converted),
         'model_layers': [layer.get('type') for layer in cfg.get('model', {}).get('layers', [])],
+        'conversion_report': conversion_report,
     }
 
 
@@ -219,6 +272,7 @@ def _export_cuda_native_npz_to_torch(
     converted: dict[str, Any] = {}
     missing: list[str] = []
     defaulted: list[str] = []
+    consumed_source_keys: set[str] = set()
 
     def source_key(idx: int, suffix: str) -> str:
         op = str(layers[idx]['type']).lower()
@@ -263,6 +317,7 @@ def _export_cuda_native_npz_to_torch(
                 f'but torch model expects {tuple(target_tensor.shape)} for {key!r}'
             )
         converted[key] = torch.from_numpy(np.asarray(arr)).to(dtype=target_tensor.dtype)
+        consumed_source_keys.add(src)
 
     if missing:
         raise ValueError(
@@ -272,6 +327,12 @@ def _export_cuda_native_npz_to_torch(
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
+    conversion_report = {
+        'transposed_keys': [],
+        'defaulted_keys': defaulted,
+        'skipped_source_keys': sorted(set(arrays) - consumed_source_keys),
+        'source_checkpoint_fingerprint': _checkpoint_fingerprint(checkpoint_path),
+    }
     torch.save({
         'model_state': converted,
         'source_format': 'cuda_native_param_dict',
@@ -279,6 +340,7 @@ def _export_cuda_native_npz_to_torch(
         'config_path': str(config_path),
         'defaulted_keys': defaulted,
         'backend_hint': 'torch',
+        'conversion_report': conversion_report,
     }, output)
     return {
         'ok': True,
@@ -287,6 +349,7 @@ def _export_cuda_native_npz_to_torch(
         'defaulted_keys': defaulted,
         'num_keys': len(converted),
         'model_layers': [layer.get('type') for layer in cfg.get('model', {}).get('layers', [])],
+        'conversion_report': conversion_report,
     }
 
 

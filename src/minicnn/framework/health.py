@@ -74,7 +74,9 @@ def healthcheck() -> dict[str, object]:
         ),
     ]
     return {
+        'schema_version': 1,
         'status': _summary_status(checks),
+        'summary_status': _summary_status(checks),
         'project_root_exists': PROJECT_ROOT.exists(),
         'data_root_exists': DATA_ROOT.exists(),
         'cpp_root_exists': CPP_ROOT.exists(),
@@ -109,7 +111,9 @@ def doctor() -> dict[str, object]:
         ),
     ]
     return {
+        'schema_version': 1,
         'status': _summary_status(checks),
+        'summary_status': _summary_status(checks),
         'project': {
             'project_root': str(PROJECT_ROOT),
             'project_root_exists': PROJECT_ROOT.exists(),

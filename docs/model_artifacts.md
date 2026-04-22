@@ -39,8 +39,8 @@ minicnn inspect-checkpoint --path artifacts/models/example_autograd_best.npz
 
 What it does:
 
-- `.npz`: lists keys, shapes, dtypes, and a guessed checkpoint kind
-- `.pt` / `.pth`: lists top-level keys and `model_state` keys
+- `.npz`: lists keys, shapes, dtypes, a guessed checkpoint kind, a file fingerprint, and any warnings
+- `.pt` / `.pth`: lists top-level keys, `model_state` keys, a file fingerprint, and any warnings
 
 Notes:
 
@@ -73,6 +73,13 @@ Why `cuda_legacy` is excluded:
 - its checkpoint schema is tied to handcrafted runtime geometry
 - it stores runtime-specific training state, not a frontend-level portable model format
 - a safe export path would need an explicit geometry-to-module conversion layer
+
+Successful exports also include a `conversion_report` with:
+
+- `defaulted_keys`
+- `transposed_keys`
+- `skipped_source_keys`
+- `source_checkpoint_fingerprint`
 
 ## Reuse Examples
 
@@ -207,8 +214,8 @@ minicnn inspect-checkpoint --path artifacts/models/example_autograd_best.npz
 
 它會做的事：
 
-- `.npz`：列出 keys、shape、dtype，以及推測的 checkpoint kind
-- `.pt` / `.pth`：列出 top-level keys 與 `model_state` keys
+- `.npz`：列出 keys、shape、dtype、推測的 checkpoint kind、檔案 fingerprint 與 warnings
+- `.pt` / `.pth`：列出 top-level keys、`model_state` keys、檔案 fingerprint 與 warnings
 
 注意：
 
@@ -241,6 +248,13 @@ minicnn export-torch-checkpoint \
 - 它的 checkpoint schema 綁定手寫 runtime geometry
 - 裡面存的是 runtime-specific training state，不是前端層可攜模型格式
 - 若要安全轉換，需額外實作 geometry-to-module conversion layer
+
+成功匯出時也會附帶 `conversion_report`，內容包含：
+
+- `defaulted_keys`
+- `transposed_keys`
+- `skipped_source_keys`
+- `source_checkpoint_fingerprint`
 
 ## 復用示範
 

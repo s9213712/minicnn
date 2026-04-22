@@ -210,7 +210,9 @@ def test_cli_healthcheck_returns_structured_json(capsys):
 
     assert rc == 0
     assert payload['command'] == 'healthcheck'
+    assert payload['schema_version'] == 1
     assert payload['status'] in {'ok', 'warning', 'error'}
+    assert payload['summary_status'] == payload['status']
     assert isinstance(payload['checks'], list)
     assert 'flex_registries' in payload
     assert 'warnings' in payload
@@ -491,8 +493,11 @@ def test_cli_inspect_checkpoint_reports_npz_schema(capsys, tmp_path):
     payload = json.loads(capsys.readouterr().out)
 
     assert rc == 0
+    assert payload['schema_version'] == 1
     assert payload['format'] == 'npz'
     assert payload['kind'] in {'autograd_state_dict', 'numpy_state_dict'}
+    assert 'fingerprint' in payload
+    assert isinstance(payload['warnings'], list)
     assert payload['num_keys'] == 2
     assert payload['preview']['layer0_weight']['shape'] == [4, 4]
 
@@ -536,8 +541,26 @@ def test_cli_inspect_checkpoint_reports_missing_torch_for_pt_without_traceback(t
     assert 'Traceback' not in proc.stderr
 
 
+def test_cli_inspect_checkpoint_reports_broken_torch_import_without_traceback(tmp_path):
+    ckpt = tmp_path / 'demo.pt'
+    ckpt.write_bytes(b'not-a-real-torch-checkpoint')
+
+    proc = _run_python_with_broken_torch(
+        tmp_path,
+        '-m',
+        'minicnn.cli',
+        'inspect-checkpoint',
+        '--path',
+        str(ckpt),
+    )
+
+    assert proc.returncode == 2
+    assert 'inspect-checkpoint could not import PyTorch from this environment.' in proc.stdout
+    assert 'broken torch install for test' in proc.stdout
+    assert 'Traceback' not in proc.stderr
+
+
 def test_export_autograd_checkpoint_to_torch_pt(tmp_path):
-    import json
     import torch
 
     from minicnn.cli import main
@@ -589,6 +612,8 @@ def test_export_autograd_checkpoint_to_torch_pt(tmp_path):
     assert payload['source_format'] == 'autograd_state_dict'
     assert tuple(payload['model_state']['4.weight'].shape) == (2, 256)
     assert payload['model_state']['1.running_mean'].shape[0] == 4
+    assert payload['conversion_report']['defaulted_keys']
+    assert payload['conversion_report']['source_checkpoint_fingerprint']
 
 
 def test_export_cuda_native_checkpoint_to_torch_pt(tmp_path):
@@ -639,6 +664,7 @@ def test_export_cuda_native_checkpoint_to_torch_pt(tmp_path):
     payload = torch.load(out_path, map_location='cpu', weights_only=True)
     assert payload['source_format'] == 'cuda_native_param_dict'
     assert tuple(payload['model_state']['4.weight'].shape) == (2, 256)
+    assert payload['conversion_report']['skipped_source_keys'] == []
 
 
 def test_export_cuda_legacy_checkpoint_is_rejected(capsys, tmp_path):

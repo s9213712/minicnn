@@ -33,7 +33,7 @@ Read these in order if you want the current, operational picture of the repo:
 - [docs/guide_native_build.md](docs/guide_native_build.md) — build the shared library
 - [docs/guide_c_api.md](docs/guide_c_api.md) — exported C API reference
 - [docs/guide_layout_debug.md](docs/guide_layout_debug.md) — layout rules and debugging workflow
-- [docs/guide_windows_build.md](docs/guide_windows_build.md) — Windows-specific build path
+- [docs/guide_windows_build.md](docs/guide_windows_build.md) — unverified Windows build notes
 - [docs/cuda_batchnorm2d_evaluation.md](docs/cuda_batchnorm2d_evaluation.md) — focused note on one unresolved `cuda_legacy` extension area
 
 ### I want Python `ctypes` or C++ embedding examples
@@ -168,6 +168,7 @@ These are reference material, not primary onboarding docs:
 - [docs/comparison_completion_report.md](docs/comparison_completion_report.md)
 - [docs/optimization_progress.md](docs/optimization_progress.md)
 - [docs/benchmark_report_template.md](docs/benchmark_report_template.md)
+- [docs/agent_completion_report.md](docs/agent_completion_report.md)
 
 ## Quick Navigation
 
@@ -224,7 +225,7 @@ If you are unsure where to go next:
 - [docs/guide_native_build.md](docs/guide_native_build.md) — shared library 編譯流程
 - [docs/guide_c_api.md](docs/guide_c_api.md) — 匯出的 C API 參考
 - [docs/guide_layout_debug.md](docs/guide_layout_debug.md) — layout 規則與 debug 流程
-- [docs/guide_windows_build.md](docs/guide_windows_build.md) — Windows 專用建置路徑
+- [docs/guide_windows_build.md](docs/guide_windows_build.md) — 尚未驗證的 Windows 建置備忘
 - [docs/cuda_batchnorm2d_evaluation.md](docs/cuda_batchnorm2d_evaluation.md) — `cuda_legacy` 尚未完成的 BatchNorm2d 擴充評估
 
 ### 我想看 Python `ctypes` 或 C++ embedding 範例
@@ -356,6 +357,7 @@ Python traceback。`healthcheck`、`doctor`、`smoke`、`validate-*`、
 - [docs/comparison_completion_report.md](docs/comparison_completion_report.md)
 - [docs/optimization_progress.md](docs/optimization_progress.md)
 - [docs/benchmark_report_template.md](docs/benchmark_report_template.md)
+- [docs/agent_completion_report.md](docs/agent_completion_report.md)
 
 ## 快速導覽
 

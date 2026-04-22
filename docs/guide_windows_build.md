@@ -1,6 +1,13 @@
 # Windows Native Build
 
-This page documents the planned Windows build path for the native CUDA backend. It is not validated in the current WSL environment, but the repository now includes the CMake settings and PowerShell helper needed to produce Windows `.dll` files.
+> Status: unverified on a real Windows machine.
+>
+> This page is a build note, not a validated support claim. The repository
+> includes the CMake settings and PowerShell helper needed to attempt Windows
+> `.dll` builds, but this path is not covered by CI and has not been confirmed
+> end to end in this environment.
+
+This page documents the planned Windows build path for the native CUDA backend.
 
 ## Requirements
 
@@ -97,7 +104,13 @@ This part should be verified on a Windows machine after compiling the DLLs.
 
 # Windows Native Build（中文）
 
-本文說明 Windows 平台的 native CUDA backend 建置流程。目前在 WSL 環境未實際驗證，但 repo 已包含所需的 CMake 設定與 PowerShell 腳本，可產生 Windows `.dll` 檔案。
+> 狀態：尚未在實際 Windows 機器上驗證。
+>
+> 這份文件目前是建置備忘，不代表已正式支援。repo 內雖然已包含
+> CMake 設定與 PowerShell helper，可嘗試產生 Windows `.dll`，
+> 但這條路徑目前沒有 CI 驗證，也尚未在此環境完成端到端確認。
+
+本文說明 Windows 平台的 native CUDA backend 建置流程。
 
 ## 需求
 
