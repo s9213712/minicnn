@@ -18,6 +18,11 @@ build/
 dist/
 cmake-build-*/
 cpp/build*/
+cpp/Debug/
+cpp/Release/
+cpp/RelWithDebInfo/
+cpp/MinSizeRel/
+scripts/require/
 
 # Runtime outputs
 artifacts/

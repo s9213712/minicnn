@@ -76,8 +76,9 @@ refactoring without changing the user-facing command surface:
   - CUDA backend loading/buffer helpers
 - Documentation has been aligned with the current CLI surface, current backend
   boundaries, artifact locations, and repo-first config behavior.
-- Windows native build notes are now clearly marked as unverified rather than
-  implied support.
+- Windows native build workflow is now documented as a manually validated path
+  instead of an unverified note, including preflight checks, GPU architecture
+  guidance, and script defaults aligned with the recorded Windows run.
 
 ## Still Experimental Or Narrow
 
@@ -85,8 +86,8 @@ refactoring without changing the user-facing command surface:
   prototypes exist, but it is still sequential-only and not production-ready.
 - `cuda_legacy` remains intentionally narrow. It is validated early and should
   not be treated as a broad frontend-compatible backend.
-- Windows native builds are documented, but not verified in CI or on a real
-  Windows validation path within this repo.
+- Windows native builds now have a documented manually validated path, but they
+  are still not covered by CI.
 
 ## Remaining Structural Work
 
@@ -98,7 +99,8 @@ These items are intentionally not closed out in the low-risk cleanup passes:
 - decide whether `training/checkpoints.py` should split GPU buffer containers
   away from checkpoint I/O entirely
 - consider versioning more JSON payloads beyond the current diagnostics layer
-- review `scripts/build_windows_native.ps1` and validate it on a real Windows path
+- decide whether to add CI coverage or a reproducible release checklist for the
+  Windows native build path
 - decide whether the remaining large-structure work should stay on
   `kernel_optimization` or move to a separate deeper-refactor branch
 
@@ -247,7 +249,8 @@ The recent cleanup passes were repeatedly checked with:
   backend loading/buffer helpers。
 - 文件已對齊目前 CLI surface、backend 邊界、artifact 路徑與 repo-first
   config 行為。
-- Windows native build 文件已明確標示為尚未驗證，而不是隱含正式支援。
+- Windows native build workflow 已改為記錄「手動驗證過的路徑」，不再只是
+  尚未驗證的備忘，並補上前置檢查、GPU 架構對照與腳本預設值說明。
 
 ## 仍屬 Experimental 或刻意狹窄
 
@@ -255,8 +258,7 @@ The recent cleanup passes were repeatedly checked with:
   prototype，但仍屬 sequential-only，不能當作 production-ready backend。
 - `cuda_legacy` 仍是刻意收斂的窄邊界 backend，會提早驗證失敗，不應被視為廣泛
   frontend 相容實作。
-- Windows native build 雖已寫出流程，但目前沒有 CI 驗證，也沒有 repo 內可證明
-  的實機驗證紀錄。
+- Windows native build 現在已有手動驗證過的路徑說明，但仍未納入 CI。
 
 ## 尚未處理的結構性工作
 
@@ -267,7 +269,7 @@ The recent cleanup passes were repeatedly checked with:
   目前可 monkeypatch 的測試表面
 - 評估 `training/checkpoints.py` 是否要把 GPU buffer 容器與 checkpoint I/O 完全拆開
 - 規劃比目前 diagnostics 更廣的 JSON payload 版本化策略
-- 在真實 Windows 路徑上驗證 `scripts/build_windows_native.ps1`
+- 評估是否要為 Windows native build 補 CI 覆蓋，或至少整理可重現的 release checklist
 - 決定剩下的大型結構整理是否繼續留在 `kernel_optimization`
 
 ## 程式變更

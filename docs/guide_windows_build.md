@@ -1,44 +1,75 @@
 # Windows Native Build
 
-> Status: unverified on a real Windows machine.
+> Status: manually validated on a real Windows machine.
 >
-> This page is a build note, not a validated support claim. The repository
-> includes the CMake settings and PowerShell helper needed to attempt Windows
-> `.dll` builds, but this path is not covered by CI and has not been confirmed
-> end to end in this environment.
+> This path is still not covered by CI, but the repository now includes a
+> tested manual workflow for building the native CUDA backend as Windows
+> `.dll` files.
 
-This page documents the planned Windows build path for the native CUDA backend.
+This page documents the validated manual Windows build path for the native CUDA
+backend.
 
 ## Requirements
 
 - Windows 10/11
 - NVIDIA display driver with CUDA support
-- Visual Studio 2022 with C++ workload
+- Visual Studio 2019 or 2022 with the C++ workload
 - CMake 3.20 or newer
 - CUDA Toolkit installed on Windows
 - PowerShell
 
-## Build Both Native Variants
+## Validated Path
 
-Run from the repository root in PowerShell:
+The branch-local validation record for this repo used:
+
+- `Generator = Visual Studio 16 2019`
+- `Platform = x64`
+- `Config = Release`
+- `CMAKE_CUDA_ARCHITECTURES = 75`
+
+The PowerShell helper keeps `-Generator`, `-Platform`, and `-CudaArch`
+overrideable. The project does not hardcode a Visual Studio generator inside
+`CMakeLists.txt`.
+
+## Preflight Checks
+
+Run these first in PowerShell before configuring CMake:
 
 ```powershell
-.\scripts\build_windows_native.ps1 -Variant both
+nvidia-smi
+nvcc --version
+cmake --version
+dir "C:\Program Files (x86)\Windows Kits\10\Include"
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 ```
 
-For non-RTX-30 GPUs, pass a different CUDA architecture:
+If `nvidia-smi` fails, fix the driver path before debugging CMake or CUDA.
+
+## Build Both Native Variants
+
+Run from the repository root in PowerShell. This matches the validated branch
+local path:
 
 ```powershell
-.\scripts\build_windows_native.ps1 -Variant both -CudaArch 89
+.\scripts\build_windows_native.ps1 -Variant both -Clean
+```
+
+The helper prints the resolved repo/build paths, the exact `cmake` arguments,
+and the discovered DLL locations after each successful build.
+
+For other GPU generations, override `-CudaArch` explicitly:
+
+```powershell
+.\scripts\build_windows_native.ps1 -Variant both -Clean -CudaArch 89
 ```
 
 Expected outputs:
 
 ```text
-cpp\minimal_cuda_cnn_cublas.dll
-cpp\minimal_cuda_cnn_cublas.lib
-cpp\minimal_cuda_cnn_handmade.dll
-cpp\minimal_cuda_cnn_handmade.lib
+cpp\Release\minimal_cuda_cnn_cublas.dll
+cpp\Release\minimal_cuda_cnn_cublas.lib
+cpp\Release\minimal_cuda_cnn_handmade.dll
+cpp\Release\minimal_cuda_cnn_handmade.lib
 ```
 
 The cuBLAS variant compiles with `USE_CUBLAS=ON`. The handmade variant compiles with `USE_CUBLAS=OFF`.
@@ -51,11 +82,20 @@ The cuBLAS variant compiles with `USE_CUBLAS=ON`. The handmade variant compiles 
 .\scripts\build_windows_native.ps1 -Variant default
 ```
 
+## GPU Architecture
+
+| GPU series | `CMAKE_CUDA_ARCHITECTURES` |
+|---|---:|
+| RTX 20 Turing | `75` |
+| RTX 30 Ampere | `86` |
+| RTX 40 Ada | `89` |
+| RTX 50 Blackwell | `120` |
+
 ## Manual CMake Command
 
 ```powershell
-$CudaArch = "86"
-cmake -S cpp -B cpp\build-windows-cublas -G "Visual Studio 17 2022" -A x64 `
+$CudaArch = "75"
+cmake -S cpp -B cpp\build-windows-cublas -G "Visual Studio 16 2019" -A x64 `
   -DUSE_CUBLAS=ON `
   -DMINICNN_OUTPUT_NAME=minimal_cuda_cnn_cublas `
   -DCMAKE_CUDA_ARCHITECTURES=$CudaArch
@@ -66,14 +106,18 @@ cmake --build cpp\build-windows-cublas --config Release --parallel
 For the handmade variant:
 
 ```powershell
-$CudaArch = "86"
-cmake -S cpp -B cpp\build-windows-handmade -G "Visual Studio 17 2022" -A x64 `
+$CudaArch = "75"
+cmake -S cpp -B cpp\build-windows-handmade -G "Visual Studio 16 2019" -A x64 `
   -DUSE_CUBLAS=OFF `
   -DMINICNN_OUTPUT_NAME=minimal_cuda_cnn_handmade `
   -DCMAKE_CUDA_ARCHITECTURES=$CudaArch
 
 cmake --build cpp\build-windows-handmade --config Release --parallel
 ```
+
+If you switch generator, platform, SDK, or CUDA architecture, clear the old
+build directory first. `.\scripts\build_windows_native.ps1 -Clean` does this
+for you.
 
 ## Python Loading Note
 
@@ -98,50 +142,85 @@ first. They now return JSON-friendly output or short user-facing failures.
 
 Both DLL variants should export `maxpool_backward_nchw_status` in addition to the legacy void `maxpool_backward_nchw` symbol.
 
-This part should be verified on a Windows machine after compiling the DLLs.
+Treat these as the manual success criteria:
+
+- the expected `.dll` and `.lib` files exist under `cpp\Release\`
+- both variants export `maxpool_backward_nchw_status`
+- `minicnn validate-dual-config` and `minicnn healthcheck` pass
+- both `runtime.cuda_variant=cublas` and `runtime.cuda_variant=handmade` load
+  in separate smoke runs
 
 ---
 
 # Windows Native Build（中文）
 
-> 狀態：尚未在實際 Windows 機器上驗證。
+> 狀態：已在實際 Windows 機器上做過手動驗證。
 >
-> 這份文件目前是建置備忘，不代表已正式支援。repo 內雖然已包含
-> CMake 設定與 PowerShell helper，可嘗試產生 Windows `.dll`，
-> 但這條路徑目前沒有 CI 驗證，也尚未在此環境完成端到端確認。
+> 這條路徑目前仍沒有 CI 覆蓋，但 repo 內已整理出一條實測過的
+> Windows `.dll` 手動建置流程。
 
-本文說明 Windows 平台的 native CUDA backend 建置流程。
+本文說明 Windows 平台 native CUDA backend 的手動驗證建置流程。
 
 ## 需求
 
 - Windows 10/11
 - 支援 CUDA 的 NVIDIA 顯示驅動
-- Visual Studio 2022（含 C++ 工作負載）
+- Visual Studio 2019 或 2022（含 C++ 工作負載）
 - CMake 3.20 以上
 - Windows 端安裝的 CUDA Toolkit
 - PowerShell
 
-## 編譯兩種 Native Variant
+## 已驗證路徑
 
-在 PowerShell 專案根目錄執行：
+這次 repo 內保留的 Windows 建置紀錄使用了：
+
+- `Generator = Visual Studio 16 2019`
+- `Platform = x64`
+- `Config = Release`
+- `CMAKE_CUDA_ARCHITECTURES = 75`
+
+PowerShell helper 仍保留 `-Generator`、`-Platform`、`-CudaArch` 可覆寫。
+專案本身不會在 `CMakeLists.txt` 內寫死 Visual Studio generator。
+
+## 建置前檢查
+
+在 PowerShell 先執行：
 
 ```powershell
-.\scripts\build_windows_native.ps1 -Variant both
+nvidia-smi
+nvcc --version
+cmake --version
+dir "C:\Program Files (x86)\Windows Kits\10\Include"
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 ```
 
-若使用非 RTX 30 系列 GPU，傳入對應的 CUDA 架構：
+如果 `nvidia-smi` 先失敗，優先修顯示卡驅動與 CUDA 環境，不要直接往
+CMake 設定排查。
+
+## 編譯兩種 Native Variant
+
+在 PowerShell 專案根目錄執行。下面這條就是這次驗證路徑對齊的用法：
 
 ```powershell
-.\scripts\build_windows_native.ps1 -Variant both -CudaArch 89
+.\scripts\build_windows_native.ps1 -Variant both -Clean
+```
+
+helper 會印出解析後的 repo/build 路徑、完整 `cmake` 參數，以及成功後找到的
+DLL 實際路徑。
+
+若使用其他 GPU 世代，請明確覆寫 `-CudaArch`：
+
+```powershell
+.\scripts\build_windows_native.ps1 -Variant both -Clean -CudaArch 89
 ```
 
 預期輸出：
 
 ```text
-cpp\minimal_cuda_cnn_cublas.dll
-cpp\minimal_cuda_cnn_cublas.lib
-cpp\minimal_cuda_cnn_handmade.dll
-cpp\minimal_cuda_cnn_handmade.lib
+cpp\Release\minimal_cuda_cnn_cublas.dll
+cpp\Release\minimal_cuda_cnn_cublas.lib
+cpp\Release\minimal_cuda_cnn_handmade.dll
+cpp\Release\minimal_cuda_cnn_handmade.lib
 ```
 
 cuBLAS variant 使用 `USE_CUBLAS=ON` 編譯，handmade variant 使用 `USE_CUBLAS=OFF`。
@@ -154,11 +233,20 @@ cuBLAS variant 使用 `USE_CUBLAS=ON` 編譯，handmade variant 使用 `USE_CUBL
 .\scripts\build_windows_native.ps1 -Variant default
 ```
 
+## GPU 架構
+
+| GPU 系列 | `CMAKE_CUDA_ARCHITECTURES` |
+|---|---:|
+| RTX 20 系列 Turing | `75` |
+| RTX 30 系列 Ampere | `86` |
+| RTX 40 系列 Ada | `89` |
+| RTX 50 系列 Blackwell | `120` |
+
 ## 手動 CMake 指令
 
 ```powershell
-$CudaArch = "86"
-cmake -S cpp -B cpp\build-windows-cublas -G "Visual Studio 17 2022" -A x64 `
+$CudaArch = "75"
+cmake -S cpp -B cpp\build-windows-cublas -G "Visual Studio 16 2019" -A x64 `
   -DUSE_CUBLAS=ON `
   -DMINICNN_OUTPUT_NAME=minimal_cuda_cnn_cublas `
   -DCMAKE_CUDA_ARCHITECTURES=$CudaArch
@@ -169,14 +257,17 @@ cmake --build cpp\build-windows-cublas --config Release --parallel
 Handmade variant：
 
 ```powershell
-$CudaArch = "86"
-cmake -S cpp -B cpp\build-windows-handmade -G "Visual Studio 17 2022" -A x64 `
+$CudaArch = "75"
+cmake -S cpp -B cpp\build-windows-handmade -G "Visual Studio 16 2019" -A x64 `
   -DUSE_CUBLAS=OFF `
   -DMINICNN_OUTPUT_NAME=minimal_cuda_cnn_handmade `
   -DCMAKE_CUDA_ARCHITECTURES=$CudaArch
 
 cmake --build cpp\build-windows-handmade --config Release --parallel
 ```
+
+若切換 generator、platform、SDK 或 CUDA arch，先清掉舊 build 目錄。
+`.\scripts\build_windows_native.ps1 -Clean` 會幫你處理。
 
 ## Python 載入說明
 
@@ -201,4 +292,9 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_le
 
 兩個 DLL variant 都應匯出 `maxpool_backward_nchw_status`，以及舊有的 void `maxpool_backward_nchw` symbol。
 
-此部分需在 Windows 機器上編譯 DLL 後實際驗證。
+可把以下視為手動驗證完成的判定條件：
+
+- `cpp\Release\` 下實際出現預期的 `.dll` 與 `.lib`
+- 兩個 variant 都匯出 `maxpool_backward_nchw_status`
+- `minicnn validate-dual-config` 與 `minicnn healthcheck` 通過
+- `runtime.cuda_variant=cublas` 與 `runtime.cuda_variant=handmade` 都能各自完成 smoke run

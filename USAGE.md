@@ -33,7 +33,7 @@ Read these in order if you want the current, operational picture of the repo:
 - [docs/guide_native_build.md](docs/guide_native_build.md) — build the shared library
 - [docs/guide_c_api.md](docs/guide_c_api.md) — exported C API reference
 - [docs/guide_layout_debug.md](docs/guide_layout_debug.md) — layout rules and debugging workflow
-- [docs/guide_windows_build.md](docs/guide_windows_build.md) — unverified Windows build notes
+- [docs/guide_windows_build.md](docs/guide_windows_build.md) — manually validated Windows build guide (not CI-covered)
 - [docs/cuda_batchnorm2d_evaluation.md](docs/cuda_batchnorm2d_evaluation.md) — focused note on one unresolved `cuda_legacy` maintenance area
 
 ### I want Python `ctypes` or C++ embedding examples
@@ -232,7 +232,7 @@ If you are unsure where to go next:
 - [docs/guide_native_build.md](docs/guide_native_build.md) — shared library 編譯流程
 - [docs/guide_c_api.md](docs/guide_c_api.md) — 匯出的 C API 參考
 - [docs/guide_layout_debug.md](docs/guide_layout_debug.md) — layout 規則與 debug 流程
-- [docs/guide_windows_build.md](docs/guide_windows_build.md) — 尚未驗證的 Windows 建置備忘
+- [docs/guide_windows_build.md](docs/guide_windows_build.md) — 已手動驗證的 Windows 建置指南（尚未納入 CI）
 - [docs/cuda_batchnorm2d_evaluation.md](docs/cuda_batchnorm2d_evaluation.md) — `cuda_legacy` 尚未完成的維護型 BatchNorm2d 評估
 
 ### 我想看 Python `ctypes` 或 C++ embedding 範例

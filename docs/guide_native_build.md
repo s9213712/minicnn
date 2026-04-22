@@ -143,11 +143,13 @@ make -C cpp
 
 ## Windows DLL
 
-See [guide_windows_build.md](guide_windows_build.md) for the currently unverified
-Windows build notes and the PowerShell helper script:
+See [guide_windows_build.md](guide_windows_build.md) for the manually validated
+Windows build guide. The current recorded path uses `Visual Studio 16 2019`,
+`x64`, and `CMAKE_CUDA_ARCHITECTURES=75`; it is still a manual workflow rather
+than a CI-covered one.
 
 ```powershell
-.\scripts\build_windows_native.ps1 -Variant both
+.\scripts\build_windows_native.ps1 -Variant both -Clean
 ```
 
 ## CUDA Memory Check
@@ -273,8 +275,9 @@ make -C cpp
 ## Windows DLL
 
 詳細需求與手動 CMake 指令請看
-[guide_windows_build.md](guide_windows_build.md)。該文件目前屬於尚未驗證的
-Windows 建置備忘。
+[guide_windows_build.md](guide_windows_build.md)。目前記錄下來的驗證路徑使用
+`Visual Studio 16 2019`、`x64` 與 `CMAKE_CUDA_ARCHITECTURES=75`，但仍屬
+手動流程，尚未納入 CI。
 
 ## CUDA 記憶體檢查
 

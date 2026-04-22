@@ -16,6 +16,12 @@ target_include_directories(minimal_cuda_cnn PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/i
 target_link_libraries(minimal_cuda_cnn PUBLIC CUDA::cudart)
 target_compile_definitions(minimal_cuda_cnn PRIVATE $<$<CONFIG:Debug>:MINICNN_DEBUG_SYNC>)
 
+if(MSVC)
+  target_compile_options(minimal_cuda_cnn PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:/utf-8 /wd4819>
+  )
+endif()
+
 if(USE_CUBLAS)
   target_compile_definitions(minimal_cuda_cnn PRIVATE USE_CUBLAS=1)
   target_link_libraries(minimal_cuda_cnn PUBLIC CUDA::cublas)
