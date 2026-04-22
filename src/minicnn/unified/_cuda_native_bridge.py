@@ -61,9 +61,9 @@ def _load_numpy_data(cfg: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, np.nd
     dtype = str(dataset_cfg.get('type', 'random'))
 
     if dtype == 'random':
-        from minicnn.flex.data import _random_dataset
+        from minicnn.flex._datasets import DATASET_ARRAY_LOADERS
 
-        return _random_dataset(dataset_cfg, train_cfg)
+        return DATASET_ARRAY_LOADERS['random'](dataset_cfg, train_cfg)
 
     if dtype == 'cifar10':
         from pathlib import Path as P

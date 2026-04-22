@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import importlib
 from typing import Any
 
-
-_TORCH_INSTALL_HINT = 'Install it with:\n  pip install -e .[torch]'
+from minicnn.torch_runtime import TORCH_INSTALL_HINT, import_torch_with_details, resolve_torch_device
 
 
 def _exit_user_error(message: str) -> None:
@@ -13,21 +11,21 @@ def _exit_user_error(message: str) -> None:
 
 
 def _import_torch_or_exit(command_name: str):
-    try:
-        return importlib.import_module('torch')
-    except ModuleNotFoundError as exc:
-        if exc.name == 'torch':
-            _exit_user_error(f'{command_name} requires PyTorch.\n{_TORCH_INSTALL_HINT}')
+    torch, error = import_torch_with_details()
+    if torch is not None:
+        return torch
+    if error is None:
+        _exit_user_error(f'{command_name} requires PyTorch.\n{TORCH_INSTALL_HINT}')
+    if isinstance(error, ModuleNotFoundError):
         _exit_user_error(
-            f'{command_name} could not import PyTorch because a dependency is missing: {exc.name}.\n'
-            f'Reinstall PyTorch for this environment.\n{_TORCH_INSTALL_HINT}'
+            f'{command_name} could not import PyTorch because a dependency is missing: {error.name}.\n'
+            f'Reinstall PyTorch for this environment.\n{TORCH_INSTALL_HINT}'
         )
-    except Exception as exc:
-        _exit_user_error(
-            f'{command_name} could not import PyTorch from this environment.\n'
-            f'Import failed with: {exc.__class__.__name__}: {exc}\n'
-            f'Reinstall PyTorch or use a no-torch command.\n{_TORCH_INSTALL_HINT}'
-        )
+    _exit_user_error(
+        f'{command_name} could not import PyTorch from this environment.\n'
+        f'Import failed with: {error.__class__.__name__}: {error}\n'
+        f'Reinstall PyTorch or use a no-torch command.\n{TORCH_INSTALL_HINT}'
+    )
 
 
 def _ensure_torch_or_exit(command_name: str):
@@ -38,10 +36,11 @@ def _ensure_torch_device_supported_or_exit(cfg: dict[str, Any], command_name: st
     torch = _import_torch_or_exit(command_name)
     train_cfg = cfg.get('train', {})
     device = str(train_cfg.get('device', 'auto'))
-    if device == 'cuda' and not torch.cuda.is_available():
+    try:
+        resolve_torch_device(device, torch)
+    except RuntimeError as exc:
         _exit_user_error(
-            'Requested train.device=cuda, but CUDA is not available in this PyTorch runtime.\n'
-            'Use train.device=auto or train.device=cpu.'
+            str(exc)
         )
 
 
