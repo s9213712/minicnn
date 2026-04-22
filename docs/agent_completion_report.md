@@ -45,7 +45,10 @@ materially more stable, easier to automate, and easier to explain honestly.
   CLI behavior:
   - CLI helpers
   - flex device/reporting helpers
+  - flex training step helpers
+  - flex run orchestration helpers
   - unified cuda_native bridge helpers
+  - unified cuda_native runtime loop helpers
   - legacy CUDA runtime helpers
   - torch baseline runtime helpers
   - autograd data/reporting helpers
@@ -89,7 +92,10 @@ Representative areas touched in this cleanup wave:
 - `src/minicnn/introspection/`
 - `src/minicnn/flex/device.py`
 - `src/minicnn/flex/reporting.py`
+- `src/minicnn/flex/_training_steps.py`
+- `src/minicnn/flex/_training_run.py`
 - `src/minicnn/unified/_cuda_native_bridge.py`
+- `src/minicnn/unified/_cuda_native_runtime.py`
 - `src/minicnn/training/_legacy_cuda_runtime.py`
 - `src/minicnn/training/_legacy_torch_runtime.py`
 - `src/minicnn/training/_cuda_batch_steps.py`
@@ -128,6 +134,8 @@ Recent baseline on this branch:
   information and metadata instead of ad-hoc payload fragments.
 - `show-model` and `show-graph` now give two distinct architecture views:
   frontend structure vs compiler-traced primitive graph.
+- `train_from_config()` and `run_cuda_native_training()` now act more clearly as
+  orchestration entrypoints instead of mixing all step-level logic inline.
 
 ## Docs Sync
 
@@ -220,7 +228,10 @@ The recent cleanup passes were repeatedly checked with:
 - `src/minicnn/introspection/`
 - `src/minicnn/flex/device.py`
 - `src/minicnn/flex/reporting.py`
+- `src/minicnn/flex/_training_steps.py`
+- `src/minicnn/flex/_training_run.py`
 - `src/minicnn/unified/_cuda_native_bridge.py`
+- `src/minicnn/unified/_cuda_native_runtime.py`
 - `src/minicnn/training/_legacy_cuda_runtime.py`
 - `src/minicnn/training/_legacy_torch_runtime.py`
 - `src/minicnn/training/_cuda_batch_steps.py`
@@ -258,6 +269,8 @@ cleanup 迭代補強的回歸測試範圍包括：
   與 metadata，而不是零散 ad-hoc 欄位。
 - `show-model` / `show-graph` 提供兩種不同架構視角：前端結構與 compiler traced
   primitive graph。
+- `train_from_config()` 與 `run_cuda_native_training()` 現在更清楚地只扮演
+  orchestration 入口，而不是把 step-level 邏輯全部攤在單檔內。
 
 ## 文件同步
 
