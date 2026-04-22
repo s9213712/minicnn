@@ -186,6 +186,16 @@ class TestAutogradSchedulerValidation:
             run_dir = train_autograd_from_config(cfg)
             assert (run_dir / 'summary.json').exists()
 
+    def test_plateau_scheduler_smoke(self):
+        from minicnn.training.train_autograd import train_autograd_from_config
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = self._minimal_cfg(tmpdir)
+            cfg['train']['epochs'] = 2
+            cfg['scheduler'] = {'enabled': True, 'type': 'plateau', 'factor': 0.5, 'patience': 1}
+            run_dir = train_autograd_from_config(cfg)
+            assert (run_dir / 'summary.json').exists()
+            assert (run_dir / 'metrics.jsonl').exists()
+
 
 # ---------------------------------------------------------------------------
 # Instruction #5 — autograd dataset.download boolean parsing

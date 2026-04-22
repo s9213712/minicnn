@@ -1,95 +1,46 @@
 from __future__ import annotations
 
-import json
 import time
-import warnings
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from minicnn.config.parsing import parse_bool
-from minicnn.flex.runtime import create_run_dir, dump_summary
+from minicnn.flex.runtime import create_run_dir
 from minicnn.models import build_model_from_config
 from minicnn.nn import Tensor, bce_with_logits_loss, cross_entropy, mse_loss, no_grad
 from minicnn.optim import Adam, AdamW, RMSprop, SGD
-from minicnn.paths import BEST_MODELS_ROOT, DATA_ROOT
 from minicnn.schedulers.cosine import CosineAnnealingLR
 from minicnn.schedulers.plateau import ReduceLROnPlateau
 from minicnn.schedulers.step import StepLR
-
-
-def _random_dataset(dataset_cfg: dict[str, Any]):
-    input_shape = tuple(dataset_cfg.get('input_shape', [1, 4, 4]))
-    num_classes = int(dataset_cfg.get('num_classes', 2))
-    num_samples = int(dataset_cfg.get('num_samples', 16))
-    val_samples = int(dataset_cfg.get('val_samples', 8))
-    test_samples = int(dataset_cfg.get('test_samples', val_samples))
-    seed = int(dataset_cfg.get('seed', 42))
-    rng = np.random.default_rng(seed)
-    x_train = rng.normal(size=(num_samples, *input_shape)).astype(np.float32)
-    y_train = rng.integers(0, num_classes, size=(num_samples,), dtype=np.int64)
-    x_val = rng.normal(size=(val_samples, *input_shape)).astype(np.float32)
-    y_val = rng.integers(0, num_classes, size=(val_samples,), dtype=np.int64)
-    x_test = rng.normal(size=(test_samples, *input_shape)).astype(np.float32)
-    y_test = rng.integers(0, num_classes, size=(test_samples,), dtype=np.int64)
-    return x_train, y_train, x_val, y_val, x_test, y_test
+from minicnn.training._autograd_data import (
+    _cifar10_dataset as _cifar10_dataset_impl,
+    _mnist_dataset as _mnist_dataset_impl,
+    load_autograd_dataset,
+)
+from minicnn.training._autograd_reporting import (
+    build_epoch_row,
+    dump_autograd_summary,
+    reload_best_model,
+    resolve_autograd_artifacts,
+    save_best_model,
+    write_epoch_row,
+)
 
 
 def _cifar10_dataset(dataset_cfg: dict[str, Any]):
-    from minicnn.data.cifar10 import load_cifar10, normalize_cifar
-    data_root = str(dataset_cfg.get('data_root', DATA_ROOT))
-    download = parse_bool(dataset_cfg.get('download', False), label='dataset.download')
-    n_train = int(dataset_cfg.get('num_samples', 45000))
-    n_val = int(dataset_cfg.get('val_samples', 5000))
-    seed = int(dataset_cfg.get('seed', 42))
-    x_train, y_train, x_val, y_val, x_test, y_test = load_cifar10(
-        data_root, n_train=n_train, n_val=n_val, seed=seed, download=download,
-    )
-    return (
-        normalize_cifar(x_train), y_train,
-        normalize_cifar(x_val), y_val,
-        normalize_cifar(x_test), y_test,
-    )
+    normalized = dict(dataset_cfg)
+    normalized['download'] = parse_bool(normalized.get('download', False), label='dataset.download')
+    return _cifar10_dataset_impl(normalized)
 
 
 def _mnist_dataset(dataset_cfg: dict[str, Any]):
-    from minicnn.data.mnist import load_mnist, normalize_mnist
-    data_root = str(dataset_cfg.get('data_root', DATA_ROOT / 'mnist'))
-    download = parse_bool(dataset_cfg.get('download', True), label='dataset.download')
-    n_train = int(dataset_cfg.get('num_samples', 60000))
-    n_val = int(dataset_cfg.get('val_samples', 5000))
-    seed = int(dataset_cfg.get('seed', 42))
-    x_train, y_train, x_val, y_val, x_test, y_test = load_mnist(
-        data_root, n_train=n_train, n_val=n_val, seed=seed, download=download,
-    )
-    return (
-        normalize_mnist(x_train), y_train,
-        normalize_mnist(x_val), y_val,
-        normalize_mnist(x_test), y_test,
-    )
+    return _mnist_dataset_impl(dataset_cfg)
 
 
 def _load_dataset(dataset_cfg: dict[str, Any]):
-    dtype = str(dataset_cfg.get('type', 'random'))
-    if dtype == 'cifar10':
-        warnings.warn(
-            'train-autograd with cifar10 uses NumPy Conv2d which is very slow. '
-            'For fast CIFAR-10 training use train-flex or train-dual.',
-            UserWarning,
-            stacklevel=3,
-        )
-        return _cifar10_dataset(dataset_cfg)
-    if dtype == 'mnist':
-        warnings.warn(
-            'train-autograd with mnist uses NumPy Conv2d which is slow for large datasets.',
-            UserWarning,
-            stacklevel=3,
-        )
-        return _mnist_dataset(dataset_cfg)
-    if dtype == 'random':
-        return _random_dataset(dataset_cfg)
-    raise ValueError(f'train-autograd: unsupported dataset.type={dtype!r}; expected random, cifar10, or mnist')
+    return load_autograd_dataset(dataset_cfg)
 
 
 def _make_optimizer(params, cfg: dict[str, Any]):
@@ -225,9 +176,7 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
     scheduler = _make_scheduler(optimizer, sched_cfg)
 
     run_dir = create_run_dir(cfg)
-    metrics_path = run_dir / 'metrics.jsonl'
-    BEST_MODELS_ROOT.mkdir(parents=True, exist_ok=True)
-    best_path = BEST_MODELS_ROOT / f'{run_dir.name}_autograd_best.npz'
+    metrics_path, best_path = resolve_autograd_artifacts(run_dir)
     best_val = -1.0
     last_train_acc = 0.0
     last_epoch_time = 0.0
@@ -255,6 +204,14 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
             model.train(False)
             last_train_acc = _accuracy(model, x_train, y_train, batch_size, loss_type)
             val_acc = _accuracy(model, x_val, y_val, batch_size, loss_type)
+            row = build_epoch_row(
+                epoch=epoch,
+                train_loss=total_loss / max(total, 1),
+                train_acc=last_train_acc,
+                val_acc=val_acc,
+                lr=optimizer.lr,
+                epoch_time_s=last_epoch_time,
+            )
 
             if scheduler is not None:
                 if isinstance(scheduler, ReduceLROnPlateau):
@@ -262,16 +219,7 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
                 else:
                     scheduler.step()
 
-            row = {
-                'epoch': epoch,
-                'train_loss': total_loss / max(total, 1),
-                'train_acc': last_train_acc,
-                'val_acc': val_acc,
-                'lr': optimizer.lr,
-                'epoch_time_s': last_epoch_time,
-            }
-            metrics_file.write(json.dumps(row) + '\n')
-            metrics_file.flush()
+            write_epoch_row(metrics_file, row)
             print(
                 f"Epoch {epoch}/{epochs}: loss={row['train_loss']:.4f}, "
                 f"train_acc={last_train_acc * 100:.2f}%, "
@@ -280,23 +228,20 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
             )
             if val_acc > best_val:
                 best_val = val_acc
-                np.savez(best_path, **model.state_dict())
+                save_best_model(best_path, model)
 
     # Reload best checkpoint before final test evaluation so test_acc matches best_val_acc.
-    if best_path.exists():
-        ckpt = np.load(best_path)
-        model.load_state_dict({k: ckpt[k] for k in ckpt.files})
+    reload_best_model(best_path, model)
     model.train(False)
     test_acc = _accuracy(model, x_test, y_test, batch_size, loss_type)
-    dump_summary(run_dir, {
-        'effective_backend': 'autograd',
-        'run_dir': str(run_dir),
-        'best_model_path': str(best_path),
-        'input_shape': list(dataset_cfg.get('input_shape', [1, 4, 4])),
-        'final_shape': list(final_shape),
-        'train_acc': last_train_acc,
-        'best_val_acc': best_val,
-        'test_acc': test_acc,
-        'epoch_time_s': last_epoch_time,
-    })
+    dump_autograd_summary(
+        run_dir=run_dir,
+        dataset_cfg=dataset_cfg,
+        final_shape=final_shape,
+        best_path=best_path,
+        last_train_acc=last_train_acc,
+        best_val=best_val,
+        test_acc=test_acc,
+        last_epoch_time=last_epoch_time,
+    )
     return run_dir
