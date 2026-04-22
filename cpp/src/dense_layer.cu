@@ -18,7 +18,7 @@ __global__ void dense_forward_kernel(const float* input, const float* weights, c
 }
 
 // FC Backward: dL/dinput = dL/dout @ weights^T
-// weights layout: (out_f × in_f) row-major: weights[col*in_f + i]
+// weights layout: (out_f x in_f) row-major: weights[col*in_f + i]
 __global__ void dense_backward_input_kernel(const float* d_out, const float* weights, float* d_input,
                                              int N, int in_f, int out_f) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;

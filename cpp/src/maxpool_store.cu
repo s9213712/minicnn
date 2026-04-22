@@ -1,8 +1,8 @@
 #include "cuda_check.h"
 
 // MaxPool Forward with 2x2 stride - stores max indices
-// Input: (C, N, H, W) — CNHW layout
-// Output: (C, N, H/2, W/2) — CNHW layout
+// Input: (C, N, H, W) - CNHW layout
+// Output: (C, N, H/2, W/2) - CNHW layout
 // Stores max_idx in CNHW linear index space for backward pass
 
 __global__ void maxpool_forward_store_kernel(const float* input, float* output, int* max_idx,

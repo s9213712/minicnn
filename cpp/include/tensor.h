@@ -4,7 +4,7 @@
 #include <iostream>
 #include <vector>
 
-// 4D Tensor 結構 (Batch, Channel, Height, Width)
+// 4D tensor layout: (batch, channel, height, width)
 struct CudaTensor {
     float* data;
     int n, c, h, w;
@@ -28,5 +28,5 @@ struct CudaTensor {
     }
 };
 
-// GPU 狀態監測函數 (由 C++ 呼叫)
+// GPU status helper for C++ callers
 extern "C" void check_gpu_status();

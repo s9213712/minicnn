@@ -79,6 +79,9 @@ refactoring without changing the user-facing command surface:
 - Windows native build workflow is now documented as a manually validated path
   instead of an unverified note, including preflight checks, GPU architecture
   guidance, and script defaults aligned with the recorded Windows run.
+- The Windows path no longer depends on a `/utf-8` compiler flag for native
+  headers; the affected handwritten CUDA/C++ headers were normalized to
+  ASCII-only comments to avoid source-encoding-specific build failures.
 
 ## Still Experimental Or Narrow
 
@@ -251,6 +254,8 @@ The recent cleanup passes were repeatedly checked with:
   config 行為。
 - Windows native build workflow 已改為記錄「手動驗證過的路徑」，不再只是
   尚未驗證的備忘，並補上前置檢查、GPU 架構對照與腳本預設值說明。
+- Windows 路徑也不再依賴 `/utf-8` 編譯旗標處理 native header；相關
+  手寫 CUDA/C++ header 已改為 ASCII-only 註解，避免卡在特定原始碼編碼。
 
 ## 仍屬 Experimental 或刻意狹窄
 

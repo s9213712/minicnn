@@ -6,14 +6,14 @@
 #include <vector>
 #include <string>
 
-// 層類基類
+// Base layer interface
 class Layer {
 public:
     virtual ~Layer() {}
     virtual std::unique_ptr<CudaTensor> forward(CudaTensor* input) = 0;
 };
 
-// 卷積層
+// Convolution layer
 class ConvLayer : public Layer {
     int in_c, out_c, kh, kw;
     float* d_weights;
@@ -51,13 +51,13 @@ public:
     std::unique_ptr<CudaTensor> forward(CudaTensor* input) override;
 };
 
-// 激活層 (ReLU)
+// Activation layer (ReLU)
 class ReLULayer : public Layer {
 public:
     std::unique_ptr<CudaTensor> forward(CudaTensor* input) override;
 };
 
-// 池化層 (MaxPool)
+// Pooling layer (MaxPool)
 class MaxPoolLayer : public Layer {
 public:
     std::unique_ptr<CudaTensor> forward(CudaTensor* input) override;

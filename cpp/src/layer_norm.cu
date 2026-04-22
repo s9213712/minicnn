@@ -4,7 +4,7 @@
 // Input: (N, C, H, W) -> normalize over (H*W)
 // Output: (N, C, H, W)
 //
-// NOTE: Experimental — not used in the main CIFAR-10 training path.
+// NOTE: Experimental - not used in the main CIFAR-10 training path.
 // The current CUDA training loop uses LeakyReLU activations and does not
 // call layer_norm_forward / layer_norm_backward.  This kernel exists as a
 // building block for future architectures (e.g. Vision Transformer pre-norm).

@@ -146,7 +146,8 @@ make -C cpp
 See [guide_windows_build.md](guide_windows_build.md) for the manually validated
 Windows build guide. The current recorded path uses `Visual Studio 16 2019`,
 `x64`, and `CMAKE_CUDA_ARCHITECTURES=75`; it is still a manual workflow rather
-than a CI-covered one.
+than a CI-covered one. The repo-side native headers are kept ASCII-only so this
+path does not depend on `/utf-8` or UTF-16 source-file handling.
 
 ```powershell
 .\scripts\build_windows_native.ps1 -Variant both -Clean
@@ -277,7 +278,8 @@ make -C cpp
 詳細需求與手動 CMake 指令請看
 [guide_windows_build.md](guide_windows_build.md)。目前記錄下來的驗證路徑使用
 `Visual Studio 16 2019`、`x64` 與 `CMAKE_CUDA_ARCHITECTURES=75`，但仍屬
-手動流程，尚未納入 CI。
+手動流程，尚未納入 CI。repo 端的 native header 也維持 ASCII-only，
+避免這條路徑依賴 `/utf-8` 或 UTF-16 原始碼處理。
 
 ## CUDA 記憶體檢查
 

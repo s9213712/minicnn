@@ -31,6 +31,13 @@ The PowerShell helper keeps `-Generator`, `-Platform`, and `-CudaArch`
 overrideable. The project does not hardcode a Visual Studio generator inside
 `CMakeLists.txt`.
 
+## Source Encoding Note
+
+Do not rely on `/utf-8` to make native headers with non-ASCII comments compile
+on Windows. The safer repo-side fix here is to keep the handwritten CUDA/C++
+headers ASCII-only, so the validated Windows path does not depend on a
+UTF-16-vs-UTF-8 source encoding choice.
+
 ## Preflight Checks
 
 Run these first in PowerShell before configuring CMake:
@@ -181,6 +188,12 @@ Treat these as the manual success criteria:
 
 PowerShell helper 仍保留 `-Generator`、`-Platform`、`-CudaArch` 可覆寫。
 專案本身不會在 `CMakeLists.txt` 內寫死 Visual Studio generator。
+
+## 原始碼編碼注意事項
+
+不要依賴 `/utf-8` 來讓含非 ASCII 註解的 native header 在 Windows 上通過編譯。
+這次 repo 端採用的穩定做法，是把手寫 CUDA/C++ header 維持為 ASCII-only，
+避免整條 Windows build 路徑卡在 UTF-16 和 UTF-8 的差異上。
 
 ## 建置前檢查
 

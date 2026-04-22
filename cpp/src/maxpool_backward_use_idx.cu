@@ -1,9 +1,9 @@
 #include "cuda_check.h"
 
 // MaxPool Backward using stored max indices from forward pass
-// grad_out: (C, N, H/2, W/2) — CNHW layout (same as forward output)
-// grad_input: (C, N, H, W) — CNHW layout, initialized to zeros before calling
-// max_idx: (C, N, H/2, W/2) — CNHW linear indices into grad_input space
+// grad_out: (C, N, H/2, W/2) - CNHW layout (same as forward output)
+// grad_input: (C, N, H, W) - CNHW layout, initialized to zeros before calling
+// max_idx: (C, N, H/2, W/2) - CNHW linear indices into grad_input space
 
 __global__ void maxpool_backward_use_idx_kernel(const float* grad_out, const int* max_idx,
                                                 float* grad_input, int N, int C, int H, int W) {
