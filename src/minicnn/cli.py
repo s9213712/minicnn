@@ -21,8 +21,10 @@ from minicnn._cli_errors import (
 from minicnn._cli_output import (
     _add_format_arg,
     _print_diagnostic,
+    _print_graph_view,
     _print_generic_payload,
     _print_json,
+    _print_model_view,
     _print_validation_result,
 )
 from minicnn.core.build import build_native, check_native
@@ -388,6 +390,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_compile = sub.add_parser('compile', help='Trace and optimize a model config into MiniCNN IR')
     p_compile.add_argument('--config', type=str, default='configs/autograd_tiny.yaml')
     p_compile.add_argument('overrides', nargs='*')
+    p_show_model = sub.add_parser('show-model', help='Render a human-oriented model summary from config/frontend structure')
+    p_show_model.add_argument('--config', type=str, default='configs/flex_cnn.yaml')
+    p_show_model.add_argument('overrides', nargs='*')
+    _add_format_arg(p_show_model)
+    p_show_graph = sub.add_parser('show-graph', help='Render the canonical primitive graph traced from config')
+    p_show_graph.add_argument('--config', type=str, default='configs/flex_cnn.yaml')
+    p_show_graph.add_argument('overrides', nargs='*')
+    _add_format_arg(p_show_graph)
 
     p_train_native = sub.add_parser('train-native', help='[EXPERIMENTAL] Train with cuda_native backend (research prototype)')
     p_train_native.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
@@ -714,6 +724,37 @@ def main(argv: list[str] | None = None) -> int:
         cfg = _load_flex_config_or_exit(args.config, args.overrides)
         graph = optimize(trace_model_config(cfg.get('model', {})))
         _print_json(graph.summary())
+        return 0
+
+    if args.command == 'show-model':
+        from minicnn.introspection.model_view import build_model_view_from_config, render_model_view_text
+
+        cfg = _load_flex_config_or_exit(args.config, args.overrides)
+        view = build_model_view_from_config(cfg)
+        payload = {
+            'status': 'ok',
+            'schema_version': 1,
+            'model_type': view.model_type,
+            'input_shape': view.input_shape,
+            'backend_intent': view.backend_intent,
+            'summary': view.summary,
+            'layers': [layer.to_dict() for layer in view.layers],
+            'text': render_model_view_text(view),
+        }
+        _print_model_view(payload, command='show-model', output_format=args.format)
+        return 0
+
+    if args.command == 'show-graph':
+        from minicnn.introspection.graph_view import build_graph_view_from_config, render_graph_view_text
+
+        cfg = _load_flex_config_or_exit(args.config, args.overrides)
+        payload = {
+            'status': 'ok',
+            'schema_version': 1,
+            **build_graph_view_from_config(cfg),
+        }
+        payload['text'] = render_graph_view_text(payload)
+        _print_graph_view(payload, command='show-graph', output_format=args.format)
         return 0
 
     parser.print_help()

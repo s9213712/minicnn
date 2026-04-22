@@ -144,6 +144,8 @@ both the `cuda_legacy` and `cuda_native` config validation boundaries.
 | `minicnn --help` | no | no | no |
 | `minicnn validate-dual-config` | no | no | no |
 | `minicnn show-cuda-mapping` | no | no | no |
+| `minicnn show-model` | no | no | no |
+| `minicnn show-graph` | no | no | no |
 | `minicnn compile` | no | no | no |
 | `minicnn train-flex` | yes | no | depends on dataset |
 | `minicnn train-dual engine.backend=torch` | yes | no | depends on dataset |
@@ -156,7 +158,7 @@ instead of an import-time traceback.
 
 Config and override mistakes also fail with a short message and exit code `2`
 instead of a Python traceback. `healthcheck`, `doctor`, `smoke`,
-`validate-*`, `show-cuda-mapping`, and `inspect-checkpoint` now emit
+`validate-*`, `show-cuda-mapping`, `show-model`, `show-graph`, and `inspect-checkpoint` now emit
 JSON-friendly output, and `train.device=cuda` fails early with guidance to use
 `train.device=auto` or `train.device=cpu` when CUDA is unavailable.
 
@@ -168,8 +170,14 @@ minicnn healthcheck --format json
 minicnn doctor --format text
 minicnn smoke --format json
 minicnn validate-dual-config --format text
+minicnn show-model --config configs/flex_cnn.yaml --format text
+minicnn show-graph --config configs/flex_cnn.yaml --format json
 minicnn inspect-checkpoint --path artifacts/models/example_best.pt --format text
 ```
+
+`show-model` stays at the frontend/config view and preserves composite layer
+names. `show-graph` shows the primitive graph traced by the compiler path after
+basic optimization passes.
 
 ## Repo-First Resource Model
 

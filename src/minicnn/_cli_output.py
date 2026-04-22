@@ -89,3 +89,17 @@ def _print_generic_payload(payload: dict[str, Any], *, command: str, output_form
         value = payload.get(key)
         if value not in (None, '', [], {}):
             print(_text_block(key, value))
+
+
+def _print_model_view(payload: dict[str, Any], *, command: str, output_format: str) -> None:
+    if output_format == 'json':
+        _print_json({'command': command, **payload})
+        return
+    print(payload['text'])
+
+
+def _print_graph_view(payload: dict[str, Any], *, command: str, output_format: str) -> None:
+    if output_format == 'json':
+        _print_json({'command': command, **payload})
+        return
+    print(payload['text'])

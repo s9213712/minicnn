@@ -69,6 +69,8 @@ minicnn train-autograd --config configs/autograd_tiny.yaml
 minicnn compare --config configs/dual_backend_cnn.yaml
 minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
+minicnn show-model --config configs/flex_cnn.yaml
+minicnn show-graph --config configs/flex_cnn.yaml --format json
 minicnn inspect-checkpoint --path artifacts/models/example_best.pt
 minicnn export-torch-checkpoint --path artifacts/models/example_autograd_best.npz --config configs/autograd_tiny.yaml --output artifacts/models/example_autograd_export.pt
 minicnn compile --config configs/autograd_tiny.yaml
@@ -101,6 +103,9 @@ minicnn list-dual-components
 - the compiler can trace a default flex model
 - both `cuda_legacy` and `cuda_native` validators still accept their reference configs
 
+`show-model` is the frontend/config view.
+`show-graph` is the primitive compiler-IR view.
+
 ## Minimum Dependency Matrix
 
 | Command / feature | PyTorch | native `.so` | CIFAR-10 data |
@@ -108,6 +113,8 @@ minicnn list-dual-components
 | `minicnn --help` | no | no | no |
 | `minicnn validate-dual-config` | no | no | no |
 | `minicnn show-cuda-mapping` | no | no | no |
+| `minicnn show-model` | no | no | no |
+| `minicnn show-graph` | no | no | no |
 | `minicnn compile` | no | no | no |
 | `minicnn train-flex` | yes | no | depends on dataset |
 | `minicnn train-dual engine.backend=torch` | yes | no | depends on dataset |
@@ -120,7 +127,7 @@ import-time traceback.
 
 Config and override mistakes also fail with a short message and exit code `2`
 instead of a Python traceback. `healthcheck`, `doctor`, `smoke`,
-`validate-*`, `show-cuda-mapping`, and `inspect-checkpoint` emit JSON-friendly
+`validate-*`, `show-cuda-mapping`, `show-model`, `show-graph`, and `inspect-checkpoint` emit JSON-friendly
 output. If your PyTorch runtime has no CUDA support, `train.device=cuda` fails
 early and tells you to switch to `auto` or `cpu`.
 
@@ -300,6 +307,8 @@ minicnn list-dual-components
 | `minicnn --help` | 否 | 否 | 否 |
 | `minicnn validate-dual-config` | 否 | 否 | 否 |
 | `minicnn show-cuda-mapping` | 否 | 否 | 否 |
+| `minicnn show-model` | 否 | 否 | 否 |
+| `minicnn show-graph` | 否 | 否 | 否 |
 | `minicnn compile` | 否 | 否 | 否 |
 | `minicnn train-flex` | 是 | 否 | 視 dataset 而定 |
 | `minicnn train-dual engine.backend=torch` | 是 | 否 | 視 dataset 而定 |
@@ -312,7 +321,7 @@ traceback。
 
 config 或 override 寫錯時，也會以簡短訊息和 exit code `2` 失敗，而不是吐出
 Python traceback。`healthcheck`、`doctor`、`smoke`、`validate-*`、
-`show-cuda-mapping`、`inspect-checkpoint` 都會輸出 JSON-friendly
+`show-cuda-mapping`、`show-model`、`show-graph`、`inspect-checkpoint` 都會輸出 JSON-friendly
 結果；若目前 PyTorch runtime 不支援 CUDA，`train.device=cuda`
 也會提早失敗並提示改用 `auto` 或 `cpu`。
 

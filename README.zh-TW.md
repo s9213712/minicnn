@@ -142,6 +142,8 @@ config、跑一次小型 compiler trace，並驗證 `cuda_legacy` 與
 | `minicnn --help` | 否 | 否 | 否 |
 | `minicnn validate-dual-config` | 否 | 否 | 否 |
 | `minicnn show-cuda-mapping` | 否 | 否 | 否 |
+| `minicnn show-model` | 否 | 否 | 否 |
+| `minicnn show-graph` | 否 | 否 | 否 |
 | `minicnn compile` | 否 | 否 | 否 |
 | `minicnn train-flex` | 是 | 否 | 視 dataset 而定 |
 | `minicnn train-dual engine.backend=torch` | 是 | 否 | 視 dataset 而定 |
@@ -154,7 +156,7 @@ config、跑一次小型 compiler trace，並驗證 `cuda_legacy` 與
 
 config 或 override 寫錯時，也會以簡短訊息和 exit code `2` 失敗，而不是吐出
 Python traceback。`healthcheck`、`doctor`、`smoke`、`validate-*`、
-`show-cuda-mapping`、`inspect-checkpoint` 現在都會輸出 JSON-friendly
+`show-cuda-mapping`、`show-model`、`show-graph`、`inspect-checkpoint` 現在都會輸出 JSON-friendly
 結果；若目前 CUDA 不可用，`train.device=cuda` 也會提早失敗並提示改用
 `train.device=auto` 或 `train.device=cpu`。
 
@@ -165,8 +167,13 @@ minicnn healthcheck --format json
 minicnn doctor --format text
 minicnn smoke --format json
 minicnn validate-dual-config --format text
+minicnn show-model --config configs/flex_cnn.yaml --format text
+minicnn show-graph --config configs/flex_cnn.yaml --format json
 minicnn inspect-checkpoint --path artifacts/models/example_best.pt --format text
 ```
+
+`show-model` 會停留在前端/config 視角，保留 composite layer 名稱。
+`show-graph` 會顯示 compiler trace 之後、經過基本 optimizer pass 的 primitive graph。
 
 ## Repo-First 資源模型
 

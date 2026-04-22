@@ -202,10 +202,14 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'export-torch-checkpoint' in help_text
     assert 'validate-config' in help_text
     assert 'compile' in help_text
+    assert 'show-model' in help_text
+    assert 'show-graph' in help_text
     assert '--cuda-arch' in build_help
     assert '--format {json,text}' in subparsers.choices['healthcheck'].format_help()
     assert '--format {json,text}' in subparsers.choices['inspect-checkpoint'].format_help()
     assert '--format {json,text}' in subparsers.choices['validate-dual-config'].format_help()
+    assert '--format {json,text}' in subparsers.choices['show-model'].format_help()
+    assert '--format {json,text}' in subparsers.choices['show-graph'].format_help()
 
 
 def test_cli_config_resolution_falls_back_to_project_root():
@@ -297,6 +301,61 @@ def test_cli_info_supports_json_output(capsys):
     assert payload['command'] == 'info'
     assert 'health' in payload
     assert 'resolved_legacy_settings' in payload
+
+
+def test_cli_show_model_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['show-model', '--config', 'configs/flex_cnn.yaml'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['command'] == 'show-model'
+    assert payload['schema_version'] == 1
+    assert payload['status'] == 'ok'
+    assert isinstance(payload['layers'], list)
+    assert 'summary' in payload
+
+
+def test_cli_show_model_supports_text_output(capsys):
+    from minicnn.cli import main
+
+    rc = main(['show-model', '--config', 'configs/flex_cnn.yaml', '--format', 'text'])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out.startswith('Model Summary')
+    assert 'Layers:' in out
+    assert 'Totals:' in out
+
+
+def test_cli_show_graph_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['show-graph', '--config', 'configs/flex_cnn.yaml'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['command'] == 'show-graph'
+    assert payload['schema_version'] == 1
+    assert payload['status'] == 'ok'
+    assert payload['graph']['node_count'] == len(payload['graph']['nodes'])
+
+
+def test_cli_show_graph_supports_text_output(capsys):
+    from minicnn.cli import main
+
+    rc = main(['show-graph', '--config', 'configs/flex_cnn.yaml', '--format', 'text'])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out.startswith('Canonical Graph')
+    assert 'Nodes:' in out
+    assert 'Graph metadata:' in out
 
 
 def test_cli_validate_dual_config_supports_text_output(capsys):
