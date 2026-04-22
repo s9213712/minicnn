@@ -55,6 +55,7 @@ materially more stable, easier to automate, and easier to explain honestly.
   - flex run orchestration helpers
   - unified cuda_native bridge helpers
   - unified cuda_native runtime loop helpers
+  - unified cuda_native support helpers
   - artifact inspect/export helpers
   - legacy GPU buffer container helpers
   - legacy checkpoint payload helpers
@@ -115,6 +116,7 @@ Representative areas touched in this cleanup wave:
 - `src/minicnn/flex/_training_run.py`
 - `src/minicnn/unified/_cuda_native_bridge.py`
 - `src/minicnn/unified/_cuda_native_runtime.py`
+- `src/minicnn/unified/_cuda_native_support.py`
 - `src/minicnn/training/_checkpoint_payloads.py`
 - `src/minicnn/training/_weight_buffers.py`
 - `src/minicnn/training/_legacy_cuda_runtime.py`
@@ -160,6 +162,9 @@ Recent baseline on this branch:
   loader helper while preserving the historical import surface.
 - train/compare command orchestration now lives in a dedicated CLI helper layer
   instead of remaining inline in `main()`.
+- cuda_native dataset loading, eval, scheduler resolution, and training-summary
+  rendering now live in a focused support layer rather than being mixed into
+  the bridge module.
 - `show-model` and `show-graph` now give two distinct architecture views:
   frontend structure vs compiler-traced primitive graph.
 - `train_from_config()` and `run_cuda_native_training()` now act more clearly as
