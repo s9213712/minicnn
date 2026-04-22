@@ -24,6 +24,13 @@ from ._training_steps import (
     pred_accuracy as _pred_accuracy_impl,
     run_train_epoch,
 )
+from ._training_run import (
+    TrainingRunState,
+    handle_epoch_artifacts,
+    load_best_model_state,
+    should_stop_early,
+    step_scheduler,
+)
 
 
 def _zero_grad(optimizer) -> None:
@@ -124,10 +131,9 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
     epochs = int(train_cfg.get('epochs', 1))
     early_stop_patience = int(train_cfg.get('early_stop_patience', 0) or 0)
     min_delta = float(train_cfg.get('min_delta', 0.0) or 0.0)
-    epochs_no_improve = 0
     runtime_cfg = cfg.get('runtime', {})
     save_every_n_epochs = int(runtime_cfg.get('save_every_n_epochs', train_cfg.get('save_every_n_epochs', 0)) or 0)
-    periodic_checkpoints: list[str] = []
+    run_state = TrainingRunState(best_val_acc=best_val_acc)
 
     with metrics_path.open('w', encoding='utf-8') as metrics_file:
         for epoch in range(1, epochs + 1):
@@ -147,11 +153,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
                 zero_grad=_zero_grad,
             )
             val_metrics = _eval(model, val_loader, criterion, device, loss_type)
-            if scheduler is not None:
-                if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    scheduler.step(val_metrics['loss'])
-                else:
-                    scheduler.step()
+            step_scheduler(torch, scheduler, val_metrics=val_metrics)
             epoch_time_s = time.perf_counter() - epoch_t0
             row = _build_epoch_row(
                 epoch=epoch,
@@ -161,18 +163,18 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
                 epoch_time_s=epoch_time_s,
             )
             _write_metrics_row(metrics_file, row)
-            if save_every_n_epochs > 0 and epoch % save_every_n_epochs == 0:
-                checkpoint_path = _checkpoint_path(run_dir, epoch)
-                torch.save({'epoch': epoch, 'model_state': model.state_dict()}, checkpoint_path)
-                periodic_checkpoints.append(str(checkpoint_path))
-            improved = val_metrics['acc'] > best_val_acc + min_delta
-            if improved:
-                best_val_acc = val_metrics['acc']
-                epochs_no_improve = 0
-                torch.save({'model_state': model.state_dict()}, best_model_path)
-                save_msg = ' saved_best'
-            else:
-                epochs_no_improve += 1
+            improved = handle_epoch_artifacts(
+                torch,
+                run_state=run_state,
+                run_dir=run_dir,
+                epoch=epoch,
+                save_every_n_epochs=save_every_n_epochs,
+                best_model_path=best_model_path,
+                checkpoint_path_for_epoch=_checkpoint_path,
+                model_state=model.state_dict(),
+                val_acc=val_metrics['acc'],
+                min_delta=min_delta,
+            )
             print(
                 _epoch_log_message(
                     epoch=epoch,
@@ -184,17 +186,13 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
                     saved_best=improved,
                 )
             )
-            if early_stop_patience > 0 and epochs_no_improve >= early_stop_patience:
-                print(f'Early stopping after {epoch} epochs; best val_acc={best_val_acc * 100:.2f}%.')
+            if should_stop_early(run_state, early_stop_patience=early_stop_patience):
+                print(f'Early stopping after {epoch} epochs; best val_acc={run_state.best_val_acc * 100:.2f}%.')
                 break
 
     test_metrics = None
     if test_loader is not None and best_model_path.exists():
-        try:
-            checkpoint = torch.load(best_model_path, map_location=device, weights_only=True)
-        except TypeError:  # pragma: no cover - older torch
-            checkpoint = torch.load(best_model_path, map_location=device)
-        model.load_state_dict(checkpoint['model_state'])
+        model.load_state_dict(load_best_model_state(torch, best_model_path, device=device))
         test_metrics = _eval(model, test_loader, criterion, device, loss_type)
 
     summary = _build_training_summary(
@@ -204,7 +202,7 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
         input_shape=input_shape,
         model_cfg=model_cfg,
         cfg=cfg,
-        periodic_checkpoints=periodic_checkpoints,
+        periodic_checkpoints=run_state.periodic_checkpoints,
         test_metrics=test_metrics,
     )
     dump_summary(run_dir, summary)
