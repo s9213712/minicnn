@@ -7,12 +7,13 @@ from typing import Any
 
 import yaml
 
-from minicnn.config.parsing import parse_scalar
+from minicnn.config.parsing import parse_scalar, set_nested_value
 from .schema import (
     BackendConfig,
     CallbackConfig,
     ExperimentConfig,
     FrameworkConfig,
+    LossConfig,
     LoggingConfig,
     ModelConfig,
     OptimConfig,
@@ -28,6 +29,7 @@ SECTION_TYPES = {
     "backend": BackendConfig,
     "train": TrainConfig,
     "optim": OptimConfig,
+    "loss": LossConfig,
     "model": ModelConfig,
     "runtime": RuntimeConfig,
     "logging": LoggingConfig,
@@ -46,6 +48,19 @@ def _deep_update(dst: dict[str, Any], src: dict[str, Any]) -> dict[str, Any]:
     return dst
 
 
+def _apply_overrides(data: dict[str, Any], overrides: list[str]) -> None:
+    parsed_overrides: list[tuple[list[str], Any]] = []
+    for item in overrides:
+        if '=' not in item:
+            raise ValueError(f"Override must look like section.key=value, got: {item}")
+        key, raw = item.split('=', 1)
+        parsed_overrides.append((key.split('.'), parse_scalar(raw)))
+
+    parsed_overrides.sort(key=lambda item: 0 if item[0][-1] == 'type' else 1)
+    for parts, value in parsed_overrides:
+        set_nested_value(data, parts, value, clear_on_type_change=True)
+
+
 def load_config(path: str | Path | None = None, overrides: list[str] | None = None) -> ExperimentConfig:
     data: dict[str, Any] = ExperimentConfig().to_dict()
     if path:
@@ -54,15 +69,7 @@ def load_config(path: str | Path | None = None, overrides: list[str] | None = No
             raise TypeError("Config file must contain a mapping at the top level")
         _deep_update(data, loaded)
     if overrides:
-        for item in overrides:
-            if '=' not in item:
-                raise ValueError(f"Override must look like section.key=value, got: {item}")
-            key, raw = item.split('=', 1)
-            parts = key.split('.')
-            cur = data
-            for p in parts[:-1]:
-                cur = cur.setdefault(p, {})
-            cur[parts[-1]] = parse_scalar(raw)
+        _apply_overrides(data, overrides)
     return dict_to_config(data)
 
 

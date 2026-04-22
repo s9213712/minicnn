@@ -138,6 +138,41 @@ def test_shared_scalar_parser_handles_nested_lists_for_legacy_config():
     assert cfg.train.train_batch_ids == [1, 2, 3]
 
 
+def test_legacy_loader_supports_loss_section_override():
+    from minicnn.config.loader import load_config
+
+    cfg = load_config(None, ['loss.loss_type=mse'])
+
+    assert cfg.loss.loss_type == 'mse'
+
+
+def test_legacy_loader_rejects_invalid_list_override_path():
+    from minicnn.config.loader import load_config
+
+    try:
+        load_config(None, ['model.conv_layers.foo=1'])
+    except TypeError as exc:
+        assert "numeric list index" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError('expected TypeError for invalid list override path')
+
+
+def test_parse_bool_error_lists_accepted_values():
+    from minicnn.config.parsing import parse_bool
+
+    try:
+        parse_bool('maybe', label='dataset.download')
+    except ValueError as exc:
+        message = str(exc)
+    else:  # pragma: no cover
+        raise AssertionError('expected ValueError for invalid bool string')
+
+    assert 'dataset.download' in message
+    assert 'accepted values:' in message
+    assert 'true' in message
+    assert 'false' in message
+
+
 def test_cli_reports_missing_train_flex_config_without_traceback():
     from minicnn.cli import main
 

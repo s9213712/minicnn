@@ -6,6 +6,7 @@ import yaml
 
 
 def parse_bool(value: Any, *, label: str = 'value') -> bool:
+    accepted = 'accepted values: true, false, yes, no, on, off, 1, 0'
     if isinstance(value, bool):
         return value
     if isinstance(value, int) and value in {0, 1}:
@@ -16,7 +17,7 @@ def parse_bool(value: Any, *, label: str = 'value') -> bool:
             return True
         if normalized in {'0', 'false', 'no', 'off'}:
             return False
-    raise ValueError(f'{label} must be a boolean, got {value!r}')
+    raise ValueError(f'{label} must be a boolean, got {value!r}; {accepted}')
 
 
 def parse_scalar(text: str) -> Any:
