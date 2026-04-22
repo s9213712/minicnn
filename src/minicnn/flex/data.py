@@ -13,8 +13,16 @@ try:
     import torch
     import torch.nn.functional as F
     from torch.utils.data import DataLoader, TensorDataset
-except Exception:  # pragma: no cover
+    _TORCH_IMPORT_ERROR = None
+except ModuleNotFoundError as exc:  # pragma: no cover
     torch = None
+    _TORCH_IMPORT_ERROR = None if exc.name == 'torch' else exc
+    F = None
+    DataLoader = None
+    TensorDataset = None
+except Exception as exc:  # pragma: no cover
+    torch = None
+    _TORCH_IMPORT_ERROR = exc
     F = None
     DataLoader = None
     TensorDataset = None
@@ -55,6 +63,16 @@ else:  # pragma: no cover
     AugmentedTensorDataset = None
 
 
+def _require_torch_data_support() -> None:
+    if torch is None or DataLoader is None or AugmentedTensorDataset is None:
+        if _TORCH_IMPORT_ERROR is not None:
+            raise RuntimeError(
+                'PyTorch import failed in this environment for flex data loading. '
+                f'{_TORCH_IMPORT_ERROR.__class__.__name__}: {_TORCH_IMPORT_ERROR}'
+            )
+        raise RuntimeError('PyTorch is required for train-flex')
+
+
 def _make_loader(
     x: np.ndarray,
     y: np.ndarray,
@@ -65,8 +83,7 @@ def _make_loader(
     horizontal_flip: bool = False,
     seed: int = 0,
 ):
-    if torch is None or DataLoader is None or AugmentedTensorDataset is None:
-        raise RuntimeError('PyTorch is required for train-flex')
+    _require_torch_data_support()
     tx = torch.from_numpy(x.astype(np.float32))
     ty = torch.from_numpy(y.astype(np.int64))
     dataset = AugmentedTensorDataset(tx, ty, random_crop_padding=random_crop_padding, horizontal_flip=horizontal_flip, seed=seed)
@@ -130,6 +147,13 @@ def _mnist_dataset(cfg: dict, train_cfg: dict):
     return normalize_mnist(x_train), y_train, normalize_mnist(x_val), y_val
 
 
+_DATASET_ARRAY_LOADERS = {
+    'random': _random_dataset,
+    'cifar10': _cifar_dataset,
+    'mnist': _mnist_dataset,
+}
+
+
 def _load_custom_dataset_factory(factory_path: str):
     if ':' not in factory_path:
         raise ValueError(
@@ -157,14 +181,9 @@ def _load_custom_dataset_factory(factory_path: str):
 
 def _load_dataset_arrays(dataset_cfg: dict, train_cfg: dict):
     dtype = dataset_cfg.get('type', 'cifar10')
-    if dtype == 'random':
-        x_train, y_train, x_val, y_val = _random_dataset(dataset_cfg, train_cfg)
-        return x_train, y_train, x_val, y_val, None, None
-    if dtype == 'cifar10':
-        x_train, y_train, x_val, y_val = _cifar_dataset(dataset_cfg, train_cfg)
-        return x_train, y_train, x_val, y_val, None, None
-    if dtype == 'mnist':
-        x_train, y_train, x_val, y_val = _mnist_dataset(dataset_cfg, train_cfg)
+    loader = _DATASET_ARRAY_LOADERS.get(dtype)
+    if loader is not None:
+        x_train, y_train, x_val, y_val = loader(dataset_cfg, train_cfg)
         return x_train, y_train, x_val, y_val, None, None
 
     factory = _load_custom_dataset_factory(str(dtype))
@@ -196,8 +215,7 @@ def _load_dataset_arrays(dataset_cfg: dict, train_cfg: dict):
 
 
 def create_dataloaders(dataset_cfg: dict, train_cfg: dict, augmentation_cfg: dict | None = None):
-    if torch is None:
-        raise RuntimeError('PyTorch is required for train-flex')
+    _require_torch_data_support()
     x_train, y_train, x_val, y_val, _x_test, _y_test = _load_dataset_arrays(dataset_cfg, train_cfg)
     batch_size = int(train_cfg.get('batch_size', 64))
     num_workers = int(train_cfg.get('num_workers', 0))
@@ -228,8 +246,7 @@ def create_dataloaders(dataset_cfg: dict, train_cfg: dict, augmentation_cfg: dic
 
 
 def create_test_dataloader(dataset_cfg: dict, train_cfg: dict):
-    if torch is None:
-        raise RuntimeError('PyTorch is required for train-flex')
+    _require_torch_data_support()
     dtype = dataset_cfg.get('type', 'cifar10')
     batch_size = int(train_cfg.get('batch_size', 64))
     num_workers = int(train_cfg.get('num_workers', 0))

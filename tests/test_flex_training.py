@@ -182,6 +182,49 @@ def test_custom_dataset_factory_requires_dotted_import_path():
         create_dataloaders(dataset_cfg, {'batch_size': 4, 'num_workers': 0})
 
 
+def test_create_dataloaders_reports_broken_torch_import(monkeypatch):
+    import minicnn.flex.data as data
+
+    monkeypatch.setattr(data, 'torch', None)
+    monkeypatch.setattr(data, 'DataLoader', None)
+    monkeypatch.setattr(data, 'AugmentedTensorDataset', None)
+    monkeypatch.setattr(data, '_TORCH_IMPORT_ERROR', ImportError('broken torch install for test'))
+
+    dataset_cfg = {
+        'type': 'random',
+        'input_shape': [1, 8, 8],
+        'num_classes': 2,
+        'num_samples': 8,
+        'val_samples': 4,
+    }
+
+    with pytest.raises(RuntimeError, match='broken torch install for test'):
+        data.create_dataloaders(dataset_cfg, {'batch_size': 4, 'num_workers': 0})
+
+
+def test_dataset_loader_registry_still_supports_random_dataset():
+    import minicnn.flex.data as data
+
+    x_train, y_train, x_val, y_val, x_test, y_test = data._load_dataset_arrays(
+        {
+            'type': 'random',
+            'input_shape': [1, 4, 4],
+            'num_classes': 2,
+            'num_samples': 4,
+            'val_samples': 2,
+            'seed': 1,
+        },
+        {'batch_size': 2},
+    )
+
+    assert x_train.shape == (4, 1, 4, 4)
+    assert y_train.shape == (4,)
+    assert x_val.shape == (2, 1, 4, 4)
+    assert y_val.shape == (2,)
+    assert x_test is None
+    assert y_test is None
+
+
 def test_train_from_config_applies_init_seed_before_model_build(tmp_path: Path, monkeypatch):
     import torch
     import minicnn.flex.trainer as trainer
