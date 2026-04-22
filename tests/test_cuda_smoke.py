@@ -61,6 +61,25 @@ def test_train_cuda_import_does_not_load_missing_library():
     assert 'import-ok' in result.stdout
 
 
+def test_train_cuda_import_does_not_create_run_dir(tmp_path):
+    run_dir = tmp_path / 'legacy-run-dir'
+    code = (
+        "import os\n"
+        f"os.environ['MINICNN_ARTIFACT_RUN_DIR'] = {str(run_dir)!r}\n"
+        "import minicnn.training.train_cuda\n"
+        "print('import-ok')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, '-c', code],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=SUBPROCESS_ENV,
+    )
+    assert 'import-ok' in result.stdout
+    assert not run_dir.exists()
+
+
 def test_settings_shape_fields_match_model_geometry():
     from minicnn.config import settings
 
