@@ -188,7 +188,7 @@ def _run_smoke_checks() -> dict[str, Any]:
     from minicnn.compiler import optimize, trace_model_config
     from minicnn.cuda_native.api import validate_cuda_native_config
     from minicnn.flex.config import load_flex_config
-    from minicnn.framework.health import healthcheck
+    from minicnn.framework.health import build_diagnostic_payload, healthcheck
     from minicnn.unified.config import load_unified_config
     from minicnn.unified.cuda_legacy import validate_cuda_legacy_compatibility
 
@@ -286,14 +286,10 @@ def _run_smoke_checks() -> dict[str, Any]:
     if overall_ok:
         next_steps.append('minicnn train-flex --config configs/flex_cnn.yaml')
 
-    return {
-        'status': 'ok' if overall_ok else 'error',
+    return build_diagnostic_payload(checks=checks, extra={
         'ok': overall_ok,
-        'checks': checks,
         'next_steps': next_steps,
-        'warnings': [check['name'] for check in checks if (not check['ok']) and (not check['required'])],
-        'errors': [check['name'] for check in checks if (not check['ok']) and check['required']],
-    }
+    })
 
 
 def build_parser() -> argparse.ArgumentParser:

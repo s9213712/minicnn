@@ -232,7 +232,11 @@ def test_cli_smoke_returns_structured_json(capsys):
     payload = json.loads(out)
 
     assert rc == 0
+    assert payload['command'] == 'smoke'
+    assert payload['schema_version'] == 1
     assert payload['ok'] is True
+    assert payload['status'] == payload['summary_status']
+    assert payload['check_summary']['total'] == len(payload['checks'])
     assert isinstance(payload['checks'], list)
     assert any(check['name'] == 'compiler_trace' for check in payload['checks'])
     assert all('severity' in check for check in payload['checks'])
@@ -252,6 +256,7 @@ def test_cli_healthcheck_returns_structured_json(capsys):
     assert payload['schema_version'] == 1
     assert payload['status'] in {'ok', 'warning', 'error'}
     assert payload['summary_status'] == payload['status']
+    assert payload['check_summary']['total'] == len(payload['checks'])
     assert isinstance(payload['checks'], list)
     assert 'flex_registries' in payload
     assert 'warnings' in payload

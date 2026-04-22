@@ -9,6 +9,8 @@ from minicnn.flex.registry import describe_registries
 from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
 from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED
 
+DIAGNOSTIC_SCHEMA_VERSION = 1
+
 
 def _check(name: str, ok: bool, *, required: bool = True, details: dict[str, object] | None = None, suggested_fix: str | None = None) -> dict[str, object]:
     return {
@@ -45,6 +47,29 @@ def _error_messages(checks: list[dict[str, object]]) -> list[str]:
     ]
 
 
+def _check_summary(checks: list[dict[str, object]]) -> dict[str, int]:
+    return {
+        'total': len(checks),
+        'ok': sum(1 for check in checks if bool(check['ok'])),
+        'warning': sum(1 for check in checks if (not bool(check['ok'])) and (not bool(check['required']))),
+        'error': sum(1 for check in checks if (not bool(check['ok'])) and bool(check['required'])),
+    }
+
+
+def build_diagnostic_payload(*, checks: list[dict[str, object]], extra: dict[str, object] | None = None) -> dict[str, object]:
+    status = _summary_status(checks)
+    return {
+        'schema_version': DIAGNOSTIC_SCHEMA_VERSION,
+        'status': status,
+        'summary_status': status,
+        'check_summary': _check_summary(checks),
+        'checks': checks,
+        'warnings': _warning_messages(checks),
+        'errors': _error_messages(checks),
+        **(extra or {}),
+    }
+
+
 def healthcheck() -> dict[str, object]:
     shared_candidates = sorted([p.name for p in CPP_ROOT.glob('*.so')])
     checks = [
@@ -73,20 +98,14 @@ def healthcheck() -> dict[str, object]:
             suggested_fix='Run minicnn prepare-data if you need the handcrafted CIFAR-10 path.',
         ),
     ]
-    return {
-        'schema_version': 1,
-        'status': _summary_status(checks),
-        'summary_status': _summary_status(checks),
+    return build_diagnostic_payload(checks=checks, extra={
         'project_root_exists': PROJECT_ROOT.exists(),
         'data_root_exists': DATA_ROOT.exists(),
         'cpp_root_exists': CPP_ROOT.exists(),
         'shared_objects': shared_candidates,
         'flex_registries': describe_registries(),
         'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
-        'checks': checks,
-        'warnings': _warning_messages(checks),
-        'errors': _error_messages(checks),
-    }
+    })
 
 
 def doctor() -> dict[str, object]:
@@ -110,10 +129,7 @@ def doctor() -> dict[str, object]:
             suggested_fix='Run minicnn prepare-data to enable the handcrafted CIFAR-10 backend.',
         ),
     ]
-    return {
-        'schema_version': 1,
-        'status': _summary_status(checks),
-        'summary_status': _summary_status(checks),
+    return build_diagnostic_payload(checks=checks, extra={
         'project': {
             'project_root': str(PROJECT_ROOT),
             'project_root_exists': PROJECT_ROOT.exists(),
@@ -134,7 +150,4 @@ def doctor() -> dict[str, object]:
         'settings': settings.summarize(),
         'flex_registries': describe_registries(),
         'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
-        'checks': checks,
-        'warnings': _warning_messages(checks),
-        'errors': _error_messages(checks),
-    }
+    })
