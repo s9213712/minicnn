@@ -157,6 +157,14 @@ Python traceback。`healthcheck`、`doctor`、`smoke` 現在都會輸出
 JSON-friendly 結果；若目前 CUDA 不可用，`train.device=cuda` 也會提早失敗並
 提示改用 `train.device=auto` 或 `train.device=cpu`。
 
+這些診斷命令也支援 `--format text`，方便直接在終端查看：
+
+```bash
+minicnn healthcheck --format json
+minicnn doctor --format text
+minicnn smoke --format json
+```
+
 ## Repo-First 資源模型
 
 MiniCNN 目前仍以 repo checkout 為主要使用模型。像

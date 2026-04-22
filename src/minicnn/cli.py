@@ -104,6 +104,39 @@ def _print_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, default=str))
 
 
+def _add_format_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument('--format', choices=['json', 'text'], default='json')
+
+
+def _text_block(title: str, payload: Any) -> str:
+    rendered = json.dumps(payload, indent=2, default=str)
+    return f'{title}:\n{rendered}'
+
+
+def _print_diagnostic(payload: dict[str, Any], *, command: str, output_format: str) -> None:
+    if output_format == 'json':
+        enriched = {'command': command, **payload}
+        _print_json(enriched)
+        return
+
+    status = payload.get('status', 'ok')
+    checks = payload.get('checks', [])
+    warnings = payload.get('warnings', [])
+    errors = payload.get('errors', [])
+    print(f'{command}: {status}')
+    if checks:
+        for check in checks:
+            marker = 'ok' if check.get('ok') else ('warn' if not check.get('required') else 'error')
+            print(f"- [{marker}] {check.get('name')}")
+            suggested_fix = check.get('suggested_fix')
+            if suggested_fix and not check.get('ok'):
+                print(f"  fix: {suggested_fix}")
+    if warnings:
+        print(_text_block('warnings', warnings))
+    if errors:
+        print(_text_block('errors', errors))
+
+
 def _load_config_or_exit(loader, config_path: str | None, overrides: list[str], *, template_cmd: str) -> dict:
     resolved_path = _resolve_cli_config_path(config_path)
     try:
@@ -424,9 +457,12 @@ def _run_smoke_checks() -> dict[str, Any]:
         next_steps.append('minicnn train-flex --config configs/flex_cnn.yaml')
 
     return {
+        'status': 'ok' if overall_ok else 'error',
         'ok': overall_ok,
         'checks': checks,
         'next_steps': next_steps,
+        'warnings': [check['name'] for check in checks if (not check['ok']) and (not check['required'])],
+        'errors': [check['name'] for check in checks if (not check['ok']) and check['required']],
     }
 
 
@@ -448,10 +484,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub.add_parser('prepare-data', help='Download and extract CIFAR-10 Python batches')
-    sub.add_parser('info', help='Show important project paths and summary')
-    sub.add_parser('doctor', help='Run first-run diagnostics for paths, data, and native CUDA')
-    sub.add_parser('healthcheck', help='Validate framework wiring and native artifacts')
-    sub.add_parser('smoke', help='Run a compact first-run self-check across configs, compiler, and backend validation')
+    p_info = sub.add_parser('info', help='Show important project paths and summary')
+    _add_format_arg(p_info)
+    p_doctor = sub.add_parser('doctor', help='Run first-run diagnostics for paths, data, and native CUDA')
+    _add_format_arg(p_doctor)
+    p_health = sub.add_parser('healthcheck', help='Validate framework wiring and native artifacts')
+    _add_format_arg(p_health)
+    p_smoke = sub.add_parser('smoke', help='Run a compact first-run self-check across configs, compiler, and backend validation')
+    _add_format_arg(p_smoke)
     sub.add_parser('list-flex-components', help='List configurable built-in components')
     sub.add_parser('list-dual-components', help='List dual-backend components and cuda_legacy subset')
     sub.add_parser('config-template', help='Print the PyTorch-flex config template')
@@ -559,6 +599,21 @@ def main(argv: list[str] | None = None) -> int:
         from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED
 
         cuda_library = resolve_library_path()
+        payload = {
+            'status': 'ok',
+            'project_root': str(PROJECT_ROOT),
+            'cpp_root': str(CPP_ROOT),
+            'data_root': str(DATA_ROOT),
+            'cuda_library': str(cuda_library),
+            'native_library_present': Path(cuda_library).exists(),
+            'resolved_legacy_settings': settings.summarize(),
+            'health': healthcheck(),
+            'flexible_registries': describe_registries(),
+            'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
+        }
+        if args.format == 'json':
+            _print_json({'command': 'info', **payload})
+            return 0
         print(f'PROJECT_ROOT={PROJECT_ROOT}')
         print(f'CPP_ROOT={CPP_ROOT}')
         print(f'DATA_ROOT={DATA_ROOT}')
@@ -577,18 +632,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == 'healthcheck':
         from minicnn.framework.health import healthcheck
 
-        _print_json(healthcheck())
+        _print_diagnostic(healthcheck(), command='healthcheck', output_format=args.format)
         return 0
 
     if args.command == 'smoke':
         result = _run_smoke_checks()
-        _print_json(result)
+        _print_diagnostic(result, command='smoke', output_format=args.format)
         return 0 if result['ok'] else 2
 
     if args.command == 'doctor':
         from minicnn.framework.health import doctor
 
-        _print_json(doctor())
+        _print_diagnostic(doctor(), command='doctor', output_format=args.format)
         return 0
 
     if args.command == 'list-flex-components':

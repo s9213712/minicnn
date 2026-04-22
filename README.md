@@ -159,6 +159,14 @@ instead of a Python traceback. `healthcheck`, `doctor`, and `smoke` now emit
 JSON-friendly output, and `train.device=cuda` fails early with guidance to use
 `train.device=auto` or `train.device=cpu` when CUDA is unavailable.
 
+Those diagnostic commands also support `--format text` for quick terminal use:
+
+```bash
+minicnn healthcheck --format json
+minicnn doctor --format text
+minicnn smoke --format json
+```
+
 ## Repo-First Resource Model
 
 MiniCNN is still a repo-first tool. Built-in configs such as

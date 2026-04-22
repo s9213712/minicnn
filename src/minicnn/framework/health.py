@@ -21,6 +21,30 @@ def _check(name: str, ok: bool, *, required: bool = True, details: dict[str, obj
     }
 
 
+def _summary_status(checks: list[dict[str, object]]) -> str:
+    if any((not bool(check['ok'])) and bool(check['required']) for check in checks):
+        return 'error'
+    if any(not bool(check['ok']) for check in checks):
+        return 'warning'
+    return 'ok'
+
+
+def _warning_messages(checks: list[dict[str, object]]) -> list[str]:
+    return [
+        str(check['name'])
+        for check in checks
+        if (not bool(check['ok'])) and (not bool(check['required']))
+    ]
+
+
+def _error_messages(checks: list[dict[str, object]]) -> list[str]:
+    return [
+        str(check['name'])
+        for check in checks
+        if (not bool(check['ok'])) and bool(check['required'])
+    ]
+
+
 def healthcheck() -> dict[str, object]:
     shared_candidates = sorted([p.name for p in CPP_ROOT.glob('*.so')])
     checks = [
@@ -50,6 +74,7 @@ def healthcheck() -> dict[str, object]:
         ),
     ]
     return {
+        'status': _summary_status(checks),
         'project_root_exists': PROJECT_ROOT.exists(),
         'data_root_exists': DATA_ROOT.exists(),
         'cpp_root_exists': CPP_ROOT.exists(),
@@ -57,6 +82,8 @@ def healthcheck() -> dict[str, object]:
         'flex_registries': describe_registries(),
         'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
         'checks': checks,
+        'warnings': _warning_messages(checks),
+        'errors': _error_messages(checks),
     }
 
 
@@ -82,6 +109,7 @@ def doctor() -> dict[str, object]:
         ),
     ]
     return {
+        'status': _summary_status(checks),
         'project': {
             'project_root': str(PROJECT_ROOT),
             'project_root_exists': PROJECT_ROOT.exists(),
@@ -103,4 +131,6 @@ def doctor() -> dict[str, object]:
         'flex_registries': describe_registries(),
         'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
         'checks': checks,
+        'warnings': _warning_messages(checks),
+        'errors': _error_messages(checks),
     }

@@ -168,6 +168,7 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'validate-config' in help_text
     assert 'compile' in help_text
     assert '--cuda-arch' in build_help
+    assert '--format {json,text}' in subparsers.choices['healthcheck'].format_help()
 
 
 def test_cli_config_resolution_falls_back_to_project_root():
@@ -206,8 +207,57 @@ def test_cli_healthcheck_returns_structured_json(capsys):
     payload = json.loads(out)
 
     assert rc == 0
+    assert payload['command'] == 'healthcheck'
+    assert payload['status'] in {'ok', 'warning', 'error'}
     assert isinstance(payload['checks'], list)
     assert 'flex_registries' in payload
+    assert 'warnings' in payload
+    assert 'errors' in payload
+
+
+def test_cli_healthcheck_supports_text_output(capsys):
+    from minicnn.cli import main
+
+    rc = main(['healthcheck', '--format', 'text'])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out.startswith('healthcheck: ')
+    assert '- [' in out
+
+
+def test_cli_doctor_supports_text_output(capsys):
+    from minicnn.cli import main
+
+    rc = main(['doctor', '--format', 'text'])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out.startswith('doctor: ')
+
+
+def test_cli_smoke_supports_text_output(capsys):
+    from minicnn.cli import main
+
+    rc = main(['smoke', '--format', 'text'])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out.startswith('smoke: ')
+
+
+def test_cli_info_supports_json_output(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['info', '--format', 'json'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['command'] == 'info'
+    assert 'health' in payload
+    assert 'resolved_legacy_settings' in payload
 
 
 def test_cli_help_still_works_without_torch(tmp_path):

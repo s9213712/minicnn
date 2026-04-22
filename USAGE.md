@@ -123,6 +123,9 @@ instead of a Python traceback. `healthcheck`, `doctor`, and `smoke` emit
 JSON-friendly output. If your PyTorch runtime has no CUDA support,
 `train.device=cuda` fails early and tells you to switch to `auto` or `cpu`.
 
+These diagnostic commands also accept `--format text` for human-readable
+terminal output while keeping `json` as the default machine-readable format.
+
 Built-in config paths such as `configs/flex_cnn.yaml` and
 `configs/dual_backend_cnn.yaml` fall back to project-root-relative resolution,
 so they still work when `minicnn` is launched from outside the repo root.
@@ -308,6 +311,9 @@ config 或 override 寫錯時，也會以簡短訊息和 exit code `2` 失敗，
 Python traceback。`healthcheck`、`doctor`、`smoke` 都會輸出
 JSON-friendly 結果；若目前 PyTorch runtime 不支援 CUDA，
 `train.device=cuda` 也會提早失敗並提示改用 `auto` 或 `cpu`。
+
+這些診斷命令也接受 `--format text`，方便直接在終端查看；`json` 仍是預設的
+機器可讀格式。
 
 像 `configs/flex_cnn.yaml`、`configs/dual_backend_cnn.yaml` 這類內建 config
 路徑，必要時會自動以 project root 為基準解析，所以不必強制在 repo root

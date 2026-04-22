@@ -176,6 +176,7 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
 
 `validate-*`, `doctor`, `healthcheck`, and `smoke` all emit JSON-friendly output.
+`healthcheck`, `doctor`, and `smoke` also accept `--format text`.
 
 See [docs/cuda_native.md](cuda_native.md) for the full guide.
 See [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md) for future extension RFCs.
@@ -367,6 +368,7 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
 
 `validate-*`、`doctor`、`healthcheck`、`smoke` 現在都會輸出 JSON-friendly 結果。
+`healthcheck`、`doctor`、`smoke` 也支援 `--format text`。
 
 完整說明見 [docs/cuda_native.md](cuda_native.md)。
 Phase 5 擴充 RFC 見 [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)。
