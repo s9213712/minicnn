@@ -1,26 +1,23 @@
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 from typing import Any
 
 from minicnn.config.parsing import parse_bool
-from minicnn.paths import BEST_MODELS_ROOT
 
 from .builder import build_loss, build_model, build_optimizer, build_scheduler
 from .data import create_dataloaders, create_test_dataloader
+from .device import _choose_device, torch
+from .reporting import (
+    _best_model_path,
+    _build_epoch_row,
+    _build_training_summary,
+    _checkpoint_path,
+    _epoch_log_message,
+    _write_metrics_row,
+)
 from .runtime import create_run_dir, dump_summary
-
-try:
-    import torch
-    _TORCH_IMPORT_ERROR = None
-except ModuleNotFoundError as exc:  # pragma: no cover
-    torch = None
-    _TORCH_IMPORT_ERROR = None if exc.name == 'torch' else exc
-except Exception as exc:  # pragma: no cover
-    torch = None
-    _TORCH_IMPORT_ERROR = exc
 
 
 def _zero_grad(optimizer) -> None:
@@ -28,26 +25,6 @@ def _zero_grad(optimizer) -> None:
         optimizer.zero_grad(set_to_none=True)
     except TypeError:
         optimizer.zero_grad()
-
-
-def _choose_device(device_cfg: str):
-    if torch is None:
-        if _TORCH_IMPORT_ERROR is not None:
-            raise RuntimeError(
-                'PyTorch import failed in this environment. '
-                f'{_TORCH_IMPORT_ERROR.__class__.__name__}: {_TORCH_IMPORT_ERROR}'
-            )
-        raise RuntimeError('PyTorch is required for train-flex.')
-    if device_cfg == 'cpu':
-        return torch.device('cpu')
-    if device_cfg == 'cuda':
-        if not torch.cuda.is_available():
-            raise RuntimeError(
-                'Requested train.device=cuda, but CUDA is not available in this PyTorch runtime.\n'
-                'Use train.device=auto or train.device=cpu.'
-            )
-        return torch.device('cuda')
-    return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def _adapt_targets(yb, logits, loss_type: str):
@@ -104,16 +81,6 @@ def _eval(model, loader, criterion, device, loss_type: str = 'CrossEntropyLoss')
             acc_sum += _pred_accuracy(logits, yb, loss_type) * bs
             count += bs
     return {'loss': loss_sum / max(count, 1), 'acc': acc_sum / max(count, 1)}
-
-
-def _best_model_path(run_dir: Path) -> Path:
-    BEST_MODELS_ROOT.mkdir(parents=True, exist_ok=True)
-    return BEST_MODELS_ROOT / f'{run_dir.name}_best.pt'
-
-
-def _checkpoint_path(run_dir: Path, epoch: int) -> Path:
-    BEST_MODELS_ROOT.mkdir(parents=True, exist_ok=True)
-    return BEST_MODELS_ROOT / f'{run_dir.name}_epoch_{epoch}.pt'
 
 
 def _optimizer_params(model, optimizer_cfg: dict[str, Any]):
@@ -240,17 +207,14 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
                 else:
                     scheduler.step()
             epoch_time_s = time.perf_counter() - epoch_t0
-            row = {
-                'epoch': epoch,
-                'train_loss': train_metrics['loss'],
-                'train_acc': train_metrics['acc'],
-                'val_loss': val_metrics['loss'],
-                'val_acc': val_metrics['acc'],
-                'lr': optimizer.param_groups[0]['lr'],
-                'epoch_time_s': epoch_time_s,
-            }
-            metrics_file.write(json.dumps(row) + '\n')
-            metrics_file.flush()
+            row = _build_epoch_row(
+                epoch=epoch,
+                train_metrics=train_metrics,
+                val_metrics=val_metrics,
+                lr=optimizer.param_groups[0]['lr'],
+                epoch_time_s=epoch_time_s,
+            )
+            _write_metrics_row(metrics_file, row)
             if save_every_n_epochs > 0 and epoch % save_every_n_epochs == 0:
                 checkpoint_path = _checkpoint_path(run_dir, epoch)
                 torch.save({'epoch': epoch, 'model_state': model.state_dict()}, checkpoint_path)
@@ -263,13 +227,16 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
                 save_msg = ' saved_best'
             else:
                 epochs_no_improve += 1
-                save_msg = ''
             print(
-                f"Epoch {epoch}/{epochs}: loss={train_metrics['loss']:.4f}, "
-                f"train_acc={train_metrics['acc'] * 100:.2f}%, "
-                f"val_acc={val_metrics['acc'] * 100:.2f}%, "
-                f"lr={optimizer.param_groups[0]['lr']:.6g}, "
-                f"time={epoch_time_s:.1f}s{save_msg}"
+                _epoch_log_message(
+                    epoch=epoch,
+                    epochs=epochs,
+                    train_metrics=train_metrics,
+                    val_metrics=val_metrics,
+                    lr=optimizer.param_groups[0]['lr'],
+                    epoch_time_s=epoch_time_s,
+                    saved_best=improved,
+                )
             )
             if early_stop_patience > 0 and epochs_no_improve >= early_stop_patience:
                 print(f'Early stopping after {epoch} epochs; best val_acc={best_val_acc * 100:.2f}%.')
@@ -284,20 +251,15 @@ def train_from_config(cfg: dict[str, Any]) -> Path:
         model.load_state_dict(checkpoint['model_state'])
         test_metrics = _eval(model, test_loader, criterion, device, loss_type)
 
-    summary = {
-        'device': str(device),
-        'run_dir': str(run_dir),
-        'best_model_path': str(best_model_path),
-        'input_shape': list(input_shape),
-        'model_layers': [layer.get('type') for layer in model_cfg.get('layers', [])],
-        'optimizer': cfg.get('optimizer', {}).get('type'),
-        'loss': cfg.get('loss', {}).get('type'),
-        'scheduler': cfg.get('scheduler', {}).get('type') if cfg.get('scheduler', {}).get('enabled') else None,
-    }
-    if periodic_checkpoints:
-        summary['periodic_checkpoints'] = periodic_checkpoints
-    if test_metrics is not None:
-        summary['test_loss'] = test_metrics['loss']
-        summary['test_acc'] = test_metrics['acc']
+    summary = _build_training_summary(
+        device=device,
+        run_dir=run_dir,
+        best_model_path=best_model_path,
+        input_shape=input_shape,
+        model_cfg=model_cfg,
+        cfg=cfg,
+        periodic_checkpoints=periodic_checkpoints,
+        test_metrics=test_metrics,
+    )
     dump_summary(run_dir, summary)
     return run_dir
