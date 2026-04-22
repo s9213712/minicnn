@@ -65,6 +65,24 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
                                 -> cuda_legacy [MAINTENANCE ONLY] (historical handwritten CUDA path)
 ```
 
+## 最近的工程進度
+
+目前這輪 cleanup / refactor 的重點，是在不改 public CLI surface 的前提下，
+把最熱的入口檔案再拆成更聚焦的 helper。
+
+最近完成的收斂包括：
+
+- CLI 已把 parser 建構、readonly 指令、training/compare 指令拆成獨立 helper
+- `flex` 訓練路徑已把 context setup、run orchestration、reporting、device
+  resolution、step-level execution 分層
+- `cuda_native` 的 unified training 已把 bridge、runtime loop、support /
+  reporting helper 分開
+- artifact inspect/export 與 legacy checkpoint payload handling 也已抽到獨立
+  helper 層，不再混在較大的模組裡
+
+結果是：對使用者來說，命令集合不變；對維護者來說，模組責任更窄，也更容易在
+後續 native / kernel 優化前建立明確回滾點。
+
 ## 目前可以直接跑的東西
 
 ### `torch`

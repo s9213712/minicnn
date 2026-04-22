@@ -67,6 +67,25 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
                                 -> cuda_legacy [MAINTENANCE ONLY] (historical handwritten CUDA path)
 ```
 
+## Recent Engineering Progress
+
+The current cleanup and refactor work has pushed more orchestration logic out of
+the hottest entrypoint files without changing the public CLI surface.
+
+Recent passes include:
+
+- CLI dispatch now splits parser construction, readonly commands, and
+  training/compare commands into focused helper modules
+- `flex` training now separates context setup, run orchestration, reporting,
+  device resolution, and step-level execution
+- `cuda_native` unified training now separates bridge helpers, runtime loop
+  helpers, and support/reporting helpers
+- artifact inspection/export and legacy checkpoint payload handling now live in
+  dedicated helper layers instead of staying mixed into larger modules
+
+The result is the same user-facing command set, but with narrower module
+responsibilities and cleaner rollback points for deeper native optimization work.
+
 ## What You Can Run Today
 
 ### `torch`

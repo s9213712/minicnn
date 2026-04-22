@@ -21,6 +21,15 @@ low-risk and medium-risk workstream:
 The repo still contains deeper refactor opportunities, but the current state is
 materially more stable, easier to automate, and easier to explain honestly.
 
+The latest branch-local progress has gone one step further on structural
+refactoring without changing the user-facing command surface:
+
+- CLI parser construction now lives in a dedicated helper module
+- `flex` training context setup now lives in a focused helper layer in addition
+  to the earlier run/step/reporting splits
+- the deeper-refactor branch has been kept pushable at stable checkpoints
+  before each new risky optimization pass
+
 ## Completed
 
 - CLI error handling now separates user-facing failures from internal crashes
@@ -46,11 +55,13 @@ materially more stable, easier to automate, and easier to explain honestly.
 - Several dense modules were split into focused helpers without changing public
   CLI behavior:
   - CLI helpers
+  - CLI parser builder
   - CLI readonly command helpers
   - CLI training/compare command helpers
   - flex device/reporting helpers
   - flex dataset loading helpers
   - flex loader/augmentation helpers
+  - flex training context helpers
   - flex training step helpers
   - flex run orchestration helpers
   - unified cuda_native bridge helpers
@@ -99,6 +110,7 @@ Representative areas touched in this cleanup wave:
 - `src/minicnn/_cli_config.py`
 - `src/minicnn/_cli_errors.py`
 - `src/minicnn/_cli_output.py`
+- `src/minicnn/_cli_parser.py`
 - `src/minicnn/_cli_readonly.py`
 - `src/minicnn/_cli_training.py`
 - `src/minicnn/torch_runtime.py`
@@ -112,6 +124,7 @@ Representative areas touched in this cleanup wave:
 - `src/minicnn/flex/_datasets.py`
 - `src/minicnn/flex/_loader.py`
 - `src/minicnn/flex/reporting.py`
+- `src/minicnn/flex/_training_context.py`
 - `src/minicnn/flex/_training_steps.py`
 - `src/minicnn/flex/_training_run.py`
 - `src/minicnn/unified/_cuda_native_bridge.py`
@@ -140,6 +153,7 @@ The cleanup work added or expanded regression coverage around:
 - autograd-to-torch and cuda_native-to-torch export behavior
 - cuda_legacy checkpoint save/reload transactionality
 - `show-model` / `show-graph` CLI introspection
+- flex training context setup compatibility with historical monkeypatch-based tests
 
 Recent baseline on this branch:
 
@@ -162,6 +176,8 @@ Recent baseline on this branch:
   loader helper while preserving the historical import surface.
 - train/compare command orchestration now lives in a dedicated CLI helper layer
   instead of remaining inline in `main()`.
+- CLI parser construction now lives in a dedicated helper module rather than
+  staying mixed into the dispatch entrypoint.
 - cuda_native dataset loading, eval, scheduler resolution, and training-summary
   rendering now live in a focused support layer rather than being mixed into
   the bridge module.
@@ -169,6 +185,8 @@ Recent baseline on this branch:
   frontend structure vs compiler-traced primitive graph.
 - `train_from_config()` and `run_cuda_native_training()` now act more clearly as
   orchestration entrypoints instead of mixing all step-level logic inline.
+- `train_from_config()` now also separates setup/finalization context from the
+  main loop while preserving the older monkeypatch surface expected by tests.
 
 ## Docs Sync
 
