@@ -34,6 +34,8 @@ materially more stable, easier to automate, and easier to explain honestly.
   imports in user-facing CLI paths.
 - Artifact inspection and export now expose clearer metadata, including
   fingerprints, warnings, and conversion reports for supported torch exports.
+- Torch runtime import and device resolution now share common helpers, reducing
+  drift between CLI preflight checks and flex trainer execution.
 - `show-model` and `show-graph` are now implemented as real CLI features rather
   than placeholder commands, giving frontend-view and compiler-graph-view
   introspection from config.
@@ -45,10 +47,13 @@ materially more stable, easier to automate, and easier to explain honestly.
   CLI behavior:
   - CLI helpers
   - flex device/reporting helpers
+  - flex dataset loading helpers
   - flex training step helpers
   - flex run orchestration helpers
   - unified cuda_native bridge helpers
   - unified cuda_native runtime loop helpers
+  - artifact inspect/export helpers
+  - legacy checkpoint payload helpers
   - legacy CUDA runtime helpers
   - torch baseline runtime helpers
   - autograd data/reporting helpers
@@ -71,9 +76,11 @@ materially more stable, easier to automate, and easier to explain honestly.
 
 These items are intentionally not closed out in the low-risk cleanup passes:
 
-- reduce responsibility density inside `flex/trainer.py`
-- separate validation, execution, and reporting in `unified/cuda_native.py`
-- tighten cross-module artifact/checkpoint schema ownership further
+- reduce responsibility density further inside `cli.py`
+- consider whether `flex/data.py` should eventually split loader/augmentation
+  helpers into separate files without weakening its current monkeypatch surface
+- decide whether `training/checkpoints.py` should split GPU buffer containers
+  away from checkpoint I/O entirely
 - consider versioning more JSON payloads beyond the current diagnostics layer
 - review `scripts/build_windows_native.ps1` and validate it on a real Windows path
 - decide whether the remaining large-structure work should stay on
@@ -87,15 +94,21 @@ Representative areas touched in this cleanup wave:
 - `src/minicnn/_cli_config.py`
 - `src/minicnn/_cli_errors.py`
 - `src/minicnn/_cli_output.py`
+- `src/minicnn/torch_runtime.py`
 - `src/minicnn/framework/health.py`
 - `src/minicnn/artifacts.py`
+- `src/minicnn/_artifact_inspect.py`
+- `src/minicnn/_artifact_export.py`
 - `src/minicnn/introspection/`
 - `src/minicnn/flex/device.py`
+- `src/minicnn/flex/data.py`
+- `src/minicnn/flex/_datasets.py`
 - `src/minicnn/flex/reporting.py`
 - `src/minicnn/flex/_training_steps.py`
 - `src/minicnn/flex/_training_run.py`
 - `src/minicnn/unified/_cuda_native_bridge.py`
 - `src/minicnn/unified/_cuda_native_runtime.py`
+- `src/minicnn/training/_checkpoint_payloads.py`
 - `src/minicnn/training/_legacy_cuda_runtime.py`
 - `src/minicnn/training/_legacy_torch_runtime.py`
 - `src/minicnn/training/_cuda_batch_steps.py`
@@ -115,6 +128,7 @@ The cleanup work added or expanded regression coverage around:
 - run directory collision safety
 - checkpoint inspection payloads
 - autograd-to-torch and cuda_native-to-torch export behavior
+- cuda_legacy checkpoint save/reload transactionality
 - `show-model` / `show-graph` CLI introspection
 
 Recent baseline on this branch:
@@ -132,6 +146,8 @@ Recent baseline on this branch:
   `--format text` where appropriate.
 - `inspect-checkpoint` and `export-torch-checkpoint` now expose richer schema
   information and metadata instead of ad-hoc payload fragments.
+- flex data loading and cuda_native random-data bridging now depend on a shared
+  dataset helper layer instead of duplicating random dataset logic.
 - `show-model` and `show-graph` now give two distinct architecture views:
   frontend structure vs compiler-traced primitive graph.
 - `train_from_config()` and `run_cuda_native_training()` now act more clearly as
@@ -181,6 +197,8 @@ The recent cleanup passes were repeatedly checked with:
 - PyTorch 相依錯誤現在會區分「沒裝 torch」與「torch import 損壞」兩種情況。
 - 產物檢查與匯出現在會帶出較清楚的 metadata，例如 fingerprint、warnings、
   以及支援 torch 匯出時的 conversion report。
+- torch runtime import 與 device resolution 現在共用 helper，減少 CLI 預檢與
+  flex trainer 執行邏輯之間的漂移。
 - `show-model` 與 `show-graph` 已從 skeleton 變成可用的 CLI 功能，能從 config
   輸出前端視角與 compiler graph 視角的架構摘要。
 - backend 角色定位已在主文件中明確化：
@@ -188,9 +206,10 @@ The recent cleanup passes were repeatedly checked with:
   方向，`autograd` 是 correctness oracle，`cuda_legacy` 是 maintenance-only
   的歷史 backend。
 - 多個高熱度檔案已先拆成 focused helper，但不改 public CLI 行為，例如：
-  CLI helpers、flex device/reporting、unified cuda_native bridge、legacy
-  CUDA runtime、torch baseline runtime、autograd data/reporting、CUDA backend
-  loading/buffer helpers。
+  CLI helpers、flex device/reporting、flex dataset loading、artifact
+  inspect/export、unified cuda_native bridge、legacy checkpoint payload、
+  legacy CUDA runtime、torch baseline runtime、autograd data/reporting、CUDA
+  backend loading/buffer helpers。
 - 文件已對齊目前 CLI surface、backend 邊界、artifact 路徑與 repo-first
   config 行為。
 - Windows native build 文件已明確標示為尚未驗證，而不是隱含正式支援。
@@ -208,9 +227,10 @@ The recent cleanup passes were repeatedly checked with:
 
 下列項目刻意沒有在低風險 cleanup 迭代中一併做完：
 
-- 降低 `flex/trainer.py` 的責任密度
-- 在 `unified/cuda_native.py` 更清楚分開 validation、execution、reporting
-- 進一步收斂 artifact / checkpoint schema 的 ownership
+- 進一步降低 `cli.py` 的責任密度
+- 評估 `flex/data.py` 是否要再把 loader / augmentation helper 拆檔，同時保住
+  目前可 monkeypatch 的測試表面
+- 評估 `training/checkpoints.py` 是否要把 GPU buffer 容器與 checkpoint I/O 完全拆開
 - 規劃比目前 diagnostics 更廣的 JSON payload 版本化策略
 - 在真實 Windows 路徑上驗證 `scripts/build_windows_native.ps1`
 - 決定剩下的大型結構整理是否繼續留在 `kernel_optimization`
@@ -223,15 +243,21 @@ The recent cleanup passes were repeatedly checked with:
 - `src/minicnn/_cli_config.py`
 - `src/minicnn/_cli_errors.py`
 - `src/minicnn/_cli_output.py`
+- `src/minicnn/torch_runtime.py`
 - `src/minicnn/framework/health.py`
 - `src/minicnn/artifacts.py`
+- `src/minicnn/_artifact_inspect.py`
+- `src/minicnn/_artifact_export.py`
 - `src/minicnn/introspection/`
 - `src/minicnn/flex/device.py`
+- `src/minicnn/flex/data.py`
+- `src/minicnn/flex/_datasets.py`
 - `src/minicnn/flex/reporting.py`
 - `src/minicnn/flex/_training_steps.py`
 - `src/minicnn/flex/_training_run.py`
 - `src/minicnn/unified/_cuda_native_bridge.py`
 - `src/minicnn/unified/_cuda_native_runtime.py`
+- `src/minicnn/training/_checkpoint_payloads.py`
 - `src/minicnn/training/_legacy_cuda_runtime.py`
 - `src/minicnn/training/_legacy_torch_runtime.py`
 - `src/minicnn/training/_cuda_batch_steps.py`
@@ -251,6 +277,7 @@ cleanup 迭代補強的回歸測試範圍包括：
 - run directory collision safety
 - checkpoint inspect payload
 - autograd/cuda_native 匯出到 torch 的行為
+- cuda_legacy checkpoint save/reload 的 transactionality
 - `show-model` / `show-graph` CLI introspection
 
 近期基線：
@@ -267,6 +294,8 @@ cleanup 迭代補強的回歸測試範圍包括：
 - 驗證與檢查指令在適當情況下統一支援 `--format json` / `--format text`。
 - `inspect-checkpoint` 與 `export-torch-checkpoint` 現在會輸出較完整的 schema
   與 metadata，而不是零散 ad-hoc 欄位。
+- flex data loading 與 cuda_native random-data bridging 現在共用 dataset helper
+  層，不再各自維護 random dataset 邏輯。
 - `show-model` / `show-graph` 提供兩種不同架構視角：前端結構與 compiler traced
   primitive graph。
 - `train_from_config()` 與 `run_cuda_native_training()` 現在更清楚地只扮演
