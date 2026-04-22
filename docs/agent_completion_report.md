@@ -47,6 +47,7 @@ materially more stable, easier to automate, and easier to explain honestly.
   CLI behavior:
   - CLI helpers
   - CLI readonly command helpers
+  - CLI training/compare command helpers
   - flex device/reporting helpers
   - flex dataset loading helpers
   - flex loader/augmentation helpers
@@ -98,6 +99,7 @@ Representative areas touched in this cleanup wave:
 - `src/minicnn/_cli_errors.py`
 - `src/minicnn/_cli_output.py`
 - `src/minicnn/_cli_readonly.py`
+- `src/minicnn/_cli_training.py`
 - `src/minicnn/torch_runtime.py`
 - `src/minicnn/framework/health.py`
 - `src/minicnn/artifacts.py`
@@ -156,6 +158,8 @@ Recent baseline on this branch:
   dataset helper layer instead of duplicating random dataset logic.
 - flex DataLoader construction and augmentation behavior now live in a focused
   loader helper while preserving the historical import surface.
+- train/compare command orchestration now lives in a dedicated CLI helper layer
+  instead of remaining inline in `main()`.
 - `show-model` and `show-graph` now give two distinct architecture views:
   frontend structure vs compiler-traced primitive graph.
 - `train_from_config()` and `run_cuda_native_training()` now act more clearly as

@@ -1,24 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import json
-import time
-from pathlib import Path
-from typing import Any
 
 from minicnn._cli_config import (
-    _ensure_cuda_legacy_prereqs_or_exit,
-    _load_flex_config_or_exit,
-    _load_unified_config_or_exit,
     _resolve_cli_config_path,
-)
-from minicnn._cli_errors import (
-    _ensure_torch_device_supported_or_exit,
-    _run_user_operation_or_exit,
 )
 from minicnn._cli_output import (
     _add_format_arg,
-    _print_json,
 )
 from minicnn._cli_readonly import (
     handle_compile,
@@ -40,10 +28,18 @@ from minicnn._cli_readonly import (
     handle_validate_cuda_native_config,
     handle_validate_dual_config,
 )
+from minicnn._cli_training import (
+    benchmark_fields as _benchmark_fields,
+    common_train_overrides as _common_train_overrides,
+    compare_backends_and_overrides as _compare_backends_and_overrides,
+    handle_compare,
+    handle_train_autograd,
+    handle_train_dual,
+    handle_train_dual_alias,
+    handle_train_flex,
+    handle_train_native,
+)
 from minicnn.core.build import build_native, check_native
-
-
-_COMPARE_BACKENDS = {'torch', 'cuda_legacy', 'autograd'}
 
 
 def _add_common_train_args(parser: argparse.ArgumentParser) -> None:
@@ -63,120 +59,6 @@ def _add_common_train_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--log-interval', type=int)
     parser.add_argument('--grad-debug', action='store_true')
     parser.add_argument('--grad-debug-batches', type=int)
-
-
-def _common_train_overrides(args) -> list[str]:
-    mapping = {
-        'epochs': 'train.epochs',
-        'batch': 'train.batch_size',
-        'lr_conv1': 'optimizer.lr_conv1',
-        'lr_conv': 'optimizer.lr_conv',
-        'lr_fc': 'optimizer.lr_fc',
-        'momentum': 'optimizer.momentum',
-        'weight_decay': 'optimizer.weight_decay',
-        'dataset_seed': 'dataset.seed',
-        'train_seed': 'train.seed',
-        'data_dir': 'dataset.data_root',
-        'eval_max_batches': 'train.eval_max_batches',
-        'log_interval': 'train.log_every',
-        'grad_debug_batches': 'runtime.grad_debug_batches',
-    }
-    overrides = []
-    for attr, key in mapping.items():
-        value = getattr(args, attr, None)
-        if value is not None:
-            overrides.append(f'{key}={value}')
-    if getattr(args, 'init_seed', None) is not None:
-        overrides.append(f'train.init_seed={args.init_seed}')
-    if getattr(args, 'checkpoint_path', None) is not None:
-        overrides.append(f'runtime.best_model_filename={args.checkpoint_path}')
-    if getattr(args, 'grad_debug', False):
-        overrides.append('runtime.grad_debug=true')
-    return overrides
-
-
-def _read_metrics(run_dir: Path) -> list[dict[str, Any]]:
-    metrics_path = run_dir / 'metrics.jsonl'
-    if not metrics_path.exists():
-        return []
-    rows = []
-    for line in metrics_path.read_text(encoding='utf-8').splitlines():
-        line = line.strip()
-        if line:
-            rows.append(json.loads(line))
-    return rows
-
-
-def _effective_train_samples(cfg: dict[str, Any]) -> int:
-    dataset_cfg = cfg.get('dataset', {})
-    train_cfg = cfg.get('train', {})
-    num_samples = int(dataset_cfg.get('num_samples', 0) or 0)
-    batch_size = int(train_cfg.get('batch_size', 0) or 0)
-    max_steps = train_cfg.get('max_steps_per_epoch')
-    if max_steps is not None and batch_size > 0:
-        capped = int(max_steps) * batch_size
-        return min(num_samples, capped) if num_samples > 0 else capped
-    return num_samples
-
-
-def _round_or_none(value: float | None, digits: int = 3) -> float | None:
-    return round(value, digits) if value is not None else None
-
-
-def _benchmark_fields(backend: str, cfg: dict[str, Any], run_dir: Path, elapsed_s: float) -> dict[str, Any]:
-    train_cfg = cfg.get('train', {})
-    dataset_cfg = cfg.get('dataset', {})
-    runtime_cfg = cfg.get('runtime', {})
-    metrics = _read_metrics(run_dir)
-    epoch_times = [
-        float(row['epoch_time_s'])
-        for row in metrics
-        if row.get('epoch_time_s') is not None
-    ]
-    avg_epoch_time = sum(epoch_times) / len(epoch_times) if epoch_times else None
-    train_samples = _effective_train_samples(cfg)
-    throughput_window = avg_epoch_time if avg_epoch_time and avg_epoch_time > 0 else elapsed_s
-    samples_per_sec = (
-        train_samples / throughput_window
-        if train_samples > 0 and throughput_window > 0
-        else None
-    )
-    if backend == 'cuda_legacy':
-        variant = runtime_cfg.get('cuda_variant')
-    elif backend == 'torch':
-        variant = train_cfg.get('device')
-    else:
-        variant = ''
-    return {
-        'variant': variant or '',
-        'train_samples': train_samples,
-        'val_samples': int(dataset_cfg.get('val_samples', 0) or 0),
-        'batch_size': int(train_cfg.get('batch_size', 0) or 0),
-        'epochs_requested': int(train_cfg.get('epochs', 0) or 0),
-        'epochs_completed': len(metrics) if metrics else None,
-        'avg_epoch_time_s': _round_or_none(avg_epoch_time, digits=6),
-        'last_epoch_time_s': _round_or_none(epoch_times[-1] if epoch_times else None, digits=6),
-        'samples_per_sec': _round_or_none(samples_per_sec),
-        'elapsed_s': round(elapsed_s, 3),
-    }
-
-
-def _compare_backends_and_overrides(args) -> tuple[list[str], list[str]]:
-    if args.backends:
-        backends = []
-        extra_overrides = []
-        for token in args.backends:
-            if token in _COMPARE_BACKENDS and not extra_overrides:
-                backends.append(token)
-            elif '=' in token:
-                extra_overrides.append(token)
-            else:
-                expected = ', '.join(sorted(_COMPARE_BACKENDS))
-                raise ValueError(f"invalid compare backend {token!r}; expected one of: {expected}")
-        return backends, [*args.overrides, *extra_overrides]
-    backends = [b for b in (args.backend_a, args.backend_b) if b] or ['torch', 'cuda_legacy']
-    return backends, args.overrides
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='minicnn', description='MiniCNN dual-backend CLI (pure handcrafted CUDA + PyTorch)')
@@ -347,13 +229,7 @@ def main(argv: list[str] | None = None) -> int:
         return handle_export_torch_checkpoint(args)
 
     if args.command == 'train-flex':
-        from minicnn.flex.trainer import train_from_config
-
-        cfg = _load_flex_config_or_exit(args.config, [*_common_train_overrides(args), *args.overrides])
-        _ensure_torch_device_supported_or_exit(cfg, 'train-flex')
-        run_dir = _run_user_operation_or_exit(train_from_config, cfg)
-        print(f'Artifacts written to: {run_dir}')
-        return 0
+        return handle_train_flex(args)
 
     if args.command == 'validate-dual-config':
         return handle_validate_dual_config(args)
@@ -362,71 +238,16 @@ def main(argv: list[str] | None = None) -> int:
         return handle_show_cuda_mapping(args)
 
     if args.command in {'train', 'train-dual'}:
-        cfg = _load_unified_config_or_exit(args.config, [*_common_train_overrides(args), *args.overrides])
-        backend = str(cfg.get('engine', {}).get('backend', 'torch'))
-        if backend == 'torch':
-            _ensure_torch_device_supported_or_exit(cfg, 'train-dual with engine.backend=torch')
-        elif backend == 'cuda_legacy':
-            _ensure_cuda_legacy_prereqs_or_exit(cfg)
-        from minicnn.unified.trainer import train_unified_from_config
-
-        run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
-        print(f'Artifacts written to: {run_dir}')
-        return 0
+        return handle_train_dual(args)
 
     if args.command in {'train-cuda', 'train-torch'}:
-        backend = 'cuda_legacy' if args.command == 'train-cuda' else 'torch'
-        cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *_common_train_overrides(args), *args.overrides])
-        if backend == 'torch':
-            _ensure_torch_device_supported_or_exit(cfg, 'train-dual with engine.backend=torch')
-        else:
-            _ensure_cuda_legacy_prereqs_or_exit(cfg)
-        from minicnn.unified.trainer import train_unified_from_config
-
-        run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
-        print(f'Artifacts written to: {run_dir}')
-        return 0
+        return handle_train_dual_alias(args)
 
     if args.command == 'train-autograd':
-        from minicnn.training.train_autograd import train_autograd_from_config
-        cfg = _load_flex_config_or_exit(args.config if args.config else None, [*_common_train_overrides(args), *args.overrides])
-        run_dir = _run_user_operation_or_exit(train_autograd_from_config, cfg)
-        print(f'Artifacts written to: {run_dir}')
-        return 0
+        return handle_train_autograd(args)
 
     if args.command == 'compare':
-        rows = []
-        try:
-            backends, compare_overrides = _compare_backends_and_overrides(args)
-        except ValueError as exc:
-            parser.error(str(exc))
-        for backend in backends:
-            t0 = time.perf_counter()
-            if backend == 'autograd':
-                from minicnn.training.train_autograd import train_autograd_from_config
-                cfg = _load_flex_config_or_exit(args.config if args.config else None, [*_common_train_overrides(args), *compare_overrides])
-                run_dir = _run_user_operation_or_exit(train_autograd_from_config, cfg)
-            else:
-                cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *_common_train_overrides(args), *compare_overrides])
-                if backend == 'torch':
-                    _ensure_torch_device_supported_or_exit(cfg, 'compare with engine.backend=torch')
-                elif backend == 'cuda_legacy':
-                    _ensure_cuda_legacy_prereqs_or_exit(cfg)
-                from minicnn.unified.trainer import train_unified_from_config
-                run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
-            elapsed = time.perf_counter() - t0
-            summary_path = run_dir / 'summary.json'
-            summary = json.loads(summary_path.read_text(encoding='utf-8')) if summary_path.exists() else {}
-            row = {
-                'backend': backend,
-                'run_dir': str(run_dir),
-                'best_model_path': summary.get('best_model_path'),
-                'test_acc': summary.get('test_acc'),
-            }
-            row.update(_benchmark_fields(backend, cfg, run_dir, elapsed))
-            rows.append(row)
-        _print_json({'runs': rows})
-        return 0
+        return handle_compare(args, parser)
 
     if args.command == 'validate-config':
         return handle_validate_config(args)
@@ -438,31 +259,7 @@ def main(argv: list[str] | None = None) -> int:
         return handle_cuda_native_capabilities()
 
     if args.command == 'train-native':
-        import warnings
-        from minicnn.cuda_native.api import get_capability_summary as get_cuda_native_summary
-        from minicnn.unified.trainer import train_unified_from_config
-
-        cfg = _load_unified_config_or_exit(args.config, ['engine.backend=cuda_native', *_common_train_overrides(args), *args.overrides])
-        warnings.warn(
-            '[EXPERIMENTAL] cuda_native backend: backward/training prototypes exist, '
-            'but the validated support boundary remains narrow and not production-ready.',
-            stacklevel=1,
-        )
-        summary = get_cuda_native_summary()
-        _print_json({
-            'backend': 'cuda_native',
-            'status': 'experimental',
-            'validated_support_boundary': {
-                'datasets': summary.get('supported_datasets', []),
-                'losses': summary.get('supported_losses', []),
-                'optimizers': summary.get('supported_optimizers', []),
-                'schedulers': summary.get('supported_schedulers', []),
-                'ops': summary.get('supported_ops', []),
-            },
-        })
-        run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
-        print(f'Artifacts written to: {run_dir}')
-        return 0
+        return handle_train_native(args)
 
     if args.command == 'compile':
         return handle_compile(args)
