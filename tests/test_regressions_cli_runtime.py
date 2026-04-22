@@ -169,6 +169,8 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'compile' in help_text
     assert '--cuda-arch' in build_help
     assert '--format {json,text}' in subparsers.choices['healthcheck'].format_help()
+    assert '--format {json,text}' in subparsers.choices['inspect-checkpoint'].format_help()
+    assert '--format {json,text}' in subparsers.choices['validate-dual-config'].format_help()
 
 
 def test_cli_config_resolution_falls_back_to_project_root():
@@ -258,6 +260,35 @@ def test_cli_info_supports_json_output(capsys):
     assert payload['command'] == 'info'
     assert 'health' in payload
     assert 'resolved_legacy_settings' in payload
+
+
+def test_cli_validate_dual_config_supports_text_output(capsys):
+    from minicnn.cli import main
+
+    rc = main(['validate-dual-config', '--format', 'text'])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out.startswith('validate-dual-config: ok')
+    assert 'backend: cuda_legacy' in out
+
+
+def test_cli_validate_config_reports_text_errors(capsys):
+    from minicnn.cli import main
+
+    rc = main([
+        'validate-config',
+        '--format',
+        'text',
+        'engine.backend=cuda_legacy',
+        'optimizer.type=RMSprop',
+    ])
+
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert out.startswith('validate-config: error')
+    assert 'backend: cuda_legacy' in out
+    assert 'errors:' in out
 
 
 def test_cli_help_still_works_without_torch(tmp_path):
@@ -464,6 +495,26 @@ def test_cli_inspect_checkpoint_reports_npz_schema(capsys, tmp_path):
     assert payload['kind'] in {'autograd_state_dict', 'numpy_state_dict'}
     assert payload['num_keys'] == 2
     assert payload['preview']['layer0_weight']['shape'] == [4, 4]
+
+
+def test_cli_inspect_checkpoint_supports_text_output(capsys, tmp_path):
+    from minicnn.cli import main
+
+    ckpt = tmp_path / 'demo_autograd_best.npz'
+    np.savez(
+        ckpt,
+        layer0_weight=np.zeros((4, 4), dtype=np.float32),
+        layer0_bias=np.zeros((4,), dtype=np.float32),
+    )
+
+    rc = main(['inspect-checkpoint', '--path', str(ckpt), '--format', 'text'])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out.startswith('inspect-checkpoint: ')
+    assert f'path: {ckpt}' in out
+    assert 'format: npz' in out
+    assert 'preview:' in out
 
 
 def test_cli_inspect_checkpoint_reports_missing_torch_for_pt_without_traceback(tmp_path):

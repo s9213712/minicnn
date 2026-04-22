@@ -137,6 +137,54 @@ def _print_diagnostic(payload: dict[str, Any], *, command: str, output_format: s
         print(_text_block('errors', errors))
 
 
+def _print_validation_result(payload: dict[str, Any], *, command: str, output_format: str) -> None:
+    if output_format == 'json':
+        _print_json({'command': command, **payload})
+        return
+
+    status = payload.get('status', 'ok' if payload.get('ok', False) else 'error')
+    print(f'{command}: {status}')
+    backend = payload.get('backend')
+    if backend:
+        print(f'backend: {backend}')
+    note = payload.get('note')
+    if note:
+        print(f'note: {note}')
+    errors = payload.get('errors', [])
+    if errors:
+        print(_text_block('errors', errors))
+
+
+def _print_generic_payload(payload: dict[str, Any], *, command: str, output_format: str) -> None:
+    if output_format == 'json':
+        _print_json({'command': command, **payload})
+        return
+
+    headline = payload.get('status') or payload.get('kind') or payload.get('format') or 'ok'
+    print(f'{command}: {headline}')
+    for key in ('path', 'format', 'kind', 'backend', 'note'):
+        value = payload.get(key)
+        if value not in (None, '', [], {}):
+            print(f'{key}: {value}')
+    for key in (
+        'compatible_backends',
+        'top_level_keys',
+        'state_keys',
+        'keys',
+        'preview',
+        'project',
+        'model',
+        'optim',
+        'train',
+        'runtime',
+        'warnings',
+        'errors',
+    ):
+        value = payload.get(key)
+        if value not in (None, '', [], {}):
+            print(_text_block(key, value))
+
+
 def _load_config_or_exit(loader, config_path: str | None, overrides: list[str], *, template_cmd: str) -> dict:
     resolved_path = _resolve_cli_config_path(config_path)
     try:
@@ -498,6 +546,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser('dual-config-template', help='Print the dual-backend unified config template')
     p_inspect_ckpt = sub.add_parser('inspect-checkpoint', help='Inspect a saved model/checkpoint artifact (.pt/.pth/.npz)')
     p_inspect_ckpt.add_argument('--path', required=True, type=str)
+    _add_format_arg(p_inspect_ckpt)
     p_export_ckpt = sub.add_parser('export-torch-checkpoint', help='Export a supported MiniCNN checkpoint to a generic torch checkpoint (.pt)')
     p_export_ckpt.add_argument('--path', required=True, type=str)
     p_export_ckpt.add_argument('--config', required=True, type=str)
@@ -544,14 +593,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate = sub.add_parser('validate-dual-config', help='Validate whether a config can run on cuda_legacy')
     p_validate.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
     p_validate.add_argument('overrides', nargs='*')
+    _add_format_arg(p_validate)
 
     p_map = sub.add_parser('show-cuda-mapping', help='Show how a unified config maps onto the handcrafted CUDA backend')
     p_map.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
     p_map.add_argument('overrides', nargs='*')
+    _add_format_arg(p_map)
 
     p_validate_any = sub.add_parser('validate-config', help='Validate shared config shape and backend compatibility')
     p_validate_any.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
     p_validate_any.add_argument('overrides', nargs='*')
+    _add_format_arg(p_validate_any)
 
     p_compile = sub.add_parser('compile', help='Trace and optimize a model config into MiniCNN IR')
     p_compile.add_argument('--config', type=str, default='configs/autograd_tiny.yaml')
@@ -564,6 +616,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate_native = sub.add_parser('validate-cuda-native-config', help='[EXPERIMENTAL] Validate config against cuda_native constraints')
     p_validate_native.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
     p_validate_native.add_argument('overrides', nargs='*')
+    _add_format_arg(p_validate_native)
 
     sub.add_parser('cuda-native-capabilities', help='[EXPERIMENTAL] Print cuda_native capability descriptor')
 
@@ -683,7 +736,7 @@ def main(argv: list[str] | None = None) -> int:
             payload = inspect_checkpoint(args.path)
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
             _exit_user_error(str(exc))
-        _print_json(payload)
+        _print_generic_payload(payload, command='inspect-checkpoint', output_format=args.format)
         return 0
 
     if args.command == 'export-torch-checkpoint':
@@ -714,17 +767,27 @@ def main(argv: list[str] | None = None) -> int:
 
         cfg = _load_unified_config_or_exit(args.config, args.overrides)
         errors = validate_cuda_legacy_compatibility(cfg)
+        payload = {
+            'ok': not errors,
+            'status': 'ok' if not errors else 'error',
+            'backend': 'cuda_legacy',
+            'errors': errors,
+        }
         if errors:
-            _print_json({'ok': False, 'errors': errors})
+            _print_validation_result(payload, command='validate-dual-config', output_format=args.format)
             return 2
-        _print_json({'ok': True, 'backend': 'cuda_legacy'})
+        _print_validation_result(payload, command='validate-dual-config', output_format=args.format)
         return 0
 
     if args.command == 'show-cuda-mapping':
         from minicnn.unified.cuda_legacy import summarize_legacy_mapping
 
         cfg = _load_unified_config_or_exit(args.config, args.overrides)
-        _print_json(summarize_legacy_mapping(cfg))
+        _print_generic_payload(
+            summarize_legacy_mapping(cfg),
+            command='show-cuda-mapping',
+            output_format=args.format,
+        )
         return 0
 
     if args.command in {'train', 'train-dual'}:
@@ -806,7 +869,13 @@ def main(argv: list[str] | None = None) -> int:
             errors = validate_cuda_native_config(cfg)
         else:
             errors = []
-        _print_json({'ok': not errors, 'errors': errors, 'backend': backend})
+        payload = {
+            'ok': not errors,
+            'status': 'ok' if not errors else 'error',
+            'errors': errors,
+            'backend': backend,
+        }
+        _print_validation_result(payload, command='validate-config', output_format=args.format)
         return 0 if not errors else 2
 
     if args.command == 'validate-cuda-native-config':
@@ -814,14 +883,17 @@ def main(argv: list[str] | None = None) -> int:
 
         cfg = _load_unified_config_or_exit(args.config, args.overrides)
         errors = validate_cuda_native_config(cfg)
-        if errors:
-            _print_json({'ok': False, 'errors': errors, 'backend': 'cuda_native'})
-            return 2
-        _print_json({
-            'ok': True,
+        payload = {
+            'ok': not errors,
+            'status': 'ok' if not errors else 'error',
+            'errors': errors,
             'backend': 'cuda_native',
-            'note': 'experimental — backward/training prototypes present, strict boundary validation applied',
-        })
+        }
+        if errors:
+            _print_validation_result(payload, command='validate-cuda-native-config', output_format=args.format)
+            return 2
+        payload['note'] = 'experimental — backward/training prototypes present, strict boundary validation applied'
+        _print_validation_result(payload, command='validate-cuda-native-config', output_format=args.format)
         return 0
 
     if args.command == 'cuda-native-capabilities':

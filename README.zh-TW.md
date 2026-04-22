@@ -153,16 +153,19 @@ config、跑一次小型 compiler trace，並驗證 `cuda_legacy` 與
 階段直接丟 traceback。
 
 config 或 override 寫錯時，也會以簡短訊息和 exit code `2` 失敗，而不是吐出
-Python traceback。`healthcheck`、`doctor`、`smoke` 現在都會輸出
-JSON-friendly 結果；若目前 CUDA 不可用，`train.device=cuda` 也會提早失敗並
-提示改用 `train.device=auto` 或 `train.device=cpu`。
+Python traceback。`healthcheck`、`doctor`、`smoke`、`validate-*`、
+`show-cuda-mapping`、`inspect-checkpoint` 現在都會輸出 JSON-friendly
+結果；若目前 CUDA 不可用，`train.device=cuda` 也會提早失敗並提示改用
+`train.device=auto` 或 `train.device=cpu`。
 
-這些診斷命令也支援 `--format text`，方便直接在終端查看：
+這些診斷、檢查與驗證命令也支援 `--format text`，方便直接在終端查看：
 
 ```bash
 minicnn healthcheck --format json
 minicnn doctor --format text
 minicnn smoke --format json
+minicnn validate-dual-config --format text
+minicnn inspect-checkpoint --path artifacts/models/example_best.pt --format text
 ```
 
 ## Repo-First 資源模型

@@ -155,16 +155,20 @@ If a command needs PyTorch, the CLI now fails with a short dependency message
 instead of an import-time traceback.
 
 Config and override mistakes also fail with a short message and exit code `2`
-instead of a Python traceback. `healthcheck`, `doctor`, and `smoke` now emit
+instead of a Python traceback. `healthcheck`, `doctor`, `smoke`,
+`validate-*`, `show-cuda-mapping`, and `inspect-checkpoint` now emit
 JSON-friendly output, and `train.device=cuda` fails early with guidance to use
 `train.device=auto` or `train.device=cpu` when CUDA is unavailable.
 
-Those diagnostic commands also support `--format text` for quick terminal use:
+Those inspection and validation commands also support `--format text` for
+quick terminal use:
 
 ```bash
 minicnn healthcheck --format json
 minicnn doctor --format text
 minicnn smoke --format json
+minicnn validate-dual-config --format text
+minicnn inspect-checkpoint --path artifacts/models/example_best.pt --format text
 ```
 
 ## Repo-First Resource Model
