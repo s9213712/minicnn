@@ -17,11 +17,18 @@ htmlcov/
 build/
 dist/
 cmake-build-*/
-cpp/build*/
+cpp/build-*/
 cpp/Debug/
 cpp/Release/
 cpp/RelWithDebInfo/
 cpp/MinSizeRel/
+cpp/x64/
+cpp/*.so
+cpp/*.dll
+cpp/*.lib
+cpp/*.exp
+cpp/*.pdb
+cpp/*.ilk
 scripts/require/
 
 # Runtime outputs
