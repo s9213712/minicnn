@@ -768,6 +768,48 @@ def test_export_autograd_checkpoint_to_torch_pt(tmp_path):
     assert payload['conversion_report']['source_checkpoint_fingerprint']
 
 
+def test_export_autograd_checkpoint_reports_output_schema(capsys, tmp_path):
+    import json
+
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'autograd_export.yaml'
+    config_path.write_text(
+        'dataset:\n'
+        '  input_shape: [1, 4, 4]\n'
+        'model:\n'
+        '  layers:\n'
+        '    - type: Flatten\n'
+        '    - type: Linear\n'
+        '      out_features: 2\n',
+        encoding='utf-8',
+    )
+    ckpt_path = tmp_path / 'demo_autograd_best.npz'
+    np.savez(
+        ckpt_path,
+        **{
+            '1.weight': np.zeros((16, 2), dtype=np.float32),
+            '1.bias': np.zeros((2,), dtype=np.float32),
+        },
+    )
+    out_path = tmp_path / 'exported.pt'
+
+    rc = main([
+        'export-torch-checkpoint',
+        '--path', str(ckpt_path),
+        '--config', str(config_path),
+        '--output', str(out_path),
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['format'] == 'pt'
+    assert payload['kind'] == 'torch_state_dict_checkpoint'
+    assert payload['compatible_backends'] == ['torch', 'train-flex', 'train-dual(engine.backend=torch)']
+    assert payload['metadata']['source_checkpoint'] == str(ckpt_path)
+    assert payload['metadata']['config_path'] == str(config_path)
+
+
 def test_export_cuda_native_checkpoint_to_torch_pt(tmp_path):
     import torch
 
@@ -817,6 +859,37 @@ def test_export_cuda_native_checkpoint_to_torch_pt(tmp_path):
     assert payload['source_format'] == 'cuda_native_param_dict'
     assert tuple(payload['model_state']['4.weight'].shape) == (2, 256)
     assert payload['conversion_report']['skipped_source_keys'] == []
+
+
+def test_cli_inspect_torch_checkpoint_includes_export_metadata(capsys, tmp_path):
+    import json
+    import torch
+
+    from minicnn.cli import main
+
+    ckpt = tmp_path / 'exported.pt'
+    torch.save(
+        {
+            'model_state': {
+                '0.weight': torch.zeros((2, 2)),
+            },
+            'source_format': 'autograd_state_dict',
+            'source_checkpoint': 'artifacts/models/demo_autograd_best.npz',
+            'config_path': 'configs/autograd_tiny.yaml',
+            'backend_hint': 'torch',
+            'defaulted_keys': ['0.bias'],
+        },
+        ckpt,
+    )
+
+    rc = main(['inspect-checkpoint', '--path', str(ckpt)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['format'] == 'pt'
+    assert payload['kind'] == 'torch_state_dict_checkpoint'
+    assert payload['metadata']['source_format'] == 'autograd_state_dict'
+    assert payload['metadata']['backend_hint'] == 'torch'
 
 
 def test_export_cuda_legacy_checkpoint_is_rejected(capsys, tmp_path):

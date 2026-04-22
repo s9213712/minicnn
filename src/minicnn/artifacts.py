@@ -97,6 +97,11 @@ def inspect_torch_checkpoint(path: str | Path) -> dict[str, Any]:
             'preview': {},
         }
     model_state = payload.get('model_state')
+    metadata = {
+        key: payload[key]
+        for key in ('source_format', 'source_checkpoint', 'config_path', 'backend_hint', 'defaulted_keys', 'conversion_report')
+        if key in payload
+    }
     warnings: list[str] = []
     if isinstance(model_state, dict):
         state_keys = sorted(model_state.keys())
@@ -114,13 +119,16 @@ def inspect_torch_checkpoint(path: str | Path) -> dict[str, Any]:
         kind=TORCH_STATE_DICT_CHECKPOINT_KIND,
         warnings=warnings,
     )
-    return {
+    result = {
         **info.to_dict(),
         'top_level_keys': sorted(payload.keys()),
         'state_keys': state_keys,
         'num_state_keys': len(state_keys),
         'preview': preview,
     }
+    if metadata:
+        result['metadata'] = metadata
+    return result
 
 
 def inspect_checkpoint(path: str | Path) -> dict[str, Any]:
@@ -222,13 +230,25 @@ def _export_autograd_npz_to_torch(
         'backend_hint': 'torch',
         'conversion_report': conversion_report,
     }, output)
+    output_info = build_checkpoint_info(
+        path=output,
+        format='pt',
+        kind=TORCH_STATE_DICT_CHECKPOINT_KIND,
+        warnings=[],
+    )
     return {
+        **output_info.to_dict(),
         'ok': True,
         'source_format': 'autograd_state_dict',
         'output_path': str(output),
         'defaulted_keys': defaulted,
         'num_keys': len(converted),
         'model_layers': [layer.get('type') for layer in cfg.get('model', {}).get('layers', [])],
+        'metadata': {
+            'source_checkpoint': str(checkpoint_path),
+            'config_path': str(config_path),
+            'backend_hint': 'torch',
+        },
         'conversion_report': conversion_report,
     }
 
@@ -317,13 +337,25 @@ def _export_cuda_native_npz_to_torch(
         'backend_hint': 'torch',
         'conversion_report': conversion_report,
     }, output)
+    output_info = build_checkpoint_info(
+        path=output,
+        format='pt',
+        kind=TORCH_STATE_DICT_CHECKPOINT_KIND,
+        warnings=[],
+    )
     return {
+        **output_info.to_dict(),
         'ok': True,
         'source_format': 'cuda_native_param_dict',
         'output_path': str(output),
         'defaulted_keys': defaulted,
         'num_keys': len(converted),
         'model_layers': [layer.get('type') for layer in cfg.get('model', {}).get('layers', [])],
+        'metadata': {
+            'source_checkpoint': str(checkpoint_path),
+            'config_path': str(config_path),
+            'backend_hint': 'torch',
+        },
         'conversion_report': conversion_report,
     }
 
