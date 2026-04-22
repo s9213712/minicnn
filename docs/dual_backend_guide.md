@@ -33,6 +33,11 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
 
 Do not assume any backend accepts the same full surface as torch.
+Validation errors now return a short CLI message or JSON payload with exit code `2`, not a traceback.
+
+If you target `engine.backend=torch` with `train.device=cuda`, MiniCNN now
+fails early when the active PyTorch runtime has no CUDA support and tells you
+to use `train.device=auto` or `train.device=cpu`.
 
 ## Inspect The Mapping
 
@@ -146,6 +151,11 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
 
 不要假設任何 backend 接受和 torch 一樣廣的前端功能。
+驗證錯誤現在都會以簡短 CLI 訊息或 JSON payload 回報，exit code 固定 `2`，不再直接吐 traceback。
+
+如果你在 `engine.backend=torch` 下指定 `train.device=cuda`，但目前的
+PyTorch runtime 沒有 CUDA，MiniCNN 會提早失敗並提示改用
+`train.device=auto` 或 `train.device=cpu`。
 
 ## 查看 Mapping
 

@@ -172,6 +172,8 @@ That means:
 - `config-template` and `dual-config-template` are the portable built-ins
 - if you need a fully packaged toolchain, use explicit config paths instead of
   assuming repo files exist in site-packages
+- if a built-in config still cannot be found, the CLI now tells you to pass an
+  explicit `--config` path instead of failing with a traceback
 
 ## Build The Native CUDA Library
 

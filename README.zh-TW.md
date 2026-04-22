@@ -168,6 +168,7 @@ MiniCNN 目前仍以 repo checkout 為主要使用模型。像
 - 主要支援 workflow 仍是 repo 內的 editable install
 - 真正可攜的內建內容是 `config-template` 與 `dual-config-template`
 - 若要做完整 packaged toolchain，請顯式傳入 config 路徑，不要假設 repo 檔案會出現在 site-packages
+- 若內建 config 仍然找不到，CLI 現在會明確提示改傳顯式 `--config` 路徑，而不是吐 traceback
 
 ## 編譯 Native CUDA Library
 

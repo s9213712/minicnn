@@ -100,6 +100,8 @@ src/minicnn/
 - `cuda_legacy` is a narrow backend with validator-enforced limits
 - `autograd` is for learning and tests, not throughput
 - `cuda_native` is a graph-based research prototype, not a drop-in replacement for any stable backend
+- `healthcheck`, `doctor`, and `smoke` are JSON-friendly CLI surfaces for automation
+- config and override mistakes fail at the CLI boundary with short exit-code-2 messages instead of Python tracebacks
 
 See [backend_capabilities.md](backend_capabilities.md) for the support matrix and [dual_backend_guide.md](dual_backend_guide.md) for change-impact guidance.
 
@@ -230,6 +232,8 @@ src/minicnn/
 - `cuda_legacy` 是有 validator 強制限制的窄 backend
 - `autograd` 用於學習和測試，不追求吞吐量
 - `cuda_native` 是 graph-based 研究 prototype，不是任何穩定 backend 的直接替代品
+- `healthcheck`、`doctor`、`smoke` 目前都是適合 automation 的 JSON-friendly CLI 介面
+- config 或 override 錯誤會在 CLI 邊界以簡短訊息和 exit code 2 失敗，不再直接吐出 Python traceback
 
 ## 新增功能指引
 

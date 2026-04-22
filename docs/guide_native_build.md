@@ -89,6 +89,9 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
 
 `--check` verifies required exported symbols. `maxpool_backward_nchw_status` is a status-returning compatibility symbol that lets the Python wrapper convert native parameter errors into catchable exceptions.
 
+Before training, use `minicnn validate-dual-config` and `minicnn healthcheck`.
+They now emit JSON-friendly output or short user-facing failures instead of raw tracebacks.
+
 ## GPU Architecture
 
 | GPU series | `-arch` |
@@ -240,6 +243,9 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml \
 minicnn train-dual --config configs/dual_backend_cnn.yaml \
   engine.backend=cuda_legacy runtime.cuda_variant=handmade
 ```
+
+正式訓練前建議先跑 `minicnn validate-dual-config` 與 `minicnn healthcheck`。
+這些命令現在都會輸出 JSON-friendly 結果，或以簡短使用者訊息失敗，不再直接吐 raw traceback。
 
 ## GPU 架構
 

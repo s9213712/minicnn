@@ -124,6 +124,7 @@ Stable support boundary:
 - loss: `CrossEntropyLoss`, `MSELoss`
 
 Use `minicnn validate-dual-config` before running.
+Validation failures now return short CLI messages or JSON payloads instead of raw tracebacks.
 
 ## cuda_native (Experimental)
 
@@ -173,6 +174,8 @@ CLI:
 minicnn cuda-native-capabilities
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
+
+`validate-*`, `doctor`, `healthcheck`, and `smoke` all emit JSON-friendly output.
 
 See [docs/cuda_native.md](cuda_native.md) for the full guide.
 See [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md) for future extension RFCs.
@@ -313,6 +316,7 @@ Debugging order:
 - 損失：`CrossEntropyLoss`、`MSELoss`
 
 訓練前請先執行 `minicnn validate-dual-config`。
+驗證失敗現在會回傳簡短 CLI 訊息或 JSON payload，而不是直接丟出 raw traceback。
 
 ## cuda_native（實驗）
 
@@ -361,6 +365,8 @@ CLI：
 minicnn cuda-native-capabilities
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
+
+`validate-*`、`doctor`、`healthcheck`、`smoke` 現在都會輸出 JSON-friendly 結果。
 
 完整說明見 [docs/cuda_native.md](cuda_native.md)。
 Phase 5 擴充 RFC 見 [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)。

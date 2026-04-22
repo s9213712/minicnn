@@ -72,6 +72,9 @@ A broader example config lives at:
 configs/autograd_enhanced.yaml
 ```
 
+`train-autograd` config and override mistakes now fail with short CLI messages
+and exit code `2`, matching the torch and dual-backend paths.
+
 ## Dataset Support
 
 `train-autograd` currently supports:
@@ -250,6 +253,9 @@ minicnn train-autograd --config configs/autograd_tiny.yaml
 ```text
 configs/autograd_enhanced.yaml
 ```
+
+`train-autograd` 的 config 或 override 錯誤，現在也會和 torch / dual-backend
+路徑一樣，以簡短 CLI 訊息和 exit code `2` 失敗。
 
 ## 支援資料集
 

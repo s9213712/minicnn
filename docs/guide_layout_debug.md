@@ -163,8 +163,10 @@ Diagnose incrementally:
 
 - Fix `train.init_seed` before comparing backends to avoid initialization variance.
 - CLI override can modify list elements: `model.layers.1.out_features=7`.
+- Invalid override paths now fail with a short CLI message and exit code `2`, which is useful when debugging list-index mistakes.
 - Boolean strings use a strict parser: `"false"`, `"0"`, `"no"` all parse as false.
 - `cuda_legacy` runtime variant resets the native library cache when switching in the same process. If you suspect the wrong `.so` is loaded, print `MINICNN_CUDA_VARIANT`, `MINICNN_CUDA_SO`, and `resolve_library_path()`.
+- `healthcheck`, `doctor`, and `smoke` are JSON-friendly, so they are safe to feed into scripts before running native debugging steps.
 
 ---
 
@@ -235,5 +237,7 @@ cuda-memcheck python3 -u /tmp/so_function_check.py
 
 - 固定 `train.init_seed` 再比較 backend。
 - CLI override 可直接改 list 元素，例如 `model.layers.1.out_features=7`。
+- 無效 override path 現在會以簡短 CLI 訊息和 exit code `2` 失敗，方便排查 list index 類錯誤。
 - 布林字串 strict parser：`"false"`、`"0"`、`"no"` 都解析成 false。
 - `cuda_legacy` runtime variant 在同一 process 切換時會重設 native library cache。
+- `healthcheck`、`doctor`、`smoke` 都是 JSON-friendly 輸出，適合在進入 native debug 流程前先交給腳本檢查。

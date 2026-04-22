@@ -128,6 +128,8 @@ Built-in config paths such as `configs/flex_cnn.yaml` and
 so they still work when `minicnn` is launched from outside the repo root.
 This is still a repo-first convenience model, not a full packaged-resource
 distribution.
+If a built-in config still cannot be found, the CLI now tells you to pass an
+explicit `--config` path.
 
 ## Document Roles
 
@@ -311,6 +313,7 @@ JSON-friendly 結果；若目前 PyTorch runtime 不支援 CUDA，
 路徑，必要時會自動以 project root 為基準解析，所以不必強制在 repo root
 下執行 `minicnn`。
 但這仍是 repo-first 的便利模型，不是完整 packaged-resource 發行方式。
+如果內建 config 仍然找不到，CLI 現在會明確提示改傳顯式 `--config` 路徑。
 
 ## 文件角色
 

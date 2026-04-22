@@ -86,6 +86,9 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_le
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy runtime.cuda_variant=handmade train.epochs=1
 ```
 
+As on Linux, run `minicnn validate-dual-config` and `minicnn healthcheck`
+first. They now return JSON-friendly output or short user-facing failures.
+
 Both DLL variants should export `maxpool_backward_nchw_status` in addition to the legacy void `maxpool_backward_nchw` symbol.
 
 This part should be verified on a Windows machine after compiling the DLLs.
@@ -179,6 +182,9 @@ Python loader 在同一 process 切換 variant 時會重設 native handle cache�
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy runtime.cuda_variant=cublas train.epochs=1
 minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy runtime.cuda_variant=handmade train.epochs=1
 ```
+
+和 Linux 一樣，建議先執行 `minicnn validate-dual-config` 與
+`minicnn healthcheck`。它們現在會回傳 JSON-friendly 結果，或以簡短訊息失敗。
 
 兩個 DLL variant 都應匯出 `maxpool_backward_nchw_status`，以及舊有的 void `maxpool_backward_nchw` symbol。
 

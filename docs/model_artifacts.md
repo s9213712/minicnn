@@ -46,6 +46,7 @@ Notes:
 
 - inspecting `.pt` / `.pth` still requires PyTorch
 - inspecting `.npz` does not
+- user-facing artifact inspection errors fail with a short CLI message instead of a traceback
 
 ## Export To A Generic Torch Checkpoint
 
@@ -213,6 +214,7 @@ minicnn inspect-checkpoint --path artifacts/models/example_autograd_best.npz
 
 - 檢查 `.pt` / `.pth` 仍需要 PyTorch
 - 檢查 `.npz` 不需要
+- 使用者層級的 artifact 檢查錯誤，現在會以簡短 CLI 訊息失敗，而不是吐 traceback
 
 ## 匯出成通用 torch checkpoint
 

@@ -79,3 +79,4 @@ If a component also needs to run on `cuda_legacy`, you still have to add:
 - Prefer adding built-ins only after a component proves repeatedly useful.
 - Keep user-facing booleans compatible with the strict config parser.
 - Use dotted CLI overrides such as `model.layers.1.out_features=64` for quick experiments.
+- Invalid dotted overrides now fail with a short CLI message instead of a traceback, which makes list-index mistakes easier to diagnose.

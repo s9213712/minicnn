@@ -111,8 +111,11 @@ The primary Python/CLI training path uses the flat C ABI and `ctypes`. `network.
 - `train.init_seed` controls torch/flex model initialization; CUDA legacy and CPU/NumPy autograd use their own seeded init paths.
 - String booleans are parsed strictly: `"false"` and `"0"` do not become true through Python `bool()`.
 - Dotted CLI overrides may update list elements such as `model.layers.1.out_features=7`.
+- Invalid config files and invalid dotted overrides now fail at the CLI boundary with short exit-code-2 messages instead of Python tracebacks.
 - `cuda_legacy` validation reports malformed numeric fields as validation errors before compiling an `ExperimentConfig`.
 - CUDA legacy runtime cleanup frees weights and velocity buffers even when training raises before final evaluation.
+- `healthcheck`, `doctor`, and `smoke` return JSON-friendly payloads for shell tooling and agents.
+- Torch paths now fail early when `train.device=cuda` is requested on a runtime without CUDA support.
 
 ---
 
@@ -225,4 +228,7 @@ minicnn/
 - `train.init_seed` 控制 torch/flex 模型初始化；CUDA legacy 與 CPU/NumPy autograd 使用各自的 seeded init 路徑。
 - 布林字串使用 strict parser；`"false"`、`"0"` 不會透過 Python `bool()` 成為 true。
 - Dotted CLI override 可更新 list 元素，例如 `model.layers.1.out_features=7`。
+- 無效 config 或 dotted override 現在會在 CLI 邊界以簡短訊息和 exit code 2 失敗，不再直接吐出 Python traceback。
 - `cuda_legacy` validation 會把格式錯誤的數值欄位報告為 validation error，而不是在 `ExperimentConfig` compile 後才失敗。
+- `healthcheck`、`doctor`、`smoke` 會回傳 JSON-friendly payload，方便 shell 工具與 agent 使用。
+- torch 路徑若要求 `train.device=cuda`，但當前 runtime 不支援 CUDA，現在會提早失敗。
