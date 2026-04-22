@@ -46,6 +46,7 @@ materially more stable, easier to automate, and easier to explain honestly.
 - Several dense modules were split into focused helpers without changing public
   CLI behavior:
   - CLI helpers
+  - CLI readonly command helpers
   - flex device/reporting helpers
   - flex dataset loading helpers
   - flex training step helpers
@@ -94,6 +95,7 @@ Representative areas touched in this cleanup wave:
 - `src/minicnn/_cli_config.py`
 - `src/minicnn/_cli_errors.py`
 - `src/minicnn/_cli_output.py`
+- `src/minicnn/_cli_readonly.py`
 - `src/minicnn/torch_runtime.py`
 - `src/minicnn/framework/health.py`
 - `src/minicnn/artifacts.py`
@@ -206,7 +208,7 @@ The recent cleanup passes were repeatedly checked with:
   方向，`autograd` 是 correctness oracle，`cuda_legacy` 是 maintenance-only
   的歷史 backend。
 - 多個高熱度檔案已先拆成 focused helper，但不改 public CLI 行為，例如：
-  CLI helpers、flex device/reporting、flex dataset loading、artifact
+  CLI helpers、CLI readonly command helpers、flex device/reporting、flex dataset loading、artifact
   inspect/export、unified cuda_native bridge、legacy checkpoint payload、
   legacy CUDA runtime、torch baseline runtime、autograd data/reporting、CUDA
   backend loading/buffer helpers。
@@ -243,6 +245,7 @@ The recent cleanup passes were repeatedly checked with:
 - `src/minicnn/_cli_config.py`
 - `src/minicnn/_cli_errors.py`
 - `src/minicnn/_cli_output.py`
+- `src/minicnn/_cli_readonly.py`
 - `src/minicnn/torch_runtime.py`
 - `src/minicnn/framework/health.py`
 - `src/minicnn/artifacts.py`
