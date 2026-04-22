@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
 import numpy as np
 
+from minicnn.checkpoint_schema import CHECKPOINT_SCHEMA_VERSION, CUDA_LEGACY_CHECKPOINT_KIND
 from minicnn.core.cuda_backend import g2h, gpu_zeros, lib, upload
 from minicnn.training.cuda_arch import CudaNetGeometry
 
@@ -201,6 +203,10 @@ def save_checkpoint(
     try:
         np.savez(
             str(tmp),
+            schema_version=np.int32(CHECKPOINT_SCHEMA_VERSION),
+            backend=np.str_('cuda_legacy'),
+            checkpoint_kind=np.str_(CUDA_LEGACY_CHECKPOINT_KIND),
+            created_at=np.str_(datetime.now(timezone.utc).isoformat()),
             epoch=np.int32(epoch),
             val_acc=np.float32(val_acc),
             lr_conv1=np.float32(lr_conv1),

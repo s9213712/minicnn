@@ -73,6 +73,7 @@ def _print_generic_payload(payload: dict[str, Any], *, command: str, output_form
             print(f'{key}: {value}')
     for key in (
         'compatible_backends',
+        'metadata',
         'top_level_keys',
         'state_keys',
         'keys',

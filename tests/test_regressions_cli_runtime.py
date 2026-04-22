@@ -502,6 +502,34 @@ def test_cli_inspect_checkpoint_reports_npz_schema(capsys, tmp_path):
     assert payload['preview']['layer0_weight']['shape'] == [4, 4]
 
 
+def test_cli_inspect_checkpoint_reports_legacy_metadata(capsys, tmp_path):
+    import json
+
+    from minicnn.cli import main
+
+    ckpt = tmp_path / 'legacy_best.npz'
+    np.savez(
+        ckpt,
+        schema_version=np.int32(1),
+        backend=np.str_('cuda_legacy'),
+        checkpoint_kind=np.str_('cuda_legacy_checkpoint'),
+        created_at=np.str_('2026-04-22T00:00:00+00:00'),
+        epoch=np.int32(1),
+        val_acc=np.float32(0.1),
+        n_conv=np.int32(4),
+        fc_w=np.zeros((10,), dtype=np.float32),
+        fc_b=np.zeros((1,), dtype=np.float32),
+    )
+
+    rc = main(['inspect-checkpoint', '--path', str(ckpt)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['kind'] == 'cuda_legacy_checkpoint'
+    assert payload['metadata']['backend'] == 'cuda_legacy'
+    assert payload['metadata']['checkpoint_kind'] == 'cuda_legacy_checkpoint'
+
+
 def test_cli_inspect_checkpoint_supports_text_output(capsys, tmp_path):
     from minicnn.cli import main
 
@@ -520,6 +548,31 @@ def test_cli_inspect_checkpoint_supports_text_output(capsys, tmp_path):
     assert f'path: {ckpt}' in out
     assert 'format: npz' in out
     assert 'preview:' in out
+
+
+def test_cli_inspect_checkpoint_text_output_includes_metadata(capsys, tmp_path):
+    from minicnn.cli import main
+
+    ckpt = tmp_path / 'legacy_best.npz'
+    np.savez(
+        ckpt,
+        schema_version=np.int32(1),
+        backend=np.str_('cuda_legacy'),
+        checkpoint_kind=np.str_('cuda_legacy_checkpoint'),
+        created_at=np.str_('2026-04-22T00:00:00+00:00'),
+        epoch=np.int32(1),
+        val_acc=np.float32(0.1),
+        n_conv=np.int32(4),
+        fc_w=np.zeros((10,), dtype=np.float32),
+        fc_b=np.zeros((1,), dtype=np.float32),
+    )
+
+    rc = main(['inspect-checkpoint', '--path', str(ckpt), '--format', 'text'])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert 'metadata:' in out
+    assert 'cuda_legacy' in out
 
 
 def test_cli_inspect_checkpoint_reports_missing_torch_for_pt_without_traceback(tmp_path):
@@ -908,6 +961,50 @@ def test_free_weights_skips_none_and_accepts_none(monkeypatch):
     checkpoints.free_weights([None, 'p1', None, 'p2'])
 
     assert freed == ['p1', 'p2']
+
+
+def test_save_checkpoint_writes_legacy_schema_metadata(tmp_path, monkeypatch):
+    import minicnn.training.checkpoints as checkpoints
+
+    class Stage:
+        def __init__(self):
+            self.weight_numel = 1
+            self.batch_norm = False
+            self.out_c = 1
+
+    class Geom:
+        n_conv = 2
+        fc_out = 1
+        fc_in = 1
+        conv_stages = [Stage(), Stage()]
+
+    weights = checkpoints.DeviceWeights(['c1', 'c2'], 'fc_w_ptr', 'fc_b_ptr')
+    arrays = {
+        'c1': np.array([1], dtype=np.float32),
+        'c2': np.array([2], dtype=np.float32),
+        'fc_w_ptr': np.array([3], dtype=np.float32),
+        'fc_b_ptr': np.array([4], dtype=np.float32),
+    }
+
+    monkeypatch.setattr(checkpoints, 'g2h', lambda ptr, _numel: arrays[ptr])
+
+    ckpt_path = tmp_path / 'legacy_saved.npz'
+    checkpoints.save_checkpoint(
+        str(ckpt_path),
+        epoch=3,
+        val_acc=12.5,
+        lr_conv1=0.1,
+        lr_conv=0.01,
+        lr_fc=0.001,
+        device_weights=weights,
+        geom=Geom(),
+    )
+
+    with np.load(ckpt_path) as ckpt:
+        assert int(ckpt['schema_version']) == 1
+        assert str(ckpt['backend']) == 'cuda_legacy'
+        assert str(ckpt['checkpoint_kind']) == 'cuda_legacy_checkpoint'
+        assert 'created_at' in ckpt
 
 
 def test_evaluation_uses_device_weights_container_interface(monkeypatch):

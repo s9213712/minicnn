@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-
-def _checkpoint_fingerprint(path: str | Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open('rb') as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
-            digest.update(chunk)
-    return digest.hexdigest()
+from minicnn.checkpoint_schema import (
+    TORCH_STATE_DICT_CHECKPOINT_KIND,
+    UNKNOWN_TORCH_PAYLOAD_KIND,
+    build_checkpoint_info,
+    checkpoint_fingerprint,
+    detect_npz_kind,
+    warnings_for_kind,
+)
 
 
 def _array_summary(value: Any) -> dict[str, Any]:
@@ -21,19 +21,6 @@ def _array_summary(value: Any) -> dict[str, Any]:
         'shape': list(arr.shape),
         'dtype': str(arr.dtype),
     }
-
-
-def _detect_npz_kind(path: Path, keys: list[str]) -> str:
-    key_set = set(keys)
-    if {'epoch', 'val_acc', 'fc_w', 'fc_b'} <= key_set:
-        return 'cuda_legacy_checkpoint'
-    if path.name.endswith('_autograd_best.npz'):
-        return 'autograd_state_dict'
-    if any(key.startswith('_running_mean_') or key.startswith('_running_var_') for key in key_set):
-        return 'cuda_native_param_dict'
-    if any(key.startswith('_w_') or key.startswith('_b_') for key in key_set):
-        return 'cuda_native_param_dict'
-    return 'numpy_state_dict'
 
 
 def _torch_tool_import_error(command_name: str, *, action: str) -> RuntimeError:
@@ -71,34 +58,22 @@ def inspect_npz_checkpoint(path: str | Path) -> dict[str, Any]:
             key: _array_summary(ckpt[key])
             for key in keys[:20]
         }
-    kind = _detect_npz_kind(path_obj, keys)
-    compatibility = {
-        'cuda_legacy_checkpoint': ['cuda_legacy'],
-        'autograd_state_dict': ['autograd'],
-        'cuda_native_param_dict': ['cuda_native'],
-        'numpy_state_dict': ['numpy_state_dict_only'],
-    }.get(kind, ['unknown'])
-    warnings: list[str] = []
-    if kind == 'cuda_legacy_checkpoint':
-        warnings.append(
-            'This checkpoint is tied to the handcrafted cuda_legacy runtime schema and cannot be exported directly to torch.'
-        )
-    elif kind == 'numpy_state_dict':
-        warnings.append(
-            'This NPZ file does not match a recognized MiniCNN training artifact schema.'
-        )
-    return {
-        'schema_version': 1,
-        'path': str(path_obj),
-        'format': 'npz',
-        'kind': kind,
-        'fingerprint': _checkpoint_fingerprint(path_obj),
-        'compatible_backends': compatibility,
+        metadata = {
+            key: ckpt[key].tolist()
+            for key in ('schema_version', 'backend', 'checkpoint_kind', 'created_at', 'epoch', 'val_acc')
+            if key in ckpt
+        }
+    kind = detect_npz_kind(path_obj, keys)
+    info = build_checkpoint_info(path=path_obj, format='npz', kind=kind, warnings=warnings_for_kind(kind))
+    payload = {
+        **info.to_dict(),
         'keys': keys,
         'num_keys': len(keys),
         'preview': preview,
-        'warnings': warnings,
     }
+    if metadata:
+        payload['metadata'] = metadata
+    return payload
 
 
 def inspect_torch_checkpoint(path: str | Path) -> dict[str, Any]:
@@ -110,16 +85,16 @@ def inspect_torch_checkpoint(path: str | Path) -> dict[str, Any]:
     except TypeError:  # pragma: no cover - older torch
         payload = torch.load(path_obj, map_location='cpu')
     if not isinstance(payload, dict):
+        info = build_checkpoint_info(
+            path=path_obj,
+            format='torch_pickle',
+            kind=UNKNOWN_TORCH_PAYLOAD_KIND,
+            warnings=['Torch payload is not a dictionary; inspection is limited.'],
+        )
         return {
-            'schema_version': 1,
-            'path': str(path_obj),
-            'format': 'torch_pickle',
-            'kind': 'unknown_torch_payload',
-            'fingerprint': _checkpoint_fingerprint(path_obj),
-            'compatible_backends': [],
+            **info.to_dict(),
             'top_level_type': type(payload).__name__,
             'preview': {},
-            'warnings': ['Torch payload is not a dictionary; inspection is limited.'],
         }
     model_state = payload.get('model_state')
     warnings: list[str] = []
@@ -133,18 +108,18 @@ def inspect_torch_checkpoint(path: str | Path) -> dict[str, Any]:
         state_keys = []
         preview = {}
         warnings.append("Torch checkpoint does not contain a 'model_state' dictionary.")
+    info = build_checkpoint_info(
+        path=path_obj,
+        format='pt',
+        kind=TORCH_STATE_DICT_CHECKPOINT_KIND,
+        warnings=warnings,
+    )
     return {
-        'schema_version': 1,
-        'path': str(path_obj),
-        'format': 'pt',
-        'kind': 'torch_state_dict_checkpoint',
-        'fingerprint': _checkpoint_fingerprint(path_obj),
-        'compatible_backends': ['torch', 'train-flex', 'train-dual(engine.backend=torch)'],
+        **info.to_dict(),
         'top_level_keys': sorted(payload.keys()),
         'state_keys': state_keys,
         'num_state_keys': len(state_keys),
         'preview': preview,
-        'warnings': warnings,
     }
 
 
@@ -236,7 +211,7 @@ def _export_autograd_npz_to_torch(
         'transposed_keys': transposed,
         'defaulted_keys': defaulted,
         'skipped_source_keys': sorted(set(arrays) - consumed_source_keys),
-        'source_checkpoint_fingerprint': _checkpoint_fingerprint(checkpoint_path),
+        'source_checkpoint_fingerprint': checkpoint_fingerprint(checkpoint_path),
     }
     torch.save({
         'model_state': converted,
@@ -331,7 +306,7 @@ def _export_cuda_native_npz_to_torch(
         'transposed_keys': [],
         'defaulted_keys': defaulted,
         'skipped_source_keys': sorted(set(arrays) - consumed_source_keys),
-        'source_checkpoint_fingerprint': _checkpoint_fingerprint(checkpoint_path),
+        'source_checkpoint_fingerprint': checkpoint_fingerprint(checkpoint_path),
     }
     torch.save({
         'model_state': converted,
