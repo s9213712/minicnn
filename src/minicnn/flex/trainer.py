@@ -1,23 +1,18 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 from typing import Any
 
 from minicnn.config.parsing import parse_bool
 
 from .builder import build_loss, build_model, build_optimizer, build_scheduler
-from .data import create_dataloaders, create_test_dataloader
 from .device import _choose_device, torch
 from .reporting import (
-    _best_model_path,
     _build_epoch_row,
-    _build_training_summary,
     _checkpoint_path,
     _epoch_log_message,
     _write_metrics_row,
 )
-from .runtime import create_run_dir, dump_summary
 from ._training_steps import (
     adapt_targets as _adapt_targets_impl,
     evaluate_model as _eval_impl,
@@ -31,6 +26,7 @@ from ._training_run import (
     should_stop_early,
     step_scheduler,
 )
+from ._training_context import finalize_training_run, prepare_training_context
 
 
 def _zero_grad(optimizer) -> None:
@@ -95,115 +91,83 @@ def _optimizer_params(model, optimizer_cfg: dict[str, Any]):
     return groups or model.parameters()
 
 
-def train_from_config(cfg: dict[str, Any]) -> Path:
+def train_from_config(cfg: dict[str, Any]):
     if torch is None:
         _choose_device('auto')
-    dataset_cfg = cfg.get('dataset', {})
-    train_cfg = cfg.get('train', {})
-    model_cfg = cfg.get('model', {})
-    run_dir = create_run_dir(cfg)
-    device = _choose_device(str(train_cfg.get('device', 'auto')))
+    ctx = prepare_training_context(
+        cfg=cfg,
+        torch=torch,
+        choose_device=_choose_device,
+        optimizer_params_builder=_optimizer_params,
+        build_model_fn=build_model,
+        build_loss_fn=build_loss,
+        build_optimizer_fn=build_optimizer,
+        build_scheduler_fn=build_scheduler,
+    )
+    run_state = TrainingRunState(best_val_acc=float('-inf'))
 
-    augmentation_cfg = cfg.get('augmentation', {})
-    train_loader, val_loader = create_dataloaders(dataset_cfg, train_cfg, augmentation_cfg=augmentation_cfg)
-    test_loader = create_test_dataloader(dataset_cfg, train_cfg)
-    input_shape = tuple(dataset_cfg.get('input_shape', [3, 32, 32]))
-    init_seed = int(train_cfg.get('init_seed', dataset_cfg.get('seed', 42)))
-    torch.manual_seed(init_seed)
-    if device.type == 'cuda':
-        torch.cuda.manual_seed_all(init_seed)
-    model = build_model(model_cfg, input_shape=input_shape).to(device)
-    criterion = build_loss(cfg.get('loss', {'type': 'CrossEntropyLoss'}))
-    optimizer_cfg = dict(cfg.get('optimizer', {'type': 'SGD', 'lr': 0.01}))
-    optimizer = build_optimizer(_optimizer_params(model, optimizer_cfg), optimizer_cfg)
-    scheduler = build_scheduler(optimizer, cfg.get('scheduler'))
-    amp_enabled = parse_bool(train_cfg.get('amp', False), label='train.amp') and device.type == 'cuda'
-    if hasattr(torch, 'amp') and hasattr(torch.amp, 'GradScaler'):
-        scaler = torch.amp.GradScaler('cuda', enabled=amp_enabled)
-    else:  # pragma: no cover
-        scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
-
-    loss_type = str(cfg.get('loss', {}).get('type', 'CrossEntropyLoss'))
-    best_val_acc = float('-inf')
-    best_model_path = _best_model_path(run_dir)
-    metrics_path = run_dir / 'metrics.jsonl'
-    grad_accum_steps = max(1, int(train_cfg.get('grad_accum_steps', 1)))
-    epochs = int(train_cfg.get('epochs', 1))
-    early_stop_patience = int(train_cfg.get('early_stop_patience', 0) or 0)
-    min_delta = float(train_cfg.get('min_delta', 0.0) or 0.0)
-    runtime_cfg = cfg.get('runtime', {})
-    save_every_n_epochs = int(runtime_cfg.get('save_every_n_epochs', train_cfg.get('save_every_n_epochs', 0)) or 0)
-    run_state = TrainingRunState(best_val_acc=best_val_acc)
-
-    with metrics_path.open('w', encoding='utf-8') as metrics_file:
-        for epoch in range(1, epochs + 1):
-            if hasattr(train_loader.dataset, 'set_epoch'):
-                train_loader.dataset.set_epoch(epoch)
+    with (ctx.run_dir / 'metrics.jsonl').open('w', encoding='utf-8') as metrics_file:
+        for epoch in range(1, ctx.epochs + 1):
+            if hasattr(ctx.train_loader.dataset, 'set_epoch'):
+                ctx.train_loader.dataset.set_epoch(epoch)
             epoch_t0 = time.perf_counter()
             train_metrics = run_train_epoch(
                 torch,
-                model=model,
-                train_loader=train_loader,
-                criterion=criterion,
-                optimizer=optimizer,
-                scaler=scaler,
-                device=device,
-                loss_type=loss_type,
-                grad_accum_steps=grad_accum_steps,
+                model=ctx.model,
+                train_loader=ctx.train_loader,
+                criterion=ctx.criterion,
+                optimizer=ctx.optimizer,
+                scaler=ctx.scaler,
+                device=ctx.device,
+                loss_type=ctx.loss_type,
+                grad_accum_steps=ctx.grad_accum_steps,
                 zero_grad=_zero_grad,
             )
-            val_metrics = _eval(model, val_loader, criterion, device, loss_type)
-            step_scheduler(torch, scheduler, val_metrics=val_metrics)
+            val_metrics = _eval(ctx.model, ctx.val_loader, ctx.criterion, ctx.device, ctx.loss_type)
+            step_scheduler(torch, ctx.scheduler, val_metrics=val_metrics)
             epoch_time_s = time.perf_counter() - epoch_t0
             row = _build_epoch_row(
                 epoch=epoch,
                 train_metrics=train_metrics,
                 val_metrics=val_metrics,
-                lr=optimizer.param_groups[0]['lr'],
+                lr=ctx.optimizer.param_groups[0]['lr'],
                 epoch_time_s=epoch_time_s,
             )
             _write_metrics_row(metrics_file, row)
             improved = handle_epoch_artifacts(
                 torch,
                 run_state=run_state,
-                run_dir=run_dir,
+                run_dir=ctx.run_dir,
                 epoch=epoch,
-                save_every_n_epochs=save_every_n_epochs,
-                best_model_path=best_model_path,
+                save_every_n_epochs=ctx.save_every_n_epochs,
+                best_model_path=ctx.best_model_path,
                 checkpoint_path_for_epoch=_checkpoint_path,
-                model_state=model.state_dict(),
+                model_state=ctx.model.state_dict(),
                 val_acc=val_metrics['acc'],
-                min_delta=min_delta,
+                min_delta=ctx.min_delta,
             )
             print(
                 _epoch_log_message(
                     epoch=epoch,
-                    epochs=epochs,
+                    epochs=ctx.epochs,
                     train_metrics=train_metrics,
                     val_metrics=val_metrics,
-                    lr=optimizer.param_groups[0]['lr'],
+                    lr=ctx.optimizer.param_groups[0]['lr'],
                     epoch_time_s=epoch_time_s,
                     saved_best=improved,
                 )
             )
-            if should_stop_early(run_state, early_stop_patience=early_stop_patience):
+            if should_stop_early(run_state, early_stop_patience=ctx.early_stop_patience):
                 print(f'Early stopping after {epoch} epochs; best val_acc={run_state.best_val_acc * 100:.2f}%.')
                 break
 
     test_metrics = None
-    if test_loader is not None and best_model_path.exists():
-        model.load_state_dict(load_best_model_state(torch, best_model_path, device=device))
-        test_metrics = _eval(model, test_loader, criterion, device, loss_type)
+    if ctx.test_loader is not None and ctx.best_model_path.exists():
+        ctx.model.load_state_dict(load_best_model_state(torch, ctx.best_model_path, device=ctx.device))
+        test_metrics = _eval(ctx.model, ctx.test_loader, ctx.criterion, ctx.device, ctx.loss_type)
 
-    summary = _build_training_summary(
-        device=device,
-        run_dir=run_dir,
-        best_model_path=best_model_path,
-        input_shape=input_shape,
-        model_cfg=model_cfg,
-        cfg=cfg,
-        periodic_checkpoints=run_state.periodic_checkpoints,
+    return finalize_training_run(
+        ctx=ctx,
+        run_state=run_state,
         test_metrics=test_metrics,
     )
-    dump_summary(run_dir, summary)
-    return run_dir
