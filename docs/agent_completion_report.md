@@ -49,11 +49,13 @@ materially more stable, easier to automate, and easier to explain honestly.
   - CLI readonly command helpers
   - flex device/reporting helpers
   - flex dataset loading helpers
+  - flex loader/augmentation helpers
   - flex training step helpers
   - flex run orchestration helpers
   - unified cuda_native bridge helpers
   - unified cuda_native runtime loop helpers
   - artifact inspect/export helpers
+  - legacy GPU buffer container helpers
   - legacy checkpoint payload helpers
   - legacy CUDA runtime helpers
   - torch baseline runtime helpers
@@ -105,12 +107,14 @@ Representative areas touched in this cleanup wave:
 - `src/minicnn/flex/device.py`
 - `src/minicnn/flex/data.py`
 - `src/minicnn/flex/_datasets.py`
+- `src/minicnn/flex/_loader.py`
 - `src/minicnn/flex/reporting.py`
 - `src/minicnn/flex/_training_steps.py`
 - `src/minicnn/flex/_training_run.py`
 - `src/minicnn/unified/_cuda_native_bridge.py`
 - `src/minicnn/unified/_cuda_native_runtime.py`
 - `src/minicnn/training/_checkpoint_payloads.py`
+- `src/minicnn/training/_weight_buffers.py`
 - `src/minicnn/training/_legacy_cuda_runtime.py`
 - `src/minicnn/training/_legacy_torch_runtime.py`
 - `src/minicnn/training/_cuda_batch_steps.py`
@@ -150,6 +154,8 @@ Recent baseline on this branch:
   information and metadata instead of ad-hoc payload fragments.
 - flex data loading and cuda_native random-data bridging now depend on a shared
   dataset helper layer instead of duplicating random dataset logic.
+- flex DataLoader construction and augmentation behavior now live in a focused
+  loader helper while preserving the historical import surface.
 - `show-model` and `show-graph` now give two distinct architecture views:
   frontend structure vs compiler-traced primitive graph.
 - `train_from_config()` and `run_cuda_native_training()` now act more clearly as
