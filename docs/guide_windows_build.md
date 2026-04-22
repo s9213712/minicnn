@@ -175,6 +175,28 @@ python -u examples\mnist_ctypes\train_mnist_so_full_cnn_frame.py --download
 The smoke script goes through MiniCNN's own DLL resolver and binding layer,
 checks the required symbols, then performs a GPU upload/download round-trip.
 
+## Common Failures
+
+- `nvidia-smi` fails before CMake starts
+  Fix the NVIDIA driver/runtime path first. Do not debug CMake until the GPU is
+  visible.
+- `nvcc --version` fails or `CUDA_PATH` is missing
+  Install the Windows CUDA Toolkit and confirm `%CUDA_PATH%\bin` is available.
+- `corecrt.h` or Windows SDK headers are missing
+  Install the Visual Studio C++ workload and Windows SDK, then re-open a fresh
+  shell.
+- CMake reports generator mismatch or stale cache errors
+  Remove the old build directory or rerun with `.\scripts\build_windows_native.ps1 -Clean`.
+- CMake configures but the expected DLL is not found
+  Check the printed build directory and output name; success is the DLL/LIB
+  pair under `cpp\Release\`, not just a successful configure step.
+- Python cannot load the DLL even though the build succeeded
+  Verify `cpp\` and `%CUDA_PATH%\bin` are visible to the process, then run
+  `examples\mnist_ctypes\check_native_library.py` directly.
+- Variant switching loads the wrong binary
+  Clear stale env vars and prefer explicit `runtime.cuda_variant` or
+  `MINICNN_CUDA_SO`, not both at once.
+
 ---
 
 # Windows Native Build（中文）
@@ -347,3 +369,21 @@ python -u examples\mnist_ctypes\train_mnist_so_full_cnn_frame.py --download
 
 這個 smoke script 會走 MiniCNN 自己的 DLL resolver 與 binding layer，
 先檢查必要 symbol，再做一次 GPU upload/download round-trip。
+
+## 常見失敗案例
+
+- 還沒進 CMake 前，`nvidia-smi` 就失敗
+  先修 NVIDIA driver / runtime 路徑，不要先往 CMake 排查。
+- `nvcc --version` 失敗，或 `CUDA_PATH` 沒有設好
+  先安裝 Windows CUDA Toolkit，確認 `%CUDA_PATH%\bin` 可見。
+- 出現 `corecrt.h` 或 Windows SDK header 找不到
+  補裝 Visual Studio C++ workload 與 Windows SDK，然後重新開 shell。
+- CMake 回報 generator mismatch 或舊 cache 汙染
+  直接刪舊 build 目錄，或重跑 `.\scripts\build_windows_native.ps1 -Clean`。
+- CMake configure 成功，但找不到預期 DLL
+  成功判定應看 `cpp\Release\` 下是否真的出現 DLL/LIB，而不是只看 configure 通過。
+- DLL 已編出來，但 Python 還是載不進去
+  確認 process 看得到 `cpp\` 與 `%CUDA_PATH%\bin`，再直接跑
+  `examples\mnist_ctypes\check_native_library.py`。
+- 切 variant 時載到錯的 binary
+  清掉舊的 env var；`runtime.cuda_variant` 和 `MINICNN_CUDA_SO` 最好只明確指定一種。

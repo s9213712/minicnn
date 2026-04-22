@@ -227,18 +227,24 @@ def _kernel_avgpool2d(node: Node, ctx: dict[str, Any]) -> None:
     ctx[node.outputs[0]] = out
 
 
+DEFAULT_KERNEL_SPECS: tuple[tuple[str, KernelFn], ...] = (
+    ('Conv2d', _kernel_conv2d),
+    ('BatchNorm2d', _kernel_batchnorm2d_eval),
+    ('ReLU', _kernel_relu),
+    ('LeakyReLU', _kernel_leaky_relu),
+    ('Sigmoid', _kernel_sigmoid),
+    ('Tanh', _kernel_tanh),
+    ('SiLU', _kernel_silu),
+    ('Flatten', _kernel_flatten),
+    ('Linear', _kernel_linear),
+    ('MaxPool2d', _kernel_maxpool2d),
+    ('AvgPool2d', _kernel_avgpool2d),
+)
+
+
 def make_default_registry() -> KernelRegistry:
     """Build a KernelRegistry with all Phase-1/2 reference kernels."""
     reg = KernelRegistry()
-    reg.register('Conv2d', _kernel_conv2d)
-    reg.register('BatchNorm2d', _kernel_batchnorm2d_eval)
-    reg.register('ReLU', _kernel_relu)
-    reg.register('LeakyReLU', _kernel_leaky_relu)
-    reg.register('Sigmoid', _kernel_sigmoid)
-    reg.register('Tanh', _kernel_tanh)
-    reg.register('SiLU', _kernel_silu)
-    reg.register('Flatten', _kernel_flatten)
-    reg.register('Linear', _kernel_linear)
-    reg.register('MaxPool2d', _kernel_maxpool2d)
-    reg.register('AvgPool2d', _kernel_avgpool2d)
+    for op_name, fn in DEFAULT_KERNEL_SPECS:
+        reg.register(op_name, fn)
     return reg

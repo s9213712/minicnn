@@ -223,6 +223,14 @@ def test_default_registry_has_minimum_ops():
         assert reg.has(op), f'missing kernel for {op}'
 
 
+def test_default_registry_registered_ops_are_stable():
+    from minicnn.cuda_native.kernels import DEFAULT_KERNEL_SPECS, make_default_registry
+
+    reg = make_default_registry()
+
+    assert reg.registered_ops() == sorted(op_name for op_name, _ in DEFAULT_KERNEL_SPECS)
+
+
 # ---------------------------------------------------------------------------
 # executor
 # ---------------------------------------------------------------------------
