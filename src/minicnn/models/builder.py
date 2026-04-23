@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from minicnn.model_spec import resolve_model_config
 from minicnn.models.registry import get_model_component
 from minicnn.models.shape_inference import infer_layer_shape
 from minicnn.nn import Sequential
@@ -20,6 +21,7 @@ def build_model_from_config(
 ):
     if not isinstance(model_cfg, dict):
         raise TypeError('model config must be a mapping')
+    model_cfg = resolve_model_config(model_cfg)
     input_shape = tuple(input_shape or model_cfg.get('input_shape', [1, 4, 4]))
     _validate_shape('input', input_shape)
     shape = input_shape

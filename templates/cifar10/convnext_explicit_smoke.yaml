@@ -1,0 +1,100 @@
+# CIFAR-10  ConvNeXt explicit smoke config  (Torch backend only)
+#
+# Purpose:
+# - Minimal integration smoke path for explicit ConvNeXt primitives.
+# - Keeps the same frontend structure as convnext_explicit.yaml but shrinks
+#   the dataset and epoch count for quick validation.
+#
+# Run:
+#   minicnn train-flex --config templates/cifar10/convnext_explicit_smoke.yaml
+
+project:
+  name: minicnn
+  run_name: cifar10-convnext-explicit-smoke
+  artifacts_root: artifacts
+
+engine:
+  backend: torch
+  strict_backend_validation: true
+
+dataset:
+  type: cifar10
+  data_root: data/cifar-10-batches-py
+  download: false
+  num_samples: 64
+  val_samples: 16
+  num_classes: 10
+  input_shape: [3, 32, 32]
+  seed: 42
+  random_crop_padding: 4
+  horizontal_flip: true
+
+model:
+  layers:
+    - type: Conv2d
+      out_channels: 64
+      kernel_size: 3
+      stride: 1
+      padding: 1
+    - type: DepthwiseConv2d
+      kernel_size: 7
+    - type: LayerNorm2d
+    - type: PointwiseConv2d
+      out_channels: 256
+    - type: GELU
+    - type: PointwiseConv2d
+      out_channels: 64
+    - type: DepthwiseConv2d
+      kernel_size: 7
+    - type: LayerNorm2d
+    - type: PointwiseConv2d
+      out_channels: 256
+    - type: GELU
+    - type: PointwiseConv2d
+      out_channels: 64
+    - type: Conv2d
+      out_channels: 128
+      kernel_size: 2
+      stride: 2
+    - type: DepthwiseConv2d
+      kernel_size: 7
+    - type: LayerNorm2d
+    - type: PointwiseConv2d
+      out_channels: 512
+    - type: GELU
+    - type: PointwiseConv2d
+      out_channels: 128
+    - type: DepthwiseConv2d
+      kernel_size: 7
+    - type: LayerNorm2d
+    - type: PointwiseConv2d
+      out_channels: 512
+    - type: GELU
+    - type: PointwiseConv2d
+      out_channels: 128
+    - type: GlobalAvgPool2d
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 1
+  batch_size: 16
+  device: cpu
+  amp: false
+  grad_accum_steps: 1
+  num_workers: 0
+  log_every: 10
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: AdamW
+  lr: 0.001
+  weight_decay: 0.05
+
+scheduler:
+  enabled: true
+  type: CosineAnnealingLR
+  T_max: 1

@@ -53,3 +53,16 @@ def test_repository_templates_materialize_supported_models_without_value_errors(
 
         model = build_model(model_cfg, cfg['dataset']['input_shape'])
         assert model.inferred_shapes[-1] == (cfg['dataset']['num_classes'],)
+
+
+def test_convnext_explicit_template_builds_and_runs_forward():
+    import torch
+
+    path = TEMPLATES_ROOT / 'cifar10' / 'convnext_explicit.yaml'
+    cfg = load_flex_config(path, [])
+    _validate_dataset_split(cfg, path)
+
+    model = build_model(cfg['model'], cfg['dataset']['input_shape'])
+    y = model(torch.randn(2, *cfg['dataset']['input_shape']))
+
+    assert tuple(y.shape) == (2, cfg['dataset']['num_classes'])

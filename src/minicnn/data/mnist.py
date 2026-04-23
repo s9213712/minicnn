@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
+from minicnn.user_errors import format_dataset_split_error, format_user_error
+
 MNIST_URL = "https://storage.googleapis.com/cvdf-datasets/mnist"
 MNIST_FILES = {
     "train_images": "train-images-idx3-ubyte.gz",
@@ -78,12 +80,21 @@ def load_mnist(
     train_labels = train_labels[idx]
 
     if n_train < 0 or n_val < 0:
-        raise ValueError('n_train and n_val must be non-negative')
+        raise ValueError(format_user_error(
+            'Dataset split invalid',
+            cause='num_samples and val_samples must be non-negative.',
+            fix='Use values greater than or equal to 0.',
+            example='num_samples=55000\nval_samples=5000',
+        ))
     if n_train + n_val > len(train_images):
-        raise ValueError(
-            f"n_train + n_val exceeds available training samples: "
-            f"{n_train} + {n_val} > {len(train_images)}"
-        )
+        raise ValueError(format_dataset_split_error(
+            dataset_name='mnist',
+            train_pool_size=len(train_images),
+            num_samples=n_train,
+            val_samples=n_val,
+            example_num_samples=55000,
+            example_val_samples=5000,
+        ))
 
     x_train = train_images[:n_train]
     y_train = train_labels[:n_train].astype(np.int64)

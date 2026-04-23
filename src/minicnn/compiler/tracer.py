@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from minicnn.compiler.ir import IRGraph, IRNode
+from minicnn.model_spec import resolve_model_config
 
 
 def trace_model_config(model_cfg: dict, input_name: str = 'input') -> IRGraph:
+    model_cfg = resolve_model_config(model_cfg)
     nodes = []
     prev = input_name
     for idx, layer in enumerate(model_cfg.get('layers', [])):

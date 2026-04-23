@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from minicnn.model_spec import resolve_model_config
+
 
 _PARAMETERIZED_TYPES = {
     'Conv2d',
@@ -41,8 +43,9 @@ class ModelView:
 
 
 def build_model_view_from_config(cfg: dict[str, Any]) -> ModelView:
-    model_cfg = cfg.get('model', {})
-    model_type = str(model_cfg.get('type', 'Sequential'))
+    raw_model_cfg = cfg.get('model', {})
+    model_cfg = resolve_model_config(raw_model_cfg)
+    model_type = str(raw_model_cfg.get('name', model_cfg.get('type', 'Sequential')))
     input_shape = _extract_input_shape(cfg)
     backend_intent = _extract_backend_intent(cfg)
     layers = _extract_model_layers(model_cfg.get('layers', []))

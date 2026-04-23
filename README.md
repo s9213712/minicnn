@@ -38,6 +38,14 @@ surfaces are working. From there:
 - use `minicnn train-autograd --config configs/autograd_tiny.yaml` for the smallest CPU-only reference path
 - use `USAGE.md` as the doc index when you want task-based navigation
 
+In JSON mode, `minicnn smoke` also reports:
+
+- `torch_available`
+- `cuda_available`
+- `native_available`
+- `flex_registry_ready`
+- `warnings` / `errors`
+
 ## Why This Exists
 
 Most frameworks intentionally hide kernel orchestration, memory handling, and
@@ -221,6 +229,11 @@ python -c "import torch; print('torch=', torch.__version__); print('cuda_availab
 `minicnn smoke` is the recommended first check after install. It verifies the
 repo layout, parses built-in configs, runs a small compiler trace, and validates
 both the `cuda_legacy` and `cuda_native` config validation boundaries.
+
+If PyTorch is missing, `minicnn smoke` now returns a warning instead of
+pretending the repo is broken. In JSON mode, use `torch_available=false` and
+`flex_registry_ready=false` as the signal that the optional torch/flex path is
+not ready yet.
 
 ## Minimum Dependency Matrix
 

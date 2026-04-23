@@ -49,6 +49,7 @@ def run_smoke_checks() -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     torch_module, torch_error = import_torch_with_details()
     torch_available = torch_module is not None
+    torch_error_text = None if torch_error is None else f'{torch_error.__class__.__name__}: {torch_error}'
     cuda_available = False
     if torch_available:
         try:
@@ -57,6 +58,9 @@ def run_smoke_checks() -> dict[str, Any]:
             cuda_available = False
     native_artifacts = list(health.get('native_artifacts', health.get('shared_objects', [])))
     native_available = bool(native_artifacts)
+    flex_registries = health.get('flex_registries', {})
+    flex_registry_ok = bool(flex_registries.get('layers')) and bool(flex_registries.get('optimizers'))
+    flex_registry_ready = bool(torch_available and flex_registry_ok)
 
     checks.append(_smoke_check(
         'project_paths',
@@ -67,21 +71,40 @@ def run_smoke_checks() -> dict[str, Any]:
         },
     ))
 
-    flex_registries = health.get('flex_registries', {})
-    flex_registry_ok = bool(flex_registries.get('layers')) and bool(flex_registries.get('optimizers'))
+    checks.append(_smoke_check(
+        'torch_dependency',
+        torch_available,
+        required=False,
+        details={
+            'torch_available': torch_available,
+            'torch_error': torch_error_text,
+            'command_scope': 'required for torch/flex training, optional for repo inspection and native-only paths',
+        },
+        suggested_fix=(
+            ''
+            if torch_available
+            else f'Install PyTorch if you want torch/flex training.\n{TORCH_INSTALL_HINT}'
+        ),
+    ))
+
     checks.append(_smoke_check(
         'flex_registry_surface',
-        flex_registry_ok,
+        flex_registry_ready,
         required=torch_available,
         details={
             'registries': flex_registries,
             'torch_available': torch_available,
-            'torch_error': None if torch_error is None else f'{torch_error.__class__.__name__}: {torch_error}',
+            'torch_error': torch_error_text,
+            'root_cause': '' if torch_available else 'optional dependency missing',
         },
         suggested_fix=(
             ''
-            if flex_registry_ok or torch_available
-            else f'Install PyTorch if you want torch/flex training.\n{TORCH_INSTALL_HINT}'
+            if flex_registry_ready
+            else (
+                f'Install PyTorch if you want torch/flex training.\n{TORCH_INSTALL_HINT}'
+                if not torch_available
+                else 'Check minicnn.flex.components registration/import wiring if torch is installed but the registry is still empty.'
+            )
         ),
     ))
 
@@ -157,7 +180,9 @@ def run_smoke_checks() -> dict[str, Any]:
         next_steps.append('minicnn build --legacy-make --check')
     if not cifar10_ready:
         next_steps.append('minicnn prepare-data')
-    if overall_ok:
+    if not torch_available:
+        next_steps.append('python -m pip install -e .[torch]')
+    if overall_ok and torch_available:
         next_steps.append('minicnn train-flex --config configs/flex_cnn.yaml')
 
     return build_diagnostic_payload(checks=checks, extra={
@@ -166,6 +191,13 @@ def run_smoke_checks() -> dict[str, Any]:
         'torch_available': torch_available,
         'cuda_available': cuda_available,
         'native_available': native_available,
+        'flex_registry_ready': flex_registry_ready,
+        'dependency_status': {
+            'torch_available': torch_available,
+            'cuda_available': cuda_available,
+            'native_available': native_available,
+            'flex_registry_ready': flex_registry_ready,
+        },
     })
 
 
@@ -384,6 +416,7 @@ def handle_show_cuda_mapping(args) -> int:
 
 
 def handle_validate_config(args) -> int:
+    from minicnn.backend_capability import validate_backend_model_capabilities
     from minicnn.cuda_native.api import validate_cuda_native_config
     from minicnn.unified.cuda_legacy import validate_cuda_legacy_compatibility
 
@@ -394,7 +427,7 @@ def handle_validate_config(args) -> int:
     elif backend == 'cuda_native':
         errors = validate_cuda_native_config(cfg)
     else:
-        errors = []
+        errors = validate_backend_model_capabilities(cfg.get('model', {}), backend)
     payload = {
         'schema_version': 1,
         'kind': 'validation_result',

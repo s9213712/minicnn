@@ -9,6 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
+from minicnn.user_errors import format_dataset_split_error, format_user_error
+
 
 CIFAR10_URL = "https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz"
 CIFAR10_ARCHIVE = "cifar-10-python.tar.gz"
@@ -123,8 +125,22 @@ def load_cifar10(data_root, n_train=8000, n_val=2000, seed=None, train_batch_ids
     x_test, y_test = _load_batch(data_root / "test_batch")
     print(f"Test samples: {x_test.shape[0]}")
 
+    if n_train < 0 or n_val < 0:
+        raise ValueError(format_user_error(
+            'Dataset split invalid',
+            cause='num_samples and val_samples must be non-negative.',
+            fix='Use values greater than or equal to 0.',
+            example='num_samples=45000\nval_samples=5000',
+        ))
     if n_train + n_val > x_train_all.shape[0]:
-        raise ValueError(f"n_train + n_val exceeds available samples: {n_train} + {n_val}")
+        raise ValueError(format_dataset_split_error(
+            dataset_name='cifar10',
+            train_pool_size=int(x_train_all.shape[0]),
+            num_samples=n_train,
+            val_samples=n_val,
+            example_num_samples=45000,
+            example_val_samples=5000,
+        ))
 
     rng = np.random.default_rng(seed)
     indices = rng.permutation(x_train_all.shape[0])

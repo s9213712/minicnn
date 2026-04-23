@@ -4,27 +4,9 @@ import sys
 from typing import Any
 
 from minicnn.torch_runtime import TORCH_INSTALL_HINT, import_torch_with_details, resolve_torch_device
+from minicnn.user_errors import format_user_error
 
 _USER_OPERATION_ERRORS = (FileNotFoundError, TypeError, ValueError)
-
-
-def format_user_error(
-    problem: str,
-    *,
-    cause: str | None = None,
-    fix: str | None = None,
-    example: str | None = None,
-) -> str:
-    lines = [f'[ERROR] {problem}']
-    if cause:
-        lines.append(f'-> Cause: {cause}')
-    if fix:
-        lines.append(f'-> Fix: {fix}')
-    if example:
-        lines.append('-> Example:')
-        for line in str(example).splitlines():
-            lines.append(f'   {line}')
-    return '\n'.join(lines)
 
 
 def _exit_user_error(message: str) -> None:
@@ -88,6 +70,8 @@ def _run_user_operation_or_exit(func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
     except _USER_OPERATION_ERRORS as exc:
+        if str(exc).startswith('[ERROR] '):
+            _exit_user_error(str(exc))
         _exit_user_error(format_user_error(
             'Command failed because the provided input or environment is invalid.',
             cause=str(exc),

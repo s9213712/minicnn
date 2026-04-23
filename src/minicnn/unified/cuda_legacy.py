@@ -5,6 +5,7 @@ from typing import Any
 
 from minicnn.config.parsing import parse_bool
 from minicnn.config.schema import ExperimentConfig
+from minicnn.model_spec import resolve_model_config
 
 
 CUDA_LEGACY_SUPPORTED = {
@@ -52,6 +53,7 @@ def _coerce_bool(value: Any, label: str, errors: list[str]) -> bool | None:
 
 
 def _collect_conv_blocks(model_cfg: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    model_cfg = resolve_model_config(model_cfg)
     layers = model_cfg.get('layers', [])
     if not isinstance(layers, list):
         raise TypeError('model.layers must be a list')
@@ -202,8 +204,9 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
             in_ch = _coerce_int(conv.get('in_channels', prev_out), f'Conv{idx}.in_channels', errors)
             if in_ch is not None and in_ch != prev_out:
                 errors.append(f'Conv{idx} in_channels must equal previous out_channels ({prev_out})')
+    resolved_model = resolve_model_config(model)
     for pool_pos in (4, 9):
-        layer = model.get('layers', [])[pool_pos]
+        layer = resolved_model.get('layers', [])[pool_pos]
         kernel_size = _coerce_int(layer.get('kernel_size', 2), f'Pool layer at position {pool_pos + 1}.kernel_size', errors)
         stride = _coerce_int(layer.get('stride', 2), f'Pool layer at position {pool_pos + 1}.stride', errors)
         if kernel_size is not None and stride is not None and (kernel_size != 2 or stride != 2):

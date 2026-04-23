@@ -52,6 +52,8 @@ Read these in order if you want the current, operational picture of the repo:
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md) — shared-config path and backend routing
 - [docs/model_artifacts.md](docs/model_artifacts.md) — checkpoint formats and reuse boundaries
 - [templates/README.md](templates/README.md) — ready-to-edit config templates
+- [docs/convnext_explicit_smoke_index.md](docs/convnext_explicit_smoke_index.md) — explicit ConvNeXt primitive smoke/test entrypoint
+- [docs/convnext_explicit_delivery_summary.md](docs/convnext_explicit_delivery_summary.md) — delivery summary for the explicit ConvNeXt primitive slice
 - [examples/README.md](examples/README.md) — canonical beginner path and runnable example families
 
 Dataset split note:
@@ -59,6 +61,9 @@ Dataset split note:
 - MNIST uses a 60000-image train pool plus a separate 10000-image test split
 - `dataset.val_samples` is cut from that 60000-image train pool
 - keep `dataset.num_samples + dataset.val_samples <= 60000`
+- CIFAR-10 uses a 50000-image train pool plus a separate 10000-image test split
+- `dataset.val_samples` for CIFAR-10 is also cut from that 50000-image train pool
+- keep `dataset.num_samples + dataset.val_samples <= 50000`
 
 ### I want to work on the handcrafted CUDA path
 
@@ -135,6 +140,10 @@ minicnn list-dual-components
 - built-in configs parse
 - the compiler can trace a default flex model
 - both `cuda_legacy` and `cuda_native` validators still accept their reference configs
+
+In JSON mode, `minicnn smoke` also exposes `torch_available`,
+`cuda_available`, `native_available`, `flex_registry_ready`, plus top-level
+`warnings` and `errors` arrays for automation or onboarding checks.
 
 `show-model` is the frontend/config view.
 `show-graph` is the primitive compiler-IR view.

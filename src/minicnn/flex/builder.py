@@ -4,6 +4,8 @@ import math
 from copy import deepcopy
 from typing import Any
 
+from minicnn.model_spec import resolve_model_config
+
 from .importing import import_from_string
 from .registry import REGISTRY
 from . import components  # noqa: F401
@@ -54,6 +56,7 @@ def _expand_presets(layers_cfg: list[dict[str, Any]]) -> list[dict[str, Any]]:
 _PASSTHROUGH_LAYERS = {
     'BatchNorm2d',
     'ConvNeXtBlock',
+    'LayerNorm2d',
     'Dropout',
     'Dropout2d',
     'ELU',
@@ -111,13 +114,22 @@ def _ensure_tuple2(value: Any) -> tuple[int, int]:
 
 def _infer_output_shape(layer_type: str, kwargs: dict[str, Any], tracer: ShapeTracer) -> tuple[int, ...]:
     shape = tracer.shape
-    if layer_type == 'Conv2d':
+    if layer_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d'}:
         c, h, w = shape
-        ks = _ensure_tuple2(kwargs.get('kernel_size', 1))
+        default_kernel = 1 if layer_type == 'PointwiseConv2d' else kwargs.get('kernel_size', 1)
+        ks = _ensure_tuple2(default_kernel)
         st = _ensure_tuple2(kwargs.get('stride', 1))
-        pd = _ensure_tuple2(kwargs.get('padding', 0))
+        if 'padding' in kwargs:
+            pd = _ensure_tuple2(kwargs.get('padding', 0))
+        elif layer_type == 'DepthwiseConv2d':
+            pd = tuple(k // 2 for k in ks)
+        else:
+            pd = (0, 0)
         dl = _ensure_tuple2(kwargs.get('dilation', 1))
-        out_c = int(kwargs['out_channels'])
+        if layer_type == 'DepthwiseConv2d':
+            out_c = int(kwargs.get('out_channels', kwargs.get('in_channels', c) * kwargs.get('channel_multiplier', 1)))
+        else:
+            out_c = int(kwargs['out_channels'])
         out_h = math.floor((h + 2*pd[0] - dl[0]*(ks[0]-1) - 1) / st[0] + 1)
         out_w = math.floor((w + 2*pd[1] - dl[1]*(ks[1]-1) - 1) / st[1] + 1)
         return (out_c, out_h, out_w)
@@ -166,10 +178,12 @@ def _resolve_factory(category: str, type_name: str):
 def _materialize_layer(layer_cfg: dict[str, Any], tracer: ShapeTracer):
     cfg = deepcopy(layer_cfg)
     layer_type = cfg.pop('type')
-    if layer_type == 'Conv2d' and 'in_channels' not in cfg:
+    if layer_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d'} and 'in_channels' not in cfg:
         cfg['in_channels'] = tracer.channels
     if layer_type == 'BatchNorm2d' and 'num_features' not in cfg:
         cfg['num_features'] = tracer.channels
+    if layer_type == 'LayerNorm2d' and 'num_channels' not in cfg:
+        cfg['num_channels'] = tracer.channels
     if layer_type == 'ResidualBlock' and 'in_channels' not in cfg:
         cfg['in_channels'] = tracer.channels
     if layer_type == 'ConvNeXtBlock' and 'channels' not in cfg and 'in_channels' not in cfg:
@@ -191,6 +205,7 @@ def _materialize_layer(layer_cfg: dict[str, Any], tracer: ShapeTracer):
 def build_model(model_cfg: dict[str, Any], input_shape: list[int] | tuple[int, ...]):
     if nn is None:
         raise RuntimeError('PyTorch is required for configurable model building')
+    model_cfg = resolve_model_config(model_cfg)
     tracer = ShapeTracer(tuple(int(x) for x in input_shape))
     modules: list[nn.Module] = []
     if 'factory' in model_cfg:

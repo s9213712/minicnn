@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from minicnn.cuda_native.capabilities import CUDA_NATIVE_CAPABILITIES
+from minicnn.model_spec import resolve_model_config
 
 _SUPPORTED_OPS: frozenset[str] = frozenset(CUDA_NATIVE_CAPABILITIES['supported_ops'])
 
@@ -78,5 +79,6 @@ def validate_layer_list(layers: list[dict[str, Any]]) -> list[str]:
 
 def validate_cuda_native_model_config(model_cfg: dict[str, Any]) -> list[str]:
     """Validate a model config dict for cuda_native compatibility."""
+    model_cfg = resolve_model_config(model_cfg)
     layers = model_cfg.get('layers', [])
     return validate_layer_list(layers)

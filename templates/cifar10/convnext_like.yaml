@@ -6,8 +6,11 @@
 #
 # Scope:
 # - Uses MiniCNN's torch/flex-only ConvNeXtBlock component.
+# - The block is explicitly built from depthwise conv, channel-first LayerNorm2d,
+#   pointwise conv, GELU, and residual add.
 # - This is an experimental frontend path, not repo-wide ConvNeXt support.
-# - Not compatible with cuda_legacy or cuda_native.
+# - Not compatible with cuda_legacy or cuda_native; unsupported backends must
+#   fail validation instead of silently degrading.
 #
 # Run:
 #   minicnn train-flex --config templates/cifar10/convnext_like.yaml

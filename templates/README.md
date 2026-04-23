@@ -39,6 +39,8 @@ templates/
 │   ├── alexnet_like.yaml   # 更深的 AlexNet-like（僅 Torch）
 │   ├── resnet_like.yaml    # 帶殘差連結的 ResNet-like（僅 Torch）
 │   └── convnext_like.yaml  # 最小 ConvNeXt-like（僅 Torch，實驗性）
+│   └── convnext_explicit.yaml # 顯式 primitive 版 ConvNeXt-like（僅 Torch，實驗性）
+│   └── convnext_explicit_smoke.yaml # 顯式 primitive 最小 smoke 訓練版
 └── mnist/
     ├── lenet_like.yaml     # LeNet-like 2-conv CNN
     └── mlp.yaml            # MLP baseline
@@ -61,6 +63,15 @@ minicnn prepare-data
 ```
 
 MNIST 的範本設有 `dataset.download: true`，第一次執行時會自動下載（約 11 MB）。
+
+資料切分規則：
+
+- MNIST：60000 筆 train pool + 10000 筆獨立 test split
+- CIFAR-10：50000 筆 train pool + 10000 筆獨立 test split
+- `dataset.val_samples` 永遠是從 train pool 切出，不是額外資料
+- 因此：
+  `MNIST -> num_samples + val_samples <= 60000`
+  `CIFAR-10 -> num_samples + val_samples <= 50000`
 
 ## 訓練程式位置
 
@@ -225,6 +236,48 @@ minicnn train-flex --config templates/cifar10/convnext_like.yaml
 
 > `ConvNeXtBlock` 是 MiniCNN 的 torch/flex 專用元件，屬於實驗性 frontend
 > 擴充，不代表 `cuda_native` 或 `cuda_legacy` 已支援 ConvNeXt。
+> 目前 block 內部會明確使用 depthwise conv、channel-first `LayerNorm2d`、
+> pointwise conv、`GELU` 與 residual add，不再依賴隱含的 NHWC 轉換語意。
+
+### convnext_explicit — ConvNeXt-like explicit primitives（Torch only, experimental）
+
+與 `convnext_like` 不同，這份 template 不使用封裝好的 `ConvNeXtBlock`，
+而是把 block 直接展開成顯式 primitive：
+
+```text
+DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d(expand) -> GELU -> PointwiseConv2d(shrink)
+```
+
+**執行**
+
+```bash
+minicnn train-flex --config templates/cifar10/convnext_explicit.yaml
+```
+
+適合用來：
+
+- 驗證 registry 裡的 ConvNeXt primitives 是否可直接組裝
+- 做更細的 block 級實驗，而不先改 `ConvNeXtBlock` 類別本身
+
+> 這仍然是 `torch/flex` 專用的實驗性路徑，不代表其他 backend 已具備
+> depthwise conv / LayerNorm2d / residual add 的對應能力。
+
+### convnext_explicit_smoke — explicit primitives smoke config
+
+如果你只想最快驗證顯式 ConvNeXt primitives 能否完成一次最小訓練啟動，
+使用這份較小的 smoke config：
+
+```bash
+minicnn train-flex --config templates/cifar10/convnext_explicit_smoke.yaml
+```
+
+這份設定固定為：
+
+- `dataset.num_samples: 64`
+- `dataset.val_samples: 16`
+- `train.epochs: 1`
+- `train.batch_size: 16`
+- `train.device: cpu`
 
 ---
 

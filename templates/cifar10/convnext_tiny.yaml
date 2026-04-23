@@ -1,0 +1,55 @@
+# CIFAR-10  ConvNeXt-tiny named model entry  (Torch backend only, experimental)
+#
+# Scope:
+# - Uses model.name=convnext_tiny instead of spelling out model.layers[].
+# - This expands to MiniCNN's built-in ConvNeXtBlock-based torch/flex path.
+# - Not compatible with cuda_legacy or cuda_native.
+#
+# Run:
+#   minicnn train-flex --config templates/cifar10/convnext_tiny.yaml
+
+project:
+  name: minicnn
+  run_name: cifar10-convnext-tiny
+  artifacts_root: artifacts
+
+engine:
+  backend: torch
+  strict_backend_validation: true
+
+dataset:
+  type: cifar10
+  data_root: data/cifar-10-batches-py
+  download: false
+  num_samples: 45000
+  val_samples: 5000
+  num_classes: 10
+  input_shape: [3, 32, 32]
+  seed: 42
+  random_crop_padding: 4
+  horizontal_flip: true
+
+model:
+  name: convnext_tiny
+
+train:
+  epochs: 50
+  batch_size: 64
+  device: auto
+  amp: false
+  grad_accum_steps: 1
+  num_workers: 0
+  log_every: 50
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: AdamW
+  lr: 0.001
+  weight_decay: 0.05
+
+scheduler:
+  enabled: true
+  type: CosineAnnealingLR
+  T_max: 50
