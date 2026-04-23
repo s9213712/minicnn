@@ -181,6 +181,7 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 
 完整說明請見 [docs/cuda_native.md](docs/cuda_native.md)。
 後續擴充方向請見 [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md)。
+從實驗走向可承諾實裝邊界的規劃請見 [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md)。
 
 ## 快速開始
 

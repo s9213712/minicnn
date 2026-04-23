@@ -193,6 +193,7 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 
 See [docs/cuda_native.md](docs/cuda_native.md) for the full guide.
 See [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md) for the staged expansion direction.
+See [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md) for the path from experimental backend to implementation-grade public contract.
 
 ## Quick Start
 
