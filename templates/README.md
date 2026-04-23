@@ -237,6 +237,13 @@ minicnn train-flex --config templates/cifar10/convnext_like.yaml
 
 資料儲存路徑：`data/mnist/`（可透過 `dataset.data_root` 修改）
 
+MNIST split 規則：
+
+- 60000 筆 training images 是 train/val 共用的 pool
+- `dataset.val_samples` 是從這 60000 裡切出來，不是額外資料
+- 因此 `dataset.num_samples + dataset.val_samples` 必須小於等於 `60000`
+- 目前內建 MNIST templates 採用 `55000 + 5000`
+
 ---
 
 ### lenet_like — LeNet-like CNN

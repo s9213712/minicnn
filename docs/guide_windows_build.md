@@ -97,7 +97,8 @@ local path:
 ```
 
 The helper prints the resolved repo/build paths, the exact `cmake` arguments,
-and the discovered DLL locations after each successful build.
+the discovered DLL/LIB locations after each successful build, and the
+loader-ready copies staged into `cpp\`.
 
 For other GPU generations, override `-CudaArch` explicitly:
 
@@ -105,16 +106,20 @@ For other GPU generations, override `-CudaArch` explicitly:
 .\scripts\build_windows_native.ps1 -Variant both -Clean -CudaArch 89
 ```
 
-Expected outputs:
+Typical discovered build outputs:
 
 ```text
-cpp\Release\minimal_cuda_cnn_cublas.dll
-cpp\Release\minimal_cuda_cnn_cublas.lib
-cpp\Release\minimal_cuda_cnn_handmade.dll
-cpp\Release\minimal_cuda_cnn_handmade.lib
+cpp\build-windows-cublas\Release\minimal_cuda_cnn_cublas.dll
+cpp\build-windows-cublas\Release\minimal_cuda_cnn_cublas.lib
+cpp\build-windows-handmade\Release\minimal_cuda_cnn_handmade.dll
+cpp\build-windows-handmade\Release\minimal_cuda_cnn_handmade.lib
 ```
 
-The cuBLAS variant compiles with `USE_CUBLAS=ON`. The handmade variant compiles with `USE_CUBLAS=OFF`.
+The helper also stages loader-ready copies into `cpp\`, so MiniCNN's Python
+loader can resolve the selected variant without manual copying.
+
+The cuBLAS variant compiles with `USE_CUBLAS=ON`. The handmade variant compiles
+with `USE_CUBLAS=OFF`.
 
 ## Build One Variant
 
@@ -186,7 +191,8 @@ Both DLL variants should export `maxpool_backward_nchw_status` in addition to th
 
 Treat these as the manual success criteria:
 
-- the expected `.dll` and `.lib` files exist under `cpp\Release\`
+- the expected `.dll` and `.lib` files are discovered under `cpp\build-windows-*\Release\`
+- loader-ready copies exist under `cpp\`
 - both variants export `maxpool_backward_nchw_status`
 - `minicnn validate-dual-config` and `minicnn healthcheck` pass
 - both `runtime.cuda_variant=cublas` and `runtime.cuda_variant=handmade` load
@@ -227,7 +233,8 @@ checks the required symbols, then performs a GPU upload/download round-trip.
   Remove the old build directory or rerun with `.\scripts\build_windows_native.ps1 -Clean`.
 - CMake configures but the expected DLL is not found
   Check the printed build directory and output name; success is the DLL/LIB
-  pair under `cpp\Release\`, not just a successful configure step.
+  pair under `cpp\build-windows-*\Release\`, plus loader-ready copies under
+  `cpp\`, not just a successful configure step.
 - Python cannot load the DLL even though the build succeeded
   Verify `cpp\` and `%CUDA_PATH%\bin` are visible to the process, then run
   `examples\mnist_ctypes\check_native_library.py` directly.
@@ -303,8 +310,8 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 .\scripts\build_windows_native.ps1 -Variant both -Clean
 ```
 
-helper 會印出解析後的 repo/build 路徑、完整 `cmake` 參數，以及成功後找到的
-DLL 實際路徑。
+helper 會印出解析後的 repo/build 路徑、完整 `cmake` 參數、成功後找到的
+DLL/LIB 實際路徑，以及 stage 到 `cpp\` 的 loader-ready copy。
 
 若使用其他 GPU 世代，請明確覆寫 `-CudaArch`：
 
@@ -312,14 +319,17 @@ DLL 實際路徑。
 .\scripts\build_windows_native.ps1 -Variant both -Clean -CudaArch 89
 ```
 
-預期輸出：
+典型 build 輸出位置：
 
 ```text
-cpp\Release\minimal_cuda_cnn_cublas.dll
-cpp\Release\minimal_cuda_cnn_cublas.lib
-cpp\Release\minimal_cuda_cnn_handmade.dll
-cpp\Release\minimal_cuda_cnn_handmade.lib
+cpp\build-windows-cublas\Release\minimal_cuda_cnn_cublas.dll
+cpp\build-windows-cublas\Release\minimal_cuda_cnn_cublas.lib
+cpp\build-windows-handmade\Release\minimal_cuda_cnn_handmade.dll
+cpp\build-windows-handmade\Release\minimal_cuda_cnn_handmade.lib
 ```
+
+helper 也會把 loader 需要的 `.dll/.lib` 複製到 `cpp\`，讓 MiniCNN
+Python loader 不需要手動搬檔。
 
 cuBLAS variant 使用 `USE_CUBLAS=ON` 編譯，handmade variant 使用 `USE_CUBLAS=OFF`。
 
@@ -392,7 +402,8 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_le
 
 可把以下視為手動驗證完成的判定條件：
 
-- `cpp\Release\` 下實際出現預期的 `.dll` 與 `.lib`
+- `cpp\build-windows-*\Release\` 下實際出現預期的 `.dll` 與 `.lib`
+- `cpp\` 下有 loader-ready copy
 - 兩個 variant 都匯出 `maxpool_backward_nchw_status`
 - `minicnn validate-dual-config` 與 `minicnn healthcheck` 通過
 - `runtime.cuda_variant=cublas` 與 `runtime.cuda_variant=handmade` 都能各自完成 smoke run
@@ -430,7 +441,8 @@ python -u examples\mnist_ctypes\train_mnist_so_full_cnn_frame.py --download
 - CMake 回報 generator mismatch 或舊 cache 汙染
   直接刪舊 build 目錄，或重跑 `.\scripts\build_windows_native.ps1 -Clean`。
 - CMake configure 成功，但找不到預期 DLL
-  成功判定應看 `cpp\Release\` 下是否真的出現 DLL/LIB，而不是只看 configure 通過。
+  成功判定應看 `cpp\build-windows-*\Release\` 下是否真的出現 DLL/LIB，
+  而且 `cpp\` 下也要有 loader-ready copy，不是只看 configure 通過。
 - DLL 已編出來，但 Python 還是載不進去
   確認 process 看得到 `cpp\` 與 `%CUDA_PATH%\bin`，再直接跑
   `examples\mnist_ctypes\check_native_library.py`。

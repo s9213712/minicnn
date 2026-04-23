@@ -54,6 +54,12 @@ Read these in order if you want the current, operational picture of the repo:
 - [templates/README.md](templates/README.md) — ready-to-edit config templates
 - [examples/README.md](examples/README.md) — canonical beginner path and runnable example families
 
+Dataset split note:
+
+- MNIST uses a 60000-image train pool plus a separate 10000-image test split
+- `dataset.val_samples` is cut from that 60000-image train pool
+- keep `dataset.num_samples + dataset.val_samples <= 60000`
+
 ### I want to work on the handcrafted CUDA path
 
 - [docs/guide_project_structure.md](docs/guide_project_structure.md) — repo map of the native and Python sides

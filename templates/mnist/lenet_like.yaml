@@ -28,8 +28,8 @@ dataset:
   type: mnist
   data_root: data/mnist
   download: true           # downloads ~11 MB on first run; set false afterwards
-  num_samples: 60000
-  val_samples: 10000
+  num_samples: 55000
+  val_samples: 5000
   num_classes: 10
   input_shape: [1, 28, 28]
   seed: 42

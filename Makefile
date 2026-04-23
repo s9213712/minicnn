@@ -4,7 +4,7 @@ install:
 	python -m pip install -e .
 
 develop:
-	python -m pip install -e .[dev]
+	python -m pip install -e .[torch,dev]
 
 build:
 	minicnn build

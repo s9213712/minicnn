@@ -6,6 +6,7 @@ from typing import Any
 
 from minicnn._cli_config import _load_flex_config_or_exit, _load_unified_config_or_exit, _resolve_cli_config_path
 from minicnn._cli_errors import _exit_user_error
+from minicnn._cli_errors import format_user_error
 from minicnn._cli_output import (
     _print_diagnostic,
     _print_generic_payload,
@@ -15,6 +16,7 @@ from minicnn._cli_output import (
     _print_validation_result,
 )
 from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
+from minicnn.torch_runtime import TORCH_INSTALL_HINT, import_torch_with_details
 
 
 def _smoke_check(
@@ -45,6 +47,16 @@ def run_smoke_checks() -> dict[str, Any]:
 
     health = healthcheck()
     checks: list[dict[str, Any]] = []
+    torch_module, torch_error = import_torch_with_details()
+    torch_available = torch_module is not None
+    cuda_available = False
+    if torch_available:
+        try:
+            cuda_available = bool(torch_module.cuda.is_available())
+        except Exception:
+            cuda_available = False
+    native_artifacts = list(health.get('native_artifacts', health.get('shared_objects', [])))
+    native_available = bool(native_artifacts)
 
     checks.append(_smoke_check(
         'project_paths',
@@ -56,16 +68,26 @@ def run_smoke_checks() -> dict[str, Any]:
     ))
 
     flex_registries = health.get('flex_registries', {})
+    flex_registry_ok = bool(flex_registries.get('layers')) and bool(flex_registries.get('optimizers'))
     checks.append(_smoke_check(
         'flex_registry_surface',
-        bool(flex_registries.get('layers')) and bool(flex_registries.get('optimizers')),
-        details={'registries': flex_registries},
+        flex_registry_ok,
+        required=torch_available,
+        details={
+            'registries': flex_registries,
+            'torch_available': torch_available,
+            'torch_error': None if torch_error is None else f'{torch_error.__class__.__name__}: {torch_error}',
+        },
+        suggested_fix=(
+            ''
+            if flex_registry_ok or torch_available
+            else f'Install PyTorch if you want torch/flex training.\n{TORCH_INSTALL_HINT}'
+        ),
     ))
 
-    native_artifacts = list(health.get('native_artifacts', health.get('shared_objects', [])))
     checks.append(_smoke_check(
         'native_cuda_artifacts',
-        bool(native_artifacts),
+        native_available,
         required=False,
         details={
             'native_artifacts': native_artifacts,
@@ -141,6 +163,9 @@ def run_smoke_checks() -> dict[str, Any]:
     return build_diagnostic_payload(checks=checks, extra={
         'ok': overall_ok,
         'next_steps': next_steps,
+        'torch_available': torch_available,
+        'cuda_available': cuda_available,
+        'native_available': native_available,
     })
 
 
@@ -253,7 +278,12 @@ def handle_inspect_checkpoint(args) -> int:
     try:
         payload = inspect_checkpoint(args.path)
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
-        _exit_user_error(str(exc))
+        _exit_user_error(format_user_error(
+            'inspect-checkpoint failed.',
+            cause=str(exc),
+            fix='Check that the checkpoint path exists and points to a supported MiniCNN artifact.',
+            example=f'minicnn inspect-checkpoint --path {args.path}',
+        ))
     _print_generic_payload(payload, command='inspect-checkpoint', output_format=args.format)
     return 0
 
@@ -268,7 +298,12 @@ def handle_export_torch_checkpoint(args) -> int:
             output_path=args.output,
         )
     except (FileNotFoundError, RuntimeError, ValueError, TypeError) as exc:
-        _exit_user_error(str(exc))
+        _exit_user_error(format_user_error(
+            'export-torch-checkpoint failed.',
+            cause=str(exc),
+            fix='Check the checkpoint path, config path, and output path, then retry.',
+            example=f'minicnn export-torch-checkpoint --path {args.path} --config {args.config} --output {args.output}',
+        ))
     _print_json(payload)
     return 0
 
@@ -291,7 +326,11 @@ def handle_evaluate_checkpoint(args) -> int:
             test_data_normalized=bool(args.test_data_normalized),
         )
     except (FileNotFoundError, RuntimeError, ValueError, TypeError) as exc:
-        _exit_user_error(str(exc))
+        _exit_user_error(format_user_error(
+            'evaluate-checkpoint failed.',
+            cause=str(exc),
+            fix='Check the checkpoint, config, and optional test-data inputs, then retry.',
+        ))
 
     if args.format == 'json':
         _print_json({'command': 'evaluate-checkpoint', **payload})

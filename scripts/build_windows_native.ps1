@@ -26,6 +26,37 @@ Write-Host "Platform     = [$Platform]"
 Write-Host "Config       = [$Config]"
 Write-Host "CudaArch     = [$CudaArch]"
 
+function Get-RecommendedCudaArch {
+    try {
+        $gpuName = (& nvidia-smi --query-gpu=name --format=csv,noheader 2>$null | Select-Object -First 1).Trim()
+        if (-not $gpuName) {
+            return $null
+        }
+        $recommended = $null
+        if ($gpuName -match 'RTX 20') {
+            $recommended = '75'
+        }
+        elseif ($gpuName -match 'RTX 30') {
+            $recommended = '86'
+        }
+        elseif ($gpuName -match 'RTX 40') {
+            $recommended = '89'
+        }
+        elseif ($gpuName -match 'RTX 50') {
+            $recommended = '120'
+        }
+        if ($recommended) {
+            return @{
+                Name = $gpuName
+                CudaArch = $recommended
+            }
+        }
+    }
+    catch {
+    }
+    return $null
+}
+
 function Remove-BuildDir {
     param([string]$Dir)
 
@@ -70,15 +101,58 @@ function Get-DllLocations {
     )
 
     $results = @()
-    if (Test-Path $BuildDir) {
-        $results += Get-ChildItem -Path $BuildDir -Recurse -Filter "$OutputName.dll" -ErrorAction SilentlyContinue
-        $results += Get-ChildItem -Path $BuildDir -Recurse -Filter "*.dll" -ErrorAction SilentlyContinue |
-            Where-Object { $_.BaseName -eq $OutputName }
+    foreach ($root in @($BuildDir, $CppRoot, (Join-Path $CppRoot "Release"))) {
+        if (Test-Path $root) {
+            $results += Get-ChildItem -Path $root -Recurse -Filter "$OutputName.dll" -ErrorAction SilentlyContinue
+            $results += Get-ChildItem -Path $root -Recurse -Filter "*.dll" -ErrorAction SilentlyContinue |
+                Where-Object { $_.BaseName -eq $OutputName }
+        }
     }
 
     $results |
         Sort-Object FullName -Unique |
         ForEach-Object { $_.FullName }
+}
+
+function Get-LibLocations {
+    param(
+        [string]$BuildDir,
+        [string]$OutputName
+    )
+
+    $results = @()
+    foreach ($root in @($BuildDir, $CppRoot, (Join-Path $CppRoot "Release"))) {
+        if (Test-Path $root) {
+            $results += Get-ChildItem -Path $root -Recurse -Filter "$OutputName.lib" -ErrorAction SilentlyContinue
+            $results += Get-ChildItem -Path $root -Recurse -Filter "*.lib" -ErrorAction SilentlyContinue |
+                Where-Object { $_.BaseName -eq $OutputName }
+        }
+    }
+
+    $results |
+        Sort-Object FullName -Unique |
+        ForEach-Object { $_.FullName }
+}
+
+function Stage-LoaderArtifacts {
+    param(
+        [string[]]$Dlls,
+        [string[]]$Libs
+    )
+
+    $staged = @()
+    foreach ($path in @($Dlls + $Libs)) {
+        if (-not $path) {
+            continue
+        }
+        $sourcePath = [System.IO.Path]::GetFullPath($path)
+        $destPath = [System.IO.Path]::Combine($CppRoot, [System.IO.Path]::GetFileName($sourcePath))
+        if ($sourcePath -ne $destPath) {
+            Copy-Item -Path $sourcePath -Destination $destPath -Force
+        }
+        $staged += $destPath
+    }
+    $staged | Sort-Object -Unique
 }
 
 function Report-Success {
@@ -89,12 +163,33 @@ function Report-Success {
     )
 
     $dlls = @(Get-DllLocations -BuildDir $BuildDir -OutputName $OutputName)
+    $libs = @(Get-LibLocations -BuildDir $BuildDir -OutputName $OutputName)
+    $staged = @(Stage-LoaderArtifacts -Dlls $dlls -Libs $libs)
 
     Write-Host ""
     if ($dlls.Count -gt 0) {
-        Write-Host "[SUCCESS] $VariantName" -ForegroundColor Green
-        Write-Host "DLL files:" -ForegroundColor Green
+        Write-Host "Build SUCCESS ($VariantName)" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "DLL location:" -ForegroundColor Green
         $dlls | ForEach-Object { Write-Host "  $_" }
+        if ($libs.Count -gt 0) {
+            Write-Host ""
+            Write-Host "LIB location:" -ForegroundColor Green
+            $libs | ForEach-Object { Write-Host "  $_" }
+        }
+        if ($staged.Count -gt 0) {
+            Write-Host ""
+            Write-Host "Loader-ready copies:" -ForegroundColor Green
+            $staged | ForEach-Object { Write-Host "  $_" }
+        }
+        Write-Host ""
+        Write-Host "Next step:" -ForegroundColor Cyan
+        Write-Host "  minicnn validate-dual-config --config configs/dual_backend_cnn.yaml"
+        Write-Host "  minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_legacy runtime.cuda_variant=$VariantName"
+        Write-Host ""
+        Write-Host "Troubleshooting:" -ForegroundColor Yellow
+        Write-Host "  - If DLL not found, check the printed build directory and Visual Studio config."
+        Write-Host "  - If the DLL cannot load, check CUDA_PATH and the NVIDIA driver/runtime."
     }
     else {
         Write-Host "[SUCCESS] $VariantName build completed, but no DLL named [$OutputName.dll] was found." -ForegroundColor Yellow
@@ -141,6 +236,12 @@ function Build-One {
     Invoke-CMake -ArgsList $BuildArgs -FailMessage "CMake build failed for variant: $Name" -BuildDir $BuildDir -VariantName $Name
 
     Report-Success -VariantName $Name -BuildDir $BuildDir -OutputName $OutputName
+}
+
+$gpuRecommendation = Get-RecommendedCudaArch
+if ($gpuRecommendation) {
+    Write-Host "Detected GPU: [$($gpuRecommendation.Name)]"
+    Write-Host "Recommended CudaArch: [$($gpuRecommendation.CudaArch)]"
 }
 
 switch ($Variant) {

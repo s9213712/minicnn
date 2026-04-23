@@ -246,7 +246,7 @@ def test_user_error_goes_to_stderr_not_stdout(capsys):
     captured = capsys.readouterr()
     assert excinfo.value.code == 2
     assert captured.out == ''
-    assert 'demo user-facing error' in captured.err
+    assert '[ERROR] demo user-facing error' in captured.err
 
 
 def test_run_user_operation_or_exit_preserves_user_error_exit_code(capsys):
@@ -259,7 +259,10 @@ def test_run_user_operation_or_exit_preserves_user_error_exit_code(capsys):
     captured = capsys.readouterr()
     assert excinfo.value.code == 2
     assert captured.out == ''
+    assert '[ERROR]' in captured.err
     assert 'bad user input' in captured.err
+    assert '-> Cause:' in captured.err
+    assert '-> Fix:' in captured.err
     assert 'Internal error:' not in captured.err
 
 
@@ -301,6 +304,9 @@ def test_cli_smoke_returns_structured_json(capsys):
     assert payload['schema_version'] == 1
     assert payload['diagnostic_kind'] == 'environment_diagnostic_summary'
     assert payload['ok'] is True
+    assert 'torch_available' in payload
+    assert 'cuda_available' in payload
+    assert 'native_available' in payload
     assert payload['status'] == payload['summary_status']
     assert payload['check_summary']['total'] == len(payload['checks'])
     assert isinstance(payload['checks'], list)
@@ -394,6 +400,30 @@ def test_cli_smoke_supports_text_output(capsys):
 
     assert rc == 0
     assert out.startswith('smoke: ')
+
+
+def test_cli_smoke_without_torch_returns_warning_not_crash(tmp_path):
+    proc = _run_python_without_torch(
+        tmp_path,
+        '-m',
+        'minicnn.cli',
+        'smoke',
+    )
+
+    assert proc.returncode == 0
+    assert 'Traceback' not in proc.stderr
+    assert proc.stderr == ''
+
+    import json
+
+    payload = json.loads(proc.stdout)
+    assert payload['command'] == 'smoke'
+    assert payload['torch_available'] is False
+    assert payload['cuda_available'] is False
+    registry_check = next(check for check in payload['checks'] if check['name'] == 'flex_registry_surface')
+    assert registry_check['required'] is False
+    assert registry_check['severity'] == 'warning'
+    assert 'pip install -e .[torch]' in registry_check['suggested_fix']
 
 
 def test_cli_info_supports_json_output(capsys):
@@ -651,6 +681,9 @@ def test_cli_reports_missing_torch_for_train_flex_without_traceback(tmp_path):
 
     assert proc.returncode == 2
     assert proc.stdout == ''
+    assert '[ERROR]' in proc.stderr
+    assert '-> Cause:' in proc.stderr
+    assert '-> Fix:' in proc.stderr
     assert 'train-flex requires PyTorch.' in proc.stderr
     assert 'pip install -e .[torch]' in proc.stderr
     assert 'Traceback' not in proc.stderr
@@ -677,6 +710,7 @@ def test_cli_reports_missing_torch_for_evaluate_checkpoint_without_traceback(tmp
 
     assert proc.returncode == 2
     assert proc.stdout == ''
+    assert '[ERROR]' in proc.stderr
     assert 'requires PyTorch' in proc.stderr
     assert 'pip install -e .[torch]' in proc.stderr
     assert 'Traceback' not in proc.stderr
@@ -695,6 +729,7 @@ def test_cli_reports_missing_torch_for_train_dual_torch_without_traceback(tmp_pa
 
     assert proc.returncode == 2
     assert proc.stdout == ''
+    assert '[ERROR]' in proc.stderr
     assert 'train-dual with engine.backend=torch requires PyTorch.' in proc.stderr
     assert 'pip install -e .[torch]' in proc.stderr
     assert 'Traceback' not in proc.stderr
@@ -712,6 +747,7 @@ def test_cli_reports_broken_torch_import_without_traceback(tmp_path):
 
     assert proc.returncode == 2
     assert proc.stdout == ''
+    assert '[ERROR]' in proc.stderr
     assert 'could not import PyTorch from this environment' in proc.stderr
     assert 'broken torch install for test' in proc.stderr
     assert 'Traceback' not in proc.stderr
@@ -729,6 +765,7 @@ def test_cli_reports_invalid_override_without_traceback(tmp_path):
 
     assert proc.returncode == 2
     assert proc.stdout == ''
+    assert '[ERROR]' in proc.stderr
     assert 'Invalid config override' in proc.stderr
     assert 'model.layers.foo=1' in proc.stderr
     assert 'must end with a numeric list index' in proc.stderr

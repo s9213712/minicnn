@@ -6,16 +6,16 @@ from typing import Any
 import yaml
 
 from minicnn.paths import DATA_ROOT, PROJECT_ROOT
-from minicnn._cli_errors import _exit_user_error
+from minicnn._cli_errors import _exit_user_error, format_user_error
 
 
 def _missing_config_message(config_path: str | None, template_cmd: str) -> str:
     shown_path = config_path or '<unspecified>'
-    return (
-        f'Config file not found: {shown_path}\n'
-        'MiniCNN is repo-first. If built-in configs are unavailable, pass --config <path> '
-        'inside a repo checkout.\n'
-        f'Create a template with:\n  {template_cmd}'
+    return format_user_error(
+        f'Config file not found: {shown_path}',
+        cause='The provided --config path does not exist from the current shell or repo root.',
+        fix='Pass a real config path inside a MiniCNN checkout, or generate a new template config.',
+        example=template_cmd,
     )
 
 
@@ -31,10 +31,18 @@ def _config_error_message(
     detail = str(exc).strip() or exc.__class__.__name__
     if isinstance(exc, yaml.YAMLError):
         shown_path = config_path or '<unspecified>'
-        return f'Failed to parse config file: {shown_path}\n{detail}'
+        return format_user_error(
+            f'Failed to parse config file: {shown_path}',
+            cause=detail,
+            fix='Fix the YAML syntax and retry.',
+        )
     if 'mapping at the top level' in detail:
         shown_path = config_path or '<unspecified>'
-        return f'Failed to parse config file: {shown_path}\n{detail}'
+        return format_user_error(
+            f'Failed to parse config file: {shown_path}',
+            cause=detail,
+            fix='Make the top-level YAML value a mapping/object.',
+        )
     if (
         'Override must look like key=value' in detail
         or detail.startswith('Override path ')
@@ -42,10 +50,24 @@ def _config_error_message(
         or 'contains an empty path segment' in detail
     ):
         if overrides:
-            return f'Invalid config override: {overrides[-1]}\n{detail}'
-        return f'Invalid config override.\n{detail}'
+            return format_user_error(
+                f'Invalid config override: {overrides[-1]}',
+                cause=detail,
+                fix='Use dotted key=value overrides and numeric indices for list entries.',
+                example='model.layers.1.out_features=64',
+            )
+        return format_user_error(
+            'Invalid config override.',
+            cause=detail,
+            fix='Use dotted key=value overrides and numeric indices for list entries.',
+            example='train.epochs=2',
+        )
     shown_path = config_path or '<unspecified>'
-    return f'Invalid config file or override for: {shown_path}\n{detail}'
+    return format_user_error(
+        f'Invalid config file or override for: {shown_path}',
+        cause=detail,
+        fix='Check the config contents and override values, then retry.',
+    )
 
 
 def _resolve_cli_config_path(config_path: str | None) -> str | None:
@@ -99,17 +121,19 @@ def _ensure_cuda_legacy_prereqs_or_exit(cfg: dict[str, Any]) -> None:
 
     library_path = Path(resolve_library_path())
     if not library_path.exists():
-        _exit_user_error(
-            'cuda_legacy training requires a native CUDA shared library.\n'
-            'Build it with:\n'
-            '  minicnn build --legacy-make --check'
-        )
+        _exit_user_error(format_user_error(
+            'cuda_legacy training requires a native CUDA shared library.',
+            cause=f'No native library was found at the resolved path: {library_path}',
+            fix='Build the handcrafted CUDA backend before using engine.backend=cuda_legacy.',
+            example='minicnn build --legacy-make --check',
+        ))
     dataset_cfg = cfg.get('dataset', {})
     if str(dataset_cfg.get('type', 'cifar10')) == 'cifar10':
         data_root = Path(dataset_cfg.get('data_root', DATA_ROOT))
         if not cifar10_ready(data_root):
-            _exit_user_error(
-                'cuda_legacy training requires prepared CIFAR-10 data.\n'
-                'Prepare it with:\n'
-                '  minicnn prepare-data'
-            )
+            _exit_user_error(format_user_error(
+                'cuda_legacy training requires prepared CIFAR-10 data.',
+                cause=f'CIFAR-10 Python batches were not found at: {data_root}',
+                fix='Prepare the dataset before using engine.backend=cuda_legacy.',
+                example='minicnn prepare-data',
+            ))
