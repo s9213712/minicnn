@@ -20,9 +20,13 @@ MODEL_REGISTRY = {
 }
 
 
+def list_model_components() -> list[str]:
+    return sorted(MODEL_REGISTRY)
+
+
 def get_model_component(name: str):
     try:
         return MODEL_REGISTRY[name]
     except KeyError as exc:
-        choices = ', '.join(sorted(MODEL_REGISTRY))
+        choices = ', '.join(list_model_components())
         raise KeyError(f'Unknown MiniCNN model component {name!r}; expected one of: {choices}') from exc
