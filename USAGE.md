@@ -8,6 +8,22 @@ Shell note:
 Most multi-line command snippets in the docs use Bash continuation with `\`.
 On Windows PowerShell, replace `\` with `` ` ``. On `cmd.exe`, use `^`.
 
+## Fastest First Run
+
+If you only want the shortest path to a working checkout:
+
+```bash
+python3 -m pip install -e .
+minicnn smoke
+minicnn show-model --config configs/flex_cnn.yaml --format text
+```
+
+After that:
+
+- use `train-flex` for the broadest practical training path
+- use `train-autograd` for the smallest CPU-only reference path
+- keep reading this file when you want the full doc map by task
+
 ## Start Here
 
 Read these in order if you want the current, operational picture of the repo:

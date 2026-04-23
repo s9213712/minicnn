@@ -20,6 +20,22 @@ Windows PowerShell 執行，請改用反引號 `` ` ``；如果你用的是 `cmd
 - `autograd`：透過 `train-autograd` 扮演內部 correctness oracle
 - `cuda_legacy`：透過 `train-dual` 保留手寫 CUDA 的歷史維護路徑
 
+## 快速開始
+
+如果你想從 clone 直接走到第一個成功指令，最短路徑是：
+
+```bash
+python3 -m pip install -e .
+minicnn smoke
+minicnn show-model --config configs/flex_cnn.yaml --format text
+```
+
+如果這三個指令都成功，代表 repo 結構、config parsing 和核心 CLI surface 都正常。接下來：
+
+- 用 `minicnn train-flex --config configs/flex_cnn.yaml` 走最廣的 reference path
+- 用 `minicnn train-autograd --config configs/autograd_tiny.yaml` 走最小的 CPU-only reference path
+- 想按任務找文件時，直接把 `USAGE.md` 當成文件索引
+
 ## 為什麼有這個專案
 
 大多數框架會刻意把 kernel orchestration、記憶體處理、backend 邊界包在平滑的 API 後面。

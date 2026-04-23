@@ -21,6 +21,23 @@ Today, the repo gives you four backend roles:
 - `autograd` via `train-autograd` as the internal correctness oracle
 - `cuda_legacy` via `train-dual` as the maintenance-only historical CUDA path
 
+## Fast Start
+
+If you want the shortest path from clone to a working command:
+
+```bash
+python3 -m pip install -e .
+minicnn smoke
+minicnn show-model --config configs/flex_cnn.yaml --format text
+```
+
+If those commands succeed, the repo layout, config parsing, and core CLI
+surfaces are working. From there:
+
+- use `minicnn train-flex --config configs/flex_cnn.yaml` for the broadest reference path
+- use `minicnn train-autograd --config configs/autograd_tiny.yaml` for the smallest CPU-only reference path
+- use `USAGE.md` as the doc index when you want task-based navigation
+
 ## Why This Exists
 
 Most frameworks intentionally hide kernel orchestration, memory handling, and
