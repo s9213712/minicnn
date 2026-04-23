@@ -5,6 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from minicnn.paths import BEST_MODELS_ROOT
+from minicnn.training.events import (
+    emit_training_event as _emit_training_event_impl,
+    format_epoch_summary_event,
+)
 
 TRAINING_SUMMARY_SCHEMA_VERSION = 1
 
@@ -53,13 +57,14 @@ def _epoch_log_message(
     epoch_time_s: float,
     saved_best: bool,
 ) -> str:
-    save_msg = ' saved_best' if saved_best else ''
-    return (
-        f"Epoch {epoch}/{epochs}: loss={train_metrics['loss']:.4f}, "
-        f"train_acc={train_metrics['acc'] * 100:.2f}%, "
-        f"val_acc={val_metrics['acc'] * 100:.2f}%, "
-        f"lr={lr:.6g}, "
-        f"time={epoch_time_s:.1f}s{save_msg}"
+    return format_epoch_summary_event(
+        epoch=epoch,
+        epochs=epochs,
+        train_metrics=train_metrics,
+        val_metrics=val_metrics,
+        lr=lr,
+        epoch_time_s=epoch_time_s,
+        saved_best=saved_best,
     )
 
 
@@ -69,25 +74,7 @@ def emit_training_event(
     *,
     writer=print,
 ) -> str:
-    if event == 'epoch_summary':
-        message = _epoch_log_message(
-            epoch=int(payload['epoch']),
-            epochs=int(payload['epochs']),
-            train_metrics=payload['train_metrics'],
-            val_metrics=payload['val_metrics'],
-            lr=float(payload['lr']),
-            epoch_time_s=float(payload['epoch_time_s']),
-            saved_best=bool(payload.get('saved_best', False)),
-        )
-    elif event == 'early_stop':
-        message = (
-            f"Early stopping after {int(payload['epoch'])} epochs; "
-            f"best val_acc={float(payload['best_val_acc']) * 100:.2f}%."
-        )
-    else:
-        raise ValueError(f'Unknown training event {event!r}')
-    writer(message)
-    return message
+    return _emit_training_event_impl(event, payload, writer=writer)
 
 
 def _build_training_summary(

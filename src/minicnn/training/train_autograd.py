@@ -27,6 +27,7 @@ from minicnn.training._autograd_reporting import (
     save_best_model,
     write_epoch_row,
 )
+from minicnn.training.events import emit_training_event
 
 
 def _cifar10_dataset(dataset_cfg: dict[str, Any]):
@@ -220,11 +221,17 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
                     scheduler.step()
 
             write_epoch_row(metrics_file, row)
-            print(
-                f"Epoch {epoch}/{epochs}: loss={row['train_loss']:.4f}, "
-                f"train_acc={last_train_acc * 100:.2f}%, "
-                f"val_acc={val_acc * 100:.2f}%, "
-                f"lr={optimizer.lr:.6g}, time={last_epoch_time:.1f}s"
+            emit_training_event(
+                'epoch_summary',
+                {
+                    'epoch': epoch,
+                    'epochs': epochs,
+                    'train_metrics': {'loss': row['train_loss'], 'acc': last_train_acc},
+                    'val_metrics': {'loss': row['train_loss'], 'acc': val_acc},
+                    'lr': optimizer.lr,
+                    'epoch_time_s': last_epoch_time,
+                    'saved_best': val_acc > best_val,
+                },
             )
             if val_acc > best_val:
                 best_val = val_acc
