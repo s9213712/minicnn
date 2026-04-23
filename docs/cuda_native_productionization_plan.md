@@ -96,6 +96,13 @@ Required tests:
 
 Phase 1 done means external tooling can depend on the output shape.
 
+Current status:
+
+- first slice started
+- `summary.json` / `metrics.jsonl` now expose explicit schema identifiers
+- `summary.json` now carries explicit checkpoint-contract metadata
+- artifact schema regression coverage exists for the current contract
+
 ## Phase 2: Runtime Hardening
 
 Goal:

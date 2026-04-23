@@ -107,6 +107,8 @@ Validated `train-native` support boundary today:
 - `metrics.jsonl` rows now also include static planner memory telemetry (`strategy`, `peak_live_bytes`, `reuse_events`, `reuse_slack_bytes`)
 - `summary.json` also records static planner/memory telemetry under `planner`
 - `summary.json` now includes `performance_report`, which bundles planner, AMP, optimizer, and training knobs in one place
+- `summary.json` and `metrics.jsonl` now both expose explicit `schema_name` / `schema_version`
+- `summary.json` now includes `checkpoint_contract` metadata instead of silently implying the checkpoint format
 
 Hermetic smoke configs:
 
@@ -385,6 +387,8 @@ reference-kernel 路徑接通，可驗證、可執行，但仍不是正式穩定
 - `metrics.jsonl` 每個 epoch row 也會額外帶 planner/memory telemetry（`strategy`、`peak_live_bytes`、`reuse_events`、`reuse_slack_bytes`）
 - `summary.json` 也會額外記錄靜態 planner/memory telemetry（`planner`）
 - `summary.json` 也包含 `performance_report`，把 planner / AMP / optimizer / training knobs 集中整理
+- `summary.json` 與 `metrics.jsonl` 現在都會帶明確的 `schema_name` / `schema_version`
+- `summary.json` 也會帶 `checkpoint_contract` metadata，而不是把 checkpoint 格式隱含在實作裡
 
 Hermetic smoke config：
 

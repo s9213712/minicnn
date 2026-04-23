@@ -55,6 +55,8 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     metrics_lines = (run_dir / 'metrics.jsonl').read_text(encoding='utf-8').strip().splitlines()
     row = json.loads(metrics_lines[-1])
 
+    assert summary['schema_name'] == 'minicnn.cuda_native.training.summary'
+    assert summary['schema_version'] == 1
     assert summary['amp'] is True
     assert 'amp_runtime' in summary
     assert 'optimizer_runtime' in summary
@@ -67,6 +69,9 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert summary['optimizer_runtime']['state_total_bytes'] > 0
     assert 'cache_allocations' in summary['amp_runtime']
 
+    assert row['schema_name'] == 'minicnn.cuda_native.training.metrics.epoch'
+    assert row['schema_version'] == 1
+    assert row['artifact_kind'] == 'training_metrics_epoch'
     assert row['amp']['enabled'] is True
     assert 'loss_scale' in row['amp']
     assert 'optimizer_runtime' in row

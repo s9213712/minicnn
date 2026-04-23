@@ -14,7 +14,11 @@ from minicnn.schedulers.cosine import CosineAnnealingLR
 from minicnn.schedulers.plateau import ReduceLROnPlateau
 from minicnn.schedulers.step import StepLR
 
+TRAINING_SUMMARY_SCHEMA_NAME = 'minicnn.cuda_native.training.summary'
 TRAINING_SUMMARY_SCHEMA_VERSION = 1
+TRAINING_METRICS_SCHEMA_NAME = 'minicnn.cuda_native.training.metrics.epoch'
+TRAINING_METRICS_SCHEMA_VERSION = 1
+CHECKPOINT_CONTRACT_VERSION = 1
 
 
 def _sanitize_amp_runtime(amp_runtime: dict[str, Any] | None) -> dict[str, Any]:
@@ -224,6 +228,9 @@ def build_epoch_row(
     planner_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     row = {
+        'schema_name': TRAINING_METRICS_SCHEMA_NAME,
+        'schema_version': TRAINING_METRICS_SCHEMA_VERSION,
+        'artifact_kind': 'training_metrics_epoch',
         'epoch': epoch,
         'train_loss': train_loss,
         'val_loss': val_metrics['loss'],
@@ -335,6 +342,7 @@ def build_training_summary(
         },
     }
     return {
+        'schema_name': TRAINING_SUMMARY_SCHEMA_NAME,
         'schema_version': TRAINING_SUMMARY_SCHEMA_VERSION,
         'artifact_kind': 'training_run_summary',
         'status': 'ok',
@@ -364,6 +372,11 @@ def build_training_summary(
         },
         'amp_runtime': sanitized_amp_runtime,
         'optimizer_runtime': sanitized_optimizer_runtime,
+        'checkpoint_contract': {
+            'format': 'npz',
+            'version': CHECKPOINT_CONTRACT_VERSION,
+            'best_model_path_key': 'best_model_path',
+        },
         'planner': dict(planner_summary or {}),
         'performance_report': performance_report,
         'epochs': epochs,
