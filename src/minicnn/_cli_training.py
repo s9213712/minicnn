@@ -59,6 +59,14 @@ def _read_metrics(run_dir: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _read_summary(run_dir: Path) -> dict[str, Any]:
+    summary_path = run_dir / 'summary.json'
+    if not summary_path.exists():
+        return {}
+    summary = json.loads(summary_path.read_text(encoding='utf-8'))
+    return summary if isinstance(summary, dict) else {}
+
+
 def _effective_train_samples(cfg: dict[str, Any]) -> int:
     dataset_cfg = cfg.get('dataset', {})
     train_cfg = cfg.get('train', {})
@@ -75,7 +83,14 @@ def _round_or_none(value: float | None, digits: int = 3) -> float | None:
     return round(value, digits) if value is not None else None
 
 
-def benchmark_fields(backend: str, cfg: dict[str, Any], run_dir: Path, elapsed_s: float) -> dict[str, Any]:
+def benchmark_fields(
+    backend: str,
+    cfg: dict[str, Any],
+    run_dir: Path,
+    elapsed_s: float,
+    *,
+    summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     train_cfg = cfg.get('train', {})
     dataset_cfg = cfg.get('dataset', {})
     runtime_cfg = cfg.get('runtime', {})
@@ -93,12 +108,14 @@ def benchmark_fields(backend: str, cfg: dict[str, Any], run_dir: Path, elapsed_s
         if train_samples > 0 and throughput_window > 0
         else None
     )
-    if backend == 'cuda_legacy':
-        variant = runtime_cfg.get('cuda_variant')
-    elif backend == 'torch':
-        variant = train_cfg.get('device')
-    else:
-        variant = ''
+    variant = ''
+    if isinstance(summary, dict):
+        variant = str(summary.get('variant') or '')
+    if not variant:
+        if backend == 'cuda_legacy':
+            variant = runtime_cfg.get('cuda_variant')
+        elif backend == 'torch':
+            variant = train_cfg.get('device')
     return {
         'variant': variant or '',
         'train_samples': train_samples,
@@ -111,6 +128,36 @@ def benchmark_fields(backend: str, cfg: dict[str, Any], run_dir: Path, elapsed_s
         'samples_per_sec': _round_or_none(samples_per_sec),
         'elapsed_s': round(elapsed_s, 3),
     }
+
+
+def _compare_row(
+    backend: str,
+    cfg: dict[str, Any],
+    run_dir: Path,
+    elapsed_s: float,
+    *,
+    summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    summary = summary if isinstance(summary, dict) else {}
+    periodic_checkpoints = summary.get('periodic_checkpoints')
+    if not isinstance(periodic_checkpoints, list):
+        periodic_checkpoints = []
+    row = {
+        'backend': backend,
+        'run_dir': str(run_dir),
+        'schema_version': summary.get('schema_version'),
+        'artifact_kind': summary.get('artifact_kind'),
+        'status': summary.get('status'),
+        'selected_backend': summary.get('selected_backend', backend),
+        'effective_backend': summary.get('effective_backend', backend),
+        'best_model_path': summary.get('best_model_path'),
+        'periodic_checkpoints': periodic_checkpoints,
+        'num_periodic_checkpoints': len(periodic_checkpoints),
+        'test_loss': summary.get('test_loss'),
+        'test_acc': summary.get('test_acc'),
+    }
+    row.update(benchmark_fields(backend, cfg, run_dir, elapsed_s, summary=summary))
+    return row
 
 
 def compare_backends_and_overrides(args) -> tuple[list[str], list[str]]:
@@ -201,16 +248,8 @@ def handle_compare(args, parser) -> int:
             from minicnn.unified.trainer import train_unified_from_config
             run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
         elapsed = time.perf_counter() - t0
-        summary_path = run_dir / 'summary.json'
-        summary = json.loads(summary_path.read_text(encoding='utf-8')) if summary_path.exists() else {}
-        row = {
-            'backend': backend,
-            'run_dir': str(run_dir),
-            'best_model_path': summary.get('best_model_path'),
-            'test_acc': summary.get('test_acc'),
-        }
-        row.update(benchmark_fields(backend, cfg, run_dir, elapsed))
-        rows.append(row)
+        summary = _read_summary(run_dir)
+        rows.append(_compare_row(backend, cfg, run_dir, elapsed, summary=summary))
     _print_json({'runs': rows})
     return 0
 

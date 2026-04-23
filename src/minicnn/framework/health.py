@@ -10,6 +10,7 @@ from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
 from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED
 
 DIAGNOSTIC_SCHEMA_VERSION = 1
+DIAGNOSTIC_KIND = 'environment_diagnostic_summary'
 _NATIVE_ARTIFACT_SUFFIXES = ('.so', '.dll', '.dylib')
 
 
@@ -61,6 +62,7 @@ def build_diagnostic_payload(*, checks: list[dict[str, object]], extra: dict[str
     status = _summary_status(checks)
     return {
         'schema_version': DIAGNOSTIC_SCHEMA_VERSION,
+        'diagnostic_kind': DIAGNOSTIC_KIND,
         'status': status,
         'summary_status': status,
         'check_summary': _check_summary(checks),

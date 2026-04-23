@@ -297,6 +297,7 @@ def test_cli_smoke_returns_structured_json(capsys):
     assert rc == 0
     assert payload['command'] == 'smoke'
     assert payload['schema_version'] == 1
+    assert payload['diagnostic_kind'] == 'environment_diagnostic_summary'
     assert payload['ok'] is True
     assert payload['status'] == payload['summary_status']
     assert payload['check_summary']['total'] == len(payload['checks'])
@@ -334,6 +335,7 @@ def test_cli_healthcheck_returns_structured_json(capsys):
     assert rc == 0
     assert payload['command'] == 'healthcheck'
     assert payload['schema_version'] == 1
+    assert payload['diagnostic_kind'] == 'environment_diagnostic_summary'
     assert payload['status'] in {'ok', 'warning', 'error'}
     assert payload['summary_status'] == payload['status']
     assert payload['check_summary']['total'] == len(payload['checks'])
@@ -364,6 +366,23 @@ def test_cli_doctor_supports_text_output(capsys):
     assert out.startswith('doctor: ')
 
 
+def test_cli_doctor_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['doctor'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['command'] == 'doctor'
+    assert payload['schema_version'] == 1
+    assert payload['diagnostic_kind'] == 'environment_diagnostic_summary'
+    assert payload['status'] in {'ok', 'warning', 'error'}
+    assert payload['summary_status'] == payload['status']
+    assert payload['check_summary']['total'] == len(payload['checks'])
+
+
 def test_cli_smoke_supports_text_output(capsys):
     from minicnn.cli import main
 
@@ -384,6 +403,9 @@ def test_cli_info_supports_json_output(capsys):
 
     assert rc == 0
     assert payload['command'] == 'info'
+    assert payload['schema_version'] == 1
+    assert payload['kind'] == 'project_info'
+    assert payload['status'] == 'ok'
     assert 'health' in payload
     assert 'resolved_legacy_settings' in payload
 
@@ -399,6 +421,7 @@ def test_cli_show_model_returns_structured_json(capsys):
     assert rc == 0
     assert payload['command'] == 'show-model'
     assert payload['schema_version'] == 1
+    assert payload['kind'] == 'model_view'
     assert payload['status'] == 'ok'
     assert isinstance(payload['layers'], list)
     assert 'summary' in payload
@@ -427,8 +450,26 @@ def test_cli_show_graph_returns_structured_json(capsys):
     assert rc == 0
     assert payload['command'] == 'show-graph'
     assert payload['schema_version'] == 1
+    assert payload['kind'] == 'graph_view'
     assert payload['status'] == 'ok'
     assert payload['graph']['node_count'] == len(payload['graph']['nodes'])
+
+
+def test_cli_compile_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['compile', '--config', 'configs/autograd_tiny.yaml'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['command'] == 'compile'
+    assert payload['schema_version'] == 1
+    assert payload['kind'] == 'compiled_graph_summary'
+    assert payload['status'] == 'ok'
+    assert 'num_nodes' in payload
+    assert 'ops' in payload
 
 
 def test_cli_show_graph_supports_text_output(capsys):
@@ -1118,6 +1159,53 @@ def test_cli_benchmark_fields_read_metrics_for_compare(tmp_path):
 
     autograd_fields = _benchmark_fields('autograd', cfg | {'train': {'device': 'auto'}}, tmp_path, elapsed_s=10.0)
     assert autograd_fields['variant'] == ''
+
+
+def test_cli_compare_row_uses_summary_contract_fields(tmp_path):
+    from minicnn._cli_training import _compare_row
+
+    (tmp_path / 'metrics.jsonl').write_text(
+        '{"epoch": 1, "epoch_time_s": 1.0}\n'
+        '{"epoch": 2, "epoch_time_s": 3.0}\n',
+        encoding='utf-8',
+    )
+    cfg = {
+        'runtime': {'cuda_variant': 'handmade'},
+        'dataset': {'num_samples': 128, 'val_samples': 16},
+        'train': {'batch_size': 32, 'epochs': 2, 'max_steps_per_epoch': 2},
+    }
+    summary = {
+        'schema_version': 1,
+        'artifact_kind': 'training_run_summary',
+        'status': 'ok',
+        'selected_backend': 'cuda_legacy',
+        'effective_backend': 'cuda_legacy',
+        'best_model_path': 'best.npz',
+        'periodic_checkpoints': ['epoch_1.npz', 'epoch_2.npz'],
+        'test_loss': 0.42,
+        'test_acc': 0.91,
+        'variant': 'cublas',
+    }
+
+    row = _compare_row('cuda_legacy', cfg, tmp_path, elapsed_s=9.0, summary=summary)
+
+    assert row['backend'] == 'cuda_legacy'
+    assert row['schema_version'] == 1
+    assert row['artifact_kind'] == 'training_run_summary'
+    assert row['status'] == 'ok'
+    assert row['selected_backend'] == 'cuda_legacy'
+    assert row['effective_backend'] == 'cuda_legacy'
+    assert row['best_model_path'] == 'best.npz'
+    assert row['periodic_checkpoints'] == ['epoch_1.npz', 'epoch_2.npz']
+    assert row['num_periodic_checkpoints'] == 2
+    assert row['test_loss'] == 0.42
+    assert row['test_acc'] == 0.91
+    assert row['variant'] == 'cublas'
+    assert row['train_samples'] == 64
+    assert row['epochs_completed'] == 2
+    assert row['avg_epoch_time_s'] == 2.0
+    assert row['last_epoch_time_s'] == 3.0
+    assert row['samples_per_sec'] == 32.0
 
 
 def test_cli_compare_backends_allow_key_value_overrides_after_backends():

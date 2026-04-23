@@ -132,6 +132,7 @@ class TestAutogradBestCheckpointReload:
             assert summary['status'] == 'ok'
             assert summary['selected_backend'] == 'autograd'
             assert summary['effective_backend'] == 'autograd'
+            assert summary['variant'] == 'numpy'
             assert summary['periodic_checkpoints'] == []
             assert summary['test_loss'] is None
             # test_acc must be a valid float in [0, 1]

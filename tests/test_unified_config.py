@@ -122,7 +122,7 @@ def test_cuda_legacy_summary_preserves_returned_test_acc(tmp_path, monkeypatch):
 
     run_dir = tmp_path / 'cuda-run'
     run_dir.mkdir()
-    cfg = load_unified_config(None, ['engine.backend=cuda_legacy'])
+    cfg = load_unified_config(None, ['engine.backend=cuda_legacy', 'runtime.cuda_variant=cublas'])
 
     monkeypatch.setattr(trainer, 'create_run_dir', lambda _cfg: run_dir)
     monkeypatch.setattr(trainer, 'compile_to_legacy_experiment', lambda _cfg: ExperimentConfig())
@@ -139,6 +139,7 @@ def test_cuda_legacy_summary_preserves_returned_test_acc(tmp_path, monkeypatch):
     assert summary['status'] == 'ok'
     assert summary['selected_backend'] == 'cuda_legacy'
     assert summary['effective_backend'] == 'cuda_legacy'
+    assert summary['variant'] == 'cublas'
     assert summary['periodic_checkpoints'] == []
     assert summary['test_acc'] == 12.5
     assert summary['test_loss'] is None

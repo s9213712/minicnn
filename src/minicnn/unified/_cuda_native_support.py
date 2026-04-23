@@ -209,6 +209,7 @@ def build_training_summary(
         'status': 'ok',
         'selected_backend': 'cuda_native',
         'effective_backend': 'cuda_native',
+        'variant': 'reference',
         'run_dir': str(run_dir),
         'best_model_path': str(best_path),
         'best_val_acc': best_val_acc,

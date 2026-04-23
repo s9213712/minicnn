@@ -69,6 +69,7 @@ def dump_autograd_summary(
         'status': 'ok',
         'selected_backend': 'autograd',
         'effective_backend': 'autograd',
+        'variant': 'numpy',
         'run_dir': str(run_dir),
         'best_model_path': str(best_path),
         'input_shape': list(dataset_cfg.get('input_shape', [1, 4, 4])),

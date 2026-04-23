@@ -24,6 +24,7 @@ def _base_training_summary(*, backend: str, run_dir: Path) -> dict[str, Any]:
         'status': 'ok',
         'selected_backend': backend,
         'effective_backend': backend,
+        'variant': '',
         'run_dir': str(run_dir),
         'best_model_path': '',
         'periodic_checkpoints': [],
@@ -59,6 +60,7 @@ def _configure_cuda_legacy_runtime(cfg: dict[str, Any], summary: dict[str, Any])
     _set_managed_env('MINICNN_CUDA_VARIANT', cuda_variant)
     _set_managed_env('MINICNN_CUDA_SO', cuda_so)
     if cuda_variant is not None:
+        summary['variant'] = str(cuda_variant)
         summary['cuda_variant'] = str(cuda_variant)
     if cuda_so is not None:
         summary['cuda_so'] = str(cuda_so)

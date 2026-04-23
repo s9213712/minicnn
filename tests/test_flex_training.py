@@ -35,6 +35,7 @@ def test_train_from_random_config(tmp_path: Path):
     assert summary['status'] == 'ok'
     assert summary['selected_backend'] == 'torch'
     assert summary['effective_backend'] == 'torch'
+    assert summary['variant'] == 'cpu'
     assert isinstance(summary['periodic_checkpoints'], list)
     assert 'test_loss' in summary
     assert 'test_acc' in summary

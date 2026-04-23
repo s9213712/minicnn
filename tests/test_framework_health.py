@@ -42,6 +42,7 @@ def test_healthcheck_reports_windows_native_artifacts(monkeypatch, tmp_path: Pat
     payload = health.healthcheck()
     artifact_check = next(check for check in payload['checks'] if check['name'] == 'native_cuda_artifacts')
 
+    assert payload['diagnostic_kind'] == 'environment_diagnostic_summary'
     assert payload['native_artifacts'] == ['minimal_cuda_cnn_handmade.dll']
     assert payload['shared_objects'] == ['minimal_cuda_cnn_handmade.dll']
     assert artifact_check['ok'] is True

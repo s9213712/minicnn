@@ -26,6 +26,10 @@ CIFAR10_CLASS_NAMES = [
 ]
 
 MNIST_CLASS_NAMES = [str(i) for i in range(10)]
+TRAINING_SUMMARY_SCHEMA_VERSION = 1
+TRAINING_SUMMARY_KIND = 'training_run_summary'
+EVALUATION_RESULT_SCHEMA_VERSION = 1
+EVALUATION_RESULT_KIND = 'checkpoint_evaluation'
 
 
 def _load_pillow():
@@ -42,11 +46,28 @@ def _load_pillow():
     return Image, ImageOps
 
 
-def load_best_model_path_from_summary(path: str | Path) -> str | None:
+def load_training_summary(path: str | Path) -> dict[str, Any]:
     summary_path = Path(path)
     if not summary_path.exists():
         raise FileNotFoundError(f'Summary file not found: {summary_path}')
     payload = json.loads(summary_path.read_text(encoding='utf-8'))
+    if not isinstance(payload, dict):
+        raise ValueError(f'Summary file must contain a JSON object: {summary_path}')
+    if payload.get('artifact_kind') != TRAINING_SUMMARY_KIND:
+        raise ValueError(
+            f'Summary file is not a {TRAINING_SUMMARY_KIND}: {summary_path}'
+        )
+    if int(payload.get('schema_version', 0) or 0) != TRAINING_SUMMARY_SCHEMA_VERSION:
+        raise ValueError(
+            'Unsupported training summary schema_version '
+            f'in {summary_path}: {payload.get("schema_version")!r}'
+        )
+    return payload
+
+
+def load_best_model_path_from_summary(path: str | Path) -> str | None:
+    summary_path = Path(path)
+    payload = load_training_summary(summary_path)
     best_model_path = payload.get('best_model_path')
     if not best_model_path:
         raise ValueError(f'Summary file does not contain best_model_path: {summary_path}')
@@ -249,6 +270,8 @@ def evaluate_checkpoint(
             total_count += batch_size_now
 
     return {
+        'schema_version': EVALUATION_RESULT_SCHEMA_VERSION,
+        'kind': EVALUATION_RESULT_KIND,
         'status': 'ok',
         'checkpoint_path': str(Path(checkpoint_path)),
         'dataset_source': dataset_source,

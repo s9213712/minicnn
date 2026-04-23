@@ -71,6 +71,8 @@ def test_evaluate_checkpoint_accepts_custom_test_npz(tmp_path):
         test_data_path=str(test_data_path),
     )
 
+    assert result['schema_version'] == 1
+    assert result['kind'] == 'checkpoint_evaluation'
     assert result['status'] == 'ok'
     assert result['dataset_source'] == str(test_data_path)
     assert result['num_samples'] == 4
@@ -101,6 +103,34 @@ def test_predict_image_resizes_and_returns_topk(tmp_path):
     assert [entry['label'] for entry in result['predictions']] == ['one', 'zero']
 
 
+def test_load_best_model_path_from_summary_rejects_non_training_summary(tmp_path):
+    from minicnn.inference import load_best_model_path_from_summary
+
+    summary_path = tmp_path / 'summary.json'
+    summary_path.write_text(json.dumps({
+        'schema_version': 1,
+        'artifact_kind': 'project_info',
+        'best_model_path': 'best.pt',
+    }), encoding='utf-8')
+
+    with pytest.raises(ValueError, match='training_run_summary'):
+        load_best_model_path_from_summary(summary_path)
+
+
+def test_load_best_model_path_from_summary_rejects_unknown_schema_version(tmp_path):
+    from minicnn.inference import load_best_model_path_from_summary
+
+    summary_path = tmp_path / 'summary.json'
+    summary_path.write_text(json.dumps({
+        'schema_version': 99,
+        'artifact_kind': 'training_run_summary',
+        'best_model_path': 'best.pt',
+    }), encoding='utf-8')
+
+    with pytest.raises(ValueError, match='schema_version'):
+        load_best_model_path_from_summary(summary_path)
+
+
 def test_cli_evaluate_checkpoint_outputs_structured_json(tmp_path, capsys):
     from minicnn.cli import main
 
@@ -126,5 +156,7 @@ def test_cli_evaluate_checkpoint_outputs_structured_json(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert rc == 0
     assert payload['command'] == 'evaluate-checkpoint'
+    assert payload['schema_version'] == 1
+    assert payload['kind'] == 'checkpoint_evaluation'
     assert payload['status'] == 'ok'
     assert payload['accuracy'] == pytest.approx(1.0)

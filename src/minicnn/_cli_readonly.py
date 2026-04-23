@@ -153,6 +153,8 @@ def handle_info(args) -> int:
 
     cuda_library = resolve_library_path()
     payload = {
+        'schema_version': 1,
+        'kind': 'project_info',
         'status': 'ok',
         'project_root': str(PROJECT_ROOT),
         'cpp_root': str(CPP_ROOT),
@@ -377,7 +379,13 @@ def handle_compile(args) -> int:
 
     cfg = _load_flex_config_or_exit(args.config, args.overrides)
     graph = optimize(trace_model_config(cfg.get('model', {})))
-    _print_json(graph.summary())
+    _print_json({
+        'command': 'compile',
+        'schema_version': 1,
+        'kind': 'compiled_graph_summary',
+        'status': 'ok',
+        **graph.summary(),
+    })
     return 0
 
 
@@ -389,6 +397,7 @@ def handle_show_model(args) -> int:
     payload = {
         'status': 'ok',
         'schema_version': 1,
+        'kind': 'model_view',
         'model_type': view.model_type,
         'input_shape': view.input_shape,
         'backend_intent': view.backend_intent,
@@ -407,6 +416,7 @@ def handle_show_graph(args) -> int:
     payload = {
         'status': 'ok',
         'schema_version': 1,
+        'kind': 'graph_view',
         **build_graph_view_from_config(cfg),
     }
     payload['text'] = render_graph_view_text(payload)

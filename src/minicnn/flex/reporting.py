@@ -80,6 +80,7 @@ def _build_training_summary(
         'status': 'ok',
         'selected_backend': 'torch',
         'effective_backend': 'torch',
+        'variant': str(device),
         'device': str(device),
         'run_dir': str(run_dir),
         'best_model_path': str(best_model_path),

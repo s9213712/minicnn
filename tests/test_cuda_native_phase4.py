@@ -233,6 +233,7 @@ class TestTrainerBridge:
         assert summary.get('status') == 'ok'
         assert summary.get('selected_backend') == 'cuda_native'
         assert summary.get('effective_backend') == 'cuda_native'
+        assert summary.get('variant') == 'reference'
         assert summary.get('periodic_checkpoints') == []
         assert 'test_loss' in summary
         assert 'test_acc' in summary
