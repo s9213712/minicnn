@@ -54,6 +54,22 @@ def infer_batchnorm2d(input_shape: tuple[int, ...]) -> tuple[int, ...]:
     return input_shape
 
 
+def infer_layernorm2d(
+    input_shape: tuple[int, ...],
+    num_channels: int | None = None,
+) -> tuple[int, ...]:
+    """LayerNorm2d preserves NCHW shape and optionally validates channels."""
+    if len(input_shape) != 4:
+        raise ValueError(
+            f'LayerNorm2d expects 4-D input (N,C,H,W), got shape {input_shape}'
+        )
+    if num_channels is not None and int(num_channels) != int(input_shape[1]):
+        raise ValueError(
+            f'LayerNorm2d num_channels={num_channels} does not match input channels={input_shape[1]}'
+        )
+    return input_shape
+
+
 def infer_flatten(input_shape: tuple[int, ...]) -> tuple[int, ...]:
     """Flatten all dims except batch into one vector: (N, C*H*W)."""
     if len(input_shape) < 2:
@@ -114,6 +130,16 @@ def infer_pool2d(
     return (n, c, oh, ow)
 
 
+def infer_global_avgpool2d(input_shape: tuple[int, ...]) -> tuple[int, ...]:
+    """Return (N, C, 1, 1) for channel-preserving global average pooling."""
+    if len(input_shape) != 4:
+        raise ValueError(
+            f'GlobalAvgPool2d expects 4-D input (N,C,H,W), got shape {input_shape}'
+        )
+    n, c, _h, _w = input_shape
+    return (n, c, 1, 1)
+
+
 def infer_shape(
     op_type: str,
     input_shape: tuple[int, ...],
@@ -137,10 +163,74 @@ def infer_shape(
                 stride=attrs.get('stride', 1),
                 padding=attrs.get('padding', 0),
             )
-        if op_type in ('ReLU', 'LeakyReLU', 'Sigmoid', 'Tanh', 'SiLU'):
+        if op_type in ('DepthwiseConv2d', 'depthwise_conv2d'):
+            if len(input_shape) != 4:
+                raise ValueError(
+                    f'DepthwiseConv2d{loc}: expects 4-D input (N,C,H,W), got shape {input_shape}'
+                )
+            c_in = int(input_shape[1])
+            channel_multiplier = int(attrs.get('channel_multiplier', 1))
+            out_ch = attrs.get('out_channels')
+            if out_ch is None:
+                out_ch = c_in * channel_multiplier
+            if int(out_ch) % c_in != 0:
+                raise ValueError(
+                    f'DepthwiseConv2d{loc}: out_channels={out_ch} must be a multiple of input channels={c_in}'
+                )
+            kernel_size = attrs.get('kernel_size', 3)
+            if isinstance(kernel_size, (tuple, list)):
+                default_padding = tuple(int(k) // 2 for k in kernel_size)
+            else:
+                default_padding = int(kernel_size) // 2
+            return infer_conv2d(
+                input_shape,
+                out_channels=int(out_ch),
+                kernel_size=kernel_size,
+                stride=attrs.get('stride', 1),
+                padding=attrs.get('padding', default_padding),
+            )
+        if op_type in ('PointwiseConv2d', 'pointwise_conv2d'):
+            out_ch = attrs.get('out_channels')
+            if out_ch is None:
+                raise ValueError(f'PointwiseConv2d{loc}: missing required attr "out_channels"')
+            return infer_conv2d(
+                input_shape,
+                out_channels=int(out_ch),
+                kernel_size=1,
+                stride=1,
+                padding=0,
+            )
+        if op_type in ('ReLU', 'LeakyReLU', 'Sigmoid', 'Tanh', 'SiLU', 'GELU', 'Identity', 'Dropout'):
             return infer_activation(input_shape)
         if op_type == 'BatchNorm2d':
             return infer_batchnorm2d(input_shape)
+        if op_type in ('LayerNorm2d', 'layernorm2d'):
+            num_channels = attrs.get('num_channels', attrs.get('channels'))
+            return infer_layernorm2d(input_shape, num_channels=num_channels)
+        if op_type == 'ResidualBlock':
+            out_channels = attrs.get('out_channels', attrs.get('channels', input_shape[1] if len(input_shape) == 4 else None))
+            if out_channels is None:
+                raise ValueError(f'ResidualBlock{loc}: missing channels/out_channels')
+            kernel_size = int(attrs.get('kernel_size', 3))
+            padding = attrs.get('padding', kernel_size // 2)
+            return infer_conv2d(
+                input_shape,
+                out_channels=int(out_channels),
+                kernel_size=kernel_size,
+                stride=attrs.get('stride', 1),
+                padding=padding,
+            )
+        if op_type in ('ConvNeXtBlock', 'convnext_block'):
+            if len(input_shape) != 4:
+                raise ValueError(
+                    f'ConvNeXtBlock{loc}: expects 4-D input (N,C,H,W), got shape {input_shape}'
+                )
+            channels = attrs.get('channels', attrs.get('in_channels', input_shape[1]))
+            if int(channels) != int(input_shape[1]):
+                raise ValueError(
+                    f'ConvNeXtBlock{loc}: channels={channels} must match input channels={input_shape[1]}'
+                )
+            return input_shape
         if op_type == 'Flatten':
             return infer_flatten(input_shape)
         if op_type == 'Linear':
@@ -155,6 +245,14 @@ def infer_shape(
                 stride=attrs.get('stride', None),
                 padding=attrs.get('padding', 0),
             )
+        if op_type in ('GlobalAvgPool2d', 'AdaptiveAvgPool2d'):
+            output_size = attrs.get('output_size', 1)
+            normalized = tuple(output_size) if isinstance(output_size, (list, tuple)) else output_size
+            if op_type == 'AdaptiveAvgPool2d' and normalized not in {1, (1, 1)}:
+                raise ValueError(
+                    f'AdaptiveAvgPool2d{loc}: only output_size=1 or (1, 1) is supported, got {output_size!r}'
+                )
+            return infer_global_avgpool2d(input_shape)
         raise ValueError(f'No shape inference rule for op: {op_type}{loc}')
     except ValueError:
         raise

@@ -48,7 +48,25 @@ class TestLayoutConstants:
         assert NHWC not in SUPPORTED_ACTIVATION_LAYOUTS
 
     def test_op_layout_rules_cover_supported_ops(self):
-        for op in ('Conv2d', 'ReLU', 'LeakyReLU', 'MaxPool2d', 'AvgPool2d', 'Flatten', 'Linear'):
+        for op in (
+            'Conv2d',
+            'DepthwiseConv2d',
+            'PointwiseConv2d',
+            'ResidualBlock',
+            'ConvNeXtBlock',
+            'BatchNorm2d',
+            'LayerNorm2d',
+            'ReLU',
+            'LeakyReLU',
+            'GELU',
+            'Dropout',
+            'MaxPool2d',
+            'AvgPool2d',
+            'AdaptiveAvgPool2d',
+            'GlobalAvgPool2d',
+            'Flatten',
+            'Linear',
+        ):
             assert op in OP_LAYOUT_RULES
 
 

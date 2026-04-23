@@ -1,0 +1,66 @@
+# CIFAR-10  ResNet-like  (cuda_native smoke, hermetic)
+#
+# Purpose:
+# - Minimal cuda_native smoke path for ResidualBlock support.
+# - Uses random data and SGD so it stays inside current cuda_native limits.
+#
+# Run:
+#   minicnn train-flex --config templates/cifar10/resnet_like_cuda_native_smoke.yaml
+
+project:
+  name: minicnn
+  run_name: cifar10-resnet-like-cuda-native-smoke
+  artifacts_root: artifacts
+
+engine:
+  backend: cuda_native
+  strict_backend_validation: true
+
+dataset:
+  type: random
+  num_samples: 64
+  val_samples: 16
+  num_classes: 10
+  input_shape: [3, 32, 32]
+  seed: 42
+
+model:
+  layers:
+    - type: Conv2d
+      out_channels: 32
+      kernel_size: 3
+      stride: 1
+      padding: 1
+      bias: false
+    - type: BatchNorm2d
+    - type: ReLU
+    - type: ResidualBlock
+      channels: 32
+      stride: 1
+    - type: ResidualBlock
+      channels: 64
+      stride: 2
+    - type: GlobalAvgPool2d
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+
+train:
+  epochs: 1
+  batch_size: 16
+  device: cpu
+  amp: false
+  grad_accum_steps: 1
+  num_workers: 0
+  log_every: 10
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: SGD
+  lr: 0.01
+  momentum: 0.9
+
+scheduler:
+  enabled: false

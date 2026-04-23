@@ -1,7 +1,8 @@
 # ConvNeXt Explicit Path Delivery Summary
 
 This document summarizes the explicit ConvNeXt primitive path that was added and
-stabilized for MiniCNN.
+stabilized for MiniCNN, and the later `cuda_native` primitive expansion that
+made a minimal native smoke path possible.
 
 ## What changed
 
@@ -22,10 +23,14 @@ contract.
 
 - `templates/cifar10/convnext_like.yaml`
   - block-based ConvNeXt-like path
+- `templates/cifar10/convnext_tiny_cuda_native_smoke.yaml`
+  - smallest built-in cuda_native smoke config for the block-based named-model path
 - `templates/cifar10/convnext_explicit.yaml`
   - explicit primitive path for direct editing
 - `templates/cifar10/convnext_explicit_smoke.yaml`
   - smallest built-in smoke training config
+- `templates/cifar10/convnext_explicit_cuda_native_smoke.yaml`
+  - smallest built-in cuda_native smoke config for the explicit primitive path
 
 ### Diagnostics and CLI UX
 
@@ -54,6 +59,10 @@ contract.
   - completed a 1-epoch reduced-data training run
 - `minicnn train-flex --config templates/cifar10/convnext_explicit_smoke.yaml`
   - completed the built-in smoke config run
+- `templates/cifar10/convnext_explicit_cuda_native_smoke.yaml`
+  - defines the hermetic cuda_native smoke path for explicit primitives
+- `templates/cifar10/convnext_tiny_cuda_native_smoke.yaml`
+  - defines the hermetic cuda_native smoke path for the block-based named model
 
 The canonical smoke contract lives in:
 
@@ -112,6 +121,6 @@ Validated coverage now includes:
 This delivery does not claim:
 
 - `cuda_legacy` support for ConvNeXt primitives
-- `cuda_native` support for ConvNeXt primitives
 - repo-wide ConvNeXt support beyond the torch/flex experimental slice
 - silent fallback from unsupported backends
+- `DropPath` / stochastic depth support

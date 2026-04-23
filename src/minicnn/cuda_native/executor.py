@@ -123,8 +123,15 @@ class ForwardExecutor:
             ):
                 if key in ctx:
                     cache[key] = ctx[key]
+            node_suffix = f'_{node.name}'
+            for key, value in ctx.items():
+                if key.startswith('_') and key.endswith(node_suffix):
+                    cache[key] = value
 
             kernel = self.registry.get(node.op_type)
             kernel(node, ctx)
+            composite_cache_key = f'__cache_{node.name}'
+            if composite_cache_key in ctx:
+                cache[composite_cache_key] = ctx[composite_cache_key]
 
         return ctx, cache

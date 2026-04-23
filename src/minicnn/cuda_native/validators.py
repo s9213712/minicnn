@@ -49,12 +49,166 @@ def _validate_linear_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
     return []
 
 
+def _validate_depthwise_conv2d_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    errors: list[str] = []
+    for key in ('kernel_size', 'stride', 'padding', 'dilation'):
+        val = attrs.get(key)
+        if val is None:
+            continue
+        try:
+            if isinstance(val, (list, tuple)):
+                [int(v) for v in val]
+            else:
+                int(val)
+        except (TypeError, ValueError):
+            errors.append(
+                f'DepthwiseConv2d node={node_name}: attr "{key}" must be an integer or pair, got {val!r}'
+            )
+    for key in ('out_channels', 'channel_multiplier'):
+        if key not in attrs:
+            continue
+        try:
+            if int(attrs[key]) <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append(
+                f'DepthwiseConv2d node={node_name}: attr "{key}" must be a positive integer, got {attrs[key]!r}'
+            )
+    return errors
+
+
+def _validate_pointwise_conv2d_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    if 'out_channels' not in attrs:
+        return [f'PointwiseConv2d node={node_name}: missing required attr "out_channels"']
+    try:
+        if int(attrs['out_channels']) <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return [
+            f'PointwiseConv2d node={node_name}: attr "out_channels" must be a positive integer, got {attrs["out_channels"]!r}'
+        ]
+    return []
+
+
+def _validate_layernorm2d_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    errors: list[str] = []
+    for key in ('num_channels', 'channels'):
+        if key not in attrs:
+            continue
+        try:
+            if int(attrs[key]) <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append(
+                f'LayerNorm2d node={node_name}: attr "{key}" must be a positive integer, got {attrs[key]!r}'
+            )
+    if 'eps' in attrs:
+        try:
+            float(attrs['eps'])
+        except (TypeError, ValueError):
+            errors.append(
+                f'LayerNorm2d node={node_name}: attr "eps" must be numeric, got {attrs["eps"]!r}'
+            )
+    return errors
+
+
+def _validate_adaptive_avgpool2d_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    output_size = attrs.get('output_size', 1)
+    normalized = tuple(output_size) if isinstance(output_size, (list, tuple)) else output_size
+    if normalized in {1, (1, 1)}:
+        return []
+    return [
+        f'AdaptiveAvgPool2d node={node_name}: only output_size=1 or (1, 1) is supported by cuda_native, got {output_size!r}'
+    ]
+
+
+def _validate_dropout_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    if 'p' not in attrs:
+        return []
+    try:
+        p = float(attrs['p'])
+    except (TypeError, ValueError):
+        return [f'Dropout node={node_name}: attr "p" must be numeric, got {attrs["p"]!r}']
+    if not (0.0 <= p < 1.0):
+        return [f'Dropout node={node_name}: attr "p" must be in [0, 1), got {p!r}']
+    return []
+
+
+def _validate_residual_block_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    errors: list[str] = []
+    for key in ('channels', 'out_channels', 'in_channels', 'kernel_size', 'stride'):
+        if key not in attrs:
+            continue
+        try:
+            if int(attrs[key]) <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append(
+                f'ResidualBlock node={node_name}: attr "{key}" must be a positive integer, got {attrs[key]!r}'
+            )
+    if 'padding' in attrs:
+        try:
+            int(attrs['padding'])
+        except (TypeError, ValueError):
+            errors.append(
+                f'ResidualBlock node={node_name}: attr "padding" must be an integer, got {attrs["padding"]!r}'
+            )
+    return errors
+
+
+def _validate_convnext_block_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    errors: list[str] = []
+    for key in ('channels', 'in_channels', 'kernel_size', 'hidden_channels'):
+        if key not in attrs:
+            continue
+        try:
+            if int(attrs[key]) <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append(
+                f'ConvNeXtBlock node={node_name}: attr "{key}" must be a positive integer, got {attrs[key]!r}'
+            )
+    if 'kernel_size' in attrs:
+        try:
+            kernel_size = int(attrs['kernel_size'])
+            if kernel_size % 2 == 0:
+                errors.append(
+                    f'ConvNeXtBlock node={node_name}: attr "kernel_size" must be odd, got {kernel_size!r}'
+                )
+        except (TypeError, ValueError):
+            pass
+    for key in ('expansion_ratio', 'layer_scale_init_value', 'layer_norm_eps'):
+        if key not in attrs:
+            continue
+        try:
+            float(attrs[key])
+        except (TypeError, ValueError):
+            errors.append(
+                f'ConvNeXtBlock node={node_name}: attr "{key}" must be numeric, got {attrs[key]!r}'
+            )
+    return errors
+
+
 def validate_layer_attrs(op: str, attrs: dict[str, Any], node_name: str) -> list[str]:
     """Validate op-specific attributes."""
     if op == 'Conv2d':
         return _validate_conv2d_attrs(attrs, node_name)
+    if op in {'DepthwiseConv2d', 'depthwise_conv2d'}:
+        return _validate_depthwise_conv2d_attrs(attrs, node_name)
+    if op in {'PointwiseConv2d', 'pointwise_conv2d'}:
+        return _validate_pointwise_conv2d_attrs(attrs, node_name)
     if op == 'Linear':
         return _validate_linear_attrs(attrs, node_name)
+    if op in {'LayerNorm2d', 'layernorm2d'}:
+        return _validate_layernorm2d_attrs(attrs, node_name)
+    if op == 'AdaptiveAvgPool2d':
+        return _validate_adaptive_avgpool2d_attrs(attrs, node_name)
+    if op == 'Dropout':
+        return _validate_dropout_attrs(attrs, node_name)
+    if op == 'ResidualBlock':
+        return _validate_residual_block_attrs(attrs, node_name)
+    if op in {'ConvNeXtBlock', 'convnext_block'}:
+        return _validate_convnext_block_attrs(attrs, node_name)
     return []
 
 

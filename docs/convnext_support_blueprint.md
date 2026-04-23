@@ -25,8 +25,10 @@ Today MiniCNN supports exactly this ConvNeXt-related slice:
 
 - one built-in `ConvNeXtBlock` on `torch/flex`
 - one tracked torch-only template: `templates/cifar10/convnext_like.yaml`
+- one experimental `cuda_native` block smoke path
+- one experimental `cuda_native` explicit primitive smoke path
 - test-backed flex builder and registry coverage
-- capability-table and docs coverage that explicitly mark other backends unsupported
+- capability-table and docs coverage that explicitly mark backend boundaries
 
 That is enough to call ConvNeXt a minimal experimental frontend path.
 
@@ -38,7 +40,6 @@ The current ConvNeXt slice does **not** include:
 
 - `autograd` execution support
 - `cuda_legacy` execution support
-- `cuda_native` execution support
 - `DropPath` / stochastic depth
 - stage macros or a dedicated ConvNeXt YAML DSL
 - ConvNeXt-specific IR lowering
@@ -51,9 +52,9 @@ out of scope.
 
 If ConvNeXt work resumes later, safe follow-up changes are limited to:
 
-1. small `torch/flex`-only quality improvements to `ConvNeXtBlock`
-2. one additional torch-only example or template if it proves a clearly new use case
-3. stronger tests around the existing `torch/flex` declaration surface
+1. small quality improvements to `ConvNeXtBlock` or the native composite implementation
+2. one additional backend-honest example or template if it proves a clearly new use case
+3. stronger tests around the existing declaration surface
 4. doc clarifications that keep backend boundaries explicit
 
 These are still Slice B style changes in
@@ -80,7 +81,7 @@ least one of these becomes true:
 1. `torch/flex` needs more than one ConvNeXt-like template and duplication becomes costly
 2. a generic frontend feature needed by multiple architectures is discovered through the ConvNeXt work
 3. `cuda_native` reaches the generic prerequisites for ConvNeXt-like execution
-   such as normalization and branching-graph support
+   such as normalization, explicit primitive support, and later branching-graph support
 4. compiler/IR work gains real backend consumers beyond torch-only introspection
 
 If none of those conditions is true, ConvNeXt should remain in maintenance mode.

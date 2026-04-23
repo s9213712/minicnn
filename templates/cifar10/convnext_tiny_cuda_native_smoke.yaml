@@ -1,0 +1,50 @@
+# CIFAR-10  ConvNeXt-tiny named model entry  (cuda_native smoke, hermetic)
+#
+# Purpose:
+# - Minimal cuda_native smoke path for model.name=convnext_tiny.
+# - Uses random data and SGD so it stays inside current cuda_native limits.
+#
+# Run:
+#   minicnn train-flex --config templates/cifar10/convnext_tiny_cuda_native_smoke.yaml
+
+project:
+  name: minicnn
+  run_name: cifar10-convnext-tiny-cuda-native-smoke
+  artifacts_root: artifacts
+
+engine:
+  backend: cuda_native
+  strict_backend_validation: true
+
+dataset:
+  type: random
+  num_samples: 64
+  val_samples: 16
+  num_classes: 10
+  input_shape: [3, 32, 32]
+  seed: 42
+
+model:
+  name: convnext_tiny
+  stem_channels: 32
+  stage2_channels: 64
+
+train:
+  epochs: 1
+  batch_size: 16
+  device: cpu
+  amp: false
+  grad_accum_steps: 1
+  num_workers: 0
+  log_every: 10
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  type: SGD
+  lr: 0.01
+  momentum: 0.9
+
+scheduler:
+  enabled: false

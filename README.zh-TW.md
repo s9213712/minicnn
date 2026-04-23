@@ -139,7 +139,7 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 - 記憶體估算與 pool（`memory.py` — `memory_footprint()`、`BufferPool`）
 - 觀測工具（`debug.py` — `dump_graph()`、`dump_plan()`、`TracingForwardExecutor`）
 
-支援 op：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`。
+支援 op：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`DepthwiseConv2d`、`PointwiseConv2d`、`LayerNorm2d`、`ResidualBlock`、`ConvNeXtBlock`、`Dropout`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`GELU`、`Identity`、`MaxPool2d`、`AvgPool2d`、`AdaptiveAvgPool2d`（僅 `output_size=(1,1)`）、`GlobalAvgPool2d`、`Flatten`、`Linear`。
 
 目前通過驗證的支援範圍：
 
@@ -150,6 +150,12 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 - `train.amp=false`、`train.grad_accum_steps=1`
 
 雖然已經有 backward 與 training prototype，但這條 backend 仍屬實驗性、只支援 sequential graph，也還不適合正式使用。後續 native 功能應優先往這條線發展；`cuda_legacy` 則維持窄邊界維護。
+
+目前也已有 hermetic native smoke 範本可直接用於：
+
+- 顯式 ConvNeXt primitive 路徑：`templates/cifar10/convnext_explicit_cuda_native_smoke.yaml`
+- named `ConvNeXtBlock` 路徑：`templates/cifar10/convnext_tiny_cuda_native_smoke.yaml`
+- `ResidualBlock` 路徑：`templates/cifar10/resnet_like_cuda_native_smoke.yaml`
 
 ```bash
 # 查看 cuda_native 支援能力

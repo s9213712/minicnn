@@ -56,8 +56,21 @@ def test_capability_surface_exposes_kernel_categories():
 
     caps = get_cuda_native_capabilities()
 
-    assert caps['supported_op_categories'] == ['activation', 'convolution', 'linear', 'normalization', 'pool', 'shape']
+    assert caps['supported_op_categories'] == [
+        'activation',
+        'composite',
+        'convolution',
+        'linear',
+        'normalization',
+        'pool',
+        'regularization',
+        'shape',
+    ]
     assert caps['kernel_registry_surface'][0] == {
+        'op_name': 'AdaptiveAvgPool2d',
+        'category': 'pool',
+    }
+    assert caps['kernel_registry_surface'][1] == {
         'op_name': 'AvgPool2d',
         'category': 'pool',
     }
@@ -93,7 +106,17 @@ def test_capability_supported_ops_not_empty():
 
 def test_validator_accepts_supported_ops():
     from minicnn.cuda_native.validators import validate_op_type
-    for op in ('BatchNorm2d', 'Conv2d', 'ReLU', 'LeakyReLU', 'Flatten', 'Linear'):
+    for op in (
+        'BatchNorm2d',
+        'Conv2d',
+        'ReLU',
+        'LeakyReLU',
+        'Flatten',
+        'Linear',
+        'Dropout',
+        'ResidualBlock',
+        'ConvNeXtBlock',
+    ):
         assert validate_op_type(op) == [], f'{op} should be accepted'
 
 
@@ -105,12 +128,9 @@ def test_validator_rejects_groupnorm():
     assert 'gn1' in errors[0]
 
 
-def test_validator_rejects_convnext_block():
+def test_validator_accepts_convnext_block():
     from minicnn.cuda_native.validators import validate_op_type
-    errors = validate_op_type('ConvNeXtBlock', node_name='cnx1')
-    assert len(errors) == 1
-    assert 'ConvNeXtBlock' in errors[0]
-    assert 'cnx1' in errors[0]
+    assert validate_op_type('ConvNeXtBlock', node_name='cnx1') == []
 
 
 def test_validator_rejects_unknown_op():
@@ -169,14 +189,13 @@ def test_api_validate_config_rejects_groupnorm():
     assert any('GroupNorm' in e for e in errors)
 
 
-def test_api_validate_config_rejects_convnext_block():
+def test_api_validate_config_accepts_convnext_block():
     from minicnn.cuda_native.api import validate_cuda_native_config
     cfg = {'model': {'layers': [
         {'type': 'Conv2d', 'out_channels': 16},
         {'type': 'ConvNeXtBlock'},
     ]}, 'optimizer': {'type': 'SGD', 'momentum': 0.0}, 'scheduler': {'enabled': False}}
-    errors = validate_cuda_native_config(cfg)
-    assert any('ConvNeXtBlock' in e for e in errors)
+    assert validate_cuda_native_config(cfg) == []
 
 
 def test_validate_layer_list_collects_missing_type_and_later_attr_error():

@@ -91,6 +91,7 @@ Dataset split note:
 - [docs/cuda_native.md](docs/cuda_native.md) — full guide to the primary native backend direction
 - [docs/cuda_native_phase5_rfc.md](docs/cuda_native_phase5_rfc.md) — future extension RFCs
 - [docs/backend_capabilities.md](docs/backend_capabilities.md) — current validated support boundary
+- [docs/convnext_explicit_smoke_index.md](docs/convnext_explicit_smoke_index.md) — hermetic native smoke entrypoints for explicit and block-based ConvNeXt paths
 
 ## CLI Surface
 

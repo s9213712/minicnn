@@ -81,12 +81,12 @@ _BACKEND_CAPABILITIES: dict[str, dict[str, Any]] = {
     },
     'cuda_native': {
         'backend': 'cuda_native',
-        'supports_depthwise_conv': False,
-        'supports_pointwise_conv': False,
-        'supports_layernorm2d': False,
-        'supports_gelu': False,
-        'supports_residual_add': False,
-        'supports_convnext_block': False,
+        'supports_depthwise_conv': True,
+        'supports_pointwise_conv': True,
+        'supports_layernorm2d': True,
+        'supports_gelu': True,
+        'supports_residual_add': True,
+        'supports_convnext_block': True,
         'supported_ops': _CUDA_NATIVE_SUPPORTED_OPS,
     },
 }

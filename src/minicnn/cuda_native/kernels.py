@@ -154,6 +154,144 @@ def _kernel_pool2d_reduce(
     ctx[node.outputs[0]] = reducer(windows).astype(np.float32)
 
 
+def _gelu_approx(x: np.ndarray) -> np.ndarray:
+    return (
+        0.5
+        * x
+        * (
+            1.0
+            + np.tanh(
+                np.sqrt(2.0 / np.pi) * (x + 0.044715 * np.power(x, 3))
+            )
+        )
+    ).astype(np.float32)
+
+
+def _conv2d_forward_array(
+    x: np.ndarray,
+    w: np.ndarray,
+    *,
+    bias: np.ndarray | None = None,
+    stride: int | tuple[int, int] | list[int] = 1,
+    padding: int | tuple[int, int] | list[int] = 0,
+    groups: int = 1,
+    node_desc: str = 'Conv2d',
+) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float32)
+    w = np.asarray(w, dtype=np.float32)
+    sh, sw = _attr_pair(stride, label='stride', node=Node(name=node_desc, op_type='Conv2d'))
+    ph, pw = _attr_pair(padding, label='padding', node=Node(name=node_desc, op_type='Conv2d'))
+    if x.ndim != 4:
+        raise ValueError(f'{node_desc} expects 4-D input (N,C,H,W), got shape {x.shape}')
+    if w.ndim != 4:
+        raise ValueError(f'{node_desc}: weight must be 4-D, got shape {w.shape}')
+    _n, c_in, _h_in, _w_in = x.shape
+    if groups <= 0:
+        raise ValueError(f'{node_desc}: groups must be positive, got {groups}')
+    if c_in % groups != 0:
+        raise ValueError(f'{node_desc}: input channels {c_in} must be divisible by groups={groups}')
+    c_out, w_in_per_group, kh, kw = w.shape
+    if c_out % groups != 0:
+        raise ValueError(f'{node_desc}: output channels {c_out} must be divisible by groups={groups}')
+    expected_w_in = c_in // groups
+    if w_in_per_group != expected_w_in:
+        raise ValueError(
+            f'{node_desc}: weight expects {w_in_per_group} channels per group, '
+            f'got input channels={c_in}, groups={groups}'
+        )
+    if ph > 0 or pw > 0:
+        x = np.pad(x, ((0, 0), (0, 0), (ph, ph), (pw, pw)))
+    windows = sliding_window_view(x, (kh, kw), axis=(2, 3))[:, :, ::sh, ::sw, :, :]
+    if windows.shape[2] == 0 or windows.shape[3] == 0:
+        raise ValueError(
+            f'{node_desc}: invalid output shape for input={x.shape}, '
+            f'kernel={(kh, kw)}, stride={(sh, sw)}, padding={(ph, pw)}'
+        )
+    h_out = windows.shape[2]
+    w_out = windows.shape[3]
+    out = np.zeros((x.shape[0], c_out, h_out, w_out), dtype=np.float32)
+    in_per_group = c_in // groups
+    out_per_group = c_out // groups
+    for group_idx in range(groups):
+        in_start = group_idx * in_per_group
+        in_end = (group_idx + 1) * in_per_group
+        out_start = group_idx * out_per_group
+        out_end = (group_idx + 1) * out_per_group
+        group_windows = windows[:, in_start:in_end, :, :, :, :]
+        group_weights = w[out_start:out_end, :, :, :]
+        out[:, out_start:out_end, :, :] = np.tensordot(
+            group_windows,
+            group_weights,
+            axes=([1, 4, 5], [1, 2, 3]),
+        ).transpose(0, 3, 1, 2)
+    if bias is not None:
+        b_arr = np.asarray(bias, dtype=np.float32)
+        if b_arr.shape != (c_out,):
+            raise ValueError(f'{node_desc}: bias must have shape {(c_out,)}, got {b_arr.shape}')
+        out = out + b_arr[None, :, None, None]
+    return out.astype(np.float32)
+
+
+def _batchnorm2d_forward_array(
+    x: np.ndarray,
+    *,
+    gamma: np.ndarray,
+    beta: np.ndarray,
+    running_mean: np.ndarray,
+    running_var: np.ndarray,
+    eps: float,
+    momentum: float,
+    mode: str,
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    if x.ndim != 4:
+        raise ValueError(f'BatchNorm2d expects 4-D input (N,C,H,W), got shape {x.shape}')
+    if mode == 'train':
+        mean = x.mean(axis=(0, 2, 3)).astype(np.float32)
+        var = x.var(axis=(0, 2, 3)).astype(np.float32)
+        next_mean = ((1.0 - momentum) * running_mean + momentum * mean).astype(np.float32)
+        next_var = ((1.0 - momentum) * running_var + momentum * var).astype(np.float32)
+    else:
+        mean = running_mean.astype(np.float32)
+        var = running_var.astype(np.float32)
+        next_mean = running_mean.astype(np.float32)
+        next_var = running_var.astype(np.float32)
+    centered = x - mean[None, :, None, None]
+    inv_std = (1.0 / np.sqrt(var[None, :, None, None] + eps)).astype(np.float32)
+    x_hat = (centered * inv_std).astype(np.float32)
+    out = (x_hat * gamma[None, :, None, None] + beta[None, :, None, None]).astype(np.float32)
+    return out, {
+        'mean': mean.astype(np.float32),
+        'var': var.astype(np.float32),
+        'x_hat': x_hat.astype(np.float32),
+        'inv_std': inv_std.astype(np.float32),
+        'running_mean': next_mean.astype(np.float32),
+        'running_var': next_var.astype(np.float32),
+        'mode': np.asarray(0 if mode == 'eval' else 1, dtype=np.int32),
+    }
+
+
+def _layernorm2d_forward_array(
+    x: np.ndarray,
+    *,
+    gamma: np.ndarray,
+    beta: np.ndarray,
+    eps: float,
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    if x.ndim != 4:
+        raise ValueError(f'LayerNorm2d expects 4-D input (N,C,H,W), got shape {x.shape}')
+    mean = x.mean(axis=1, keepdims=True).astype(np.float32)
+    var = x.var(axis=1, keepdims=True).astype(np.float32)
+    inv_std = (1.0 / np.sqrt(var + eps)).astype(np.float32)
+    x_hat = ((x - mean) * inv_std).astype(np.float32)
+    out = (x_hat * gamma.reshape(1, -1, 1, 1) + beta.reshape(1, -1, 1, 1)).astype(np.float32)
+    return out, {
+        'mean': mean.astype(np.float32),
+        'var': var.astype(np.float32),
+        'x_hat': x_hat.astype(np.float32),
+        'inv_std': inv_std.astype(np.float32),
+    }
+
+
 def _kernel_conv2d(node: Node, ctx: dict[str, Any]) -> None:
     x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
     w = np.asarray(ctx[f'_w_{node.name}'], dtype=np.float32)
@@ -169,35 +307,16 @@ def _kernel_conv2d(node: Node, ctx: dict[str, Any]) -> None:
     if ph < 0 or pw < 0:
         raise ValueError(f'Conv2d node={node.name}: padding must be non-negative, got {(ph, pw)}')
 
-    _n, c_in, _h_in, _w_in = x.shape
-    c_out, w_in, kh, kw = w.shape
-    if w_in != c_in:
-        raise ValueError(
-            f'Conv2d node={node.name}: weight expects {w_in} input channels, got {c_in}'
-        )
-
-    if ph > 0 or pw > 0:
-        x = np.pad(x, ((0, 0), (0, 0), (ph, ph), (pw, pw)))
-
-    windows = sliding_window_view(x, (kh, kw), axis=(2, 3))[:, :, ::sh, ::sw, :, :]
-    if windows.shape[2] == 0 or windows.shape[3] == 0:
-        raise ValueError(
-            f'Conv2d node={node.name}: invalid output shape for input={x.shape}, '
-            f'kernel={(kh, kw)}, stride={(sh, sw)}, padding={(ph, pw)}'
-        )
-    out = np.tensordot(
-        windows,
+    groups = int(node.attrs.get('groups', x.shape[1] if node.op_type in {'DepthwiseConv2d', 'depthwise_conv2d'} else 1))
+    ctx[node.outputs[0]] = _conv2d_forward_array(
+        x,
         w,
-        axes=([1, 4, 5], [1, 2, 3]),
-    ).transpose(0, 3, 1, 2)
-    if b is not None:
-        b_arr = np.asarray(b, dtype=np.float32)
-        if b_arr.shape != (c_out,):
-            raise ValueError(
-                f'Conv2d node={node.name}: bias must have shape {(c_out,)}, got {b_arr.shape}'
-            )
-        out = out + b_arr[None, :, None, None]
-    ctx[node.outputs[0]] = out.astype(np.float32)
+        bias=None if b is None else np.asarray(b, dtype=np.float32),
+        stride=(sh, sw),
+        padding=(ph, pw),
+        groups=groups,
+        node_desc=f'Conv2d node={node.name}',
+    )
 
 
 def _kernel_batchnorm2d_eval(node: Node, ctx: dict[str, Any]) -> None:
@@ -246,30 +365,26 @@ def _kernel_batchnorm2d_eval(node: Node, ctx: dict[str, Any]) -> None:
             "expected 'eval' or 'train'"
         )
 
-    if mode == 'train':
-        momentum = float(node.attrs.get('momentum', 0.1))
-        batch_mean = x.mean(axis=(0, 2, 3)).astype(np.float32)
-        batch_var = x.var(axis=(0, 2, 3)).astype(np.float32)
-        next_mean = ((1.0 - momentum) * running_mean + momentum * batch_mean).astype(np.float32)
-        next_var = ((1.0 - momentum) * running_var + momentum * batch_var).astype(np.float32)
-        if rm_key in ctx:
-            ctx[rm_key][...] = next_mean
-        else:
-            ctx[rm_key] = next_mean
-        if rv_key in ctx:
-            ctx[rv_key][...] = next_var
-        else:
-            ctx[rv_key] = next_var
-        mean = batch_mean
-        var = batch_var
+    out, cache = _batchnorm2d_forward_array(
+        x,
+        gamma=gamma,
+        beta=beta,
+        running_mean=running_mean,
+        running_var=running_var,
+        eps=eps,
+        momentum=float(node.attrs.get('momentum', 0.1)),
+        mode=mode,
+    )
+    next_mean = cache['running_mean']
+    next_var = cache['running_var']
+    if rm_key in ctx:
+        ctx[rm_key][...] = next_mean
     else:
-        mean = running_mean
-        var = running_var
-
-    centered = x - mean[None, :, None, None]
-    inv_std = 1.0 / np.sqrt(var[None, :, None, None] + eps)
-    out = centered * inv_std
-    out = out * gamma[None, :, None, None] + beta[None, :, None, None]
+        ctx[rm_key] = next_mean
+    if rv_key in ctx:
+        ctx[rv_key][...] = next_var
+    else:
+        ctx[rv_key] = next_var
     ctx[node.outputs[0]] = out.astype(np.float32)
 
 
@@ -306,6 +421,255 @@ def _kernel_tanh(node: Node, ctx: dict[str, Any]) -> None:
 
 def _kernel_silu(node: Node, ctx: dict[str, Any]) -> None:
     _kernel_elementwise(node, ctx, transform=lambda x: x * _sigmoid(x))
+
+
+def _kernel_gelu(node: Node, ctx: dict[str, Any]) -> None:
+    _kernel_elementwise(
+        node,
+        ctx,
+        transform=lambda x: 0.5 * x * (
+            1.0
+            + np.tanh(
+                np.sqrt(2.0 / np.pi) * (x + 0.044715 * np.power(x, 3))
+            )
+        ),
+    )
+
+
+def _kernel_identity(node: Node, ctx: dict[str, Any]) -> None:
+    _kernel_elementwise(node, ctx, transform=lambda x: x)
+
+
+def _kernel_layernorm2d(node: Node, ctx: dict[str, Any]) -> None:
+    x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
+    if x.ndim != 4:
+        raise ValueError(
+            f'LayerNorm2d expects 4-D input (N,C,H,W), got shape {x.shape}'
+        )
+    channels = x.shape[1]
+    eps = float(node.attrs.get('eps', 1e-6))
+    gamma = np.asarray(
+        ctx.get(f'_w_{node.name}', np.ones(channels, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    beta = np.asarray(
+        ctx.get(f'_b_{node.name}', np.zeros(channels, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    if gamma.shape != (channels,):
+        raise ValueError(
+            f'LayerNorm2d node={node.name}: weight must have shape {(channels,)}, got {gamma.shape}'
+        )
+    if beta.shape != (channels,):
+        raise ValueError(
+            f'LayerNorm2d node={node.name}: bias must have shape {(channels,)}, got {beta.shape}'
+        )
+    y, _cache = _layernorm2d_forward_array(
+        x,
+        gamma=gamma,
+        beta=beta,
+        eps=eps,
+    )
+    ctx[node.outputs[0]] = y.astype(np.float32)
+
+
+def _kernel_global_avgpool2d(node: Node, ctx: dict[str, Any]) -> None:
+    x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
+    if x.ndim != 4:
+        raise ValueError(
+            f'{node.op_type} expects 4-D input (N,C,H,W), got shape {x.shape}'
+        )
+    ctx[node.outputs[0]] = x.mean(axis=(2, 3), keepdims=True).astype(np.float32)
+
+
+def _kernel_adaptive_avgpool2d(node: Node, ctx: dict[str, Any]) -> None:
+    output_size = node.attrs.get('output_size', 1)
+    normalized = tuple(output_size) if isinstance(output_size, (list, tuple)) else output_size
+    if normalized not in {1, (1, 1)}:
+        raise ValueError(
+            f'AdaptiveAvgPool2d node={node.name}: only output_size=1 or (1, 1) is supported, got {output_size!r}'
+        )
+    _kernel_global_avgpool2d(node, ctx)
+
+
+def _kernel_dropout(node: Node, ctx: dict[str, Any]) -> None:
+    x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
+    p = float(node.attrs.get('p', 0.5))
+    mode = str(ctx.get('__mode__', 'eval'))
+    if mode == 'eval' or p <= 0.0:
+        ctx[node.outputs[0]] = x.astype(np.float32)
+        ctx[f'__cache_{node.name}'] = {'mask': np.ones_like(x, dtype=np.float32)}
+        return
+    if p >= 1.0:
+        raise ValueError(f'Dropout node={node.name}: p must be < 1.0, got {p}')
+    rng = ctx.get('__dropout_rng__')
+    if rng is None:
+        rng = np.random.default_rng(42)
+        ctx['__dropout_rng__'] = rng
+    keep_prob = 1.0 - p
+    mask = (rng.random(x.shape, dtype=np.float32) < keep_prob).astype(np.float32) / keep_prob
+    ctx[node.outputs[0]] = (x * mask).astype(np.float32)
+    ctx[f'__cache_{node.name}'] = {'mask': mask.astype(np.float32)}
+
+
+def _kernel_residual_block(node: Node, ctx: dict[str, Any]) -> None:
+    x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
+    stride = int(node.attrs.get('stride', 1))
+    kernel_size = int(node.attrs.get('kernel_size', 3))
+    padding = int(node.attrs.get('padding', kernel_size // 2))
+    bias = bool(node.attrs.get('bias', False))
+    mode = str(ctx.get('__mode__', 'eval'))
+
+    conv1 = _conv2d_forward_array(
+        x,
+        np.asarray(ctx[f'_w_conv1_{node.name}'], dtype=np.float32),
+        bias=np.asarray(ctx[f'_b_conv1_{node.name}'], dtype=np.float32) if bias and f'_b_conv1_{node.name}' in ctx else None,
+        stride=stride,
+        padding=padding,
+        groups=1,
+        node_desc=f'ResidualBlock.conv1 node={node.name}',
+    )
+    bn1, bn1_cache = _batchnorm2d_forward_array(
+        conv1,
+        gamma=np.asarray(ctx[f'_w_bn1_{node.name}'], dtype=np.float32),
+        beta=np.asarray(ctx[f'_b_bn1_{node.name}'], dtype=np.float32),
+        running_mean=np.asarray(ctx[f'_running_mean_bn1_{node.name}'], dtype=np.float32),
+        running_var=np.asarray(ctx[f'_running_var_bn1_{node.name}'], dtype=np.float32),
+        eps=float(node.attrs.get('eps', 1e-5)),
+        momentum=float(node.attrs.get('momentum', 0.1)),
+        mode=mode,
+    )
+    ctx[f'_running_mean_bn1_{node.name}'][...] = bn1_cache['running_mean']
+    ctx[f'_running_var_bn1_{node.name}'][...] = bn1_cache['running_var']
+    act1 = np.maximum(bn1, 0.0).astype(np.float32)
+
+    conv2 = _conv2d_forward_array(
+        act1,
+        np.asarray(ctx[f'_w_conv2_{node.name}'], dtype=np.float32),
+        bias=np.asarray(ctx[f'_b_conv2_{node.name}'], dtype=np.float32) if bias and f'_b_conv2_{node.name}' in ctx else None,
+        stride=1,
+        padding=padding,
+        groups=1,
+        node_desc=f'ResidualBlock.conv2 node={node.name}',
+    )
+    bn2, bn2_cache = _batchnorm2d_forward_array(
+        conv2,
+        gamma=np.asarray(ctx[f'_w_bn2_{node.name}'], dtype=np.float32),
+        beta=np.asarray(ctx[f'_b_bn2_{node.name}'], dtype=np.float32),
+        running_mean=np.asarray(ctx[f'_running_mean_bn2_{node.name}'], dtype=np.float32),
+        running_var=np.asarray(ctx[f'_running_var_bn2_{node.name}'], dtype=np.float32),
+        eps=float(node.attrs.get('eps', 1e-5)),
+        momentum=float(node.attrs.get('momentum', 0.1)),
+        mode=mode,
+    )
+    ctx[f'_running_mean_bn2_{node.name}'][...] = bn2_cache['running_mean']
+    ctx[f'_running_var_bn2_{node.name}'][...] = bn2_cache['running_var']
+
+    use_shortcut_conv = bool(ctx.get(f'_w_shortcut_conv_{node.name}') is not None) if f'_w_shortcut_conv_{node.name}' in ctx else False
+    if use_shortcut_conv:
+        shortcut_conv = _conv2d_forward_array(
+            x,
+            np.asarray(ctx[f'_w_shortcut_conv_{node.name}'], dtype=np.float32),
+            bias=None,
+            stride=stride,
+            padding=0,
+            groups=1,
+            node_desc=f'ResidualBlock.shortcut_conv node={node.name}',
+        )
+        shortcut, shortcut_cache = _batchnorm2d_forward_array(
+            shortcut_conv,
+            gamma=np.asarray(ctx[f'_w_shortcut_bn_{node.name}'], dtype=np.float32),
+            beta=np.asarray(ctx[f'_b_shortcut_bn_{node.name}'], dtype=np.float32),
+            running_mean=np.asarray(ctx[f'_running_mean_shortcut_bn_{node.name}'], dtype=np.float32),
+            running_var=np.asarray(ctx[f'_running_var_shortcut_bn_{node.name}'], dtype=np.float32),
+            eps=float(node.attrs.get('eps', 1e-5)),
+            momentum=float(node.attrs.get('momentum', 0.1)),
+            mode=mode,
+        )
+        ctx[f'_running_mean_shortcut_bn_{node.name}'][...] = shortcut_cache['running_mean']
+        ctx[f'_running_var_shortcut_bn_{node.name}'][...] = shortcut_cache['running_var']
+    else:
+        shortcut = x.astype(np.float32)
+        shortcut_conv = None
+        shortcut_cache = None
+
+    summed = (bn2 + shortcut).astype(np.float32)
+    out = np.maximum(summed, 0.0).astype(np.float32)
+    ctx[node.outputs[0]] = out
+    ctx[f'__cache_{node.name}'] = {
+        'x': x.astype(np.float32),
+        'conv1': conv1.astype(np.float32),
+        'bn1': bn1.astype(np.float32),
+        'bn1_cache': bn1_cache,
+        'act1': act1.astype(np.float32),
+        'conv2': conv2.astype(np.float32),
+        'bn2_cache': bn2_cache,
+        'shortcut': shortcut.astype(np.float32),
+        'shortcut_conv': None if shortcut_conv is None else shortcut_conv.astype(np.float32),
+        'shortcut_cache': shortcut_cache,
+        'summed': summed.astype(np.float32),
+        'use_shortcut_conv': np.asarray(1 if use_shortcut_conv else 0, dtype=np.int32),
+    }
+
+
+def _kernel_convnext_block(node: Node, ctx: dict[str, Any]) -> None:
+    x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
+    kernel_size = int(node.attrs.get('kernel_size', 7))
+    padding = kernel_size // 2
+    bias = bool(node.attrs.get('bias', True))
+    depthwise = _conv2d_forward_array(
+        x,
+        np.asarray(ctx[f'_w_depthwise_{node.name}'], dtype=np.float32),
+        bias=np.asarray(ctx[f'_b_depthwise_{node.name}'], dtype=np.float32) if bias and f'_b_depthwise_{node.name}' in ctx else None,
+        stride=1,
+        padding=padding,
+        groups=x.shape[1],
+        node_desc=f'ConvNeXtBlock.depthwise node={node.name}',
+    )
+    norm, norm_cache = _layernorm2d_forward_array(
+        depthwise,
+        gamma=np.asarray(ctx[f'_w_ln_{node.name}'], dtype=np.float32),
+        beta=np.asarray(ctx[f'_b_ln_{node.name}'], dtype=np.float32),
+        eps=float(node.attrs.get('layer_norm_eps', 1e-6)),
+    )
+    pw1 = _conv2d_forward_array(
+        norm,
+        np.asarray(ctx[f'_w_pw1_{node.name}'], dtype=np.float32),
+        bias=np.asarray(ctx[f'_b_pw1_{node.name}'], dtype=np.float32) if bias and f'_b_pw1_{node.name}' in ctx else None,
+        stride=1,
+        padding=0,
+        groups=1,
+        node_desc=f'ConvNeXtBlock.pointwise1 node={node.name}',
+    )
+    activated = _gelu_approx(pw1)
+    pw2 = _conv2d_forward_array(
+        activated,
+        np.asarray(ctx[f'_w_pw2_{node.name}'], dtype=np.float32),
+        bias=np.asarray(ctx[f'_b_pw2_{node.name}'], dtype=np.float32) if bias and f'_b_pw2_{node.name}' in ctx else None,
+        stride=1,
+        padding=0,
+        groups=1,
+        node_desc=f'ConvNeXtBlock.pointwise2 node={node.name}',
+    )
+    if f'_layer_scale_{node.name}' in ctx:
+        layer_scale = np.asarray(ctx[f'_layer_scale_{node.name}'], dtype=np.float32).reshape(1, -1, 1, 1)
+        scaled = (pw2 * layer_scale).astype(np.float32)
+    else:
+        layer_scale = None
+        scaled = pw2.astype(np.float32)
+    out = (x + scaled).astype(np.float32)
+    ctx[node.outputs[0]] = out
+    ctx[f'__cache_{node.name}'] = {
+        'x': x.astype(np.float32),
+        'depthwise': depthwise.astype(np.float32),
+        'norm_cache': norm_cache,
+        'norm': norm.astype(np.float32),
+        'pw1': pw1.astype(np.float32),
+        'activated': activated.astype(np.float32),
+        'pw2': pw2.astype(np.float32),
+        'scaled': scaled.astype(np.float32),
+        'has_layer_scale': np.asarray(1 if layer_scale is not None else 0, dtype=np.int32),
+    }
 
 
 def _kernel_flatten(node: Node, ctx: dict[str, Any]) -> None:
@@ -345,17 +709,31 @@ _ACTIVATION_KERNEL_SPECS: tuple[KernelSpec, ...] = (
     KernelSpec('Sigmoid', _kernel_sigmoid, 'activation'),
     KernelSpec('Tanh', _kernel_tanh, 'activation'),
     KernelSpec('SiLU', _kernel_silu, 'activation'),
+    KernelSpec('GELU', _kernel_gelu, 'activation'),
 )
 
 
 DEFAULT_KERNEL_SPECS: tuple[KernelSpec, ...] = (
     KernelSpec('Conv2d', _kernel_conv2d, 'convolution'),
+    KernelSpec('DepthwiseConv2d', _kernel_conv2d, 'convolution'),
+    KernelSpec('depthwise_conv2d', _kernel_conv2d, 'convolution'),
+    KernelSpec('PointwiseConv2d', _kernel_conv2d, 'convolution'),
+    KernelSpec('pointwise_conv2d', _kernel_conv2d, 'convolution'),
+    KernelSpec('ResidualBlock', _kernel_residual_block, 'composite'),
+    KernelSpec('ConvNeXtBlock', _kernel_convnext_block, 'composite'),
+    KernelSpec('convnext_block', _kernel_convnext_block, 'composite'),
     KernelSpec('BatchNorm2d', _kernel_batchnorm2d_eval, 'normalization'),
+    KernelSpec('LayerNorm2d', _kernel_layernorm2d, 'normalization'),
+    KernelSpec('layernorm2d', _kernel_layernorm2d, 'normalization'),
     *_ACTIVATION_KERNEL_SPECS,
+    KernelSpec('Identity', _kernel_identity, 'activation'),
+    KernelSpec('Dropout', _kernel_dropout, 'regularization'),
     KernelSpec('Flatten', _kernel_flatten, 'shape'),
     KernelSpec('Linear', _kernel_linear, 'linear'),
     KernelSpec('MaxPool2d', _kernel_maxpool2d, 'pool'),
     KernelSpec('AvgPool2d', _kernel_avgpool2d, 'pool'),
+    KernelSpec('AdaptiveAvgPool2d', _kernel_adaptive_avgpool2d, 'pool'),
+    KernelSpec('GlobalAvgPool2d', _kernel_global_avgpool2d, 'pool'),
 )
 
 

@@ -9,6 +9,7 @@ from minicnn.cuda_native.capabilities import (
 )
 from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.validators import validate_cuda_native_model_config
+from minicnn.model_spec import resolve_model_config
 
 
 _SUPPORTED_DATASET_TYPES = frozenset(
@@ -265,7 +266,8 @@ def build_cuda_native_graph(
     Raises:
         ValueError: if the config references unsupported ops or has bad attrs/shapes.
     """
-    layers = model_cfg.get('layers', [])
+    resolved_model_cfg = resolve_model_config(model_cfg)
+    layers = resolved_model_cfg.get('layers', [])
     return build_graph(layers, input_shape)
 
 

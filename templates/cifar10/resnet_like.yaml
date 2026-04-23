@@ -1,9 +1,11 @@
-# CIFAR-10  ResNet-like  (Torch backend only)
+# CIFAR-10  ResNet-like  (Torch-first)
 #
 # Architecture: Conv64/BN/ReLU → 2×ResBlock(64) → 2×ResBlock(128,stride=2) → GAP → FC10
 # Input: 3×32×32  |  Classes: 10
-# Uses MiniCNN's ResidualBlock and GlobalAvgPool2d (torch flex components).
-# Not compatible with cuda_legacy backend.
+# Uses MiniCNN's ResidualBlock and GlobalAvgPool2d.
+# This full CIFAR template is for torch/flex.
+# For the experimental cuda_native smoke path, use
+# templates/cifar10/resnet_like_cuda_native_smoke.yaml.
 #
 # Run:
 #   minicnn train-flex --config templates/cifar10/resnet_like.yaml

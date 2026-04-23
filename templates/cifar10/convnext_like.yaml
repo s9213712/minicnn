@@ -1,16 +1,17 @@
-# CIFAR-10  ConvNeXt-like  (Torch backend only, experimental)
+# CIFAR-10  ConvNeXt-like  (Torch-first, experimental)
 #
 # Architecture:
 #   Stem Conv64 -> 2x ConvNeXtBlock(64) -> Downsample Conv128/stride=2
 #   -> 2x ConvNeXtBlock(128) -> GAP -> FC10
 #
 # Scope:
-# - Uses MiniCNN's torch/flex-only ConvNeXtBlock component.
+# - Uses MiniCNN's ConvNeXtBlock component.
 # - The block is explicitly built from depthwise conv, channel-first LayerNorm2d,
 #   pointwise conv, GELU, and residual add.
 # - This is an experimental frontend path, not repo-wide ConvNeXt support.
-# - Not compatible with cuda_legacy or cuda_native; unsupported backends must
-#   fail validation instead of silently degrading.
+# - This full CIFAR + AdamW template is for torch/flex.
+# - For the experimental cuda_native block path, use
+#   templates/cifar10/convnext_tiny_cuda_native_smoke.yaml.
 #
 # Run:
 #   minicnn train-flex --config templates/cifar10/convnext_like.yaml

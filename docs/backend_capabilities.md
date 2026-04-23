@@ -63,18 +63,24 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | MaxPool2d | ✓ | ✓ | ✓ fixed 2×2 | ✓ numpy ref |
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | BatchNorm2d | ✓ | ✓ | ✗ | ✓ forward/backward prototype |
+| LayerNorm2d | ✓ | ✗ | ✗ | **✓** prototype |
 | LayerNorm | ✓ | ✗ | ✗ | ✗ rejected |
+| DepthwiseConv2d | ✓ | ✓ | ✗ | **✓** numpy ref |
+| PointwiseConv2d | ✓ | ✓ | ✗ | **✓** numpy ref |
+| GlobalAvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
+| AdaptiveAvgPool2d | ✓ | ✓ | ✗ | **✓** `(1,1)` only |
+| Identity | ✓ | ✓ | ✗ | **✓** numpy ref |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ rejected |
-| ResidualBlock | ✓ | ✓ | ✗ | ✗ rejected |
-| ConvNeXtBlock | ✓ experimental | ✗ | ✗ | ✗ |
-| Dropout | ✓ | ✓ | ✗ | ✗ |
+| ResidualBlock | ✓ | ✓ | ✗ | **✓** composite prototype |
+| ConvNeXtBlock | ✓ experimental | ✗ | ✗ | **✓** composite prototype |
+| Dropout | ✓ | ✓ | ✗ | **✓** prototype |
 | **Activations** | | | | |
 | ReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
 | LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
 | SiLU | ✓ | ✓ | ✗ | ✓ numpy ref |
 | Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref |
 | Tanh | ✓ | ✓ | ✗ | ✓ numpy ref |
-| GELU | ✓ | ✗ | ✗ | ✗ |
+| GELU | ✓ | ✗ | ✗ | **✓** numpy ref |
 | **Losses** | | | | |
 | CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
 | MSELoss | ✓ | ✓ | Experimental | **✓** numpy |
@@ -149,7 +155,7 @@ Validation failures now return short CLI messages or JSON payloads instead of ra
 
 Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work, but it is still experimental and not production-ready.
 
-Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`.
+Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`.
 
 Validated train-native support boundary:
 
@@ -159,7 +165,7 @@ Validated train-native support boundary:
 - scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
 - `train.amp=false`, `train.grad_accum_steps=1`
 
-Unsupported (rejected at validation): `GroupNorm`, `LayerNorm`, `ResidualBlock`.
+Unsupported (rejected at validation): `GroupNorm`, `LayerNorm`.
 
 Note: backward and training prototypes exist, and `BatchNorm2d` now has a prototype backward path too. The overall backend remains experimental and not production-ready. New native capability work should usually land here, not in `cuda_legacy`.
 
@@ -274,18 +280,24 @@ Debugging order:
 | MaxPool2d | ✓ | ✓ | ✓ 固定 2×2 | ✓ numpy ref |
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | BatchNorm2d | ✓ | ✓ | ✗ | ✓ forward/backward prototype |
+| LayerNorm2d | ✓ | ✗ | ✗ | **✓** prototype |
 | LayerNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
+| DepthwiseConv2d | ✓ | ✓ | ✗ | **✓** numpy ref |
+| PointwiseConv2d | ✓ | ✓ | ✗ | **✓** numpy ref |
+| GlobalAvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
+| AdaptiveAvgPool2d | ✓ | ✓ | ✗ | **✓** 僅 `(1,1)` |
+| Identity | ✓ | ✓ | ✗ | **✓** numpy ref |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
-| ResidualBlock | ✓ | ✓ | ✗ | ✗ 拒絕 |
-| ConvNeXtBlock | ✓ 實驗性 | ✗ | ✗ | ✗ |
-| Dropout | ✓ | ✓ | ✗ | ✗ |
+| ResidualBlock | ✓ | ✓ | ✗ | **✓** composite prototype |
+| ConvNeXtBlock | ✓ 實驗性 | ✗ | ✗ | **✓** composite prototype |
+| Dropout | ✓ | ✓ | ✗ | **✓** prototype |
 | **激活函數** | | | | |
 | ReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
 | LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
 | SiLU | ✓ | ✓ | ✗ | ✓ numpy ref |
 | Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref |
 | Tanh | ✓ | ✓ | ✗ | ✓ numpy ref |
-| GELU | ✓ | ✗ | ✗ | ✗ |
+| GELU | ✓ | ✗ | ✗ | **✓** numpy ref |
 | **損失函數** | | | | |
 | CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
 | MSELoss | ✓ | ✓ | 實驗中 | **✓** numpy |
@@ -367,9 +379,9 @@ Debugging order:
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
 - `train.amp=false`、`train.grad_accum_steps=1`
 
-支援 op：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`。
+支援 op：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`DepthwiseConv2d`、`PointwiseConv2d`、`LayerNorm2d`、`ResidualBlock`、`ConvNeXtBlock`、`Dropout`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`GELU`、`Identity`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`、`AdaptiveAvgPool2d`（僅 `output_size=(1,1)`）、`GlobalAvgPool2d`。
 
-驗證時拒絕的 op：`GroupNorm`、`LayerNorm`、`ResidualBlock`。
+驗證時拒絕的 op：`GroupNorm`、`LayerNorm`。
 
 注意：雖然已有 backward 與 training prototype，且 `BatchNorm2d` 也已有 prototype 級的 backward，但整體 backend 仍屬實驗性，不是正式訓練後端。後續 native 能力通常也應優先長在這裡，而不是回填到 `cuda_legacy`。
 

@@ -45,16 +45,31 @@ SUPPORTED_ACTIVATION_LAYOUTS: frozenset[str] = frozenset({NCHW, NC})
 #: Maps op_type -> (expected_input_layout, produced_output_layout).
 #: None means the layout passes through unchanged.
 OP_LAYOUT_RULES: dict[str, tuple[str | None, str | None]] = {
-    'Conv2d':     (NCHW,  NCHW),
-    'ReLU':       (None,  None),   # passthrough
-    'LeakyReLU':  (None,  None),   # passthrough
-    'Sigmoid':    (None,  None),   # passthrough
-    'Tanh':       (None,  None),   # passthrough
-    'SiLU':       (None,  None),   # passthrough
-    'MaxPool2d':  (NCHW,  NCHW),
-    'AvgPool2d':  (NCHW,  NCHW),
-    'Flatten':    (NCHW,  NC),
-    'Linear':     (NC,    NC),
+    'Conv2d':            (NCHW,  NCHW),
+    'DepthwiseConv2d':   (NCHW,  NCHW),
+    'depthwise_conv2d':  (NCHW,  NCHW),
+    'PointwiseConv2d':   (NCHW,  NCHW),
+    'pointwise_conv2d':  (NCHW,  NCHW),
+    'ResidualBlock':     (NCHW,  NCHW),
+    'ConvNeXtBlock':     (NCHW,  NCHW),
+    'convnext_block':    (NCHW,  NCHW),
+    'BatchNorm2d':       (NCHW,  NCHW),
+    'LayerNorm2d':       (NCHW,  NCHW),
+    'layernorm2d':       (NCHW,  NCHW),
+    'ReLU':              (None,  None),   # passthrough
+    'LeakyReLU':         (None,  None),   # passthrough
+    'Sigmoid':           (None,  None),   # passthrough
+    'Tanh':              (None,  None),   # passthrough
+    'SiLU':              (None,  None),   # passthrough
+    'GELU':              (None,  None),   # passthrough
+    'Identity':          (None,  None),   # passthrough
+    'Dropout':           (None,  None),   # passthrough
+    'MaxPool2d':         (NCHW,  NCHW),
+    'AvgPool2d':         (NCHW,  NCHW),
+    'AdaptiveAvgPool2d': (NCHW,  NCHW),
+    'GlobalAvgPool2d':   (NCHW,  NCHW),
+    'Flatten':           (NCHW,  NC),
+    'Linear':            (NC,    NC),
 }
 
 

@@ -37,10 +37,13 @@ templates/
 │   ├── vgg_mini.yaml       # 4-conv VGG-mini（Torch + CUDA 雙後端）
 │   ├── vgg_mini_cuda.yaml  # 同上，CUDA backend 專用 conv_layers 格式
 │   ├── alexnet_like.yaml   # 更深的 AlexNet-like（僅 Torch）
-│   ├── resnet_like.yaml    # 帶殘差連結的 ResNet-like（僅 Torch）
-│   └── convnext_like.yaml  # 最小 ConvNeXt-like（僅 Torch，實驗性）
-│   └── convnext_explicit.yaml # 顯式 primitive 版 ConvNeXt-like（僅 Torch，實驗性）
-│   └── convnext_explicit_smoke.yaml # 顯式 primitive 最小 smoke 訓練版
+│   ├── resnet_like.yaml    # 帶殘差連結的 ResNet-like（Torch-first）
+│   ├── resnet_like_cuda_native_smoke.yaml # ResidualBlock 的 cuda_native hermetic smoke
+│   └── convnext_like.yaml  # 最小 ConvNeXt-like（Torch-first block path，實驗性）
+│   └── convnext_explicit.yaml # 顯式 primitive 版 ConvNeXt-like（Torch-first，實驗性）
+│   └── convnext_explicit_smoke.yaml # 顯式 primitive 的 torch/flex hermetic smoke
+│   └── convnext_explicit_cuda_native_smoke.yaml # 顯式 primitive 的 cuda_native hermetic smoke
+│   └── convnext_tiny_cuda_native_smoke.yaml # ConvNeXtBlock named-model 的 cuda_native hermetic smoke
 └── mnist/
     ├── lenet_like.yaml     # LeNet-like 2-conv CNN
     └── mlp.yaml            # MLP baseline
@@ -208,7 +211,9 @@ minicnn train-flex --config templates/cifar10/resnet_like.yaml
 ```
 
 > `ResidualBlock` 和 `GlobalAvgPool2d` 是 MiniCNN torch flex 專用元件，
-> 位於 `src/minicnn/flex/builder.py`。CUDA legacy backend 不支援此架構。
+> 位於 `src/minicnn/flex/builder.py`。`cuda_legacy` 不支援此架構。
+> `cuda_native` 已有實驗性 block 支援，但請改用
+> `templates/cifar10/resnet_like_cuda_native_smoke.yaml` 這條 hermetic smoke path。
 
 ---
 
@@ -234,12 +239,13 @@ Input 3×32×32
 minicnn train-flex --config templates/cifar10/convnext_like.yaml
 ```
 
-> `ConvNeXtBlock` 是 MiniCNN 的 torch/flex 專用元件，屬於實驗性 frontend
-> 擴充，不代表 `cuda_native` 或 `cuda_legacy` 已支援 ConvNeXt。
+> `ConvNeXtBlock` 是 MiniCNN 的實驗性 frontend 擴充。
 > 目前 block 內部會明確使用 depthwise conv、channel-first `LayerNorm2d`、
 > pointwise conv、`GELU` 與 residual add，不再依賴隱含的 NHWC 轉換語意。
+> `cuda_native` 現在已有實驗性 block support，但完整 CIFAR template 仍建議走
+> torch/flex；native 請改用 `templates/cifar10/convnext_tiny_cuda_native_smoke.yaml`。
 
-### convnext_explicit — ConvNeXt-like explicit primitives（Torch only, experimental）
+### convnext_explicit — ConvNeXt-like explicit primitives（Torch-first, experimental）
 
 與 `convnext_like` 不同，這份 template 不使用封裝好的 `ConvNeXtBlock`，
 而是把 block 直接展開成顯式 primitive：
@@ -258,6 +264,11 @@ minicnn train-flex --config templates/cifar10/convnext_explicit.yaml
 
 - 驗證 registry 裡的 ConvNeXt primitives 是否可直接組裝
 - 做更細的 block 級實驗，而不先改 `ConvNeXtBlock` 類別本身
+
+> 這份完整 template 預設仍是 torch/flex 路徑，因為它使用 CIFAR-10 + `AdamW`。
+> `cuda_native` 現在已可跑 explicit primitives，但要改走
+> `templates/cifar10/convnext_explicit_cuda_native_smoke.yaml` 這條
+> 符合目前 capability boundary 的 smoke path。
 
 > 這仍然是 `torch/flex` 專用的實驗性路徑，不代表其他 backend 已具備
 > depthwise conv / LayerNorm2d / residual add 的對應能力。

@@ -151,7 +151,7 @@ The active native growth path in the repo, built as a graph-based backend with:
 - memory estimation and reuse (`memory.py` — `memory_footprint()`, `BufferPool`)
 - observability tooling (`debug.py` — `dump_graph()`, `dump_plan()`, `TracingForwardExecutor`)
 
-Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `MaxPool2d`, `AvgPool2d`, `Flatten`, `Linear`.
+Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`, `Flatten`, `Linear`.
 
 Current validated support boundary:
 
@@ -162,6 +162,12 @@ Current validated support boundary:
 - `train.amp=false`, `train.grad_accum_steps=1`
 
 Backward and training prototypes exist, but the backend is still experimental, sequential-only, and not production-ready yet. It is the backend that should grow next; `cuda_legacy` remains a narrow maintenance path.
+
+Hermetic native smoke examples now exist for:
+
+- explicit ConvNeXt primitives: `templates/cifar10/convnext_explicit_cuda_native_smoke.yaml`
+- named `ConvNeXtBlock` path: `templates/cifar10/convnext_tiny_cuda_native_smoke.yaml`
+- `ResidualBlock` path: `templates/cifar10/resnet_like_cuda_native_smoke.yaml`
 
 ```bash
 # Check what cuda_native supports

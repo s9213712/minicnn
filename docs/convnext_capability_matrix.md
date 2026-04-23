@@ -12,8 +12,8 @@ The short answer is:
   experimental frontend slice
 - `autograd`: not a realistic near-term target
 - `cuda_legacy`: not a target
-- `cuda_native`: not a near-term target until graph and normalization support
-  grow substantially
+- `cuda_native`: explicit primitives and `ConvNeXtBlock` now have experimental
+  smoke paths, but the backend is still prototype quality
 
 See also:
 
@@ -45,15 +45,15 @@ level.
 
 | Requirement | `torch/flex` | `autograd` | `cuda_legacy` | `cuda_native` |
 |---|---|---:|---:|---:|
-| Depthwise Conv2d | Partial | Unclear / not a target | No | No documented support |
-| Pointwise Conv / Linear MLP head | Yes | Partial | No practical fit | Partial |
-| GELU | Yes | No | No | No |
-| LayerNorm | Torch fallback possible | No | No | Rejected at validation |
-| Residual block semantics | Partial | Partial | No | Rejected / no branching graph |
-| Global pooling classifier tail | Yes | Partial | No practical fit | Partial |
-| Layer scale | Minimal built-in support | No | No | No |
+| Depthwise Conv2d | Partial | Unclear / not a target | No | Experimental |
+| Pointwise Conv / Linear MLP head | Yes | Partial | No practical fit | Experimental |
+| GELU | Yes | No | No | Experimental |
+| LayerNorm | Torch fallback possible | No | No | Experimental `LayerNorm2d` |
+| Residual block semantics | Partial | Partial | No | Experimental composite support |
+| Global pooling classifier tail | Yes | Partial | No practical fit | Experimental |
+| Layer scale | Minimal built-in support | No | No | Experimental in `ConvNeXtBlock` |
 | Stochastic depth / DropPath | No built-in support | No | No | No |
-| Minimal ConvNeXt-like built-in path | Experimental | No | No | No |
+| Minimal ConvNeXt-like built-in path | Experimental | No | No | Experimental |
 
 ## Interpretation
 
@@ -80,7 +80,8 @@ Why this is still not "full ConvNeXt support":
 - there is still no `DropPath` / stochastic-depth support
 - there is still no staged architecture family beyond one minimal example
 - there is still no autograd support
-- there is still no `cuda_native` or `cuda_legacy` support
+- there is still no `cuda_legacy` support
+- `cuda_native` support is still experimental and smoke-oriented
 
 Conclusion:
 
@@ -120,18 +121,25 @@ Conclusion:
 
 ### `cuda_native`
 
-This is also not the first destination, even though it is the long-term native direction.
+This is now an experimental ConvNeXt target.
 
-Why:
+What exists:
 
-- `LayerNorm` is currently rejected
-- residual / branching graph support is not yet available
-- graph-generalization RFC work is still ahead
-- promoting an architecture-specific target now would outrun current native reality
+- explicit primitive execution support
+- `ConvNeXtBlock` composite support
+- hermetic smoke templates for explicit and block-based paths
+- validator and capability coverage in the same patch line
+
+What still does not exist:
+
+- production-ready training stability
+- `DropPath` / stochastic depth
+- a broad architecture family beyond smoke-oriented templates
 
 Conclusion:
 
-- ConvNeXt-specific native work should wait until the generic graph and normalization slices advance
+- acceptable as an experimental native path
+- not acceptable to position as production-ready ConvNeXt support
 
 ## First Safe ConvNeXt Slice
 
@@ -146,13 +154,12 @@ The first safe slice is now implemented as:
 What this slice should **not** do:
 
 - claim autograd support
-- claim `cuda_native` support
 - claim `cuda_legacy` support
 - introduce a broad new YAML schema and new native promises in one patch
 
 ## Recommended Follow-Up Order
 
-1. keep ConvNeXt explicitly scoped to `torch/flex`
+1. keep native ConvNeXt claims explicitly scoped to the current experimental smoke slice
 2. avoid broad YAML / IR expansion until more than one minimal example is justified
 3. only then evaluate whether any generic pieces should be promoted more broadly
 
@@ -162,6 +169,7 @@ MiniCNN should currently talk about ConvNeXt this way:
 
 - valid as a frontend-expansion exploration on `torch/flex`
 - includes one built-in minimal `ConvNeXtBlock` path on `torch/flex`
+- includes experimental `cuda_native` smoke paths for explicit and block-based execution
 - not yet a built-in repo-wide supported architecture family
 - not a `cuda_legacy` target
-- not a current `cuda_native` target until generic native graph capabilities improve
+- `cuda_native` support is still experimental, not production-ready

@@ -51,22 +51,35 @@ A staged, modular backend structured in layers:
 | Op | Forward | Backward |
 |---|:---:|:---:|
 | Conv2d | ✓ | Prototype |
+| DepthwiseConv2d | ✓ | Prototype |
+| PointwiseConv2d | ✓ | Prototype |
 | ReLU | ✓ | Prototype |
 | LeakyReLU | ✓ | Prototype |
 | Sigmoid | ✓ | Prototype |
 | Tanh | ✓ | Prototype |
 | SiLU | ✓ | Prototype |
+| GELU | ✓ | Prototype |
+| Identity | ✓ | Prototype |
 | MaxPool2d | ✓ | Prototype |
 | AvgPool2d | ✓ | Prototype |
+| AdaptiveAvgPool2d (`output_size=(1,1)` only) | ✓ | Prototype |
+| GlobalAvgPool2d | ✓ | Prototype |
 | Flatten | ✓ | Prototype |
 | Linear | ✓ | Prototype |
+| Dropout | ✓ prototype | ✓ prototype |
 | BatchNorm2d | ✓ prototype (eval + train-state update) | ✓ prototype |
+| LayerNorm2d | ✓ prototype | ✓ prototype |
+| ConvNeXtBlock | ✓ composite prototype | ✓ composite prototype |
 | GroupNorm | ✗ rejected | — |
 | LayerNorm | ✗ rejected | — |
-| ResidualBlock | ✗ rejected | — |
+| ResidualBlock | ✓ composite prototype | ✓ composite prototype |
 
 `BatchNorm2d` now has forward/backward prototype support. It is part of the
 experimental training path, but remains prototype-level rather than stable.
+
+`ResidualBlock`, `ConvNeXtBlock`, and `Dropout` also run through experimental
+composite / reference-kernel paths. They are validation-backed and runnable,
+but remain research-quality rather than production-ready.
 
 Validated `train-native` support boundary today:
 
@@ -75,6 +88,12 @@ Validated `train-native` support boundary today:
 - optimizer: `SGD` with optional momentum and global gradient clipping
 - scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
 - `train.amp=false`, `train.grad_accum_steps=1`
+
+Hermetic smoke configs:
+
+- `templates/cifar10/convnext_explicit_cuda_native_smoke.yaml`
+- `templates/cifar10/convnext_tiny_cuda_native_smoke.yaml`
+- `templates/cifar10/resnet_like_cuda_native_smoke.yaml`
 
 ## How It Differs From cuda_legacy
 
@@ -270,22 +289,34 @@ native graph/planner/executor 能力公開地逐步長出來；`cuda_legacy`
 | Op | Forward | Backward |
 |---|:---:|:---:|
 | Conv2d | ✓ | Prototype |
+| DepthwiseConv2d | ✓ | Prototype |
+| PointwiseConv2d | ✓ | Prototype |
 | ReLU | ✓ | Prototype |
 | LeakyReLU | ✓ | Prototype |
 | Sigmoid | ✓ | Prototype |
 | Tanh | ✓ | Prototype |
 | SiLU | ✓ | Prototype |
+| GELU | ✓ | Prototype |
+| Identity | ✓ | Prototype |
 | MaxPool2d | ✓ | Prototype |
 | AvgPool2d | ✓ | Prototype |
+| AdaptiveAvgPool2d（僅 `output_size=(1,1)`） | ✓ | Prototype |
+| GlobalAvgPool2d | ✓ | Prototype |
 | Flatten | ✓ | Prototype |
 | Linear | ✓ | Prototype |
+| Dropout | ✓ prototype | ✓ prototype |
 | BatchNorm2d | ✓ prototype（eval + train 狀態更新） | ✓ prototype |
+| LayerNorm2d | ✓ prototype | ✓ prototype |
+| ConvNeXtBlock | ✓ composite prototype | ✓ composite prototype |
 | GroupNorm | ✗ 拒絕 | — |
 | LayerNorm | ✗ 拒絕 | — |
-| ResidualBlock | ✗ 拒絕 | — |
+| ResidualBlock | ✓ composite prototype | ✓ composite prototype |
 
 `BatchNorm2d` 現在已有 forward/backward prototype，已可進入實驗性訓練路徑，
 但整體仍屬 prototype 層級，不能視為穩定支援。
+
+`ResidualBlock`、`ConvNeXtBlock`、`Dropout` 也已透過實驗性 composite /
+reference-kernel 路徑接通，可驗證、可執行，但仍不是正式穩定能力。
 
 目前通過驗證的 `train-native` 支援範圍：
 
@@ -294,6 +325,12 @@ native graph/planner/executor 能力公開地逐步長出來；`cuda_legacy`
 - optimizer：支援 `SGD`，可選 momentum 與 global gradient clipping
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
 - `train.amp=false`、`train.grad_accum_steps=1`
+
+Hermetic smoke config：
+
+- `templates/cifar10/convnext_explicit_cuda_native_smoke.yaml`
+- `templates/cifar10/convnext_tiny_cuda_native_smoke.yaml`
+- `templates/cifar10/resnet_like_cuda_native_smoke.yaml`
 
 ## 與 cuda_legacy 的比較
 

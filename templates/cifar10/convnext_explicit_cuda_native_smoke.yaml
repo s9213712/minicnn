@@ -1,22 +1,22 @@
-# ConvNeXt explicit smoke config  (torch/flex, hermetic)
+# ConvNeXt explicit cuda_native smoke config  (experimental, hermetic)
 #
 # Purpose:
-# - Minimal integration smoke path for explicit ConvNeXt primitives.
+# - Minimal cuda_native validation/training path for explicit ConvNeXt primitives.
 # - Uses a synthetic random dataset so it works without downloads or prepared
 #   CIFAR-10 files.
-# - Keeps the same frontend structure as convnext_explicit.yaml but shrinks
-#   the dataset and epoch count for quick validation.
+# - Stays within current cuda_native support boundaries:
+#   SGD, CrossEntropyLoss, random dataset, no AMP, no grad accumulation.
 #
 # Run:
-#   minicnn train-flex --config templates/cifar10/convnext_explicit_smoke.yaml
+#   minicnn train-flex --config templates/cifar10/convnext_explicit_cuda_native_smoke.yaml
 
 project:
   name: minicnn
-  run_name: cifar10-convnext-explicit-smoke
+  run_name: cifar10-convnext-explicit-cuda-native-smoke
   artifacts_root: artifacts
 
 engine:
-  backend: torch
+  backend: cuda_native
   strict_backend_validation: true
 
 dataset:
@@ -30,7 +30,7 @@ dataset:
 model:
   layers:
     - type: Conv2d
-      out_channels: 64
+      out_channels: 32
       kernel_size: 3
       stride: 1
       padding: 1
@@ -38,38 +38,22 @@ model:
       kernel_size: 7
     - type: LayerNorm2d
     - type: PointwiseConv2d
-      out_channels: 256
-    - type: GELU
-    - type: PointwiseConv2d
-      out_channels: 64
-    - type: DepthwiseConv2d
-      kernel_size: 7
-    - type: LayerNorm2d
-    - type: PointwiseConv2d
-      out_channels: 256
-    - type: GELU
-    - type: PointwiseConv2d
-      out_channels: 64
-    - type: Conv2d
       out_channels: 128
+    - type: GELU
+    - type: PointwiseConv2d
+      out_channels: 32
+    - type: Conv2d
+      out_channels: 64
       kernel_size: 2
       stride: 2
     - type: DepthwiseConv2d
       kernel_size: 7
     - type: LayerNorm2d
     - type: PointwiseConv2d
-      out_channels: 512
+      out_channels: 256
     - type: GELU
     - type: PointwiseConv2d
-      out_channels: 128
-    - type: DepthwiseConv2d
-      kernel_size: 7
-    - type: LayerNorm2d
-    - type: PointwiseConv2d
-      out_channels: 512
-    - type: GELU
-    - type: PointwiseConv2d
-      out_channels: 128
+      out_channels: 64
     - type: GlobalAvgPool2d
     - type: Flatten
     - type: Linear
@@ -88,11 +72,9 @@ loss:
   type: CrossEntropyLoss
 
 optimizer:
-  type: AdamW
-  lr: 0.001
-  weight_decay: 0.05
+  type: SGD
+  lr: 0.01
+  momentum: 0.9
 
 scheduler:
-  enabled: true
-  type: CosineAnnealingLR
-  T_max: 1
+  enabled: false

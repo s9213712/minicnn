@@ -1,9 +1,11 @@
-# CIFAR-10  ConvNeXt-tiny named model entry  (Torch backend only, experimental)
+# CIFAR-10  ConvNeXt-tiny named model entry  (Torch-first, experimental)
 #
 # Scope:
 # - Uses model.name=convnext_tiny instead of spelling out model.layers[].
-# - This expands to MiniCNN's built-in ConvNeXtBlock-based torch/flex path.
-# - Not compatible with cuda_legacy or cuda_native.
+# - This expands to MiniCNN's built-in ConvNeXtBlock-based path.
+# - This full CIFAR + AdamW template is for torch/flex.
+# - For the experimental cuda_native smoke path, use
+#   templates/cifar10/convnext_tiny_cuda_native_smoke.yaml.
 #
 # Run:
 #   minicnn train-flex --config templates/cifar10/convnext_tiny.yaml

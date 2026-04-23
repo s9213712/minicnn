@@ -79,7 +79,7 @@ class TestValidateCudaNativeConfig:
         errors = validate_cuda_native_config(cfg)
         assert len(errors) > 0
 
-    def test_convnext_block_rejected(self):
+    def test_convnext_block_accepted(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
         cfg = self._minimal_cfg([
             {'type': 'ConvNeXtBlock'},
@@ -87,7 +87,7 @@ class TestValidateCudaNativeConfig:
             {'type': 'Linear', 'out_features': 2},
         ])
         errors = validate_cuda_native_config(cfg)
-        assert any('ConvNeXtBlock' in e for e in errors)
+        assert errors == []
 
     def test_missing_out_features_rejected(self):
         from minicnn.cuda_native.api import validate_cuda_native_config

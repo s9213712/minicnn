@@ -9,8 +9,9 @@ Each backward kernel receives:
 Returns grad_in: dL/d(node input), same shape as the node's input tensor.
 
 Supported backward ops (Phase 3):
-    Linear, ReLU, LeakyReLU, Sigmoid, Tanh, SiLU, Flatten, Conv2d,
-    BatchNorm2d, MaxPool2d, AvgPool2d
+    Linear, ReLU, LeakyReLU, Sigmoid, Tanh, SiLU, GELU, Identity,
+    Flatten, Conv2d, DepthwiseConv2d, PointwiseConv2d, BatchNorm2d,
+    LayerNorm2d, MaxPool2d, AvgPool2d, AdaptiveAvgPool2d, GlobalAvgPool2d
 """
 from __future__ import annotations
 
@@ -28,6 +29,128 @@ BwdKernelFn = Callable[[Node, np.ndarray, dict[str, Any], dict[str, Any]], np.nd
 # ---------------------------------------------------------------------------
 # Backward kernel implementations
 # ---------------------------------------------------------------------------
+
+
+def _conv2d_backward_arrays(
+    x: np.ndarray,
+    w: np.ndarray,
+    grad_out: np.ndarray,
+    *,
+    stride: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    groups: int = 1,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    sh = sw = stride if isinstance(stride, int) else stride[0]
+    ph = pw = padding if isinstance(padding, int) else padding[0]
+    n, c_in, h_in, w_in = x.shape
+    c_out, w_in_per_group, kh, kw = w.shape
+    _, _, h_out, w_out = grad_out.shape
+    if c_in % groups != 0 or c_out % groups != 0:
+        raise ValueError(
+            f'Conv2d backward helper: invalid grouped shape with input channels={c_in}, '
+            f'output channels={c_out}, groups={groups}'
+        )
+    in_per_group = c_in // groups
+    out_per_group = c_out // groups
+    if w_in_per_group != in_per_group:
+        raise ValueError(
+            f'Conv2d backward helper: weight expects {w_in_per_group} input channels per group, '
+            f'expected {in_per_group}'
+        )
+    grad_b = grad_out.sum(axis=(0, 2, 3)).astype(np.float32)
+    x_pad = np.pad(x, ((0, 0), (0, 0), (ph, ph), (pw, pw))) if (ph or pw) else x
+    grad_w = np.zeros_like(w)
+    for group_idx in range(groups):
+        in_start = group_idx * in_per_group
+        in_end = (group_idx + 1) * in_per_group
+        out_start = group_idx * out_per_group
+        out_end = (group_idx + 1) * out_per_group
+        group_grad_out = grad_out[:, out_start:out_end, :, :]
+        for i in range(kh):
+            for j in range(kw):
+                x_patch = x_pad[:, in_start:in_end, i:i + h_out * sh:sh, j:j + w_out * sw:sw]
+                grad_w[out_start:out_end, :, i, j] = np.einsum(
+                    'nchw,ndhw->cd',
+                    group_grad_out,
+                    x_patch,
+                )
+    grad_x_pad = np.zeros((n, c_in, h_in + 2 * ph, w_in + 2 * pw), dtype=np.float32)
+    for group_idx in range(groups):
+        in_start = group_idx * in_per_group
+        in_end = (group_idx + 1) * in_per_group
+        out_start = group_idx * out_per_group
+        out_end = (group_idx + 1) * out_per_group
+        group_weights = w[out_start:out_end, :, :, :]
+        for i in range(h_out):
+            for j in range(w_out):
+                g = grad_out[:, out_start:out_end, i, j]
+                contrib = np.tensordot(g, group_weights, axes=([1], [0]))
+                grad_x_pad[:, in_start:in_end, i * sh:i * sh + kh, j * sw:j * sw + kw] += contrib
+    if ph or pw:
+        grad_x = grad_x_pad[:, :, ph:ph + h_in, pw:pw + w_in].astype(np.float32)
+    else:
+        grad_x = grad_x_pad.astype(np.float32)
+    return grad_x, grad_w.astype(np.float32), grad_b.astype(np.float32)
+
+
+def _batchnorm2d_backward_arrays(
+    x: np.ndarray,
+    grad_out: np.ndarray,
+    *,
+    gamma: np.ndarray,
+    eps: float,
+    mode: str,
+    running_mean: np.ndarray,
+    running_var: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    channels = x.shape[1]
+    gamma_r = np.asarray(gamma, dtype=np.float32).reshape(1, channels, 1, 1)
+    if mode == 'train':
+        mean = x.mean(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+        var = x.var(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+    else:
+        mean = np.asarray(running_mean, dtype=np.float32).reshape(1, channels, 1, 1)
+        var = np.asarray(running_var, dtype=np.float32).reshape(1, channels, 1, 1)
+    inv_std = (1.0 / np.sqrt(var + eps)).astype(np.float32)
+    x_hat = ((x - mean) * inv_std).astype(np.float32)
+    grad_gamma = (grad_out * x_hat).sum(axis=(0, 2, 3)).astype(np.float32)
+    grad_beta = grad_out.sum(axis=(0, 2, 3)).astype(np.float32)
+    if mode == 'eval':
+        return (grad_out * gamma_r * inv_std).astype(np.float32), grad_gamma, grad_beta
+    norm_elems = float(x.shape[0] * x.shape[2] * x.shape[3])
+    sum_grad = grad_out.sum(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+    sum_grad_xhat = (grad_out * x_hat).sum(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+    grad_in = (
+        (gamma_r * inv_std / norm_elems)
+        * (norm_elems * grad_out - sum_grad - x_hat * sum_grad_xhat)
+    )
+    return grad_in.astype(np.float32), grad_gamma, grad_beta
+
+
+def _layernorm2d_backward_arrays(
+    x: np.ndarray,
+    grad_out: np.ndarray,
+    *,
+    gamma: np.ndarray,
+    eps: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    channels = x.shape[1]
+    gamma_r = np.asarray(gamma, dtype=np.float32).reshape(1, channels, 1, 1)
+    mean = x.mean(axis=1, keepdims=True).astype(np.float32)
+    var = x.var(axis=1, keepdims=True).astype(np.float32)
+    inv_std = (1.0 / np.sqrt(var + eps)).astype(np.float32)
+    x_hat = ((x - mean) * inv_std).astype(np.float32)
+    grad_gamma = (grad_out * x_hat).sum(axis=(0, 2, 3)).astype(np.float32)
+    grad_beta = grad_out.sum(axis=(0, 2, 3)).astype(np.float32)
+    dxhat = (grad_out * gamma_r).astype(np.float32)
+    norm_elems = float(channels)
+    sum_dxhat = dxhat.sum(axis=1, keepdims=True).astype(np.float32)
+    sum_dxhat_xhat = (dxhat * x_hat).sum(axis=1, keepdims=True).astype(np.float32)
+    grad_in = (
+        (inv_std / norm_elems)
+        * (norm_elems * dxhat - sum_dxhat - x_hat * sum_dxhat_xhat)
+    )
+    return grad_in.astype(np.float32), grad_gamma, grad_beta
 
 def _bwd_relu(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
     x = cache[f'fwd_{node.name}_in']
@@ -59,6 +182,28 @@ def _bwd_silu(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) 
     return (grad_out * (sig + x * sig * (1.0 - sig))).astype(np.float32)
 
 
+def _bwd_gelu(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    x = cache[f'fwd_{node.name}_in']
+    inner = np.sqrt(2.0 / np.pi) * (x + 0.044715 * np.power(x, 3))
+    tanh_inner = np.tanh(inner).astype(np.float32)
+    sech2_inner = (1.0 - tanh_inner * tanh_inner).astype(np.float32)
+    inner_grad = (
+        np.sqrt(2.0 / np.pi) * (1.0 + 3.0 * 0.044715 * np.power(x, 2))
+    ).astype(np.float32)
+    grad = 0.5 * (1.0 + tanh_inner) + 0.5 * x * sech2_inner * inner_grad
+    return (grad_out * grad).astype(np.float32)
+
+
+def _bwd_identity(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    return grad_out.astype(np.float32)
+
+
+def _bwd_dropout(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    node_cache = cache.get(f'__cache_{node.name}', {})
+    mask = np.asarray(node_cache.get('mask', np.ones_like(grad_out, dtype=np.float32)), dtype=np.float32)
+    return (grad_out * mask).astype(np.float32)
+
+
 def _bwd_flatten(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
     in_shape = cache[f'fwd_{node.name}_in_shape']
     return grad_out.reshape(in_shape).astype(np.float32)
@@ -78,47 +223,27 @@ def _bwd_linear(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict
 
 def _bwd_conv2d(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
     x = cache[f'fwd_{node.name}_in']   # (N, C_in, H_in, W_in)
-    w = cache[f'_w_{node.name}']        # (C_out, C_in, kH, kW)
+    w = cache[f'_w_{node.name}']        # (C_out, C_in/groups, kH, kW)
     attrs = node.attrs
     stride = attrs.get('stride', 1)
     padding = attrs.get('padding', 0)
     sh = sw = stride if isinstance(stride, int) else stride[0]
     ph = pw = padding if isinstance(padding, int) else padding[0]
+    groups = int(attrs.get('groups', x.shape[1] if node.op_type in {'DepthwiseConv2d', 'depthwise_conv2d'} else 1))
 
-    n, c_in, h_in, w_in = x.shape
-    c_out, _, kh, kw = w.shape
-    _, _, h_out, w_out = grad_out.shape
-
-    # dL/db
+    grad_x, grad_w, grad_b = _conv2d_backward_arrays(
+        x,
+        w,
+        grad_out,
+        stride=(sh, sw),
+        padding=(ph, pw),
+        groups=groups,
+    )
+    param_grads[f'_w_{node.name}'] = grad_w.astype(np.float32)
     b_key = f'_b_{node.name}'
     if b_key in cache:
-        param_grads[b_key] = grad_out.sum(axis=(0, 2, 3)).astype(np.float32)
-
-    # Padded input for dL/dW
-    x_pad = np.pad(x, ((0, 0), (0, 0), (ph, ph), (pw, pw))) if (ph or pw) else x
-
-    # dL/dW: (C_out, C_in, kH, kW)
-    grad_w = np.zeros_like(w)
-    for i in range(kh):
-        for j in range(kw):
-            # x_patch: (N, C_in, H_out, W_out) with stride
-            x_patch = x_pad[:, :, i:i + h_out * sh:sh, j:j + w_out * sw:sw]
-            # grad_w[:,  :, i, j] = einsum('nchw,ndhw->dc', grad_out, x_patch)
-            # c=C_out d=C_in
-            grad_w[:, :, i, j] = np.einsum('nchw,ndhw->cd', grad_out, x_patch)
-    param_grads[f'_w_{node.name}'] = grad_w.astype(np.float32)
-
-    # dL/dx: full convolution of grad_out with flipped w
-    grad_x_pad = np.zeros((n, c_in, h_in + 2 * ph, w_in + 2 * pw), dtype=np.float32)
-    for i in range(h_out):
-        for j in range(w_out):
-            g = grad_out[:, :, i, j]           # (N, C_out)
-            contrib = np.tensordot(g, w, axes=([1], [0]))  # (N, C_in, kH, kW)
-            grad_x_pad[:, :, i * sh:i * sh + kh, j * sw:j * sw + kw] += contrib
-
-    if ph or pw:
-        return grad_x_pad[:, :, ph:ph + h_in, pw:pw + w_in].astype(np.float32)
-    return grad_x_pad.astype(np.float32)
+        param_grads[b_key] = grad_b.astype(np.float32)
+    return grad_x.astype(np.float32)
 
 
 def _bwd_batchnorm2d(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
@@ -139,7 +264,7 @@ def _bwd_batchnorm2d(node: Node, grad_out: np.ndarray, cache: dict, param_grads:
     gamma = np.asarray(
         cache.get(gamma_key, np.ones(channels, dtype=np.float32)),
         dtype=np.float32,
-    ).reshape(1, channels, 1, 1)
+    )
 
     if mode == 'train':
         mean = x.mean(axis=(0, 2, 3), keepdims=True).astype(np.float32)
@@ -159,24 +284,46 @@ def _bwd_batchnorm2d(node: Node, grad_out: np.ndarray, cache: dict, param_grads:
             "expected 'eval' or 'train'"
         )
 
-    inv_std = (1.0 / np.sqrt(var + eps)).astype(np.float32)
-    x_hat = ((x - mean) * inv_std).astype(np.float32)
-
-    if gamma_key in cache:
-        param_grads[gamma_key] = (grad_out * x_hat).sum(axis=(0, 2, 3)).astype(np.float32)
-    if beta_key in cache:
-        param_grads[beta_key] = grad_out.sum(axis=(0, 2, 3)).astype(np.float32)
-
-    if mode == 'eval':
-        return (grad_out * gamma * inv_std).astype(np.float32)
-
-    norm_elems = float(x.shape[0] * x.shape[2] * x.shape[3])
-    sum_grad = grad_out.sum(axis=(0, 2, 3), keepdims=True).astype(np.float32)
-    sum_grad_xhat = (grad_out * x_hat).sum(axis=(0, 2, 3), keepdims=True).astype(np.float32)
-    grad_in = (
-        (gamma * inv_std / norm_elems)
-        * (norm_elems * grad_out - sum_grad - x_hat * sum_grad_xhat)
+    grad_in, grad_gamma, grad_beta = _batchnorm2d_backward_arrays(
+        x,
+        grad_out,
+        gamma=gamma,
+        eps=eps,
+        mode=mode,
+        running_mean=np.asarray(cache.get(running_mean_key, np.zeros(channels, dtype=np.float32)), dtype=np.float32),
+        running_var=np.asarray(cache.get(running_var_key, np.ones(channels, dtype=np.float32)), dtype=np.float32),
     )
+    if gamma_key in cache:
+        param_grads[gamma_key] = grad_gamma.astype(np.float32)
+    if beta_key in cache:
+        param_grads[beta_key] = grad_beta.astype(np.float32)
+    return grad_in.astype(np.float32)
+
+
+def _bwd_layernorm2d(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    x = cache[f'fwd_{node.name}_in']
+    if x.ndim != 4:
+        raise ValueError(
+            f'LayerNorm2d backward expects 4-D cached input (N,C,H,W), got shape {x.shape}'
+        )
+    channels = x.shape[1]
+    eps = float(node.attrs.get('eps', 1e-6))
+    gamma_key = f'_w_{node.name}'
+    beta_key = f'_b_{node.name}'
+    gamma = np.asarray(
+        cache.get(gamma_key, np.ones(channels, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    grad_in, grad_gamma, grad_beta = _layernorm2d_backward_arrays(
+        x,
+        grad_out,
+        gamma=gamma,
+        eps=eps,
+    )
+    if gamma_key in cache:
+        param_grads[gamma_key] = grad_gamma.astype(np.float32)
+    if beta_key in cache:
+        param_grads[beta_key] = grad_beta.astype(np.float32)
     return grad_in.astype(np.float32)
 
 
@@ -221,6 +368,205 @@ def _bwd_avgpool2d(node: Node, grad_out: np.ndarray, cache: dict, param_grads: d
     return grad_x.astype(np.float32)
 
 
+def _bwd_global_avgpool2d(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    x = cache[f'fwd_{node.name}_in']
+    if x.ndim != 4:
+        raise ValueError(
+            f'{node.op_type} backward expects 4-D cached input (N,C,H,W), got shape {x.shape}'
+        )
+    spatial_area = float(x.shape[2] * x.shape[3])
+    return np.broadcast_to(grad_out / spatial_area, x.shape).astype(np.float32)
+
+
+def _bwd_adaptive_avgpool2d(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    output_size = node.attrs.get('output_size', 1)
+    normalized = tuple(output_size) if isinstance(output_size, (list, tuple)) else output_size
+    if normalized not in {1, (1, 1)}:
+        raise ValueError(
+            f'AdaptiveAvgPool2d backward node={node.name}: only output_size=1 or (1, 1) is supported, got {output_size!r}'
+    )
+    return _bwd_global_avgpool2d(node, grad_out, cache, param_grads)
+
+
+def _bwd_residual_block(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    node_cache = cache[f'__cache_{node.name}']
+    x = np.asarray(node_cache['x'], dtype=np.float32)
+    conv1 = np.asarray(node_cache['conv1'], dtype=np.float32)
+    bn1 = np.asarray(node_cache['bn1'], dtype=np.float32)
+    act1 = np.asarray(node_cache['act1'], dtype=np.float32)
+    shortcut = np.asarray(node_cache['shortcut'], dtype=np.float32)
+    summed = np.asarray(node_cache['summed'], dtype=np.float32)
+    use_shortcut_conv = bool(int(np.asarray(node_cache['use_shortcut_conv']).item()))
+    stride = int(node.attrs.get('stride', 1))
+    kernel_size = int(node.attrs.get('kernel_size', 3))
+    padding = int(node.attrs.get('padding', kernel_size // 2))
+    bias = bool(node.attrs.get('bias', False))
+    eps = float(node.attrs.get('eps', 1e-5))
+    mode = 'train' if bool(int(np.asarray(node_cache['bn1_cache']['mode']).item())) else 'eval'
+
+    grad_summed = (grad_out * (summed > 0)).astype(np.float32)
+    grad_bn2 = grad_summed
+    grad_shortcut = grad_summed
+
+    gamma_bn2 = np.asarray(cache[f'_w_bn2_{node.name}'], dtype=np.float32)
+    grad_conv2, grad_gamma_bn2, grad_beta_bn2 = _batchnorm2d_backward_arrays(
+        np.asarray(node_cache['conv2'], dtype=np.float32),
+        grad_bn2,
+        gamma=gamma_bn2,
+        eps=eps,
+        mode=mode,
+        running_mean=np.asarray(cache[f'_running_mean_bn2_{node.name}'], dtype=np.float32),
+        running_var=np.asarray(cache[f'_running_var_bn2_{node.name}'], dtype=np.float32),
+    )
+    param_grads[f'_w_bn2_{node.name}'] = grad_gamma_bn2
+    param_grads[f'_b_bn2_{node.name}'] = grad_beta_bn2
+
+    grad_act1, grad_w_conv2, grad_b_conv2 = _conv2d_backward_arrays(
+        act1,
+        np.asarray(cache[f'_w_conv2_{node.name}'], dtype=np.float32),
+        grad_conv2,
+        stride=1,
+        padding=padding,
+        groups=1,
+    )
+    param_grads[f'_w_conv2_{node.name}'] = grad_w_conv2
+    if bias and f'_b_conv2_{node.name}' in cache:
+        param_grads[f'_b_conv2_{node.name}'] = grad_b_conv2
+
+    grad_bn1 = (grad_act1 * (bn1 > 0)).astype(np.float32)
+    gamma_bn1 = np.asarray(cache[f'_w_bn1_{node.name}'], dtype=np.float32)
+    grad_conv1, grad_gamma_bn1, grad_beta_bn1 = _batchnorm2d_backward_arrays(
+        conv1,
+        grad_bn1,
+        gamma=gamma_bn1,
+        eps=eps,
+        mode=mode,
+        running_mean=np.asarray(cache[f'_running_mean_bn1_{node.name}'], dtype=np.float32),
+        running_var=np.asarray(cache[f'_running_var_bn1_{node.name}'], dtype=np.float32),
+    )
+    param_grads[f'_w_bn1_{node.name}'] = grad_gamma_bn1
+    param_grads[f'_b_bn1_{node.name}'] = grad_beta_bn1
+
+    grad_main, grad_w_conv1, grad_b_conv1 = _conv2d_backward_arrays(
+        x,
+        np.asarray(cache[f'_w_conv1_{node.name}'], dtype=np.float32),
+        grad_conv1,
+        stride=stride,
+        padding=padding,
+        groups=1,
+    )
+    param_grads[f'_w_conv1_{node.name}'] = grad_w_conv1
+    if bias and f'_b_conv1_{node.name}' in cache:
+        param_grads[f'_b_conv1_{node.name}'] = grad_b_conv1
+
+    if use_shortcut_conv:
+        gamma_short = np.asarray(cache[f'_w_shortcut_bn_{node.name}'], dtype=np.float32)
+        grad_shortcut_conv, grad_gamma_short, grad_beta_short = _batchnorm2d_backward_arrays(
+            np.asarray(node_cache['shortcut_conv'], dtype=np.float32),
+            grad_shortcut,
+            gamma=gamma_short,
+            eps=eps,
+            mode=mode,
+            running_mean=np.asarray(cache[f'_running_mean_shortcut_bn_{node.name}'], dtype=np.float32),
+            running_var=np.asarray(cache[f'_running_var_shortcut_bn_{node.name}'], dtype=np.float32),
+        )
+        param_grads[f'_w_shortcut_bn_{node.name}'] = grad_gamma_short
+        param_grads[f'_b_shortcut_bn_{node.name}'] = grad_beta_short
+        grad_short, grad_w_short, _grad_b_short = _conv2d_backward_arrays(
+            x,
+            np.asarray(cache[f'_w_shortcut_conv_{node.name}'], dtype=np.float32),
+            grad_shortcut_conv,
+            stride=stride,
+            padding=0,
+            groups=1,
+        )
+        param_grads[f'_w_shortcut_conv_{node.name}'] = grad_w_short
+    else:
+        grad_short = grad_shortcut.astype(np.float32)
+
+    return (grad_main + grad_short).astype(np.float32)
+
+
+def _bwd_convnext_block(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    node_cache = cache[f'__cache_{node.name}']
+    x = np.asarray(node_cache['x'], dtype=np.float32)
+    depthwise = np.asarray(node_cache['depthwise'], dtype=np.float32)
+    norm = np.asarray(node_cache['norm'], dtype=np.float32)
+    pw1 = np.asarray(node_cache['pw1'], dtype=np.float32)
+    activated = np.asarray(node_cache['activated'], dtype=np.float32)
+    has_layer_scale = bool(int(np.asarray(node_cache['has_layer_scale']).item()))
+    bias = bool(node.attrs.get('bias', True))
+    eps = float(node.attrs.get('layer_norm_eps', 1e-6))
+    kernel_size = int(node.attrs.get('kernel_size', 7))
+    padding = kernel_size // 2
+
+    grad_x = grad_out.astype(np.float32)
+    grad_scaled = grad_out.astype(np.float32)
+    if has_layer_scale:
+        layer_scale = np.asarray(cache[f'_layer_scale_{node.name}'], dtype=np.float32).reshape(1, -1, 1, 1)
+        pw2 = np.asarray(node_cache['pw2'], dtype=np.float32)
+        param_grads[f'_layer_scale_{node.name}'] = (grad_scaled * pw2).sum(axis=(0, 2, 3)).astype(np.float32)
+        grad_pw2 = (grad_scaled * layer_scale).astype(np.float32)
+    else:
+        grad_pw2 = grad_scaled.astype(np.float32)
+
+    grad_activated, grad_w_pw2, grad_b_pw2 = _conv2d_backward_arrays(
+        activated,
+        np.asarray(cache[f'_w_pw2_{node.name}'], dtype=np.float32),
+        grad_pw2,
+        stride=1,
+        padding=0,
+        groups=1,
+    )
+    param_grads[f'_w_pw2_{node.name}'] = grad_w_pw2
+    if bias and f'_b_pw2_{node.name}' in cache:
+        param_grads[f'_b_pw2_{node.name}'] = grad_b_pw2
+
+    inner = np.sqrt(2.0 / np.pi) * (pw1 + 0.044715 * np.power(pw1, 3))
+    tanh_inner = np.tanh(inner).astype(np.float32)
+    sech2_inner = (1.0 - tanh_inner * tanh_inner).astype(np.float32)
+    inner_grad = (
+        np.sqrt(2.0 / np.pi) * (1.0 + 3.0 * 0.044715 * np.power(pw1, 2))
+    ).astype(np.float32)
+    gelu_grad = (0.5 * (1.0 + tanh_inner) + 0.5 * pw1 * sech2_inner * inner_grad).astype(np.float32)
+    grad_pw1 = (grad_activated * gelu_grad).astype(np.float32)
+
+    grad_norm, grad_w_pw1, grad_b_pw1 = _conv2d_backward_arrays(
+        norm,
+        np.asarray(cache[f'_w_pw1_{node.name}'], dtype=np.float32),
+        grad_pw1,
+        stride=1,
+        padding=0,
+        groups=1,
+    )
+    param_grads[f'_w_pw1_{node.name}'] = grad_w_pw1
+    if bias and f'_b_pw1_{node.name}' in cache:
+        param_grads[f'_b_pw1_{node.name}'] = grad_b_pw1
+
+    grad_depthwise, grad_gamma_ln, grad_beta_ln = _layernorm2d_backward_arrays(
+        depthwise,
+        grad_norm,
+        gamma=np.asarray(cache[f'_w_ln_{node.name}'], dtype=np.float32),
+        eps=eps,
+    )
+    param_grads[f'_w_ln_{node.name}'] = grad_gamma_ln
+    param_grads[f'_b_ln_{node.name}'] = grad_beta_ln
+
+    grad_residual, grad_w_depthwise, grad_b_depthwise = _conv2d_backward_arrays(
+        x,
+        np.asarray(cache[f'_w_depthwise_{node.name}'], dtype=np.float32),
+        grad_depthwise,
+        stride=1,
+        padding=padding,
+        groups=x.shape[1],
+    )
+    param_grads[f'_w_depthwise_{node.name}'] = grad_w_depthwise
+    if bias and f'_b_depthwise_{node.name}' in cache:
+        param_grads[f'_b_depthwise_{node.name}'] = grad_b_depthwise
+
+    return (grad_x + grad_residual).astype(np.float32)
+
+
 # ---------------------------------------------------------------------------
 # Backward kernel registry
 # ---------------------------------------------------------------------------
@@ -252,12 +598,26 @@ def make_default_backward_registry() -> BackwardRegistry:
     reg.register('Sigmoid', _bwd_sigmoid)
     reg.register('Tanh', _bwd_tanh)
     reg.register('SiLU', _bwd_silu)
+    reg.register('GELU', _bwd_gelu)
+    reg.register('Identity', _bwd_identity)
+    reg.register('Dropout', _bwd_dropout)
     reg.register('Flatten', _bwd_flatten)
     reg.register('Linear', _bwd_linear)
     reg.register('Conv2d', _bwd_conv2d)
+    reg.register('DepthwiseConv2d', _bwd_conv2d)
+    reg.register('depthwise_conv2d', _bwd_conv2d)
+    reg.register('PointwiseConv2d', _bwd_conv2d)
+    reg.register('pointwise_conv2d', _bwd_conv2d)
+    reg.register('ResidualBlock', _bwd_residual_block)
+    reg.register('ConvNeXtBlock', _bwd_convnext_block)
+    reg.register('convnext_block', _bwd_convnext_block)
     reg.register('BatchNorm2d', _bwd_batchnorm2d)
+    reg.register('LayerNorm2d', _bwd_layernorm2d)
+    reg.register('layernorm2d', _bwd_layernorm2d)
     reg.register('MaxPool2d', _bwd_maxpool2d)
     reg.register('AvgPool2d', _bwd_avgpool2d)
+    reg.register('AdaptiveAvgPool2d', _bwd_adaptive_avgpool2d)
+    reg.register('GlobalAvgPool2d', _bwd_global_avgpool2d)
     return reg
 
 

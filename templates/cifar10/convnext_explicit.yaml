@@ -1,4 +1,4 @@
-# CIFAR-10  ConvNeXt-like explicit primitives  (Torch backend only, experimental)
+# CIFAR-10  ConvNeXt-like explicit primitives  (Torch-first, experimental)
 #
 # Architecture:
 #   Stem Conv64
@@ -8,10 +8,12 @@
 #   -> GAP -> FC10
 #
 # Scope:
-# - Uses MiniCNN's explicit torch/flex-only ConvNeXt primitives.
+# - Uses MiniCNN's explicit ConvNeXt primitives.
 # - LayerNorm is channel-first LayerNorm2d on NCHW tensors.
 # - This is an experimental frontend path, not repo-wide ConvNeXt support.
-# - Not compatible with cuda_legacy or cuda_native.
+# - This full CIFAR + AdamW template is for torch/flex.
+# - For the experimental cuda_native primitive path, use
+#   templates/cifar10/convnext_explicit_cuda_native_smoke.yaml.
 #
 # Run:
 #   minicnn train-flex --config templates/cifar10/convnext_explicit.yaml
