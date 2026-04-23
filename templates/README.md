@@ -3,6 +3,31 @@
 可直接執行的網路架構範本，涵蓋 CIFAR-10 與 MNIST 兩個資料集。
 每個 YAML 檔都可不修改任何 Python 直接餵給 `minicnn train-flex` 或 `minicnn train-dual`。
 
+## 建議起手順序
+
+如果你只想最快跑通一條訓練路徑，建議順序是：
+
+1. `minicnn smoke`
+2. `minicnn show-model --config configs/flex_cnn.yaml --format text`
+3. `minicnn train-flex --config templates/mnist/lenet_like.yaml`
+4. `minicnn inspect-checkpoint --path <best-checkpoint>`
+
+最推薦的第一個 template 是：
+
+- `templates/mnist/lenet_like.yaml`
+
+原因：
+
+- MNIST 可自動下載，不需要先準備 CIFAR-10
+- 架構小，第一次跑比較快
+- 使用 `train-flex`，不會先把新使用者推進 native backend 限制
+
+第二個建議 template 才是：
+
+- `templates/cifar10/vgg_mini.yaml`
+
+這個 template 比較適合在你已經理解基本 config 與 checkpoint 流程後，再開始接觸 CIFAR-10 和雙 backend 邊界。
+
 ## 目錄結構
 
 ```
@@ -12,7 +37,8 @@ templates/
 │   ├── vgg_mini.yaml       # 4-conv VGG-mini（Torch + CUDA 雙後端）
 │   ├── vgg_mini_cuda.yaml  # 同上，CUDA backend 專用 conv_layers 格式
 │   ├── alexnet_like.yaml   # 更深的 AlexNet-like（僅 Torch）
-│   └── resnet_like.yaml    # 帶殘差連結的 ResNet-like（僅 Torch）
+│   ├── resnet_like.yaml    # 帶殘差連結的 ResNet-like（僅 Torch）
+│   └── convnext_like.yaml  # 最小 ConvNeXt-like（僅 Torch，實驗性）
 └── mnist/
     ├── lenet_like.yaml     # LeNet-like 2-conv CNN
     └── mlp.yaml            # MLP baseline
@@ -175,7 +201,36 @@ minicnn train-flex --config templates/cifar10/resnet_like.yaml
 
 ---
 
+### convnext_like — ConvNeXt-like（Torch only, experimental）
+
+最小、刻意收斂的 ConvNeXt-like 路徑，用來驗證 `torch/flex` 前端是否能承載
+depthwise conv、LayerNorm、GELU、MLP 與 residual add 的組合。
+
+**架構**
+
+```
+Input 3×32×32
+→ Stem: Conv(64, 3×3, pad=1)
+→ ConvNeXtBlock(64) × 2
+→ Downsample: Conv(128, 2×2, stride=2)   # 16×16
+→ ConvNeXtBlock(128) × 2
+→ GlobalAvgPool → Flatten → Linear(10)
+```
+
+**執行**
+
+```bash
+minicnn train-flex --config templates/cifar10/convnext_like.yaml
+```
+
+> `ConvNeXtBlock` 是 MiniCNN 的 torch/flex 專用元件，屬於實驗性 frontend
+> 擴充，不代表 `cuda_native` 或 `cuda_legacy` 已支援 ConvNeXt。
+
+---
+
 ## MNIST 範本
+
+對第一次接觸 MiniCNN 的使用者，這一節通常比 CIFAR-10 範本更適合作為第一站。
 
 第一次執行時 `dataset.download: true` 會自動抓取資料（約 11 MB）。
 之後可將 `download` 改為 `false` 加快啟動。

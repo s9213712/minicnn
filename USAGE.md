@@ -31,6 +31,12 @@ Read these in order if you want the current, operational picture of the repo:
 1. [docs/architecture.md](docs/architecture.md) — overall structure, execution paths, and module boundaries
 2. [docs/backend_capabilities.md](docs/backend_capabilities.md) — what each backend really supports
 3. [docs/dual_backend_guide.md](docs/dual_backend_guide.md) — how one shared config maps into the reference, native, oracle, and maintenance roles
+4. [docs/master_roadmap.md](docs/master_roadmap.md) — the canonical next-work roadmap
+5. [docs/capability_expansion_slices.md](docs/capability_expansion_slices.md) — staged implementation slices for future capability work
+6. [docs/planning_consolidation.md](docs/planning_consolidation.md) — which planning docs are canonical vs supporting
+7. [docs/example_expansion_plan.md](docs/example_expansion_plan.md) — the canonical example-growth and onboarding path
+8. [docs/convnext_yaml_ir_decision.md](docs/convnext_yaml_ir_decision.md) — why ConvNeXt currently stays inside `model.layers[]` without new schema work
+9. [docs/convnext_support_blueprint.md](docs/convnext_support_blueprint.md) — the compact "what exists / what is still forbidden" execution brief
 
 ## By Task
 
@@ -46,6 +52,7 @@ Read these in order if you want the current, operational picture of the repo:
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md) — shared-config path and backend routing
 - [docs/model_artifacts.md](docs/model_artifacts.md) — checkpoint formats and reuse boundaries
 - [templates/README.md](templates/README.md) — ready-to-edit config templates
+- [examples/README.md](examples/README.md) — canonical beginner path and runnable example families
 
 ### I want to work on the handcrafted CUDA path
 
@@ -245,6 +252,7 @@ If you are unsure where to go next:
 - [docs/dual_backend_guide.md](docs/dual_backend_guide.md) — shared-config 路徑與 backend routing
 - [docs/model_artifacts.md](docs/model_artifacts.md) — checkpoint 格式與復用邊界
 - [templates/README.md](templates/README.md) — 可直接修改的 config templates
+- [examples/README.md](examples/README.md) — canonical beginner path 與可執行範例總覽
 
 ### 我想處理手寫 CUDA 路徑
 

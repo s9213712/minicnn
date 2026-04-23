@@ -529,6 +529,7 @@ Start here:
 - [docs/custom_components.md](docs/custom_components.md): dotted-path component extension points
 - [docs/model_artifacts.md](docs/model_artifacts.md): checkpoint formats, reuse boundaries, and examples
 - [templates/README.md](templates/README.md): ready-to-edit template configs
+- [examples/README.md](examples/README.md): canonical example path and runnable example families
 
 Background and reporting notes live under `docs/`, but [USAGE.md](USAGE.md)
 now separates current operational docs from historical reports so they are not
@@ -541,7 +542,7 @@ minicnn/
 ├── cpp/                    # handcrafted CUDA / C++ backend
 ├── configs/                # example configs for flex, dual, and autograd paths
 ├── docs/                   # design notes, guides, and capability docs
-├── examples/               # custom torch component examples
+├── examples/               # runnable examples, inference demos, and native ctypes samples
 ├── src/minicnn/
 │   ├── flex/               # torch/flex frontend, registries, builder, trainer
 │   ├── unified/            # shared-config dispatch and backend bridges

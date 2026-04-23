@@ -1,5 +1,10 @@
 # Generalization Roadmap
 
+Canonical planning note:
+[master_roadmap.md](master_roadmap.md) is the tracked source of truth for the
+overall project roadmap. This file stays narrower: it explains how frontend
+breadth should relate to backend-specific execution boundaries.
+
 MiniCNN already has a reasonably general frontend compared with its narrowest
 native backend.
 

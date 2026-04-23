@@ -1,9 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
-*.so
 *.pyd
-*.dll
 *.dylib
 *.egg-info/
 .venv/
@@ -23,8 +21,6 @@ cpp/Release/
 cpp/RelWithDebInfo/
 cpp/MinSizeRel/
 cpp/x64/
-cpp/*.so
-cpp/*.dll
 cpp/*.lib
 cpp/*.exp
 cpp/*.pdb

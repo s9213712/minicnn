@@ -66,6 +66,7 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | LayerNorm | ✓ | ✗ | ✗ | ✗ rejected |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ rejected |
 | ResidualBlock | ✓ | ✓ | ✗ | ✗ rejected |
+| ConvNeXtBlock | ✓ experimental | ✗ | ✗ | ✗ |
 | Dropout | ✓ | ✓ | ✗ | ✗ |
 | **Activations** | | | | |
 | ReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
@@ -276,6 +277,7 @@ Debugging order:
 | LayerNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
 | GroupNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
 | ResidualBlock | ✓ | ✓ | ✗ | ✗ 拒絕 |
+| ConvNeXtBlock | ✓ 實驗性 | ✗ | ✗ | ✗ |
 | Dropout | ✓ | ✓ | ✗ | ✗ |
 | **激活函數** | | | | |
 | ReLU | ✓ | ✓ | ✓ | ✓ numpy ref |

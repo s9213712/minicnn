@@ -1,3 +1,5 @@
+import torch
+
 from minicnn.flex.builder import build_model
 
 
@@ -52,3 +54,27 @@ def test_shape_inference_treats_common_activations_as_passthrough():
 
     assert model.inferred_shapes[-3] == (8,)
     assert model[-1].in_features == 8
+
+
+def test_build_convnext_like_block_with_shape_inference_and_forward():
+    cfg = {
+        'layers': [
+            {'type': 'Conv2d', 'out_channels': 32, 'kernel_size': 3, 'padding': 1},
+            {'type': 'ConvNeXtBlock'},
+            {'type': 'Conv2d', 'out_channels': 64, 'kernel_size': 2, 'stride': 2},
+            {'type': 'ConvNeXtBlock', 'hidden_channels': 192, 'layer_scale_init_value': 0.0},
+            {'type': 'GlobalAvgPool2d'},
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 10},
+        ]
+    }
+
+    model = build_model(cfg, input_shape=(3, 32, 32))
+    assert model.inferred_shapes[2] == (32, 32, 32)
+    assert model.inferred_shapes[4] == (64, 16, 16)
+    assert model[1].depthwise.groups == 32
+    assert model[3].depthwise.groups == 64
+    assert model[3].layer_scale is None
+
+    out = model(torch.randn(2, 3, 32, 32))
+    assert tuple(out.shape) == (2, 10)

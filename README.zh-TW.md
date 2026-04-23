@@ -514,6 +514,7 @@ model:
 - [docs/custom_components.md](docs/custom_components.md)：dotted-path 元件擴展
 - [docs/model_artifacts.md](docs/model_artifacts.md)：checkpoint 格式、復用邊界與示範
 - [templates/README.md](templates/README.md)：可直接修改的 template config
+- [examples/README.md](examples/README.md)：canonical example path 與可執行範例總覽
 
 `docs/` 內也保留了一些背景報告與歷史比較文件；現在 [USAGE.md](USAGE.md)
 會把「目前仍是操作主線的文件」和「歷史／報告文件」分開，不再混成同一層。
@@ -525,7 +526,7 @@ minicnn/
 ├── cpp/                    # 手寫 CUDA / C++ backend
 ├── configs/                # flex、dual、autograd 路徑的範例 config
 ├── docs/                   # 設計說明、指南與 capability 文件
-├── examples/               # 自訂 torch 元件範例
+├── examples/               # 可執行範例、inference demo 與 native ctypes 樣例
 ├── src/minicnn/
 │   ├── flex/               # torch/flex 前端、registry、builder、trainer
 │   ├── unified/            # shared-config dispatch 與 backend bridge

@@ -53,6 +53,7 @@ def _expand_presets(layers_cfg: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return expanded
 _PASSTHROUGH_LAYERS = {
     'BatchNorm2d',
+    'ConvNeXtBlock',
     'Dropout',
     'Dropout2d',
     'ELU',
@@ -171,6 +172,8 @@ def _materialize_layer(layer_cfg: dict[str, Any], tracer: ShapeTracer):
         cfg['num_features'] = tracer.channels
     if layer_type == 'ResidualBlock' and 'in_channels' not in cfg:
         cfg['in_channels'] = tracer.channels
+    if layer_type == 'ConvNeXtBlock' and 'channels' not in cfg and 'in_channels' not in cfg:
+        cfg['channels'] = tracer.channels
     if layer_type == 'Linear' and 'in_features' not in cfg:
         cfg['in_features'] = tracer.flattened
     factory = _resolve_factory('layers', layer_type)

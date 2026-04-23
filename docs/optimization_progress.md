@@ -8,8 +8,12 @@ status to a specific historic PR number or branch name.
 See also:
 
 - [../USAGE.md](../USAGE.md)
+- [master_roadmap.md](master_roadmap.md)
 - [backend_capabilities.md](backend_capabilities.md)
 - [dual_backend_guide.md](dual_backend_guide.md)
+
+`master_roadmap.md` is the canonical planning document. This file stays focused
+on the current technical direction and progress framing.
 
 ## Current Project Shape
 
