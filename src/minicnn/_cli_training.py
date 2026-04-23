@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import time
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -14,9 +15,33 @@ from minicnn._cli_config import (
 )
 from minicnn._cli_errors import _ensure_torch_device_supported_or_exit, _run_user_operation_or_exit
 from minicnn._cli_output import _print_json
+from minicnn.user_errors import format_user_error
 
 
 COMPARE_BACKENDS = {'torch', 'cuda_legacy', 'autograd'}
+
+
+def _train_native_failure_category(exc: Exception) -> str:
+    if isinstance(exc, FileNotFoundError):
+        return 'missing_resource'
+    message = str(exc).lower()
+    if 'does not support' in message or 'unsupported' in message or 'only supports' in message:
+        return 'unsupported_config'
+    return 'invalid_input_or_environment'
+
+
+def _exit_train_native_user_error(exc: Exception) -> None:
+    category = _train_native_failure_category(exc)
+    rendered = str(exc)
+    if not rendered.startswith('[ERROR] '):
+        rendered = format_user_error(
+            'train-native failed because the provided config or environment is outside the validated support boundary.',
+            cause=str(exc),
+            fix='Review validate-cuda-native-config output, config values, dataset paths, and backend support limits, then retry.',
+            example='minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml',
+        )
+    print(f'{rendered}\nCategory: {category}', file=sys.stderr)
+    raise SystemExit(2)
 
 
 def common_train_overrides(args) -> list[str]:
@@ -294,6 +319,9 @@ def handle_train_native(args) -> int:
             'ops': summary.get('supported_ops', []),
         },
     })
-    with _training_output_scope(args):
-        run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
+    try:
+        with _training_output_scope(args):
+            run_dir = train_unified_from_config(cfg)
+    except (FileNotFoundError, TypeError, ValueError) as exc:
+        _exit_train_native_user_error(exc)
     return _print_run_dir(run_dir)

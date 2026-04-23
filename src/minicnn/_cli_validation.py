@@ -18,7 +18,9 @@ def handle_validate_config(args) -> int:
     else:
         errors = validate_backend_model_capabilities(cfg.get('model', {}), backend)
     payload = {
+        'schema_name': 'minicnn.cli.validation',
         'schema_version': 1,
+        'artifact_kind': 'validation_result',
         'kind': 'validation_result',
         'ok': not errors,
         'status': 'ok' if not errors else 'error',
@@ -35,7 +37,9 @@ def handle_validate_cuda_native_config(args) -> int:
     cfg = _load_unified_config_or_exit(args.config, args.overrides)
     errors = validate_cuda_native_config(cfg)
     payload = {
+        'schema_name': 'minicnn.cli.validation',
         'schema_version': 1,
+        'artifact_kind': 'validation_result',
         'kind': 'validation_result',
         'ok': not errors,
         'status': 'ok' if not errors else 'error',

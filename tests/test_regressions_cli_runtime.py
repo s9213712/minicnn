@@ -645,12 +645,98 @@ def test_cli_validate_cuda_native_config_returns_structured_json(capsys):
 
     assert rc == 0
     assert payload['command'] == 'validate-cuda-native-config'
+    assert payload['schema_name'] == 'minicnn.cli.validation'
     assert payload['schema_version'] == 1
+    assert payload['artifact_kind'] == 'validation_result'
     assert payload['kind'] == 'validation_result'
     assert payload['status'] == 'ok'
     assert payload['backend'] == 'cuda_native'
     assert payload['ok'] is True
     assert 'note' in payload
+
+
+def test_cli_validate_cuda_native_config_rejects_invalid_optimizer_with_stable_contract(capsys, tmp_path):
+    import json
+
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cuda_native_invalid_optimizer.yaml'
+    config_path.write_text(
+        'engine:\n'
+        '  backend: cuda_native\n'
+        'dataset:\n'
+        '  type: random\n'
+        '  input_shape: [1, 8, 8]\n'
+        '  num_classes: 2\n'
+        '  num_samples: 8\n'
+        '  val_samples: 4\n'
+        'model:\n'
+        '  layers:\n'
+        '    - type: Flatten\n'
+        '    - type: Linear\n'
+        '      out_features: 2\n'
+        'optimizer:\n'
+        '  type: Adagrad\n'
+        'loss:\n'
+        '  type: CrossEntropyLoss\n'
+        'train:\n'
+        '  epochs: 1\n'
+        '  batch_size: 4\n',
+        encoding='utf-8',
+    )
+
+    rc = main(['validate-cuda-native-config', '--config', str(config_path)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 2
+    assert payload['command'] == 'validate-cuda-native-config'
+    assert payload['schema_name'] == 'minicnn.cli.validation'
+    assert payload['schema_version'] == 1
+    assert payload['artifact_kind'] == 'validation_result'
+    assert payload['kind'] == 'validation_result'
+    assert payload['status'] == 'error'
+    assert payload['backend'] == 'cuda_native'
+    assert payload['ok'] is False
+    assert payload['errors']
+    assert any('optimizer' in str(item).lower() for item in payload['errors'])
+
+
+def test_train_native_rejects_unsupported_config_with_failure_category(capsys, tmp_path):
+    from minicnn.cli import main
+    import pytest
+
+    config_path = tmp_path / 'cuda_native_train_invalid_optimizer.yaml'
+    config_path.write_text(
+        'engine:\n'
+        '  backend: cuda_native\n'
+        'dataset:\n'
+        '  type: random\n'
+        '  input_shape: [1, 8, 8]\n'
+        '  num_classes: 2\n'
+        '  num_samples: 8\n'
+        '  val_samples: 4\n'
+        'model:\n'
+        '  layers:\n'
+        '    - type: Flatten\n'
+        '    - type: Linear\n'
+        '      out_features: 2\n'
+        'optimizer:\n'
+        '  type: Adagrad\n'
+        'loss:\n'
+        '  type: CrossEntropyLoss\n'
+        'train:\n'
+        '  epochs: 1\n'
+        '  batch_size: 4\n',
+        encoding='utf-8',
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(['train-native', '--config', str(config_path)])
+    captured = capsys.readouterr()
+
+    assert excinfo.value.code == 2
+    assert 'Category: unsupported_config' in captured.err
+    assert 'validate-cuda-native-config' in captured.err
 
 
 def test_cli_show_cuda_mapping_returns_structured_json(capsys):

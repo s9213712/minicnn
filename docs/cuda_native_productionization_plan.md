@@ -102,6 +102,8 @@ Current status:
 - `summary.json` / `metrics.jsonl` now expose explicit schema identifiers
 - `summary.json` now carries explicit checkpoint-contract metadata
 - artifact schema regression coverage exists for the current contract
+- `validate-cuda-native-config` now exposes explicit validation-result schema metadata
+- `train-native` now exposes stable user-facing failure categories for contract-level regression tests
 
 ## Phase 2: Runtime Hardening
 
