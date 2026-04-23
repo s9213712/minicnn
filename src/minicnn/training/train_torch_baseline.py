@@ -13,6 +13,7 @@ from minicnn.training.loop import (
     format_epoch_summary,
     reduce_lr_on_plateau,
 )
+from minicnn.training.events import emit_training_event
 from minicnn.training._legacy_torch_runtime import (
     TorchRuntimeState,
     get_device,
@@ -165,10 +166,14 @@ def run_torch_epoch(
         batch_loss = train_torch_batch(runtime, xb, yb, lr_state, metrics)
 
         if (batch_idx + 1) % 100 == 0:
-            print(
-                f"  Batch {batch_idx+1}/{nbatches}: "
-                f"loss={batch_loss:.4f}, "
-                f"acc={metrics.acc_percent:.1f}%"
+            emit_training_event(
+                'batch_progress',
+                {
+                    'batch_idx': batch_idx + 1,
+                    'num_batches': nbatches,
+                    'loss': batch_loss,
+                    'acc_percent': metrics.acc_percent,
+                },
             )
 
     return metrics
@@ -176,9 +181,13 @@ def run_torch_epoch(
 
 def reduce_lr_if_due(fit: FitState, lr_state: LrState) -> None:
     if reduce_lr_on_plateau(fit, lr_state, LR_PLATEAU_PATIENCE, LR_REDUCE_FACTOR, MIN_LR):
-        print(
-            f"  LR reduced -> conv1={lr_state.conv1:.6f}, "
-            f"conv={lr_state.conv:.6f}, fc={lr_state.fc:.6f}"
+        emit_training_event(
+            'lr_reduced',
+            {
+                'conv1': lr_state.conv1,
+                'conv': lr_state.conv,
+                'fc': lr_state.fc,
+            },
         )
 
 
@@ -210,9 +219,13 @@ def main():
         ))
 
         if fit.should_stop(EARLY_STOP_PATIENCE):
-            print(
-                f"Early stopping after {epoch+1} epochs; "
-                f"best val {fit.best_val_acc:.2f}% at epoch {fit.best_epoch}."
+            emit_training_event(
+                'legacy_early_stop',
+                {
+                    'epoch': epoch + 1,
+                    'best_val_acc': fit.best_val_acc,
+                    'best_epoch': fit.best_epoch,
+                },
             )
             break
 

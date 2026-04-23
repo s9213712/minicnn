@@ -32,6 +32,7 @@ from minicnn.training.loop import (
     format_epoch_summary,
     reduce_lr_on_plateau,
 )
+from minicnn.training.events import emit_training_event
 from minicnn.config.settings import (
     BATCH,
     BEST_MODEL_FILENAME,
@@ -94,17 +95,30 @@ def run_cuda_epoch(
         if (batch_idx + 1) % 100 == 0:
             batch_loss = (metrics.loss_sum - prev_loss_sum) / max(n, 1)
             batch_acc = (metrics.correct - prev_correct) / max(n, 1) * 100.0
-            print(f"  Batch {batch_idx+1}/{nbatches}: "
-                  f"loss={batch_loss:.4f}, "
-                  f"acc={batch_acc:.1f}%")
+            emit_training_event(
+                'batch_progress',
+                {
+                    'batch_idx': batch_idx + 1,
+                    'num_batches': nbatches,
+                    'loss': batch_loss,
+                    'acc_percent': batch_acc,
+                },
+            )
 
     return metrics
 
 
 def reduce_lr_if_due(fit: FitState, lr_state: LrState) -> None:
     if reduce_lr_on_plateau(fit, lr_state, LR_PLATEAU_PATIENCE, LR_REDUCE_FACTOR, MIN_LR):
-        print(f"  LR -> conv1={lr_state.conv1:.6f}, "
-              f"conv={lr_state.conv:.6f}, fc={lr_state.fc:.6f}")
+        emit_training_event(
+            'lr_reduced',
+            {
+                'conv1': lr_state.conv1,
+                'conv': lr_state.conv,
+                'fc': lr_state.fc,
+                'label': 'LR',
+            },
+        )
 
 
 def main() -> dict[str, object]:
@@ -142,8 +156,14 @@ def main() -> dict[str, object]:
                 ))
 
                 if fit.should_stop(EARLY_STOP_PATIENCE):
-                    print(f"Early stopping after {epoch+1} epochs; "
-                          f"best val {fit.best_val_acc:.2f}% at epoch {fit.best_epoch}.")
+                    emit_training_event(
+                        'legacy_early_stop',
+                        {
+                            'epoch': epoch + 1,
+                            'best_val_acc': fit.best_val_acc,
+                            'best_epoch': fit.best_epoch,
+                        },
+                    )
                     break
 
         finally:

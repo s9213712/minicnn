@@ -7,6 +7,7 @@ from minicnn.training.loop import (
     format_epoch_summary,
     reduce_lr_on_plateau,
 )
+from minicnn.training.events import emit_training_event
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -106,3 +107,42 @@ def test_legacy_trainers_are_split_into_backend_steps():
     assert 'def run_torch_epoch' in torch_baseline
     assert 'format_epoch_summary(' in train_cuda
     assert 'format_epoch_summary(' in torch_baseline
+
+
+def test_emit_training_event_formats_legacy_batch_progress():
+    messages = []
+
+    message = emit_training_event(
+        'batch_progress',
+        {'batch_idx': 3, 'num_batches': 10, 'loss': 1.2345, 'acc_percent': 87.5},
+        writer=messages.append,
+    )
+
+    assert message == messages[0]
+    assert message == '  Batch 3/10: loss=1.2345, acc=87.5%'
+
+
+def test_emit_training_event_formats_lr_reduced_messages():
+    messages = []
+
+    message = emit_training_event(
+        'lr_reduced',
+        {'conv1': 0.1, 'conv': 0.01, 'fc': 0.001, 'label': 'LR'},
+        writer=messages.append,
+    )
+
+    assert message == messages[0]
+    assert message == '  LR -> conv1=0.100000, conv=0.010000, fc=0.001000'
+
+
+def test_emit_training_event_formats_legacy_early_stop():
+    messages = []
+
+    message = emit_training_event(
+        'legacy_early_stop',
+        {'epoch': 7, 'best_val_acc': 83.5, 'best_epoch': 4},
+        writer=messages.append,
+    )
+
+    assert message == messages[0]
+    assert message == 'Early stopping after 7 epochs; best val 83.50% at epoch 4.'
