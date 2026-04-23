@@ -128,6 +128,7 @@ def doctor() -> dict[str, object]:
     cuda = check_cuda_ready(native_path)
     from minicnn.cuda_native.api import get_capability_summary
     cuda_native_caps = get_capability_summary()
+    settings_summary = settings.summarize()
     checks = [
         _check(
             'native_cuda_library',
@@ -162,7 +163,8 @@ def doctor() -> dict[str, object]:
         'data': {
             'cifar10_ready': cifar10_ready(DATA_ROOT),
         },
-        'settings': settings.summarize(),
+        'settings': settings_summary,
+        'settings_override_provenance': settings_summary.get('override_provenance', {}),
         'flex_registries': describe_registries(),
         'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
     })

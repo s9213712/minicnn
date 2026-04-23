@@ -74,7 +74,23 @@ def load_custom_dataset_factory(factory_path: str):
             'Custom dataset.type must use dotted import syntax "package.module:factory", '
             f'got {factory_path!r}'
         )
-    module = importlib.import_module(module_name)
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        if exc.name == module_name:
+            raise ValueError(
+                f'Custom dataset factory {factory_path!r} could not be imported: '
+                f'module {module_name!r} was not found'
+            ) from exc
+        raise ValueError(
+            f'Custom dataset factory {factory_path!r} failed while importing module '
+            f'{module_name!r}: missing dependency {exc.name!r}'
+        ) from exc
+    except Exception as exc:
+        raise ValueError(
+            f'Custom dataset factory {factory_path!r} failed while importing module '
+            f'{module_name!r}: {exc.__class__.__name__}: {exc}'
+        ) from exc
     try:
         factory = getattr(module, factory_name)
     except AttributeError as exc:

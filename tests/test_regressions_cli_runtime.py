@@ -383,6 +383,7 @@ def test_cli_doctor_returns_structured_json(capsys):
     assert payload['status'] in {'ok', 'warning', 'error'}
     assert payload['summary_status'] == payload['status']
     assert payload['check_summary']['total'] == len(payload['checks'])
+    assert payload['settings_override_provenance'] == payload['settings'].get('override_provenance', {})
 
 
 def test_cli_smoke_supports_text_output(capsys):

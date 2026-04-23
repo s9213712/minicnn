@@ -231,6 +231,37 @@ def test_custom_dataset_factory_requires_dotted_import_path():
         create_dataloaders(dataset_cfg, {'batch_size': 4, 'num_workers': 0})
 
 
+def test_custom_dataset_factory_reports_missing_module():
+    from minicnn.flex.data import create_dataloaders
+
+    dataset_cfg = {
+        'type': 'minicnn.extensions.missing_module:checkerboard_dataset',
+        'input_shape': [1, 8, 8],
+        'num_classes': 2,
+        'num_samples': 8,
+        'val_samples': 4,
+    }
+
+    with pytest.raises(ValueError, match='module .* was not found'):
+        create_dataloaders(dataset_cfg, {'batch_size': 4, 'num_workers': 0})
+
+
+def test_custom_dataset_factory_reports_broken_import(monkeypatch):
+    import minicnn.flex._datasets as datasets
+
+    original_import_module = datasets.importlib.import_module
+
+    def _broken_import(name):
+        if name == 'minicnn.extensions.custom_datasets':
+            raise RuntimeError('boom during import')
+        return original_import_module(name)
+
+    monkeypatch.setattr(datasets.importlib, 'import_module', _broken_import)
+
+    with pytest.raises(ValueError, match='boom during import'):
+        datasets.load_custom_dataset_factory('minicnn.extensions.custom_datasets:checkerboard_dataset')
+
+
 def test_create_dataloaders_reports_broken_torch_import(monkeypatch):
     import minicnn.flex.data as data
 
