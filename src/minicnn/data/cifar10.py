@@ -62,7 +62,10 @@ def prepare_cifar10(data_root, download=True):
             f"  missing={missing}\n\n"
             "Prepare the dataset with:\n"
             "  minicnn prepare-data\n"
-            "or pass an alternate path with:\n"
+            "or pass an alternate path to train-flex with:\n"
+            "  minicnn train-flex --config templates/cifar10/vgg_mini.yaml "
+            "dataset.data_root=/path/to/cifar-10-batches-py\n"
+            "or pass an alternate path to train-dual with:\n"
             "  minicnn train-dual --data-dir /path/to/cifar-10-batches-py ...\n"
             "or manually place the extracted cifar-10-batches-py directory under data/."
         )

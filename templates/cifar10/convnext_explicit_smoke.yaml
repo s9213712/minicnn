@@ -1,7 +1,9 @@
-# CIFAR-10  ConvNeXt explicit smoke config  (Torch backend only)
+# ConvNeXt explicit smoke config  (Torch backend only, hermetic)
 #
 # Purpose:
 # - Minimal integration smoke path for explicit ConvNeXt primitives.
+# - Uses a synthetic random dataset so it works without downloads or prepared
+#   CIFAR-10 files.
 # - Keeps the same frontend structure as convnext_explicit.yaml but shrinks
 #   the dataset and epoch count for quick validation.
 #
@@ -18,16 +20,12 @@ engine:
   strict_backend_validation: true
 
 dataset:
-  type: cifar10
-  data_root: data/cifar-10-batches-py
-  download: false
+  type: random
   num_samples: 64
   val_samples: 16
   num_classes: 10
   input_shape: [3, 32, 32]
   seed: 42
-  random_crop_padding: 4
-  horizontal_flip: true
 
 model:
   layers:

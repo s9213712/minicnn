@@ -5,9 +5,7 @@ from minicnn._cli_config import (
 )
 from minicnn._cli_parser import build_cli_parser
 from minicnn._cli_readonly import (
-    handle_compile,
     handle_config_template,
-    handle_cuda_native_capabilities,
     handle_doctor,
     handle_evaluate_checkpoint,
     handle_dual_config_template,
@@ -18,12 +16,13 @@ from minicnn._cli_readonly import (
     handle_list_dual_components,
     handle_list_flex_components,
     handle_show_cuda_mapping,
+    handle_smoke,
+    handle_validate_dual_config,
+)
+from minicnn._cli_introspection import (
+    handle_compile,
     handle_show_graph,
     handle_show_model,
-    handle_smoke,
-    handle_validate_config,
-    handle_validate_cuda_native_config,
-    handle_validate_dual_config,
 )
 from minicnn._cli_training import (
     benchmark_fields as _benchmark_fields,
@@ -35,6 +34,11 @@ from minicnn._cli_training import (
     handle_train_dual_alias,
     handle_train_flex,
     handle_train_native,
+)
+from minicnn._cli_validation import (
+    handle_cuda_native_capabilities,
+    handle_validate_config,
+    handle_validate_cuda_native_config,
 )
 from minicnn.core.build import build_native, check_native
 

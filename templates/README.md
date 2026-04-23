@@ -271,13 +271,9 @@ minicnn train-flex --config templates/cifar10/convnext_explicit.yaml
 minicnn train-flex --config templates/cifar10/convnext_explicit_smoke.yaml
 ```
 
-這份設定固定為：
+這條 smoke path 的正式契約與測試入口，請看：
 
-- `dataset.num_samples: 64`
-- `dataset.val_samples: 16`
-- `train.epochs: 1`
-- `train.batch_size: 16`
-- `train.device: cpu`
+- `docs/convnext_explicit_smoke_index.md`
 
 ---
 

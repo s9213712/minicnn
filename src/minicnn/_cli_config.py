@@ -83,10 +83,29 @@ def _resolve_cli_config_path(config_path: str | None) -> str | None:
     return config_path
 
 
+def _normalize_loaded_config_paths(cfg: dict[str, Any]) -> dict[str, Any]:
+    dataset_cfg = cfg.get('dataset')
+    if isinstance(dataset_cfg, dict):
+        data_root = dataset_cfg.get('data_root')
+        if isinstance(data_root, str) and data_root.strip():
+            candidate = Path(data_root).expanduser()
+            if not candidate.is_absolute():
+                dataset_cfg['data_root'] = str((PROJECT_ROOT / candidate).resolve())
+
+    project_cfg = cfg.get('project')
+    if isinstance(project_cfg, dict):
+        artifacts_root = project_cfg.get('artifacts_root')
+        if isinstance(artifacts_root, str) and artifacts_root.strip():
+            candidate = Path(artifacts_root).expanduser()
+            if not candidate.is_absolute():
+                project_cfg['artifacts_root'] = str((PROJECT_ROOT / candidate).resolve())
+    return cfg
+
+
 def _load_config_or_exit(loader, config_path: str | None, overrides: list[str], *, template_cmd: str) -> dict:
     resolved_path = _resolve_cli_config_path(config_path)
     try:
-        return loader(resolved_path, overrides)
+        return _normalize_loaded_config_paths(loader(resolved_path, overrides))
     except (FileNotFoundError, TypeError, ValueError, IndexError, yaml.YAMLError) as exc:
         _exit_user_error(
             _config_error_message(config_path, overrides, exc, template_cmd=template_cmd)

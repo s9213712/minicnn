@@ -55,6 +55,10 @@ contract.
 - `minicnn train-flex --config templates/cifar10/convnext_explicit_smoke.yaml`
   - completed the built-in smoke config run
 
+The canonical smoke contract lives in:
+
+- `docs/convnext_explicit_smoke_index.md`
+
 ### Tests
 
 Validated coverage now includes:
@@ -99,7 +103,7 @@ Validated coverage now includes:
 - `tests/test_convnext_components.py`
 - `tests/test_smoke_dependency_contract.py`
 - `tests/test_convnext_explicit_cli.py`
-- `tests/test_convnext_explicit_integration.py`
+- `tests/test_convnext_explicit_smoke.py`
 - `tests/test_dataset_split_cli_errors.py`
 - `tests/test_templates_validity.py`
 
