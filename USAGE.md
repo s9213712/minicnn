@@ -40,6 +40,7 @@ Read these in order if you want the current, operational picture of the repo:
 10. [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md) — the current staged expansion plan for the primary native backend
 11. [docs/optimization_progress.md](docs/optimization_progress.md) — recent engineering progress and current phase framing
 12. [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md) — the staged path from experimental backend to implementation-grade public contract
+13. [docs/cuda_native_smoke_matrix.md](docs/cuda_native_smoke_matrix.md) — canonical hermetic smoke matrix for public-contract regression coverage
 
 ## By Task
 
@@ -95,6 +96,7 @@ Dataset split note:
 - [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md) — staged plan for broadening graph, training, and capability coverage
 - [docs/optimization_progress.md](docs/optimization_progress.md) — current progress snapshot and next-phase framing
 - [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md) — the productionization path focused on contract freeze, hardening, and support tiers
+- [docs/cuda_native_smoke_matrix.md](docs/cuda_native_smoke_matrix.md) — the canonical smoke set and minimum artifact contract
 - [docs/cuda_native_phase5_rfc.md](docs/cuda_native_phase5_rfc.md) — future extension RFCs
 - [docs/backend_capabilities.md](docs/backend_capabilities.md) — current validated support boundary
 - [docs/convnext_explicit_smoke_index.md](docs/convnext_explicit_smoke_index.md) — hermetic native smoke entrypoints for explicit and block-based ConvNeXt paths
