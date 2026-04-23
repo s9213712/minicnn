@@ -90,9 +90,16 @@ def _load_batch(path):
     if not path.exists():
         raise FileNotFoundError(f"CIFAR-10 batch file not found: {path}")
     with open(path, "rb") as f:
-        batch = pickle.load(f, encoding="bytes")
-    x = (batch[b"data"].astype(np.float32) / 255.0).reshape(-1, 3, 32, 32)
-    y = np.array(batch[b"labels"])
+        # CIFAR-10 python batches are legacy Python-2 pickles.  `latin1` keeps
+        # NumPy payloads readable on modern Python without the NumPy 2.4
+        # `align=0` visible deprecation warning seen with `encoding="bytes"`.
+        batch = pickle.load(f, encoding="latin1")
+    data = batch.get("data", batch.get(b"data"))
+    labels = batch.get("labels", batch.get(b"labels"))
+    if data is None or labels is None:
+        raise ValueError(f"CIFAR-10 batch file has unexpected schema: {path}")
+    x = (np.asarray(data, dtype=np.float32) / 255.0).reshape(-1, 3, 32, 32)
+    y = np.asarray(labels, dtype=np.int64)
     return x, y
 
 

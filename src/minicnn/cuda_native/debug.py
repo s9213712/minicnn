@@ -97,6 +97,7 @@ class NodeTrace:
     """Record of one node's execution."""
     node_name: str
     op_type: str
+    category: str
     input_shapes: list[tuple]
     output_shapes: list[tuple]
     elapsed_ms: float
@@ -137,6 +138,7 @@ class ExecutionTrace:
                 {
                     'node': t.node_name,
                     'op': t.op_type,
+                    'category': t.category,
                     'elapsed_ms': round(t.elapsed_ms, 3),
                     'input_shapes': t.input_shapes,
                     'output_shapes': t.output_shapes,
@@ -175,6 +177,7 @@ class TracingForwardExecutor:
 
         for node in graph.topological_order():
             kernel = registry.get(node.op_type)
+            spec = registry.spec(node.op_type)
             in_shapes = [
                 tuple(ctx[inp].shape)
                 for inp in node.inputs
@@ -191,6 +194,7 @@ class TracingForwardExecutor:
             trace.node_traces.append(NodeTrace(
                 node_name=node.name,
                 op_type=node.op_type,
+                category=spec.category,
                 input_shapes=in_shapes,
                 output_shapes=out_shapes,
                 elapsed_ms=elapsed_ms,

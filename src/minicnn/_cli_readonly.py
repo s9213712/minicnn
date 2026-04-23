@@ -62,13 +62,14 @@ def run_smoke_checks() -> dict[str, Any]:
         details={'registries': flex_registries},
     ))
 
-    shared_objects = list(health.get('shared_objects', []))
+    native_artifacts = list(health.get('native_artifacts', health.get('shared_objects', [])))
     checks.append(_smoke_check(
         'native_cuda_artifacts',
-        bool(shared_objects),
+        bool(native_artifacts),
         required=False,
         details={
-            'shared_objects': shared_objects,
+            'native_artifacts': native_artifacts,
+            'shared_objects': native_artifacts,
             'hint': 'Run minicnn build --legacy-make --check if you need cuda_legacy.',
         },
         suggested_fix='Run minicnn build --legacy-make --check if you need cuda_legacy.',
@@ -130,7 +131,7 @@ def run_smoke_checks() -> dict[str, Any]:
 
     overall_ok = all(check['ok'] for check in checks if check['required'])
     next_steps: list[str] = []
-    if not shared_objects:
+    if not native_artifacts:
         next_steps.append('minicnn build --legacy-make --check')
     if not cifar10_ready:
         next_steps.append('minicnn prepare-data')
@@ -259,6 +260,42 @@ def handle_export_torch_checkpoint(args) -> int:
     except (FileNotFoundError, RuntimeError, ValueError, TypeError) as exc:
         _exit_user_error(str(exc))
     _print_json(payload)
+    return 0
+
+
+def handle_evaluate_checkpoint(args) -> int:
+    from minicnn.inference import evaluate_checkpoint, resolve_checkpoint_path
+
+    cfg = _load_unified_config_or_exit(args.config, args.overrides)
+    try:
+        checkpoint_path = resolve_checkpoint_path(
+            checkpoint_path=args.checkpoint,
+            summary_path=args.summary,
+        )
+        payload = evaluate_checkpoint(
+            cfg,
+            checkpoint_path=checkpoint_path,
+            device_name=args.device,
+            batch_size=args.batch_size,
+            test_data_path=args.test_data,
+            test_data_normalized=bool(args.test_data_normalized),
+        )
+    except (FileNotFoundError, RuntimeError, ValueError, TypeError) as exc:
+        _exit_user_error(str(exc))
+
+    if args.format == 'json':
+        _print_json({'command': 'evaluate-checkpoint', **payload})
+        return 0
+
+    print(f"evaluate-checkpoint: {payload['status']}")
+    print(f"checkpoint_path: {payload['checkpoint_path']}")
+    print(f"dataset_source: {payload['dataset_source']}")
+    print(f"device: {payload['device']}")
+    print(f"num_samples: {payload['num_samples']}")
+    print(f"batch_size: {payload['batch_size']}")
+    print(f"loss_type: {payload['loss_type']}")
+    print(f"accuracy: {payload['accuracy'] * 100:.2f}%")
+    print(f"loss: {payload['loss']:.6f}")
     return 0
 
 

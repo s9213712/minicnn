@@ -10,6 +10,7 @@ from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
 from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED
 
 DIAGNOSTIC_SCHEMA_VERSION = 1
+_NATIVE_ARTIFACT_SUFFIXES = ('.so', '.dll', '.dylib')
 
 
 def _check(name: str, ok: bool, *, required: bool = True, details: dict[str, object] | None = None, suggested_fix: str | None = None) -> dict[str, object]:
@@ -70,8 +71,16 @@ def build_diagnostic_payload(*, checks: list[dict[str, object]], extra: dict[str
     }
 
 
+def find_native_artifacts(root: Path) -> list[str]:
+    return sorted(
+        path.name
+        for path in root.iterdir()
+        if path.is_file() and path.suffix.lower() in _NATIVE_ARTIFACT_SUFFIXES
+    )
+
+
 def healthcheck() -> dict[str, object]:
-    shared_candidates = sorted([p.name for p in CPP_ROOT.glob('*.so')])
+    native_artifacts = find_native_artifacts(CPP_ROOT) if CPP_ROOT.exists() else []
     checks = [
         _check(
             'project_root',
@@ -85,9 +94,12 @@ def healthcheck() -> dict[str, object]:
         ),
         _check(
             'native_cuda_artifacts',
-            bool(shared_candidates),
+            bool(native_artifacts),
             required=False,
-            details={'shared_objects': shared_candidates},
+            details={
+                'native_artifacts': native_artifacts,
+                'shared_objects': native_artifacts,
+            },
             suggested_fix='Run minicnn build --legacy-make --check if you need cuda_legacy.',
         ),
         _check(
@@ -102,7 +114,8 @@ def healthcheck() -> dict[str, object]:
         'project_root_exists': PROJECT_ROOT.exists(),
         'data_root_exists': DATA_ROOT.exists(),
         'cpp_root_exists': CPP_ROOT.exists(),
-        'shared_objects': shared_candidates,
+        'native_artifacts': native_artifacts,
+        'shared_objects': native_artifacts,
         'flex_registries': describe_registries(),
         'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
     })

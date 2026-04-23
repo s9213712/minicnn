@@ -1,4 +1,5 @@
 from minicnn.unified.cuda_legacy import validate_cuda_legacy_compatibility
+import pytest
 
 
 def test_cuda_legacy_rejects_unsupported_layer_sequence():
@@ -118,3 +119,18 @@ def test_cuda_legacy_reports_malformed_top_level_numeric_fields_without_tracebac
     assert any('train.epochs' in err for err in errors)
     assert any('optimizer.lr_' in err for err in errors)
     assert any('LeakyReLU.negative_slope' in err for err in errors)
+
+
+def test_cuda_legacy_validator_does_not_swallow_unexpected_internal_errors(monkeypatch):
+    import minicnn.unified.cuda_legacy as legacy
+
+    monkeypatch.setattr(legacy, '_collect_conv_blocks', lambda _model: (_ for _ in ()).throw(KeyError('unexpected bug')))
+
+    with pytest.raises(KeyError, match='unexpected bug'):
+        legacy.validate_cuda_legacy_compatibility({
+            'dataset': {'type': 'cifar10', 'input_shape': [3, 32, 32], 'num_classes': 10},
+            'model': {'layers': []},
+            'train': {},
+            'loss': {},
+            'optimizer': {},
+        })

@@ -7,9 +7,11 @@ writes outputs into context in-place.
 """
 from __future__ import annotations
 
-from typing import Callable, Any
+from dataclasses import dataclass
+from typing import Callable, Any, Iterator
 
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 
 from minicnn.cuda_native.nodes import Node
 
@@ -17,14 +19,37 @@ from minicnn.cuda_native.nodes import Node
 KernelFn = Callable[['Node', dict[str, Any]], None]
 
 
+@dataclass(frozen=True)
+class KernelSpec:
+    """Describes one registered kernel and its dispatch metadata."""
+
+    op_name: str
+    fn: KernelFn
+    category: str
+
+    def __iter__(self) -> Iterator[Any]:
+        """Preserve tuple-unpack compatibility for existing call sites."""
+        yield self.op_name
+        yield self.fn
+
+
 class KernelRegistry:
     """Maps op names to kernel callables."""
 
     def __init__(self) -> None:
         self._dispatch: dict[str, KernelFn] = {}
+        self._specs: dict[str, KernelSpec] = {}
 
-    def register(self, op_name: str, fn: KernelFn) -> 'KernelRegistry':
+    def register(
+        self,
+        op_name: str,
+        fn: KernelFn,
+        *,
+        category: str = 'generic',
+    ) -> 'KernelRegistry':
+        spec = KernelSpec(op_name=op_name, fn=fn, category=category)
         self._dispatch[op_name] = fn
+        self._specs[op_name] = spec
         return self
 
     def get(self, op_name: str) -> KernelFn:
@@ -41,37 +66,138 @@ class KernelRegistry:
     def registered_ops(self) -> list[str]:
         return sorted(self._dispatch)
 
+    def spec(self, op_name: str) -> KernelSpec:
+        if op_name not in self._specs:
+            raise KeyError(
+                f'No cuda_native kernel registered for op: {op_name}. '
+                f'Registered ops: {sorted(self._specs)}'
+            )
+        return self._specs[op_name]
+
+    def describe(self, op_name: str) -> dict[str, str]:
+        spec = self.spec(op_name)
+        return {
+            'op_name': spec.op_name,
+            'category': spec.category,
+        }
+
+    def registered_specs(self) -> list[KernelSpec]:
+        return [self._specs[op_name] for op_name in self.registered_ops()]
+
 
 # ---------------------------------------------------------------------------
 # Reference numpy kernels
 # ---------------------------------------------------------------------------
 
-def _kernel_conv2d(node: Node, ctx: dict[str, Any]) -> None:
-    x: np.ndarray = ctx[node.inputs[0]]
-    w: np.ndarray = ctx[f'_w_{node.name}']
-    b: np.ndarray = ctx.get(f'_b_{node.name}')
-    attrs = node.attrs
-    stride = attrs.get('stride', 1)
-    padding = attrs.get('padding', 0)
-    sh = sw = stride if isinstance(stride, int) else stride[0]
-    ph = pw = padding if isinstance(padding, int) else padding[0]
 
-    n, c_in, h_in, w_in = x.shape
-    c_out, _, kh, kw = w.shape
-    h_out = (h_in + 2 * ph - kh) // sh + 1
-    w_out = (w_in + 2 * pw - kw) // sw + 1
+def _attr_pair(value: int | tuple[int, int] | list[int], *, label: str, node: Node) -> tuple[int, int]:
+    if isinstance(value, (tuple, list)):
+        if len(value) != 2:
+            raise ValueError(
+                f'{node.op_type} node={node.name}: {label} must be an int or length-2 pair, '
+                f'got {value!r}'
+            )
+        first, second = value
+    else:
+        first = second = value
+    try:
+        first_i = int(first)
+        second_i = int(second)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f'{node.op_type} node={node.name}: {label} must contain integers, got {value!r}'
+        ) from exc
+    return first_i, second_i
+
+
+def _pool2d_windows(node: Node, x: np.ndarray) -> tuple[np.ndarray, tuple[int, int], tuple[int, int]]:
+    if x.ndim != 4:
+        raise ValueError(
+            f'{node.op_type} expects 4-D input (N,C,H,W), got shape {x.shape}'
+        )
+    attrs = node.attrs
+    kh, kw = _attr_pair(attrs.get('kernel_size', 2), label='kernel_size', node=node)
+    if kh <= 0 or kw <= 0:
+        raise ValueError(
+            f'{node.op_type} node={node.name}: kernel_size must be positive, got {(kh, kw)}'
+        )
+    stride_value = attrs.get('stride', (kh, kw))
+    sh, sw = _attr_pair(stride_value, label='stride', node=node)
+    if sh <= 0 or sw <= 0:
+        raise ValueError(
+            f'{node.op_type} node={node.name}: stride must be positive, got {(sh, sw)}'
+        )
+    ph, pw = _attr_pair(attrs.get('padding', 0), label='padding', node=node)
+    if ph < 0 or pw < 0:
+        raise ValueError(
+            f'{node.op_type} node={node.name}: padding must be non-negative, got {(ph, pw)}'
+        )
+    if ph > 0 or pw > 0:
+        x = np.pad(x, ((0, 0), (0, 0), (ph, ph), (pw, pw)))
+    windows = sliding_window_view(x, (kh, kw), axis=(2, 3))[:, :, ::sh, ::sw, :, :]
+    if windows.shape[2] == 0 or windows.shape[3] == 0:
+        raise ValueError(
+            f'{node.op_type} node={node.name}: invalid output shape for '
+            f'input={x.shape}, kernel={(kh, kw)}, stride={(sh, sw)}, padding={(ph, pw)}'
+        )
+    return windows, (kh, kw), (sh, sw)
+
+
+def _kernel_pool2d_reduce(
+    node: Node,
+    ctx: dict[str, Any],
+    *,
+    reducer: Callable[[np.ndarray], np.ndarray],
+) -> None:
+    x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
+    windows, _kernel, _stride = _pool2d_windows(node, x)
+    ctx[node.outputs[0]] = reducer(windows).astype(np.float32)
+
+
+def _kernel_conv2d(node: Node, ctx: dict[str, Any]) -> None:
+    x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
+    w = np.asarray(ctx[f'_w_{node.name}'], dtype=np.float32)
+    b = ctx.get(f'_b_{node.name}')
+    if x.ndim != 4:
+        raise ValueError(f'Conv2d expects 4-D input (N,C,H,W), got shape {x.shape}')
+    if w.ndim != 4:
+        raise ValueError(f'Conv2d node={node.name}: weight must be 4-D, got shape {w.shape}')
+    sh, sw = _attr_pair(node.attrs.get('stride', 1), label='stride', node=node)
+    ph, pw = _attr_pair(node.attrs.get('padding', 0), label='padding', node=node)
+    if sh <= 0 or sw <= 0:
+        raise ValueError(f'Conv2d node={node.name}: stride must be positive, got {(sh, sw)}')
+    if ph < 0 or pw < 0:
+        raise ValueError(f'Conv2d node={node.name}: padding must be non-negative, got {(ph, pw)}')
+
+    _n, c_in, _h_in, _w_in = x.shape
+    c_out, w_in, kh, kw = w.shape
+    if w_in != c_in:
+        raise ValueError(
+            f'Conv2d node={node.name}: weight expects {w_in} input channels, got {c_in}'
+        )
 
     if ph > 0 or pw > 0:
         x = np.pad(x, ((0, 0), (0, 0), (ph, ph), (pw, pw)))
 
-    out = np.zeros((n, c_out, h_out, w_out), dtype=np.float32)
-    for i in range(h_out):
-        for j in range(w_out):
-            patch = x[:, :, i * sh:i * sh + kh, j * sw:j * sw + kw]
-            out[:, :, i, j] = np.tensordot(patch, w, axes=([1, 2, 3], [1, 2, 3]))
+    windows = sliding_window_view(x, (kh, kw), axis=(2, 3))[:, :, ::sh, ::sw, :, :]
+    if windows.shape[2] == 0 or windows.shape[3] == 0:
+        raise ValueError(
+            f'Conv2d node={node.name}: invalid output shape for input={x.shape}, '
+            f'kernel={(kh, kw)}, stride={(sh, sw)}, padding={(ph, pw)}'
+        )
+    out = np.tensordot(
+        windows,
+        w,
+        axes=([1, 4, 5], [1, 2, 3]),
+    ).transpose(0, 3, 1, 2)
     if b is not None:
-        out += b[None, :, None, None]
-    ctx[node.outputs[0]] = out
+        b_arr = np.asarray(b, dtype=np.float32)
+        if b_arr.shape != (c_out,):
+            raise ValueError(
+                f'Conv2d node={node.name}: bias must have shape {(c_out,)}, got {b_arr.shape}'
+            )
+        out = out + b_arr[None, :, None, None]
+    ctx[node.outputs[0]] = out.astype(np.float32)
 
 
 def _kernel_batchnorm2d_eval(node: Node, ctx: dict[str, Any]) -> None:
@@ -147,35 +273,39 @@ def _kernel_batchnorm2d_eval(node: Node, ctx: dict[str, Any]) -> None:
     ctx[node.outputs[0]] = out.astype(np.float32)
 
 
-def _kernel_relu(node: Node, ctx: dict[str, Any]) -> None:
-    x = ctx[node.inputs[0]]
-    ctx[node.outputs[0]] = np.maximum(x, 0.0).astype(np.float32)
-
-
 def _sigmoid(x: np.ndarray) -> np.ndarray:
     return (1.0 / (1.0 + np.exp(-x))).astype(np.float32)
 
 
+def _kernel_elementwise(
+    node: Node,
+    ctx: dict[str, Any],
+    *,
+    transform: Callable[[np.ndarray], np.ndarray],
+) -> None:
+    x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
+    ctx[node.outputs[0]] = transform(x).astype(np.float32)
+
+
+def _kernel_relu(node: Node, ctx: dict[str, Any]) -> None:
+    _kernel_elementwise(node, ctx, transform=lambda x: np.maximum(x, 0.0))
+
+
 def _kernel_leaky_relu(node: Node, ctx: dict[str, Any]) -> None:
-    x = ctx[node.inputs[0]]
     alpha = float(node.attrs.get('negative_slope', 0.01))
-    ctx[node.outputs[0]] = np.where(x >= 0, x, alpha * x).astype(np.float32)
+    _kernel_elementwise(node, ctx, transform=lambda x: np.where(x >= 0, x, alpha * x))
 
 
 def _kernel_sigmoid(node: Node, ctx: dict[str, Any]) -> None:
-    x = ctx[node.inputs[0]]
-    ctx[node.outputs[0]] = _sigmoid(x)
+    _kernel_elementwise(node, ctx, transform=_sigmoid)
 
 
 def _kernel_tanh(node: Node, ctx: dict[str, Any]) -> None:
-    x = ctx[node.inputs[0]]
-    ctx[node.outputs[0]] = np.tanh(x).astype(np.float32)
+    _kernel_elementwise(node, ctx, transform=np.tanh)
 
 
 def _kernel_silu(node: Node, ctx: dict[str, Any]) -> None:
-    x = ctx[node.inputs[0]]
-    sig = _sigmoid(x)
-    ctx[node.outputs[0]] = (x * sig).astype(np.float32)
+    _kernel_elementwise(node, ctx, transform=lambda x: x * _sigmoid(x))
 
 
 def _kernel_flatten(node: Node, ctx: dict[str, Any]) -> None:
@@ -194,57 +324,44 @@ def _kernel_linear(node: Node, ctx: dict[str, Any]) -> None:
 
 
 def _kernel_maxpool2d(node: Node, ctx: dict[str, Any]) -> None:
-    x: np.ndarray = ctx[node.inputs[0]]
-    attrs = node.attrs
-    ks = attrs.get('kernel_size', 2)
-    kh = kw = ks if isinstance(ks, int) else ks[0]
-    st = attrs.get('stride', ks)
-    sh = sw = st if isinstance(st, int) else st[0]
-    n, c, h, w = x.shape
-    oh = (h - kh) // sh + 1
-    ow = (w - kw) // sw + 1
-    out = np.empty((n, c, oh, ow), dtype=np.float32)
-    for i in range(oh):
-        for j in range(ow):
-            out[:, :, i, j] = x[:, :, i * sh:i * sh + kh, j * sw:j * sw + kw].max(axis=(2, 3))
-    ctx[node.outputs[0]] = out
+    _kernel_pool2d_reduce(
+        node,
+        ctx,
+        reducer=lambda windows: windows.max(axis=(-2, -1)),
+    )
 
 
 def _kernel_avgpool2d(node: Node, ctx: dict[str, Any]) -> None:
-    x: np.ndarray = ctx[node.inputs[0]]
-    attrs = node.attrs
-    ks = attrs.get('kernel_size', 2)
-    kh = kw = ks if isinstance(ks, int) else ks[0]
-    st = attrs.get('stride', ks)
-    sh = sw = st if isinstance(st, int) else st[0]
-    n, c, h, w = x.shape
-    oh = (h - kh) // sh + 1
-    ow = (w - kw) // sw + 1
-    out = np.empty((n, c, oh, ow), dtype=np.float32)
-    for i in range(oh):
-        for j in range(ow):
-            out[:, :, i, j] = x[:, :, i * sh:i * sh + kh, j * sw:j * sw + kw].mean(axis=(2, 3))
-    ctx[node.outputs[0]] = out
+    _kernel_pool2d_reduce(
+        node,
+        ctx,
+        reducer=lambda windows: windows.mean(axis=(-2, -1)),
+    )
 
 
-DEFAULT_KERNEL_SPECS: tuple[tuple[str, KernelFn], ...] = (
-    ('Conv2d', _kernel_conv2d),
-    ('BatchNorm2d', _kernel_batchnorm2d_eval),
-    ('ReLU', _kernel_relu),
-    ('LeakyReLU', _kernel_leaky_relu),
-    ('Sigmoid', _kernel_sigmoid),
-    ('Tanh', _kernel_tanh),
-    ('SiLU', _kernel_silu),
-    ('Flatten', _kernel_flatten),
-    ('Linear', _kernel_linear),
-    ('MaxPool2d', _kernel_maxpool2d),
-    ('AvgPool2d', _kernel_avgpool2d),
+_ACTIVATION_KERNEL_SPECS: tuple[KernelSpec, ...] = (
+    KernelSpec('ReLU', _kernel_relu, 'activation'),
+    KernelSpec('LeakyReLU', _kernel_leaky_relu, 'activation'),
+    KernelSpec('Sigmoid', _kernel_sigmoid, 'activation'),
+    KernelSpec('Tanh', _kernel_tanh, 'activation'),
+    KernelSpec('SiLU', _kernel_silu, 'activation'),
+)
+
+
+DEFAULT_KERNEL_SPECS: tuple[KernelSpec, ...] = (
+    KernelSpec('Conv2d', _kernel_conv2d, 'convolution'),
+    KernelSpec('BatchNorm2d', _kernel_batchnorm2d_eval, 'normalization'),
+    *_ACTIVATION_KERNEL_SPECS,
+    KernelSpec('Flatten', _kernel_flatten, 'shape'),
+    KernelSpec('Linear', _kernel_linear, 'linear'),
+    KernelSpec('MaxPool2d', _kernel_maxpool2d, 'pool'),
+    KernelSpec('AvgPool2d', _kernel_avgpool2d, 'pool'),
 )
 
 
 def make_default_registry() -> KernelRegistry:
     """Build a KernelRegistry with all Phase-1/2 reference kernels."""
     reg = KernelRegistry()
-    for op_name, fn in DEFAULT_KERNEL_SPECS:
-        reg.register(op_name, fn)
+    for spec in DEFAULT_KERNEL_SPECS:
+        reg.register(spec.op_name, spec.fn, category=spec.category)
     return reg

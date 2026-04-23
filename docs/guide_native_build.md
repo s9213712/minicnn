@@ -2,6 +2,11 @@
 
 This guide explains how to compile CUDA shared libraries from `cpp/src/*.cu`.
 
+Shell note:
+Unless a block is explicitly marked as PowerShell, multi-line commands in this
+doc use Bash continuation with `\`. On Windows PowerShell, replace `\` with
+`` ` ``. On `cmd.exe`, use `^`.
+
 ## Basic Build
 
 From the project root:
@@ -148,6 +153,12 @@ Windows build guide. The current recorded path uses `Visual Studio 16 2019`,
 `x64`, and `CMAKE_CUDA_ARCHITECTURES=75`; it is still a manual workflow rather
 than a CI-covered one. The repo-side native headers are kept ASCII-only so this
 path does not depend on `/utf-8` or UTF-16 source-file handling.
+
+If PowerShell blocks `scripts/build_windows_native.ps1`, run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+```
 
 ```powershell
 .\scripts\build_windows_native.ps1 -Variant both -Clean

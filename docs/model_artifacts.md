@@ -48,6 +48,52 @@ Notes:
 - inspecting `.npz` does not
 - user-facing artifact inspection errors fail with a short CLI message instead of a traceback
 
+## Evaluate A Torch/Flex Checkpoint
+
+For torch/flex-compatible `.pt` checkpoints, MiniCNN can also rerun test-set
+evaluation directly:
+
+```bash
+minicnn evaluate-checkpoint \
+  --config configs/dual_backend_cnn.yaml \
+  --summary artifacts/example-run/summary.json
+```
+
+By default, MiniCNN uses the official test split for the dataset in your config
+for example CIFAR-10 `test_batch` or the MNIST `t10k-*` files.
+
+If you want to score a custom test set instead, pass a `.npz` with `x` / `y`,
+`images` / `labels`, or `x_test` / `y_test`:
+
+```bash
+minicnn evaluate-checkpoint \
+  --config configs/dual_backend_cnn.yaml \
+  --checkpoint artifacts/models/example_best.pt \
+  --test-data /path/to/test_data.npz
+```
+
+Use `--test-data-normalized` only when the stored `x` arrays are already in the
+model-ready normalized space.
+
+## Single-Image Prediction
+
+For real photos or screenshots, use:
+
+```bash
+python -u examples/inference/predict_image.py \
+  --config configs/dual_backend_cnn.yaml \
+  --summary artifacts/example-run/summary.json \
+  --image path/to/photo.jpg \
+  --topk 5
+```
+
+The script:
+
+- reads `summary.json` or an explicit checkpoint path
+- center-crops and resizes oversized images to the configured `input_shape`
+- applies dataset-specific normalization for `cifar10` or `mnist`
+- prints top-k predictions with class labels when available
+
 ## Export To A Generic Torch Checkpoint
 
 For supported sources, MiniCNN can export to a standard PyTorch checkpoint:
@@ -222,6 +268,51 @@ minicnn inspect-checkpoint --path artifacts/models/example_autograd_best.npz
 - 檢查 `.pt` / `.pth` 仍需要 PyTorch
 - 檢查 `.npz` 不需要
 - 使用者層級的 artifact 檢查錯誤，現在會以簡短 CLI 訊息失敗，而不是吐 traceback
+
+## 評估 torch/flex checkpoint
+
+對 torch/flex 相容的 `.pt` checkpoint，MiniCNN 現在也能直接重跑測試集評估：
+
+```bash
+minicnn evaluate-checkpoint \
+  --config configs/dual_backend_cnn.yaml \
+  --summary artifacts/example-run/summary.json
+```
+
+預設會使用 config 對應 dataset 的官方 test split，例如 CIFAR-10 的
+`test_batch` 或 MNIST 的 `t10k-*`。
+
+如果你要指定自訂測試集，可傳入帶 `x` / `y`、`images` / `labels`，或
+`x_test` / `y_test` 的 `.npz`：
+
+```bash
+minicnn evaluate-checkpoint \
+  --config configs/dual_backend_cnn.yaml \
+  --checkpoint artifacts/models/example_best.pt \
+  --test-data /path/to/test_data.npz
+```
+
+只有在 `.npz` 裡的 `x` 已經是模型可直接吃的 normalized 輸入時，才需要加
+`--test-data-normalized`。
+
+## 單張圖片推理
+
+如果要對真實照片或截圖做推理，可用：
+
+```bash
+python -u examples/inference/predict_image.py \
+  --config configs/dual_backend_cnn.yaml \
+  --summary artifacts/example-run/summary.json \
+  --image path/to/photo.jpg \
+  --topk 5
+```
+
+這個腳本會：
+
+- 從 `summary.json` 或顯式 checkpoint 路徑載入模型
+- 先把大圖置中裁切並縮放成 config 的 `input_shape`
+- 針對 `cifar10` 或 `mnist` 套用對應 normalization
+- 輸出 top-k 預測與類別名稱（若 config / dataset 有提供）
 
 ## 匯出成通用 torch checkpoint
 

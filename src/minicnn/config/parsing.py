@@ -46,6 +46,18 @@ def parse_scalar(text: str) -> Any:
     return text
 
 
+def parse_override_parts(item: str) -> tuple[list[str], str]:
+    if '=' not in item:
+        raise ValueError(f'Override must look like key=value, got: {item}')
+    key, raw = item.split('=', 1)
+    if not key:
+        raise ValueError(f'Override key cannot be empty, got: {item}')
+    parts = key.split('.')
+    if any(part == '' for part in parts):
+        raise ValueError(f"Override key {key!r} contains an empty path segment")
+    return parts, raw
+
+
 def set_nested_value(
     data: dict[str, Any],
     parts: list[str],

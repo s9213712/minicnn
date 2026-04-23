@@ -9,6 +9,11 @@
 MiniCNN is a configuration-driven deep learning project for studying the gap
 between a flexible frontend and backend-constrained execution paths.
 
+Shell note:
+Most multi-line command examples in this repo use Bash line continuation with
+`\`. On Windows, replace that with PowerShell `` ` ``. If you are using
+`cmd.exe` instead of PowerShell, use `^`.
+
 Today, the repo gives you four backend roles:
 
 - `torch` via `train-flex` / `train-dual` as the broad reference implementation
@@ -155,6 +160,8 @@ See [docs/cuda_native.md](docs/cuda_native.md) for the full guide.
 
 ## Quick Start
 
+# Linux / macOS
+
 ```bash
 git clone https://github.com/s9213712/minicnn.git
 cd minicnn
@@ -164,6 +171,36 @@ python -m pip install -U pip
 python -m pip install -e .[torch,dev]
 minicnn smoke
 pytest
+```
+
+# Windows PowerShell
+
+```powershell
+git clone https://github.com/s9213712/minicnn.git
+cd minicnn
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip uninstall -y torch torchvision torchaudio
+python -m pip install -U pip
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+python -m pip install -e .[dev]
+minicnn smoke
+pytest
+```
+
+If PowerShell blocks `.venv\Scripts\Activate.ps1`, run this in the same shell
+first and then retry:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+```
+
+If `minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=torch`
+still does not use the GPU on Windows, verify that the environment is really
+using a CUDA-enabled PyTorch wheel:
+
+```powershell
+python -c "import torch; print('torch=', torch.__version__); print('cuda_available=', torch.cuda.is_available()); print('cuda_version=', torch.version.cuda); print('device_count=', torch.cuda.device_count()); print('device0=', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A')"
 ```
 
 `minicnn smoke` is the recommended first check after install. It verifies the
@@ -334,6 +371,8 @@ minicnn list-dual-components
 minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 minicnn inspect-checkpoint --path artifacts/models/example_best.pt
+minicnn evaluate-checkpoint --config configs/dual_backend_cnn.yaml \
+  --summary artifacts/example-run/summary.json
 minicnn cuda-native-capabilities
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
@@ -357,12 +396,25 @@ Use `summary.json` to find `best_model_path`, and use:
 
 ```bash
 minicnn inspect-checkpoint --path artifacts/models/example_best.pt
+minicnn evaluate-checkpoint --config configs/dual_backend_cnn.yaml \
+  --summary artifacts/example-run/summary.json
 minicnn export-torch-checkpoint --path artifacts/models/example_autograd_best.npz \
   --config configs/autograd_tiny.yaml \
   --output artifacts/models/example_autograd_export.pt
 ```
 
-for a quick schema view.
+for a quick schema view and a reproducible torch/flex test-set evaluation.
+
+For real-image inference, use the repo example that resizes/crops large photos
+into the configured input shape before running prediction:
+
+```bash
+python -u examples/inference/predict_image.py \
+  --config configs/dual_backend_cnn.yaml \
+  --summary artifacts/example-run/summary.json \
+  --image path/to/photo.jpg \
+  --topk 5
+```
 
 Full format and reuse guidance lives in [docs/model_artifacts.md](docs/model_artifacts.md).
 

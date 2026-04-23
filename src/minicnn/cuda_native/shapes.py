@@ -93,11 +93,17 @@ def infer_pool2d(
         )
     n, c, h, w = input_shape
     kh, kw = _pair(kernel_size)
+    if kh <= 0 or kw <= 0:
+        raise ValueError(f'Pool2d kernel_size must be positive, got {(kh, kw)}')
     if stride is None:
         sh, sw = kh, kw
     else:
         sh, sw = _pair(stride)
+    if sh <= 0 or sw <= 0:
+        raise ValueError(f'Pool2d stride must be positive, got {(sh, sw)}')
     ph, pw = _pair(padding)
+    if ph < 0 or pw < 0:
+        raise ValueError(f'Pool2d padding must be non-negative, got {(ph, pw)}')
     oh = (h + 2 * ph - kh) // sh + 1
     ow = (w + 2 * pw - kw) // sw + 1
     if oh <= 0 or ow <= 0:

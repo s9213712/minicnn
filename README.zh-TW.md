@@ -8,6 +8,11 @@
 
 MiniCNN 是一個以組態驅動的深度學習專案，用來研究「同一個前端介面」與「不同 backend 能力邊界」之間的落差。
 
+Shell 說明：
+repo 內大多數多行指令範例預設採用 Bash 的續行符號 `\`。如果你在
+Windows PowerShell 執行，請改用反引號 `` ` ``；如果你用的是 `cmd.exe`，
+則改用 `^`。
+
 目前這個 repo 實際提供四種 backend 角色：
 
 - `torch`：透過 `train-flex` / `train-dual` 扮演最廣、最穩的 reference implementation
@@ -152,6 +157,8 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 
 ## 快速開始
 
+# Linux / macOS
+
 ```bash
 git clone https://github.com/s9213712/minicnn.git
 cd minicnn
@@ -161,6 +168,35 @@ python -m pip install -U pip
 python -m pip install -e .[torch,dev]
 minicnn smoke
 pytest
+```
+
+# Windows PowerShell
+
+```powershell
+git clone https://github.com/s9213712/minicnn.git
+cd minicnn
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip uninstall -y torch torchvision torchaudio
+python -m pip install -U pip
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+python -m pip install -e .[dev]
+minicnn smoke
+pytest
+```
+
+如果 PowerShell 擋下 `.venv\Scripts\Activate.ps1`，先在同一個 shell 執行：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+```
+
+如果 `minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=torch`
+在 Windows 上仍然沒有吃到 GPU，先確認目前環境裝到的真的是 CUDA 版
+PyTorch wheel：
+
+```powershell
+python -c "import torch; print('torch=', torch.__version__); print('cuda_available=', torch.cuda.is_available()); print('cuda_version=', torch.version.cuda); print('device_count=', torch.cuda.device_count()); print('device0=', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A')"
 ```
 
 `minicnn smoke` 是安裝後最推薦先跑的自檢。它會檢查 repo 結構、解析內建
@@ -324,6 +360,8 @@ minicnn list-dual-components
 minicnn validate-dual-config --config configs/dual_backend_cnn.yaml
 minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 minicnn inspect-checkpoint --path artifacts/models/example_best.pt
+minicnn evaluate-checkpoint --config configs/dual_backend_cnn.yaml \
+  --summary artifacts/example-run/summary.json
 minicnn cuda-native-capabilities
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
@@ -347,9 +385,24 @@ root 下執行 CLI。不過這仍屬 repo-first 便利機制，不是完整 pack
 
 ```bash
 minicnn inspect-checkpoint --path artifacts/models/example_best.pt
+minicnn evaluate-checkpoint --config configs/dual_backend_cnn.yaml \
+  --summary artifacts/example-run/summary.json
 minicnn export-torch-checkpoint --path artifacts/models/example_autograd_best.npz \
   --config configs/autograd_tiny.yaml \
   --output artifacts/models/example_autograd_export.pt
+```
+
+這樣可以同時快速看 schema，也能直接重跑 torch/flex checkpoint 的測試集準確率。
+
+若要拿真實圖片做推理，可用 repo 內的正式範例。它會先把大圖裁切/縮放成 config
+支援的輸入尺寸，再做 top-k 預測：
+
+```bash
+python -u examples/inference/predict_image.py \
+  --config configs/dual_backend_cnn.yaml \
+  --summary artifacts/example-run/summary.json \
+  --image path/to/photo.jpg \
+  --topk 5
 ```
 
 完整格式與復用說明見 [docs/model_artifacts.md](docs/model_artifacts.md)。

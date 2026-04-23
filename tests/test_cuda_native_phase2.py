@@ -110,6 +110,28 @@ def test_avgpool2d_forward():
     np.testing.assert_allclose(out, expected, atol=1e-5)
 
 
+def test_maxpool2d_kernel_supports_padding():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.executor import ForwardExecutor
+
+    layers = [{'type': 'MaxPool2d', 'kernel_size': 2, 'stride': 2, 'padding': 1}]
+    g = build_graph(layers, (1, 1, 2, 2))
+    x = np.array([[[[1.0, 2.0], [3.0, 4.0]]]], dtype=np.float32)
+
+    out = ForwardExecutor().run_inference(g, x)
+
+    expected = np.array([[[[1.0, 2.0], [3.0, 4.0]]]], dtype=np.float32)
+    assert out.shape == (1, 1, 2, 2)
+    np.testing.assert_allclose(out, expected, atol=1e-5)
+
+
+def test_avgpool2d_kernel_rejects_non_positive_stride():
+    from minicnn.cuda_native.graph import build_graph
+
+    with pytest.raises(ValueError, match='stride must be positive'):
+        build_graph([{'type': 'AvgPool2d', 'kernel_size': 2, 'stride': 0}], (1, 1, 4, 4))
+
+
 def test_maxpool_avgpool_different_outputs():
     """MaxPool and AvgPool must produce distinct results on non-uniform input."""
     from minicnn.cuda_native.graph import build_graph

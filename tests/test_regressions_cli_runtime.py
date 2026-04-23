@@ -173,15 +173,35 @@ def test_parse_bool_error_lists_accepted_values():
     assert 'false' in message
 
 
-def test_cli_reports_missing_train_flex_config_without_traceback():
-    from minicnn.cli import main
+def test_legacy_loader_rejects_empty_override_key():
+    from minicnn.config.loader import load_config
 
     try:
-        main(['train-flex', '--config', '/tmp/minicnn-definitely-missing.yaml'])
-    except SystemExit as exc:
-        assert exc.code == 2
+        load_config(None, ['=1'])
+    except ValueError as exc:
+        assert 'Override key cannot be empty' in str(exc)
     else:  # pragma: no cover
-        raise AssertionError('expected SystemExit for missing config')
+        raise AssertionError('expected ValueError for empty override key')
+
+
+def test_legacy_loader_rejects_empty_override_path_segment():
+    from minicnn.config.loader import load_config
+
+    try:
+        load_config(None, ['train..epochs=1'])
+    except ValueError as exc:
+        assert 'contains an empty path segment' in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError('expected ValueError for invalid override path segment')
+
+
+def test_cli_reports_missing_train_flex_config_without_traceback():
+    from minicnn.cli import main
+    import pytest
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(['train-flex', '--config', '/tmp/minicnn-definitely-missing.yaml'])
+    assert excinfo.value.code == 2
 
 
 def test_cli_exposes_doctor_compare_and_backend_aliases():
@@ -200,6 +220,7 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'train-autograd' in help_text
     assert 'inspect-checkpoint' in help_text
     assert 'export-torch-checkpoint' in help_text
+    assert 'evaluate-checkpoint' in help_text
     assert 'validate-config' in help_text
     assert 'compile' in help_text
     assert 'show-model' in help_text
@@ -207,9 +228,51 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert '--cuda-arch' in build_help
     assert '--format {json,text}' in subparsers.choices['healthcheck'].format_help()
     assert '--format {json,text}' in subparsers.choices['inspect-checkpoint'].format_help()
+    assert '--format {json,text}' in subparsers.choices['evaluate-checkpoint'].format_help()
     assert '--format {json,text}' in subparsers.choices['validate-dual-config'].format_help()
     assert '--format {json,text}' in subparsers.choices['show-model'].format_help()
     assert '--format {json,text}' in subparsers.choices['show-graph'].format_help()
+
+
+def test_user_error_goes_to_stderr_not_stdout(capsys):
+    from minicnn._cli_errors import _exit_user_error
+    import pytest
+
+    with pytest.raises(SystemExit) as excinfo:
+        _exit_user_error('demo user-facing error')
+
+    captured = capsys.readouterr()
+    assert excinfo.value.code == 2
+    assert captured.out == ''
+    assert 'demo user-facing error' in captured.err
+
+
+def test_run_user_operation_or_exit_preserves_user_error_exit_code(capsys):
+    from minicnn._cli_errors import _run_user_operation_or_exit
+    import pytest
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_user_operation_or_exit(lambda: (_ for _ in ()).throw(ValueError('bad user input')))
+
+    captured = capsys.readouterr()
+    assert excinfo.value.code == 2
+    assert captured.out == ''
+    assert 'bad user input' in captured.err
+    assert 'Internal error:' not in captured.err
+
+
+def test_run_user_operation_or_exit_maps_internal_errors_to_exit_one(capsys):
+    from minicnn._cli_errors import _run_user_operation_or_exit
+    import pytest
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_user_operation_or_exit(lambda: (_ for _ in ()).throw(RuntimeError('unexpected kernel crash')))
+
+    captured = capsys.readouterr()
+    assert excinfo.value.code == 1
+    assert captured.out == ''
+    assert 'Internal error:' in captured.err
+    assert 'unexpected kernel crash' in captured.err
 
 
 def test_cli_config_resolution_falls_back_to_project_root():
@@ -423,8 +486,35 @@ def test_cli_reports_missing_torch_for_train_flex_without_traceback(tmp_path):
     )
 
     assert proc.returncode == 2
-    assert 'train-flex requires PyTorch.' in proc.stdout
-    assert 'pip install -e .[torch]' in proc.stdout
+    assert proc.stdout == ''
+    assert 'train-flex requires PyTorch.' in proc.stderr
+    assert 'pip install -e .[torch]' in proc.stderr
+    assert 'Traceback' not in proc.stderr
+
+
+def test_cli_reports_missing_torch_for_evaluate_checkpoint_without_traceback(tmp_path):
+    checkpoint_path = tmp_path / 'missing.pt'
+    test_data_path = tmp_path / 'test_data.npz'
+    checkpoint_path.write_bytes(b'not-a-real-checkpoint')
+    np.savez(test_data_path, x=np.zeros((1, 3, 32, 32), dtype=np.float32), y=np.zeros((1,), dtype=np.int64))
+
+    proc = _run_python_without_torch(
+        tmp_path,
+        '-m',
+        'minicnn.cli',
+        'evaluate-checkpoint',
+        '--config',
+        'configs/dual_backend_cnn.yaml',
+        '--checkpoint',
+        str(checkpoint_path),
+        '--test-data',
+        str(test_data_path),
+    )
+
+    assert proc.returncode == 2
+    assert proc.stdout == ''
+    assert 'requires PyTorch' in proc.stderr
+    assert 'pip install -e .[torch]' in proc.stderr
     assert 'Traceback' not in proc.stderr
 
 
@@ -440,8 +530,9 @@ def test_cli_reports_missing_torch_for_train_dual_torch_without_traceback(tmp_pa
     )
 
     assert proc.returncode == 2
-    assert 'train-dual with engine.backend=torch requires PyTorch.' in proc.stdout
-    assert 'pip install -e .[torch]' in proc.stdout
+    assert proc.stdout == ''
+    assert 'train-dual with engine.backend=torch requires PyTorch.' in proc.stderr
+    assert 'pip install -e .[torch]' in proc.stderr
     assert 'Traceback' not in proc.stderr
 
 
@@ -456,8 +547,9 @@ def test_cli_reports_broken_torch_import_without_traceback(tmp_path):
     )
 
     assert proc.returncode == 2
-    assert 'could not import PyTorch from this environment' in proc.stdout
-    assert 'broken torch install for test' in proc.stdout
+    assert proc.stdout == ''
+    assert 'could not import PyTorch from this environment' in proc.stderr
+    assert 'broken torch install for test' in proc.stderr
     assert 'Traceback' not in proc.stderr
 
 
@@ -472,9 +564,42 @@ def test_cli_reports_invalid_override_without_traceback(tmp_path):
     )
 
     assert proc.returncode == 2
-    assert 'Invalid config override' in proc.stdout
-    assert 'model.layers.foo=1' in proc.stdout
-    assert 'must end with a numeric list index' in proc.stdout
+    assert proc.stdout == ''
+    assert 'Invalid config override' in proc.stderr
+    assert 'model.layers.foo=1' in proc.stderr
+    assert 'must end with a numeric list index' in proc.stderr
+    assert 'Traceback' not in proc.stderr
+
+
+def test_cli_reports_empty_override_key_without_traceback(tmp_path):
+    proc = _run_python_with_sitecustomize(
+        tmp_path,
+        '',
+        '-m',
+        'minicnn.cli',
+        'validate-dual-config',
+        '=1',
+    )
+
+    assert proc.returncode == 2
+    assert proc.stdout == ''
+    assert 'Override key cannot be empty' in proc.stderr
+    assert 'Traceback' not in proc.stderr
+
+
+def test_cli_reports_empty_override_path_segment_without_traceback(tmp_path):
+    proc = _run_python_with_sitecustomize(
+        tmp_path,
+        '',
+        '-m',
+        'minicnn.cli',
+        'validate-dual-config',
+        'train..epochs=1',
+    )
+
+    assert proc.returncode == 2
+    assert proc.stdout == ''
+    assert 'contains an empty path segment' in proc.stderr
     assert 'Traceback' not in proc.stderr
 
 
@@ -493,8 +618,9 @@ def test_cli_reports_bad_yaml_without_traceback(tmp_path):
     )
 
     assert proc.returncode == 2
-    assert 'Failed to parse config file' in proc.stdout
-    assert str(bad_cfg) in proc.stdout
+    assert proc.stdout == ''
+    assert 'Failed to parse config file' in proc.stderr
+    assert str(bad_cfg) in proc.stderr
     assert 'Traceback' not in proc.stderr
 
 
@@ -513,8 +639,9 @@ def test_cli_reports_non_mapping_top_level_config_without_traceback(tmp_path):
     )
 
     assert proc.returncode == 2
-    assert 'Failed to parse config file' in proc.stdout
-    assert 'mapping at the top level' in proc.stdout
+    assert proc.stdout == ''
+    assert 'Failed to parse config file' in proc.stderr
+    assert 'mapping at the top level' in proc.stderr
     assert 'Traceback' not in proc.stderr
 
 
@@ -688,8 +815,9 @@ def test_cli_inspect_checkpoint_reports_missing_torch_for_pt_without_traceback(t
     )
 
     assert proc.returncode == 2
-    assert 'inspect-checkpoint requires PyTorch to read .pt/.pth files.' in proc.stdout
-    assert 'pip install -e .[torch]' in proc.stdout
+    assert proc.stdout == ''
+    assert 'inspect-checkpoint requires PyTorch to read .pt/.pth files.' in proc.stderr
+    assert 'pip install -e .[torch]' in proc.stderr
     assert 'Traceback' not in proc.stderr
 
 
@@ -707,8 +835,9 @@ def test_cli_inspect_checkpoint_reports_broken_torch_import_without_traceback(tm
     )
 
     assert proc.returncode == 2
-    assert 'inspect-checkpoint could not import PyTorch from this environment.' in proc.stdout
-    assert 'broken torch install for test' in proc.stdout
+    assert proc.stdout == ''
+    assert 'inspect-checkpoint could not import PyTorch from this environment.' in proc.stderr
+    assert 'broken torch install for test' in proc.stderr
     assert 'Traceback' not in proc.stderr
 
 
@@ -918,8 +1047,9 @@ def test_export_cuda_legacy_checkpoint_is_rejected(capsys, tmp_path):
     else:  # pragma: no cover
         raise AssertionError('expected SystemExit for unsupported export')
 
-    out = capsys.readouterr().out
-    assert 'cuda_legacy checkpoints cannot be exported directly' in out
+    captured = capsys.readouterr()
+    assert captured.out == ''
+    assert 'cuda_legacy checkpoints cannot be exported directly' in captured.err
 
 
 def test_cli_seed_overrides_keep_dataset_init_and_train_seeds_separate():
@@ -1177,6 +1307,51 @@ def test_save_checkpoint_writes_legacy_schema_metadata(tmp_path, monkeypatch):
         assert str(ckpt['backend']) == 'cuda_legacy'
         assert str(ckpt['checkpoint_kind']) == 'cuda_legacy_checkpoint'
         assert 'created_at' in ckpt
+
+
+def test_save_checkpoint_removes_tmp_file_on_write_failure(tmp_path, monkeypatch):
+    import minicnn.training.checkpoints as checkpoints
+
+    from minicnn.config.settings import get_arch
+    geom = get_arch()
+    path = tmp_path / 'broken_save.npz'
+
+    arrays = {
+        'c1': np.array([1], dtype=np.float32),
+        'c2': np.array([2], dtype=np.float32),
+        'c3': np.array([3], dtype=np.float32),
+        'c4': np.array([4], dtype=np.float32),
+        'fc_w_ptr': np.array([5], dtype=np.float32),
+        'fc_b_ptr': np.array([6], dtype=np.float32),
+    }
+    weights = checkpoints.DeviceWeights(['c1', 'c2', 'c3', 'c4'], 'fc_w_ptr', 'fc_b_ptr')
+
+    monkeypatch.setattr(checkpoints, 'g2h', lambda ptr, _numel: arrays[ptr])
+
+    def failing_savez(target, **payload):
+        Path(target).write_bytes(b'partial')
+        raise OSError('disk full')
+
+    monkeypatch.setattr(checkpoints.np, 'savez', failing_savez)
+
+    try:
+        checkpoints.save_checkpoint(
+            str(path),
+            epoch=1,
+            val_acc=0.5,
+            lr_conv1=0.1,
+            lr_conv=0.01,
+            lr_fc=0.001,
+            device_weights=weights,
+            geom=geom,
+        )
+    except OSError as exc:
+        assert 'disk full' in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError('expected save failure')
+
+    assert not path.exists()
+    assert not Path(f'{path}.tmp.npz').exists()
 
 
 def test_evaluation_uses_device_weights_container_interface(monkeypatch):

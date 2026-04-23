@@ -228,7 +228,43 @@ def test_default_registry_registered_ops_are_stable():
 
     reg = make_default_registry()
 
-    assert reg.registered_ops() == sorted(op_name for op_name, _ in DEFAULT_KERNEL_SPECS)
+    assert reg.registered_ops() == sorted(spec.op_name for spec in DEFAULT_KERNEL_SPECS)
+
+
+def test_default_registry_keeps_activation_kernel_surface_stable():
+    from minicnn.cuda_native.kernels import DEFAULT_KERNEL_SPECS
+
+    activation_ops = [
+        spec.op_name
+        for spec in DEFAULT_KERNEL_SPECS
+        if spec.category == 'activation'
+    ]
+
+    assert activation_ops == ['ReLU', 'LeakyReLU', 'Sigmoid', 'Tanh', 'SiLU']
+
+
+def test_default_registry_exposes_kernel_metadata():
+    from minicnn.cuda_native.kernels import make_default_registry
+
+    reg = make_default_registry()
+
+    assert reg.describe('Conv2d') == {
+        'op_name': 'Conv2d',
+        'category': 'convolution',
+    }
+    assert [(spec.op_name, spec.category) for spec in reg.registered_specs()] == [
+        ('AvgPool2d', 'pool'),
+        ('BatchNorm2d', 'normalization'),
+        ('Conv2d', 'convolution'),
+        ('Flatten', 'shape'),
+        ('LeakyReLU', 'activation'),
+        ('Linear', 'linear'),
+        ('MaxPool2d', 'pool'),
+        ('ReLU', 'activation'),
+        ('SiLU', 'activation'),
+        ('Sigmoid', 'activation'),
+        ('Tanh', 'activation'),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +354,31 @@ def test_executor_conv_relu_flatten_linear():
     }
     out = ForwardExecutor().run_inference(g, x, params=params)
     assert out.shape == (1, 5)
+
+
+def test_executor_conv2d_padding_preserves_spatial_shape():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.executor import ForwardExecutor
+
+    g = build_graph([{'type': 'Conv2d', 'out_channels': 2, 'kernel_size': 3, 'padding': 1}], input_shape=(1, 1, 4, 4))
+    x = np.arange(16, dtype=np.float32).reshape(1, 1, 4, 4)
+    w = np.ones((2, 1, 3, 3), dtype=np.float32)
+
+    out = ForwardExecutor().run_inference(g, x, params={'_w_conv2d_0': w})
+
+    assert out.shape == (1, 2, 4, 4)
+
+
+def test_executor_conv2d_rejects_weight_channel_mismatch():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.executor import ForwardExecutor
+
+    g = build_graph([{'type': 'Conv2d', 'out_channels': 2, 'kernel_size': 3}], input_shape=(1, 1, 5, 5))
+    x = np.ones((1, 1, 5, 5), dtype=np.float32)
+    bad_w = np.ones((2, 3, 3, 3), dtype=np.float32)
+
+    with pytest.raises(ValueError, match='weight expects 3 input channels, got 1'):
+        ForwardExecutor().run_inference(g, x, params={'_w_conv2d_0': bad_w})
 
 
 def test_executor_debug_mode_does_not_crash(capsys):

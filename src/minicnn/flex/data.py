@@ -10,6 +10,7 @@ from minicnn.flex._datasets import (
     load_test_arrays,
 )
 from minicnn.flex._loader import define_augmented_tensor_dataset, make_loader
+from minicnn.torch_runtime import TORCH_INSTALL_HINT
 
 try:
     import torch
@@ -42,12 +43,19 @@ else:  # pragma: no cover
 
 def _require_torch_data_support() -> None:
     if torch is None or DataLoader is None or AugmentedTensorDataset is None:
-        if _TORCH_IMPORT_ERROR is not None:
+        if _TORCH_IMPORT_ERROR is None:
+            raise RuntimeError(f'train-flex requires PyTorch to load flex datasets.\n{TORCH_INSTALL_HINT}')
+        if isinstance(_TORCH_IMPORT_ERROR, ModuleNotFoundError):
             raise RuntimeError(
-                'PyTorch import failed in this environment for flex data loading. '
-                f'{_TORCH_IMPORT_ERROR.__class__.__name__}: {_TORCH_IMPORT_ERROR}'
+                'train-flex could not import PyTorch because a dependency is missing: '
+                f'{_TORCH_IMPORT_ERROR.name}.\n'
+                f'Reinstall PyTorch for this environment.\n{TORCH_INSTALL_HINT}'
             )
-        raise RuntimeError('PyTorch is required for train-flex')
+        raise RuntimeError(
+            'train-flex could not import PyTorch from this environment.\n'
+            f'Import failed with: {_TORCH_IMPORT_ERROR.__class__.__name__}: {_TORCH_IMPORT_ERROR}\n'
+            f'Reinstall PyTorch or use a no-torch command.\n{TORCH_INSTALL_HINT}'
+        )
 
 
 def _make_loader(

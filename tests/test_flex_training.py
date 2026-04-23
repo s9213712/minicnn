@@ -202,6 +202,26 @@ def test_create_dataloaders_reports_broken_torch_import(monkeypatch):
         data.create_dataloaders(dataset_cfg, {'batch_size': 4, 'num_workers': 0})
 
 
+def test_create_dataloaders_reports_missing_torch_with_install_hint(monkeypatch):
+    import minicnn.flex.data as data
+
+    monkeypatch.setattr(data, 'torch', None)
+    monkeypatch.setattr(data, 'DataLoader', None)
+    monkeypatch.setattr(data, 'AugmentedTensorDataset', None)
+    monkeypatch.setattr(data, '_TORCH_IMPORT_ERROR', None)
+
+    dataset_cfg = {
+        'type': 'random',
+        'input_shape': [1, 8, 8],
+        'num_classes': 2,
+        'num_samples': 8,
+        'val_samples': 4,
+    }
+
+    with pytest.raises(RuntimeError, match='train-flex requires PyTorch to load flex datasets'):
+        data.create_dataloaders(dataset_cfg, {'batch_size': 4, 'num_workers': 0})
+
+
 def test_dataset_loader_registry_still_supports_random_dataset():
     import minicnn.flex.data as data
 

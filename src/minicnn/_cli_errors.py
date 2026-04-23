@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from minicnn.torch_runtime import TORCH_INSTALL_HINT, import_torch_with_details, resolve_torch_device
 
+_USER_OPERATION_ERRORS = (FileNotFoundError, TypeError, ValueError)
+
 
 def _exit_user_error(message: str) -> None:
-    print(message)
+    print(message, file=sys.stderr)
     raise SystemExit(2)
+
+
+def _exit_internal_error(message: str) -> None:
+    print(f'Internal error: {message}', file=sys.stderr)
+    raise SystemExit(1)
 
 
 def _import_torch_or_exit(command_name: str):
@@ -47,5 +55,7 @@ def _ensure_torch_device_supported_or_exit(cfg: dict[str, Any], command_name: st
 def _run_user_operation_or_exit(func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
-    except (RuntimeError, ValueError, TypeError, IndexError) as exc:
+    except _USER_OPERATION_ERRORS as exc:
         _exit_user_error(str(exc))
+    except Exception as exc:
+        _exit_internal_error(str(exc))

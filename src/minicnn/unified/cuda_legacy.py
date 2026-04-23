@@ -161,7 +161,7 @@ def validate_cuda_legacy_compatibility(cfg: dict[str, Any]) -> list[str]:
 
     try:
         convs, activations, linear = _collect_conv_blocks(model)
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         errors.append(str(exc))
         return errors
 

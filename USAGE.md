@@ -4,6 +4,10 @@ This page is the documentation entrypoint for the current repo.
 
 If you only read one documentation file outside the README, make it this one.
 
+Shell note:
+Most multi-line command snippets in the docs use Bash continuation with `\`.
+On Windows PowerShell, replace `\` with `` ` ``. On `cmd.exe`, use `^`.
+
 ## Start Here
 
 Read these in order if you want the current, operational picture of the repo:

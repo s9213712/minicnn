@@ -212,6 +212,19 @@ class TestTracingForwardExecutor:
         assert 'steps' in summary
         assert len(summary['steps']) == len(g.nodes)
 
+    def test_trace_summary_exposes_kernel_categories(self):
+        g = _small_graph()
+        params = _small_params(g)
+        executor = TracingForwardExecutor()
+        x = np.zeros((2, 1, 8, 8), dtype=np.float32)
+        _, trace = executor.run(g, {'input': x}, params)
+        summary = trace.summary()
+        assert [step['category'] for step in summary['steps']] == [
+            'shape',
+            'linear',
+            'activation',
+        ]
+
     def test_ctx_contains_output(self):
         g = _small_graph()
         params = _small_params(g)

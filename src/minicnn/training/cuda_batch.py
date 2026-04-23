@@ -59,6 +59,18 @@ class CudaRuntimeState:
     adam_step: int = 0          # incremented each optimizer step
 
 
+@dataclass(frozen=True)
+class CudaGradClipPlan:
+    global_scale: float
+    conv_normalizers: tuple[float, ...]
+
+    def fc_normalizer(self) -> float:
+        return scaled_normalizer(1.0, self.global_scale)
+
+    def conv_normalizer(self, stage_index: int) -> float:
+        return scaled_normalizer(self.conv_normalizers[stage_index], self.global_scale)
+
+
 def global_clip_scale(total_grad_sq: float, max_norm: float, eps: float = 1e-12) -> float:
     """Return the gradient scale for global-norm clipping.
 
@@ -154,9 +166,9 @@ def update_fc(
     workspace: BatchWorkspace,
     arch: CudaNetGeometry,
     lr_state: LrState,
-    grad_scale: float = 1.0,
+    clip_plan: CudaGradClipPlan,
 ) -> None:
-    normalizer = scaled_normalizer(1.0, grad_scale)
+    normalizer = clip_plan.fc_normalizer()
     if runtime.adam is not None:
         bc1, bc2 = _adam_bias_corrections(runtime.adam_step)
         update_adam(
@@ -220,20 +232,37 @@ def cuda_global_grad_scale(
     return global_clip_scale(total_sq, max_norm)
 
 
+def make_grad_clip_plan(
+    workspace: BatchWorkspace,
+    arch: CudaNetGeometry,
+    max_norm: float,
+) -> CudaGradClipPlan:
+    conv_normalizers = tuple(conv_grad_normalizers(arch))
+    global_scale = cuda_global_grad_scale(
+        workspace,
+        arch,
+        max_norm,
+        list(conv_normalizers),
+    )
+    return CudaGradClipPlan(
+        global_scale=global_scale,
+        conv_normalizers=conv_normalizers,
+    )
+
+
 def update_convs(
     runtime: CudaRuntimeState,
     workspace: BatchWorkspace,
     arch: CudaNetGeometry,
     lr_state: LrState,
-    grad_scale: float,
+    clip_plan: CudaGradClipPlan,
     log_grad: bool,
-    normalizers: list[float],
 ) -> None:
     if runtime.adam is not None:
         bc1, bc2 = _adam_bias_corrections(runtime.adam_step)
         for i, stage in enumerate(arch.conv_stages):
             lr = lr_state.conv1 if i == 0 else lr_state.conv
-            spatial_norm = scaled_normalizer(normalizers[i], grad_scale)
+            spatial_norm = clip_plan.conv_normalizer(i)
             update_adam(
                 runtime.weights.conv_weights[i], workspace.d_w_grad[i],
                 runtime.adam.conv_m[i], runtime.adam.conv_v[i],
@@ -264,7 +293,7 @@ def update_convs(
     else:
         for i, stage in enumerate(arch.conv_stages):
             lr = lr_state.conv1 if i == 0 else lr_state.conv
-            spatial_norm = scaled_normalizer(normalizers[i], grad_scale)
+            spatial_norm = clip_plan.conv_normalizer(i)
             update_conv(
                 runtime.weights.conv_weights[i],
                 workspace.d_w_grad[i],
@@ -280,7 +309,7 @@ def update_convs(
             )
             if stage.batch_norm:
                 bn_idx = arch.bn_param_idx(i)
-                norm_c = c_float(scaled_normalizer(1.0, grad_scale))
+                norm_c = c_float(clip_plan.fc_normalizer())
                 lib.conv_update_fused(
                     runtime.weights.bn_gamma[bn_idx], workspace.d_bn_dgamma[i],
                     runtime.velocities.bn_gamma_vel[bn_idx],
@@ -312,9 +341,8 @@ def train_cuda_batch(
     compute_loss_and_metrics(workspace, arch, metrics, batch_size)
     backward_fc(runtime, workspace, arch, fc_input, batch_size)
     backward_convs(runtime, workspace, arch, batch_size)
-    normalizers = conv_grad_normalizers(arch)
-    grad_scale = cuda_global_grad_scale(workspace, arch, GRAD_CLIP_GLOBAL, normalizers)
+    clip_plan = make_grad_clip_plan(workspace, arch, GRAD_CLIP_GLOBAL)
     if runtime.adam is not None:
         runtime.adam_step += 1
-    update_fc(runtime, workspace, arch, lr_state, grad_scale)
-    update_convs(runtime, workspace, arch, lr_state, grad_scale, log_grad, normalizers)
+    update_fc(runtime, workspace, arch, lr_state, clip_plan)
+    update_convs(runtime, workspace, arch, lr_state, clip_plan, log_grad)

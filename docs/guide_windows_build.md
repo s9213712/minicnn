@@ -9,6 +9,11 @@
 This page documents the validated manual Windows build path for the native CUDA
 backend.
 
+Shell note:
+Other docs in this repo often show multi-line Bash commands with `\`. When you
+run the equivalent command in Windows PowerShell, replace `\` with `` ` ``. If
+you are using `cmd.exe`, use `^`.
+
 ## Requirements
 
 - Windows 10/11
@@ -17,6 +22,29 @@ backend.
 - CMake 3.20 or newer
 - CUDA Toolkit installed on Windows
 - PowerShell
+- CUDA-enabled PyTorch wheel if you want `engine.backend=torch` to use the GPU
+
+## PyTorch GPU Note
+
+On Windows, the generic editable-install path can leave you with a CPU-only
+PyTorch wheel. If `minicnn train-dual --config configs/dual_backend_cnn.yaml
+engine.backend=torch` falls back to CPU, reinstall PyTorch explicitly:
+
+```powershell
+python -m pip uninstall -y torch torchvision torchaudio
+python -m pip install --upgrade pip
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+python -m pip install -e .[dev]
+```
+
+Then verify the runtime:
+
+```powershell
+python -c "import torch; print('torch=', torch.__version__); print('cuda_available=', torch.cuda.is_available()); print('cuda_version=', torch.version.cuda); print('device_count=', torch.cuda.device_count()); print('device0=', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A')"
+```
+
+The expected success signal is `cuda_available=True` plus a real GPU name in
+`device0=...`.
 
 ## Validated Path
 
@@ -51,6 +79,13 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 ```
 
 If `nvidia-smi` fails, fix the driver path before debugging CMake or CUDA.
+
+If PowerShell blocks `.\scripts\build_windows_native.ps1` with an execution
+policy or unauthorized-script error, run this in the same shell and retry:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+```
 
 ## Build Both Native Variants
 
@@ -180,6 +215,9 @@ checks the required symbols, then performs a GPU upload/download round-trip.
 - `nvidia-smi` fails before CMake starts
   Fix the NVIDIA driver/runtime path first. Do not debug CMake until the GPU is
   visible.
+- PowerShell says the script is unauthorized or blocked by execution policy
+  Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force`
+  in that shell, then rerun `.\scripts\build_windows_native.ps1 ...`.
 - `nvcc --version` fails or `CUDA_PATH` is missing
   Install the Windows CUDA Toolkit and confirm `%CUDA_PATH%\bin` is available.
 - `corecrt.h` or Windows SDK headers are missing
@@ -249,6 +287,13 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
 如果 `nvidia-smi` 先失敗，優先修顯示卡驅動與 CUDA 環境，不要直接往
 CMake 設定排查。
+
+如果 PowerShell 說 `.\scripts\build_windows_native.ps1` 未授權、或被
+execution policy 擋下，先在同一個 shell 裡執行：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+```
 
 ## 編譯兩種 Native Variant
 
@@ -374,6 +419,10 @@ python -u examples\mnist_ctypes\train_mnist_so_full_cnn_frame.py --download
 
 - 還沒進 CMake 前，`nvidia-smi` 就失敗
   先修 NVIDIA driver / runtime 路徑，不要先往 CMake 排查。
+- PowerShell 說腳本未授權，或被 execution policy 擋下
+  在同一個 shell 先執行
+  `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force`，
+  再重跑 `.\scripts\build_windows_native.ps1 ...`。
 - `nvcc --version` 失敗，或 `CUDA_PATH` 沒有設好
   先安裝 Windows CUDA Toolkit，確認 `%CUDA_PATH%\bin` 可見。
 - 出現 `corecrt.h` 或 Windows SDK header 找不到

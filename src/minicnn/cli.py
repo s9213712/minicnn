@@ -9,6 +9,7 @@ from minicnn._cli_readonly import (
     handle_config_template,
     handle_cuda_native_capabilities,
     handle_doctor,
+    handle_evaluate_checkpoint,
     handle_dual_config_template,
     handle_export_torch_checkpoint,
     handle_healthcheck,
@@ -92,6 +93,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == 'export-torch-checkpoint':
         return handle_export_torch_checkpoint(args)
+
+    if args.command == 'evaluate-checkpoint':
+        return handle_evaluate_checkpoint(args)
 
     if args.command == 'train-flex':
         return handle_train_flex(args)

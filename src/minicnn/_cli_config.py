@@ -39,6 +39,7 @@ def _config_error_message(
         'Override must look like key=value' in detail
         or detail.startswith('Override path ')
         or detail.startswith('Override key cannot be empty')
+        or 'contains an empty path segment' in detail
     ):
         if overrides:
             return f'Invalid config override: {overrides[-1]}\n{detail}'
