@@ -22,6 +22,9 @@ def _add_common_train_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--log-interval', type=int)
     parser.add_argument('--grad-debug', action='store_true')
     parser.add_argument('--grad-debug-batches', type=int)
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument('--quiet', action='store_true', help='Suppress inner training progress logs')
+    verbosity.add_argument('--verbose', action='store_true', help='Show inner training progress logs explicitly')
 
 
 def build_cli_parser() -> argparse.ArgumentParser:

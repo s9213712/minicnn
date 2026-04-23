@@ -225,6 +225,8 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'compile' in help_text
     assert 'show-model' in help_text
     assert 'show-graph' in help_text
+    assert '--quiet' in subparsers.choices['train-flex'].format_help()
+    assert '--verbose' in subparsers.choices['train-flex'].format_help()
     assert '--cuda-arch' in build_help
     assert '--format {json,text}' in subparsers.choices['healthcheck'].format_help()
     assert '--format {json,text}' in subparsers.choices['inspect-checkpoint'].format_help()
@@ -1229,6 +1231,54 @@ def test_cli_seed_overrides_keep_dataset_init_and_train_seeds_separate():
     assert 'train.init_seed=222' in overrides
     assert 'train.seed=333' in overrides
     assert 'dataset.seed=222' not in overrides
+
+
+def test_cli_train_flex_quiet_suppresses_inner_training_stdout(monkeypatch, tmp_path, capsys):
+    import yaml
+
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'quiet_flex.yaml'
+    config_path.write_text(yaml.safe_dump({
+        'project': {'name': 'test', 'run_name': 'quiet', 'artifacts_root': str(tmp_path / 'artifacts')},
+        'dataset': {'type': 'random', 'input_shape': [1, 8, 8], 'num_classes': 2, 'num_samples': 4, 'val_samples': 2},
+        'model': {'layers': [{'type': 'Flatten'}, {'type': 'Linear', 'out_features': 2}]},
+        'train': {'epochs': 1, 'batch_size': 2, 'device': 'cpu'},
+        'loss': {'type': 'CrossEntropyLoss'},
+        'optimizer': {'type': 'SGD', 'lr': 0.01},
+        'scheduler': {'enabled': False},
+    }, sort_keys=False), encoding='utf-8')
+
+    run_dir = tmp_path / 'run-dir'
+    run_dir.mkdir()
+
+    import minicnn.flex.trainer as trainer
+
+    def _fake_train_from_config(_cfg):
+        print('Epoch 1/1: noisy progress')
+        return run_dir
+
+    monkeypatch.setattr(trainer, 'train_from_config', _fake_train_from_config)
+
+    rc = main(['train-flex', '--config', str(config_path), '--quiet'])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert 'noisy progress' not in out
+    assert out.strip() == f'Artifacts written to: {run_dir}'
+
+
+def test_cli_train_flags_reject_quiet_and_verbose_together():
+    import pytest
+
+    from minicnn.cli import build_parser
+
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as excinfo:
+        parser.parse_args(['train-flex', '--quiet', '--verbose'])
+
+    assert excinfo.value.code == 2
 
 
 def test_cli_benchmark_fields_read_metrics_for_compare(tmp_path):

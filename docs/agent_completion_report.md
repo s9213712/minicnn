@@ -29,6 +29,11 @@ refactoring without changing the user-facing command surface:
   to the earlier run/step/reporting splits
 - the deeper-refactor branch has been kept pushable at stable checkpoints
   before each new risky optimization pass
+- recent cleanup passes also tightened JSON contract boundaries for training
+  summaries, diagnostics, compare rows, checkpoint evaluation, validation
+  payloads, and readonly introspection commands
+- training event formatting now has a shared helper surface used by both the
+  `flex` and `autograd` runtime paths
 
 ## Completed
 
@@ -43,6 +48,22 @@ refactoring without changing the user-facing command surface:
   imports in user-facing CLI paths.
 - Artifact inspection and export now expose clearer metadata, including
   fingerprints, warnings, and conversion reports for supported torch exports.
+- Training summaries across `torch`, `autograd`, `cuda_legacy`, and
+  `cuda_native` now share a clearer minimal contract:
+  `schema_version`, `artifact_kind`, `status`, `selected_backend`,
+  `effective_backend`, `variant`, `best_model_path`,
+  `periodic_checkpoints`, `test_loss`, and `test_acc`.
+- Compare-mode rows now consume that summary contract directly instead of
+  rebuilding ad-hoc backend-specific fragments.
+- Readonly/introspection commands now expose more explicit payload kinds, such
+  as `project_info`, `compiled_graph_summary`, `model_view`, `graph_view`,
+  `checkpoint_evaluation`, `validation_result`, `cuda_legacy_mapping`,
+  `flex_component_registry`, and `dual_component_registry`.
+- Training-summary consumers now validate `artifact_kind` and
+  `schema_version` rather than accepting any JSON file that happens to contain
+  `best_model_path`.
+- `flex` registry behavior no longer silently overwrites duplicate keys; repeat
+  registration now fails unless the caller opts into `replace=True`.
 - Torch runtime import and device resolution now share common helpers, reducing
   drift between CLI preflight checks and flex trainer execution.
 - `show-model` and `show-graph` are now implemented as real CLI features rather
@@ -192,6 +213,8 @@ Recent baseline on this branch:
   orchestration entrypoints instead of mixing all step-level logic inline.
 - `train_from_config()` now also separates setup/finalization context from the
   main loop while preserving the older monkeypatch surface expected by tests.
+- `flex` and `autograd` epoch progress output now share a small event-formatting
+  helper instead of duplicating ad-hoc string assembly inline.
 
 ## Docs Sync
 
@@ -206,6 +229,7 @@ The main docs now reflect current backend roles and rollout order:
 - `docs/dual_backend_guide.md`
 - `docs/guide_autograd.md`
 - `docs/guide_project_structure.md`
+- `docs/model_artifacts.md`
 
 ## Verification Baseline
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import time
 from pathlib import Path
@@ -182,12 +184,22 @@ def _print_run_dir(run_dir: Path) -> int:
     return 0
 
 
+@contextlib.contextmanager
+def _training_output_scope(args):
+    if getattr(args, 'quiet', False) and not getattr(args, 'verbose', False):
+        with contextlib.redirect_stdout(io.StringIO()):
+            yield
+        return
+    yield
+
+
 def handle_train_flex(args) -> int:
     from minicnn.flex.trainer import train_from_config
 
     cfg = _load_flex_config_or_exit(args.config, [*common_train_overrides(args), *args.overrides])
     _ensure_torch_device_supported_or_exit(cfg, 'train-flex')
-    run_dir = _run_user_operation_or_exit(train_from_config, cfg)
+    with _training_output_scope(args):
+        run_dir = _run_user_operation_or_exit(train_from_config, cfg)
     return _print_run_dir(run_dir)
 
 
@@ -204,7 +216,8 @@ def _run_unified_training(cfg: dict[str, Any], *, torch_command_name: str) -> Pa
 
 def handle_train_dual(args) -> int:
     cfg = _load_unified_config_or_exit(args.config, [*common_train_overrides(args), *args.overrides])
-    run_dir = _run_unified_training(cfg, torch_command_name='train-dual with engine.backend=torch')
+    with _training_output_scope(args):
+        run_dir = _run_unified_training(cfg, torch_command_name='train-dual with engine.backend=torch')
     return _print_run_dir(run_dir)
 
 
@@ -214,7 +227,8 @@ def handle_train_dual_alias(args) -> int:
         args.config,
         [f'engine.backend={backend}', *common_train_overrides(args), *args.overrides],
     )
-    run_dir = _run_unified_training(cfg, torch_command_name='train-dual with engine.backend=torch')
+    with _training_output_scope(args):
+        run_dir = _run_unified_training(cfg, torch_command_name='train-dual with engine.backend=torch')
     return _print_run_dir(run_dir)
 
 
@@ -222,7 +236,8 @@ def handle_train_autograd(args) -> int:
     from minicnn.training.train_autograd import train_autograd_from_config
 
     cfg = _load_flex_config_or_exit(args.config if args.config else None, [*common_train_overrides(args), *args.overrides])
-    run_dir = _run_user_operation_or_exit(train_autograd_from_config, cfg)
+    with _training_output_scope(args):
+        run_dir = _run_user_operation_or_exit(train_autograd_from_config, cfg)
     return _print_run_dir(run_dir)
 
 
@@ -238,7 +253,8 @@ def handle_compare(args, parser) -> int:
             from minicnn.training.train_autograd import train_autograd_from_config
 
             cfg = _load_flex_config_or_exit(args.config if args.config else None, [*common_train_overrides(args), *compare_overrides])
-            run_dir = _run_user_operation_or_exit(train_autograd_from_config, cfg)
+            with _training_output_scope(args):
+                run_dir = _run_user_operation_or_exit(train_autograd_from_config, cfg)
         else:
             cfg = _load_unified_config_or_exit(args.config, [f'engine.backend={backend}', *common_train_overrides(args), *compare_overrides])
             if backend == 'torch':
@@ -246,7 +262,8 @@ def handle_compare(args, parser) -> int:
             elif backend == 'cuda_legacy':
                 _ensure_cuda_legacy_prereqs_or_exit(cfg)
             from minicnn.unified.trainer import train_unified_from_config
-            run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
+            with _training_output_scope(args):
+                run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
         elapsed = time.perf_counter() - t0
         summary = _read_summary(run_dir)
         rows.append(_compare_row(backend, cfg, run_dir, elapsed, summary=summary))
@@ -277,5 +294,6 @@ def handle_train_native(args) -> int:
             'ops': summary.get('supported_ops', []),
         },
     })
-    run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
+    with _training_output_scope(args):
+        run_dir = _run_user_operation_or_exit(train_unified_from_config, cfg)
     return _print_run_dir(run_dir)
