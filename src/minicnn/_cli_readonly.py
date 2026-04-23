@@ -208,7 +208,12 @@ def handle_doctor(args) -> int:
 def handle_list_flex_components() -> int:
     from minicnn.flex.registry import describe_registries
 
-    _print_json(describe_registries())
+    _print_json({
+        'schema_version': 1,
+        'kind': 'flex_component_registry',
+        'status': 'ok',
+        'registries': describe_registries(),
+    })
     return 0
 
 
@@ -218,6 +223,9 @@ def handle_list_dual_components() -> int:
     from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED
 
     _print_json({
+        'schema_version': 1,
+        'kind': 'dual_component_registry',
+        'status': 'ok',
         'registries': describe_registries(),
         'cuda_legacy_subset': CUDA_LEGACY_SUPPORTED,
         'cuda_native_capabilities': get_cuda_native_summary(),
@@ -307,6 +315,8 @@ def handle_validate_dual_config(args) -> int:
     cfg = _load_unified_config_or_exit(args.config, args.overrides)
     errors = validate_cuda_legacy_compatibility(cfg)
     payload = {
+        'schema_version': 1,
+        'kind': 'validation_result',
         'ok': not errors,
         'status': 'ok' if not errors else 'error',
         'backend': 'cuda_legacy',
@@ -320,8 +330,14 @@ def handle_show_cuda_mapping(args) -> int:
     from minicnn.unified.cuda_legacy import summarize_legacy_mapping
 
     cfg = _load_unified_config_or_exit(args.config, args.overrides)
+    payload = {
+        'schema_version': 1,
+        'kind': 'cuda_legacy_mapping',
+        'status': 'ok',
+        **summarize_legacy_mapping(cfg),
+    }
     _print_generic_payload(
-        summarize_legacy_mapping(cfg),
+        payload,
         command='show-cuda-mapping',
         output_format=args.format,
     )
@@ -341,6 +357,8 @@ def handle_validate_config(args) -> int:
     else:
         errors = []
     payload = {
+        'schema_version': 1,
+        'kind': 'validation_result',
         'ok': not errors,
         'status': 'ok' if not errors else 'error',
         'errors': errors,
@@ -356,6 +374,8 @@ def handle_validate_cuda_native_config(args) -> int:
     cfg = _load_unified_config_or_exit(args.config, args.overrides)
     errors = validate_cuda_native_config(cfg)
     payload = {
+        'schema_version': 1,
+        'kind': 'validation_result',
         'ok': not errors,
         'status': 'ok' if not errors else 'error',
         'errors': errors,

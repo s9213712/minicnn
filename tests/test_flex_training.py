@@ -63,6 +63,44 @@ def test_optimizer_weight_decay_excludes_bias_and_norm_parameters():
     assert 'weight_decay' not in cfg
 
 
+def test_emit_training_event_formats_epoch_summary():
+    from minicnn.flex.reporting import emit_training_event
+
+    messages = []
+    message = emit_training_event(
+        'epoch_summary',
+        {
+            'epoch': 2,
+            'epochs': 5,
+            'train_metrics': {'loss': 1.2345, 'acc': 0.5},
+            'val_metrics': {'loss': 0.9876, 'acc': 0.625},
+            'lr': 0.001,
+            'epoch_time_s': 3.2,
+            'saved_best': True,
+        },
+        writer=messages.append,
+    )
+
+    assert message == messages[0]
+    assert message.startswith('Epoch 2/5: loss=1.2345')
+    assert 'val_acc=62.50%' in message
+    assert message.endswith('saved_best')
+
+
+def test_emit_training_event_formats_early_stop():
+    from minicnn.flex.reporting import emit_training_event
+
+    messages = []
+    message = emit_training_event(
+        'early_stop',
+        {'epoch': 4, 'best_val_acc': 0.8125},
+        writer=messages.append,
+    )
+
+    assert message == messages[0]
+    assert message == 'Early stopping after 4 epochs; best val_acc=81.25%.'
+
+
 def test_optimizer_type_override_drops_stale_default_kwargs():
     from minicnn.flex.config import load_flex_config
     from minicnn.flex.builder import build_optimizer

@@ -10,8 +10,8 @@ from .device import _choose_device, torch
 from .reporting import (
     _build_epoch_row,
     _checkpoint_path,
-    _epoch_log_message,
     _write_metrics_row,
+    emit_training_event,
 )
 from ._training_steps import (
     adapt_targets as _adapt_targets_impl,
@@ -146,19 +146,26 @@ def train_from_config(cfg: dict[str, Any]):
                 val_acc=val_metrics['acc'],
                 min_delta=ctx.min_delta,
             )
-            print(
-                _epoch_log_message(
-                    epoch=epoch,
-                    epochs=ctx.epochs,
-                    train_metrics=train_metrics,
-                    val_metrics=val_metrics,
-                    lr=ctx.optimizer.param_groups[0]['lr'],
-                    epoch_time_s=epoch_time_s,
-                    saved_best=improved,
-                )
+            emit_training_event(
+                'epoch_summary',
+                {
+                    'epoch': epoch,
+                    'epochs': ctx.epochs,
+                    'train_metrics': train_metrics,
+                    'val_metrics': val_metrics,
+                    'lr': ctx.optimizer.param_groups[0]['lr'],
+                    'epoch_time_s': epoch_time_s,
+                    'saved_best': improved,
+                },
             )
             if should_stop_early(run_state, early_stop_patience=ctx.early_stop_patience):
-                print(f'Early stopping after {epoch} epochs; best val_acc={run_state.best_val_acc * 100:.2f}%.')
+                emit_training_event(
+                    'early_stop',
+                    {
+                        'epoch': epoch,
+                        'best_val_acc': run_state.best_val_acc,
+                    },
+                )
                 break
 
     test_metrics = None

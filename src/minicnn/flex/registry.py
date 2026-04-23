@@ -8,7 +8,19 @@ class Registry:
     def __init__(self):
         self._items: dict[str, dict[str, Callable[..., Any]]] = defaultdict(dict)
 
-    def register(self, category: str, name: str, factory: Callable[..., Any]):
+    def register(
+        self,
+        category: str,
+        name: str,
+        factory: Callable[..., Any],
+        *,
+        replace: bool = False,
+    ):
+        if not replace and name in self._items.get(category, {}):
+            raise ValueError(
+                f"Registry entry already exists for {category!r}/{name!r}; "
+                "pass replace=True to overwrite it explicitly"
+            )
         self._items[category][name] = factory
 
     def get(self, category: str, name: str) -> Callable[..., Any]:
@@ -24,9 +36,9 @@ class Registry:
 REGISTRY = Registry()
 
 
-def register(category: str, name: str):
+def register(category: str, name: str, *, replace: bool = False):
     def wrapper(factory: Callable[..., Any]):
-        REGISTRY.register(category, name, factory)
+        REGISTRY.register(category, name, factory, replace=replace)
         return factory
     return wrapper
 

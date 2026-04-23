@@ -472,6 +472,38 @@ def test_cli_compile_returns_structured_json(capsys):
     assert 'ops' in payload
 
 
+def test_cli_list_flex_components_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['list-flex-components'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['schema_version'] == 1
+    assert payload['kind'] == 'flex_component_registry'
+    assert payload['status'] == 'ok'
+    assert 'registries' in payload
+
+
+def test_cli_list_dual_components_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['list-dual-components'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['schema_version'] == 1
+    assert payload['kind'] == 'dual_component_registry'
+    assert payload['status'] == 'ok'
+    assert 'registries' in payload
+    assert 'cuda_legacy_subset' in payload
+    assert 'cuda_native_capabilities' in payload
+
+
 def test_cli_show_graph_supports_text_output(capsys):
     from minicnn.cli import main
 
@@ -495,6 +527,23 @@ def test_cli_validate_dual_config_supports_text_output(capsys):
     assert 'backend: cuda_legacy' in out
 
 
+def test_cli_validate_dual_config_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['validate-dual-config'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['command'] == 'validate-dual-config'
+    assert payload['schema_version'] == 1
+    assert payload['kind'] == 'validation_result'
+    assert payload['status'] == 'ok'
+    assert payload['backend'] == 'cuda_legacy'
+    assert payload['ok'] is True
+
+
 def test_cli_validate_config_reports_text_errors(capsys):
     from minicnn.cli import main
 
@@ -511,6 +560,60 @@ def test_cli_validate_config_reports_text_errors(capsys):
     assert out.startswith('validate-config: error')
     assert 'backend: cuda_legacy' in out
     assert 'errors:' in out
+
+
+def test_cli_validate_config_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['validate-config'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['command'] == 'validate-config'
+    assert payload['schema_version'] == 1
+    assert payload['kind'] == 'validation_result'
+    assert payload['status'] == 'ok'
+    assert payload['backend'] == 'torch'
+    assert payload['ok'] is True
+
+
+def test_cli_validate_cuda_native_config_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['validate-cuda-native-config'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['command'] == 'validate-cuda-native-config'
+    assert payload['schema_version'] == 1
+    assert payload['kind'] == 'validation_result'
+    assert payload['status'] == 'ok'
+    assert payload['backend'] == 'cuda_native'
+    assert payload['ok'] is True
+    assert 'note' in payload
+
+
+def test_cli_show_cuda_mapping_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['show-cuda-mapping'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['command'] == 'show-cuda-mapping'
+    assert payload['schema_version'] == 1
+    assert payload['kind'] == 'cuda_legacy_mapping'
+    assert payload['status'] == 'ok'
+    assert payload['backend'] == 'cuda_legacy'
+    assert 'project' in payload
+    assert 'model' in payload
+    assert 'runtime' in payload
 
 
 def test_cli_help_still_works_without_torch(tmp_path):

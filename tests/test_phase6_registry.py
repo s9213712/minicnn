@@ -52,3 +52,23 @@ def test_registry_factories_are_real_callables():
 
     assert callable(REGISTRY.get('optimizers', 'AdamW'))
     assert callable(REGISTRY.get('activations', 'Sigmoid'))
+
+
+def test_registry_rejects_duplicate_registration_by_default():
+    from minicnn.flex.registry import Registry
+
+    registry = Registry()
+    registry.register('layers', 'Linear', object)
+
+    with pytest.raises(ValueError, match='replace=True'):
+        registry.register('layers', 'Linear', dict)
+
+
+def test_registry_allows_explicit_replace():
+    from minicnn.flex.registry import Registry
+
+    registry = Registry()
+    registry.register('layers', 'Linear', object)
+    registry.register('layers', 'Linear', dict, replace=True)
+
+    assert registry.get('layers', 'Linear') is dict
