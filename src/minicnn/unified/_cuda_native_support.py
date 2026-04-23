@@ -14,6 +14,8 @@ from minicnn.schedulers.cosine import CosineAnnealingLR
 from minicnn.schedulers.plateau import ReduceLROnPlateau
 from minicnn.schedulers.step import StepLR
 
+TRAINING_SUMMARY_SCHEMA_VERSION = 1
+
 
 def load_numpy_data(cfg: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     dataset_cfg = cfg.get('dataset', {})
@@ -202,6 +204,9 @@ def build_training_summary(
     capabilities: dict[str, Any],
 ) -> dict[str, Any]:
     return {
+        'schema_version': TRAINING_SUMMARY_SCHEMA_VERSION,
+        'artifact_kind': 'training_run_summary',
+        'status': 'ok',
         'selected_backend': 'cuda_native',
         'effective_backend': 'cuda_native',
         'run_dir': str(run_dir),
@@ -218,5 +223,8 @@ def build_training_summary(
         'scheduler': scheduler_cfg.get('type') if bool(scheduler_cfg.get('enabled', False)) else None,
         'loss': loss_cfg.get('type', 'CrossEntropyLoss'),
         'epochs': epochs,
+        'periodic_checkpoints': [],
+        'test_loss': None,
+        'test_acc': None,
         'capabilities': capabilities,
     }

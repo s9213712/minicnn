@@ -19,9 +19,12 @@ class TestCLICapabilities:
     def test_capability_summary_has_required_keys(self):
         from minicnn.cuda_native.api import get_capability_summary
         caps = get_capability_summary()
+        assert caps['schema_version'] == 1
+        assert caps['backend'] == 'cuda_native'
         assert 'experimental' in caps
         assert 'supported_ops' in caps
         assert 'forward' in caps or 'forward_only' in caps
+        assert 'supported_op_categories' in caps
 
     def test_capability_experimental_is_true(self):
         from minicnn.cuda_native.api import get_capability_summary
@@ -225,8 +228,14 @@ class TestTrainerBridge:
             warnings.simplefilter('ignore')
             run_dir = train_unified_from_config(cfg)
         summary = json.loads((run_dir / 'summary.json').read_text())
+        assert summary.get('schema_version') == 1
+        assert summary.get('artifact_kind') == 'training_run_summary'
+        assert summary.get('status') == 'ok'
         assert summary.get('selected_backend') == 'cuda_native'
         assert summary.get('effective_backend') == 'cuda_native'
+        assert summary.get('periodic_checkpoints') == []
+        assert 'test_loss' in summary
+        assert 'test_acc' in summary
 
     def test_unknown_backend_raises(self):
         from minicnn.unified.trainer import train_unified_from_config

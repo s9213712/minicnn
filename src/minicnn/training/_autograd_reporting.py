@@ -9,6 +9,8 @@ import numpy as np
 from minicnn.flex.runtime import dump_summary
 from minicnn.paths import BEST_MODELS_ROOT
 
+TRAINING_SUMMARY_SCHEMA_VERSION = 1
+
 
 def resolve_autograd_artifacts(run_dir: Path) -> tuple[Path, Path]:
     metrics_path = run_dir / 'metrics.jsonl'
@@ -62,6 +64,10 @@ def dump_autograd_summary(
     last_epoch_time: float,
 ) -> None:
     dump_summary(run_dir, {
+        'schema_version': TRAINING_SUMMARY_SCHEMA_VERSION,
+        'artifact_kind': 'training_run_summary',
+        'status': 'ok',
+        'selected_backend': 'autograd',
         'effective_backend': 'autograd',
         'run_dir': str(run_dir),
         'best_model_path': str(best_path),
@@ -69,6 +75,8 @@ def dump_autograd_summary(
         'final_shape': list(final_shape),
         'train_acc': last_train_acc,
         'best_val_acc': best_val,
+        'test_loss': None,
         'test_acc': test_acc,
+        'periodic_checkpoints': [],
         'epoch_time_s': last_epoch_time,
     })

@@ -305,6 +305,23 @@ def test_cli_smoke_returns_structured_json(capsys):
     assert all('severity' in check for check in payload['checks'])
 
 
+def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
+    import json
+
+    from minicnn.cli import main
+
+    rc = main(['cuda-native-capabilities'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['schema_version'] == 1
+    assert payload['backend'] == 'cuda_native'
+    assert payload['status'] == 'ok'
+    assert payload['summary_status'] == 'experimental'
+    assert 'supported_op_categories' in payload
+    assert 'kernel_registry_surface' in payload
+
+
 def test_cli_healthcheck_returns_structured_json(capsys):
     import json
 

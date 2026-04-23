@@ -21,9 +21,46 @@ def test_capabilities_module_imports():
 def test_capability_required_fields():
     from minicnn.cuda_native.capabilities import get_cuda_native_capabilities
     caps = get_cuda_native_capabilities()
-    for key in ('experimental', 'sequential_only', 'forward_only', 'training',
-                'backward', 'supported_ops'):
+    for key in (
+        'schema_version',
+        'backend',
+        'status',
+        'summary_status',
+        'experimental',
+        'sequential_only',
+        'forward_only',
+        'training',
+        'backward',
+        'supported_ops',
+        'supported_op_categories',
+        'kernel_registry_surface',
+    ):
         assert key in caps, f'missing capability key: {key}'
+
+
+def test_capability_surface_is_versioned_and_sorted():
+    from minicnn.cuda_native.capabilities import get_cuda_native_capabilities
+
+    caps = get_cuda_native_capabilities()
+
+    assert caps['schema_version'] == 1
+    assert caps['backend'] == 'cuda_native'
+    assert caps['status'] == 'ok'
+    assert caps['summary_status'] == 'experimental'
+    assert caps['supported_datasets'] == sorted(caps['supported_datasets'])
+    assert caps['supported_schedulers'] == sorted(caps['supported_schedulers'])
+
+
+def test_capability_surface_exposes_kernel_categories():
+    from minicnn.cuda_native.capabilities import get_cuda_native_capabilities
+
+    caps = get_cuda_native_capabilities()
+
+    assert caps['supported_op_categories'] == ['activation', 'convolution', 'linear', 'normalization', 'pool', 'shape']
+    assert caps['kernel_registry_surface'][0] == {
+        'op_name': 'AvgPool2d',
+        'category': 'pool',
+    }
 
 
 def test_capability_experimental_is_true():

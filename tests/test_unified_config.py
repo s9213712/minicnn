@@ -134,5 +134,12 @@ def test_cuda_legacy_summary_preserves_returned_test_acc(tmp_path, monkeypatch):
     result = trainer.train_unified_from_config(cfg)
     summary = json.loads((result / 'summary.json').read_text(encoding='utf-8'))
 
+    assert summary['schema_version'] == 1
+    assert summary['artifact_kind'] == 'training_run_summary'
+    assert summary['status'] == 'ok'
+    assert summary['selected_backend'] == 'cuda_legacy'
+    assert summary['effective_backend'] == 'cuda_legacy'
+    assert summary['periodic_checkpoints'] == []
     assert summary['test_acc'] == 12.5
+    assert summary['test_loss'] is None
     assert summary['best_model_path'] == 'best.npz'

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import pytest
 
@@ -28,6 +29,15 @@ def test_train_from_random_config(tmp_path: Path):
     assert (run_dir / 'metrics.jsonl').exists()
     assert (run_dir / 'summary.json').exists()
     assert 'epoch_time_s' in (run_dir / 'metrics.jsonl').read_text(encoding='utf-8')
+    summary = json.loads((run_dir / 'summary.json').read_text(encoding='utf-8'))
+    assert summary['schema_version'] == 1
+    assert summary['artifact_kind'] == 'training_run_summary'
+    assert summary['status'] == 'ok'
+    assert summary['selected_backend'] == 'torch'
+    assert summary['effective_backend'] == 'torch'
+    assert isinstance(summary['periodic_checkpoints'], list)
+    assert 'test_loss' in summary
+    assert 'test_acc' in summary
 
 
 def test_optimizer_weight_decay_excludes_bias_and_norm_parameters():

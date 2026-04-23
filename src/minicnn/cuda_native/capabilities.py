@@ -6,6 +6,10 @@ from here rather than duplicating the list.
 """
 from __future__ import annotations
 
+from typing import Any
+
+CAPABILITY_SCHEMA_VERSION = 1
+
 CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     'experimental': True,
     'production_ready': False,
@@ -54,15 +58,41 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
 }
 
 
-def get_cuda_native_capabilities() -> dict[str, object]:
-    """Return a copy of the current cuda_native capability descriptor."""
+def _sorted_unique_strings(items: object) -> list[str]:
+    return sorted({str(item) for item in items if str(item)})
+
+
+def _kernel_registry_surface() -> list[dict[str, str]]:
+    from minicnn.cuda_native.kernels import DEFAULT_KERNEL_SPECS
+
+    return [
+        {
+            'op_name': spec.op_name,
+            'category': spec.category,
+        }
+        for spec in sorted(DEFAULT_KERNEL_SPECS, key=lambda spec: spec.op_name)
+    ]
+
+
+def get_cuda_native_capabilities() -> dict[str, Any]:
+    """Return a versioned, machine-readable cuda_native capability descriptor."""
     caps = dict(CUDA_NATIVE_CAPABILITIES)
-    caps['supported_ops'] = list(caps['supported_ops'])
-    caps['planned_ops'] = list(caps['planned_ops'])
-    caps['unsupported_ops'] = list(caps['unsupported_ops'])
-    caps['supported_datasets'] = list(caps['supported_datasets'])
-    caps['supported_losses'] = list(caps['supported_losses'])
-    caps['supported_optimizers'] = list(caps['supported_optimizers'])
-    caps['supported_schedulers'] = list(caps['supported_schedulers'])
-    caps['notes'] = list(caps['notes'])
+    caps['supported_ops'] = _sorted_unique_strings(caps['supported_ops'])
+    caps['planned_ops'] = _sorted_unique_strings(caps['planned_ops'])
+    caps['unsupported_ops'] = _sorted_unique_strings(caps['unsupported_ops'])
+    caps['supported_datasets'] = _sorted_unique_strings(caps['supported_datasets'])
+    caps['supported_losses'] = _sorted_unique_strings(caps['supported_losses'])
+    caps['supported_optimizers'] = _sorted_unique_strings(caps['supported_optimizers'])
+    caps['supported_schedulers'] = _sorted_unique_strings(caps['supported_schedulers'])
+    caps['notes'] = [str(note) for note in caps['notes']]
+    kernel_surface = _kernel_registry_surface()
+    caps.update({
+        'schema_version': CAPABILITY_SCHEMA_VERSION,
+        'backend': 'cuda_native',
+        'status': 'ok',
+        'summary_status': 'experimental',
+        'capability_kind': 'backend_capability_summary',
+        'supported_op_categories': sorted({entry['category'] for entry in kernel_surface}),
+        'kernel_registry_surface': kernel_surface,
+    })
     return caps

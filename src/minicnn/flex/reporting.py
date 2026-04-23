@@ -6,6 +6,8 @@ from typing import Any
 
 from minicnn.paths import BEST_MODELS_ROOT
 
+TRAINING_SUMMARY_SCHEMA_VERSION = 1
+
 
 def _best_model_path(run_dir: Path) -> Path:
     BEST_MODELS_ROOT.mkdir(parents=True, exist_ok=True)
@@ -73,6 +75,11 @@ def _build_training_summary(
     test_metrics: dict[str, float] | None,
 ) -> dict[str, Any]:
     summary = {
+        'schema_version': TRAINING_SUMMARY_SCHEMA_VERSION,
+        'artifact_kind': 'training_run_summary',
+        'status': 'ok',
+        'selected_backend': 'torch',
+        'effective_backend': 'torch',
         'device': str(device),
         'run_dir': str(run_dir),
         'best_model_path': str(best_model_path),
@@ -81,9 +88,10 @@ def _build_training_summary(
         'optimizer': cfg.get('optimizer', {}).get('type'),
         'loss': cfg.get('loss', {}).get('type'),
         'scheduler': cfg.get('scheduler', {}).get('type') if cfg.get('scheduler', {}).get('enabled') else None,
+        'periodic_checkpoints': list(periodic_checkpoints),
+        'test_loss': None,
+        'test_acc': None,
     }
-    if periodic_checkpoints:
-        summary['periodic_checkpoints'] = periodic_checkpoints
     if test_metrics is not None:
         summary['test_loss'] = test_metrics['loss']
         summary['test_acc'] = test_metrics['acc']

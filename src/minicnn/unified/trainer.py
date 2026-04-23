@@ -14,6 +14,22 @@ from minicnn.unified.cuda_legacy import compile_to_legacy_experiment, summarize_
 
 
 _MANAGED_CUDA_ENV: dict[str, tuple[bool, str | None, str]] = {}
+TRAINING_SUMMARY_SCHEMA_VERSION = 1
+
+
+def _base_training_summary(*, backend: str, run_dir: Path) -> dict[str, Any]:
+    return {
+        'schema_version': TRAINING_SUMMARY_SCHEMA_VERSION,
+        'artifact_kind': 'training_run_summary',
+        'status': 'ok',
+        'selected_backend': backend,
+        'effective_backend': backend,
+        'run_dir': str(run_dir),
+        'best_model_path': '',
+        'periodic_checkpoints': [],
+        'test_loss': None,
+        'test_acc': None,
+    }
 
 
 def _set_managed_env(name: str, value: Any | None) -> None:
@@ -75,9 +91,8 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
         # Start from the existing flex summary so its fields are preserved.
         merged: dict[str, Any] = json.loads(torch_summary_path.read_text(encoding='utf-8')) if torch_summary_path.exists() else {}
         # Merge in unified metadata without overwriting existing keys.
-        merged.setdefault('selected_backend', backend)
-        merged.setdefault('effective_backend', 'torch')
-        merged.setdefault('run_dir', str(run_dir))
+        for key, value in _base_training_summary(backend=backend, run_dir=run_dir).items():
+            merged.setdefault(key, value)
         merged.setdefault('best_model_path', str(BEST_MODELS_ROOT / f'{run_dir.name}_best.pt'))
         merged['config_backend_toggle_only'] = True
         dump_summary(run_dir, merged)
@@ -85,11 +100,8 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
 
     if backend == 'cuda_legacy':
         run_dir = create_run_dir(cfg)
-        cuda_summary: dict[str, Any] = {
-            'selected_backend': backend,
-            'run_dir': str(run_dir),
-            'config_backend_toggle_only': True,
-        }
+        cuda_summary = _base_training_summary(backend=backend, run_dir=run_dir)
+        cuda_summary['config_backend_toggle_only'] = True
         _configure_cuda_legacy_runtime(cfg, cuda_summary)
         exp = compile_to_legacy_experiment(cfg)
         os.environ['MINICNN_ARTIFACT_RUN_DIR'] = str(run_dir)
@@ -98,7 +110,6 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
         _reload_legacy_modules_after_config()
         from minicnn.training.train_cuda import main as legacy_main
         legacy_result = legacy_main() or {}
-        cuda_summary['effective_backend'] = 'cuda_legacy'
         if isinstance(legacy_result, dict):
             for key in ('test_loss', 'test_acc'):
                 if key in legacy_result:

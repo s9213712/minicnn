@@ -127,6 +127,13 @@ class TestAutogradBestCheckpointReload:
             cfg['project']['artifacts_root'] = tmpdir
             run_dir = train_autograd_from_config(cfg)
             summary = json.loads((run_dir / 'summary.json').read_text())
+            assert summary['schema_version'] == 1
+            assert summary['artifact_kind'] == 'training_run_summary'
+            assert summary['status'] == 'ok'
+            assert summary['selected_backend'] == 'autograd'
+            assert summary['effective_backend'] == 'autograd'
+            assert summary['periodic_checkpoints'] == []
+            assert summary['test_loss'] is None
             # test_acc must be a valid float in [0, 1]
             assert 0.0 <= float(summary['test_acc']) <= 1.0
             # best_val_acc must be present
