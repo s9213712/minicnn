@@ -329,18 +329,25 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['summary_status'] == 'experimental'
     assert payload['supports_depthwise_conv'] is True
     assert payload['supports_pointwise_conv'] is True
+    assert payload['supports_groupnorm'] is True
+    assert payload['supports_layernorm'] is True
     assert payload['supports_layernorm2d'] is True
     assert payload['supports_gelu'] is True
     assert payload['supports_residual_add'] is True
     assert payload['supports_convnext_block'] is True
     for op in (
+        'Add',
+        'Concat',
         'DepthwiseConv2d',
+        'GroupNorm',
+        'LayerNorm',
         'PointwiseConv2d',
         'LayerNorm2d',
         'GELU',
         'ResidualBlock',
         'ConvNeXtBlock',
         'Dropout',
+        'DropPath',
     ):
         assert op in payload['supported_ops']
     assert 'supported_op_categories' in payload

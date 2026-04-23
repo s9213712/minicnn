@@ -112,6 +112,68 @@ def _validate_layernorm2d_attrs(attrs: dict[str, Any], node_name: str) -> list[s
     return errors
 
 
+def _validate_groupnorm_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    errors: list[str] = []
+    if 'num_groups' not in attrs:
+        errors.append(
+            f'GroupNorm node={node_name}: missing required attr "num_groups"'
+        )
+    else:
+        try:
+            if int(attrs['num_groups']) <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append(
+                f'GroupNorm node={node_name}: attr "num_groups" must be a positive integer, got {attrs["num_groups"]!r}'
+            )
+    for key in ('num_channels', 'channels'):
+        if key not in attrs:
+            continue
+        try:
+            if int(attrs[key]) <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append(
+                f'GroupNorm node={node_name}: attr "{key}" must be a positive integer, got {attrs[key]!r}'
+            )
+    if 'eps' in attrs:
+        try:
+            float(attrs['eps'])
+        except (TypeError, ValueError):
+            errors.append(
+                f'GroupNorm node={node_name}: attr "eps" must be numeric, got {attrs["eps"]!r}'
+            )
+    return errors
+
+
+def _validate_layernorm_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    normalized_shape = attrs.get('normalized_shape')
+    if normalized_shape is None:
+        return [f'LayerNorm node={node_name}: missing required attr "normalized_shape"']
+    values = normalized_shape if isinstance(normalized_shape, (list, tuple)) else [normalized_shape]
+    errors: list[str] = []
+    if len(values) == 0:
+        errors.append(
+            f'LayerNorm node={node_name}: attr "normalized_shape" must contain at least one dimension'
+        )
+    for idx, value in enumerate(values):
+        try:
+            if int(value) <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append(
+                f'LayerNorm node={node_name}: normalized_shape[{idx}] must be a positive integer, got {value!r}'
+            )
+    if 'eps' in attrs:
+        try:
+            float(attrs['eps'])
+        except (TypeError, ValueError):
+            errors.append(
+                f'LayerNorm node={node_name}: attr "eps" must be numeric, got {attrs["eps"]!r}'
+            )
+    return errors
+
+
 def _validate_adaptive_avgpool2d_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
     output_size = attrs.get('output_size', 1)
     normalized = tuple(output_size) if isinstance(output_size, (list, tuple)) else output_size
@@ -131,6 +193,18 @@ def _validate_dropout_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
         return [f'Dropout node={node_name}: attr "p" must be numeric, got {attrs["p"]!r}']
     if not (0.0 <= p < 1.0):
         return [f'Dropout node={node_name}: attr "p" must be in [0, 1), got {p!r}']
+    return []
+
+
+def _validate_droppath_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    if 'p' not in attrs:
+        return []
+    try:
+        p = float(attrs['p'])
+    except (TypeError, ValueError):
+        return [f'DropPath node={node_name}: attr "p" must be numeric, got {attrs["p"]!r}']
+    if not (0.0 <= p < 1.0):
+        return [f'DropPath node={node_name}: attr "p" must be in [0, 1), got {p!r}']
     return []
 
 
@@ -189,27 +263,96 @@ def _validate_convnext_block_attrs(attrs: dict[str, Any], node_name: str) -> lis
     return errors
 
 
+def _validate_add_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    inputs = attrs.get('inputs')
+    if not isinstance(inputs, list):
+        return [f'Add node={node_name}: attr "inputs" must be a list of tensor names']
+    if len(inputs) < 2:
+        return [f'Add node={node_name}: attr "inputs" must contain at least two tensor names']
+    errors: list[str] = []
+    for idx, name in enumerate(inputs):
+        if not str(name).strip():
+            errors.append(
+                f'Add node={node_name}: inputs[{idx}] must be a non-empty tensor name, got {name!r}'
+            )
+    return errors
+
+
+def _validate_concat_attrs(attrs: dict[str, Any], node_name: str) -> list[str]:
+    inputs = attrs.get('inputs')
+    if not isinstance(inputs, list):
+        return [f'Concat node={node_name}: attr "inputs" must be a list of tensor names']
+    if len(inputs) < 2:
+        return [f'Concat node={node_name}: attr "inputs" must contain at least two tensor names']
+    errors: list[str] = []
+    for idx, name in enumerate(inputs):
+        if not str(name).strip():
+            errors.append(
+                f'Concat node={node_name}: inputs[{idx}] must be a non-empty tensor name, got {name!r}'
+            )
+    if 'axis' in attrs:
+        try:
+            int(attrs['axis'])
+        except (TypeError, ValueError):
+            errors.append(
+                f'Concat node={node_name}: attr "axis" must be an integer, got {attrs["axis"]!r}'
+            )
+    return errors
+
+
+def _validate_graph_binding_attrs(op: str, attrs: dict[str, Any], node_name: str) -> list[str]:
+    errors: list[str] = []
+    if 'name' in attrs and not str(attrs['name']).strip():
+        errors.append(f'{op} node={node_name}: attr "name" must be a non-empty string')
+    if 'output' in attrs and not str(attrs['output']).strip():
+        errors.append(f'{op} node={node_name}: attr "output" must be a non-empty tensor name')
+    if 'inputs' in attrs and op not in {'Add', 'Concat'}:
+        inputs = attrs['inputs']
+        if not isinstance(inputs, list):
+            errors.append(f'{op} node={node_name}: attr "inputs" must be a list of tensor names')
+        elif len(inputs) != 1:
+            errors.append(
+                f'{op} node={node_name}: explicit attr "inputs" currently requires exactly one tensor name'
+            )
+        elif not str(inputs[0]).strip():
+            errors.append(
+                f'{op} node={node_name}: inputs[0] must be a non-empty tensor name, got {inputs[0]!r}'
+            )
+    return errors
+
+
 def validate_layer_attrs(op: str, attrs: dict[str, Any], node_name: str) -> list[str]:
     """Validate op-specific attributes."""
+    errors = _validate_graph_binding_attrs(op, attrs, node_name)
     if op == 'Conv2d':
-        return _validate_conv2d_attrs(attrs, node_name)
+        return errors + _validate_conv2d_attrs(attrs, node_name)
     if op in {'DepthwiseConv2d', 'depthwise_conv2d'}:
-        return _validate_depthwise_conv2d_attrs(attrs, node_name)
+        return errors + _validate_depthwise_conv2d_attrs(attrs, node_name)
     if op in {'PointwiseConv2d', 'pointwise_conv2d'}:
-        return _validate_pointwise_conv2d_attrs(attrs, node_name)
+        return errors + _validate_pointwise_conv2d_attrs(attrs, node_name)
     if op == 'Linear':
-        return _validate_linear_attrs(attrs, node_name)
+        return errors + _validate_linear_attrs(attrs, node_name)
+    if op == 'GroupNorm':
+        return errors + _validate_groupnorm_attrs(attrs, node_name)
+    if op == 'LayerNorm':
+        return errors + _validate_layernorm_attrs(attrs, node_name)
     if op in {'LayerNorm2d', 'layernorm2d'}:
-        return _validate_layernorm2d_attrs(attrs, node_name)
+        return errors + _validate_layernorm2d_attrs(attrs, node_name)
     if op == 'AdaptiveAvgPool2d':
-        return _validate_adaptive_avgpool2d_attrs(attrs, node_name)
+        return errors + _validate_adaptive_avgpool2d_attrs(attrs, node_name)
+    if op == 'Add':
+        return errors + _validate_add_attrs(attrs, node_name)
+    if op == 'Concat':
+        return errors + _validate_concat_attrs(attrs, node_name)
     if op == 'Dropout':
-        return _validate_dropout_attrs(attrs, node_name)
+        return errors + _validate_dropout_attrs(attrs, node_name)
+    if op == 'DropPath':
+        return errors + _validate_droppath_attrs(attrs, node_name)
     if op == 'ResidualBlock':
-        return _validate_residual_block_attrs(attrs, node_name)
+        return errors + _validate_residual_block_attrs(attrs, node_name)
     if op in {'ConvNeXtBlock', 'convnext_block'}:
-        return _validate_convnext_block_attrs(attrs, node_name)
-    return []
+        return errors + _validate_convnext_block_attrs(attrs, node_name)
+    return errors
 
 
 def validate_layer_list(layers: list[dict[str, Any]]) -> list[str]:

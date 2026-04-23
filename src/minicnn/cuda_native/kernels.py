@@ -292,6 +292,71 @@ def _layernorm2d_forward_array(
     }
 
 
+def _groupnorm_forward_array(
+    x: np.ndarray,
+    *,
+    gamma: np.ndarray,
+    beta: np.ndarray,
+    num_groups: int,
+    eps: float,
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    if x.ndim != 4:
+        raise ValueError(f'GroupNorm expects 4-D input (N,C,H,W), got shape {x.shape}')
+    n, c, h, w = x.shape
+    if c % num_groups != 0:
+        raise ValueError(
+            f'GroupNorm expects num_groups={num_groups} to divide channels={c}'
+        )
+    channels_per_group = c // num_groups
+    x_group = x.reshape(n, num_groups, channels_per_group, h, w)
+    mean = x_group.mean(axis=(2, 3, 4), keepdims=True).astype(np.float32)
+    var = x_group.var(axis=(2, 3, 4), keepdims=True).astype(np.float32)
+    inv_std = (1.0 / np.sqrt(var + eps)).astype(np.float32)
+    x_hat_group = ((x_group - mean) * inv_std).astype(np.float32)
+    x_hat = x_hat_group.reshape(n, c, h, w).astype(np.float32)
+    out = (x_hat * gamma.reshape(1, c, 1, 1) + beta.reshape(1, c, 1, 1)).astype(np.float32)
+    return out, {
+        'x_hat': x_hat.astype(np.float32),
+        'mean': mean.astype(np.float32),
+        'var': var.astype(np.float32),
+        'inv_std': inv_std.astype(np.float32),
+        'num_groups': np.asarray(num_groups, dtype=np.int32),
+    }
+
+
+def _layernorm_forward_array(
+    x: np.ndarray,
+    *,
+    gamma: np.ndarray,
+    beta: np.ndarray,
+    normalized_shape: tuple[int, ...],
+    eps: float,
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    if not normalized_shape:
+        raise ValueError('LayerNorm expects non-empty normalized_shape')
+    if x.ndim < len(normalized_shape):
+        raise ValueError(
+            f'LayerNorm expects input rank >= {len(normalized_shape)}, got shape {x.shape}'
+        )
+    if tuple(int(v) for v in x.shape[-len(normalized_shape):]) != tuple(normalized_shape):
+        raise ValueError(
+            f'LayerNorm expects trailing shape {tuple(normalized_shape)}, got {tuple(x.shape[-len(normalized_shape):])}'
+        )
+    reduce_axes = tuple(range(x.ndim - len(normalized_shape), x.ndim))
+    mean = x.mean(axis=reduce_axes, keepdims=True).astype(np.float32)
+    var = x.var(axis=reduce_axes, keepdims=True).astype(np.float32)
+    inv_std = (1.0 / np.sqrt(var + eps)).astype(np.float32)
+    x_hat = ((x - mean) * inv_std).astype(np.float32)
+    reshape = (1,) * (x.ndim - len(normalized_shape)) + tuple(normalized_shape)
+    out = (x_hat * gamma.reshape(reshape) + beta.reshape(reshape)).astype(np.float32)
+    return out, {
+        'mean': mean.astype(np.float32),
+        'var': var.astype(np.float32),
+        'x_hat': x_hat.astype(np.float32),
+        'inv_std': inv_std.astype(np.float32),
+    }
+
+
 def _kernel_conv2d(node: Node, ctx: dict[str, Any]) -> None:
     x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
     w = np.asarray(ctx[f'_w_{node.name}'], dtype=np.float32)
@@ -440,6 +505,38 @@ def _kernel_identity(node: Node, ctx: dict[str, Any]) -> None:
     _kernel_elementwise(node, ctx, transform=lambda x: x)
 
 
+def _kernel_add(node: Node, ctx: dict[str, Any]) -> None:
+    if len(node.inputs) < 2:
+        raise ValueError(
+            f'Add node={node.name}: expected at least two input tensors, got {len(node.inputs)}'
+        )
+    arrays = [np.asarray(ctx[input_name], dtype=np.float32) for input_name in node.inputs]
+    ref_shape = arrays[0].shape
+    result = arrays[0].copy()
+    for idx, arr in enumerate(arrays[1:], start=1):
+        if arr.shape != ref_shape:
+            raise ValueError(
+                f'Add node={node.name}: all inputs must share the same shape, '
+                f'got input[0]={ref_shape} and input[{idx}]={arr.shape}'
+            )
+        result += arr
+    ctx[node.outputs[0]] = result.astype(np.float32)
+
+
+def _kernel_concat(node: Node, ctx: dict[str, Any]) -> None:
+    if len(node.inputs) < 2:
+        raise ValueError(
+            f'Concat node={node.name}: expected at least two input tensors, got {len(node.inputs)}'
+        )
+    arrays = [np.asarray(ctx[input_name], dtype=np.float32) for input_name in node.inputs]
+    axis = int(node.attrs.get('axis', 1))
+    try:
+        result = np.concatenate(arrays, axis=axis)
+    except ValueError as exc:
+        raise ValueError(f'Concat node={node.name}: {exc}') from exc
+    ctx[node.outputs[0]] = result.astype(np.float32)
+
+
 def _kernel_layernorm2d(node: Node, ctx: dict[str, Any]) -> None:
     x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
     if x.ndim != 4:
@@ -468,6 +565,82 @@ def _kernel_layernorm2d(node: Node, ctx: dict[str, Any]) -> None:
         x,
         gamma=gamma,
         beta=beta,
+        eps=eps,
+    )
+    ctx[node.outputs[0]] = y.astype(np.float32)
+
+
+def _kernel_groupnorm(node: Node, ctx: dict[str, Any]) -> None:
+    x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
+    if x.ndim != 4:
+        raise ValueError(
+            f'GroupNorm expects 4-D input (N,C,H,W), got shape {x.shape}'
+        )
+    channels = x.shape[1]
+    num_groups = int(node.attrs.get('num_groups', 0))
+    if num_groups <= 0:
+        raise ValueError(
+            f'GroupNorm node={node.name}: attr "num_groups" must be > 0, got {num_groups}'
+        )
+    eps = float(node.attrs.get('eps', 1e-5))
+    gamma = np.asarray(
+        ctx.get(f'_w_{node.name}', np.ones(channels, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    beta = np.asarray(
+        ctx.get(f'_b_{node.name}', np.zeros(channels, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    if gamma.shape != (channels,):
+        raise ValueError(
+            f'GroupNorm node={node.name}: weight must have shape {(channels,)}, got {gamma.shape}'
+        )
+    if beta.shape != (channels,):
+        raise ValueError(
+            f'GroupNorm node={node.name}: bias must have shape {(channels,)}, got {beta.shape}'
+        )
+    y, _cache = _groupnorm_forward_array(
+        x,
+        gamma=gamma,
+        beta=beta,
+        num_groups=num_groups,
+        eps=eps,
+    )
+    ctx[node.outputs[0]] = y.astype(np.float32)
+
+
+def _kernel_layernorm(node: Node, ctx: dict[str, Any]) -> None:
+    x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
+    raw_shape = node.attrs.get('normalized_shape')
+    if raw_shape is None:
+        raise ValueError(f'LayerNorm node={node.name}: missing required attr "normalized_shape"')
+    normalized_shape = (
+        (int(raw_shape),)
+        if isinstance(raw_shape, int)
+        else tuple(int(v) for v in raw_shape)
+    )
+    eps = float(node.attrs.get('eps', 1e-5))
+    gamma = np.asarray(
+        ctx.get(f'_w_{node.name}', np.ones(normalized_shape, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    beta = np.asarray(
+        ctx.get(f'_b_{node.name}', np.zeros(normalized_shape, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    if gamma.shape != normalized_shape:
+        raise ValueError(
+            f'LayerNorm node={node.name}: weight must have shape {normalized_shape}, got {gamma.shape}'
+        )
+    if beta.shape != normalized_shape:
+        raise ValueError(
+            f'LayerNorm node={node.name}: bias must have shape {normalized_shape}, got {beta.shape}'
+        )
+    y, _cache = _layernorm_forward_array(
+        x,
+        gamma=gamma,
+        beta=beta,
+        normalized_shape=normalized_shape,
         eps=eps,
     )
     ctx[node.outputs[0]] = y.astype(np.float32)
@@ -508,6 +681,28 @@ def _kernel_dropout(node: Node, ctx: dict[str, Any]) -> None:
         ctx['__dropout_rng__'] = rng
     keep_prob = 1.0 - p
     mask = (rng.random(x.shape, dtype=np.float32) < keep_prob).astype(np.float32) / keep_prob
+    ctx[node.outputs[0]] = (x * mask).astype(np.float32)
+    ctx[f'__cache_{node.name}'] = {'mask': mask.astype(np.float32)}
+
+
+def _kernel_droppath(node: Node, ctx: dict[str, Any]) -> None:
+    x = np.asarray(ctx[node.inputs[0]], dtype=np.float32)
+    p = float(node.attrs.get('p', 0.0))
+    mode = str(ctx.get('__mode__', 'eval'))
+    if mode == 'eval' or p <= 0.0:
+        ctx[node.outputs[0]] = x.astype(np.float32)
+        ctx[f'__cache_{node.name}'] = {'mask': np.ones_like(x, dtype=np.float32)}
+        return
+    if p >= 1.0:
+        raise ValueError(f'DropPath node={node.name}: p must be < 1.0, got {p}')
+    rng = ctx.get('__dropout_rng__')
+    if rng is None:
+        rng = np.random.default_rng(42)
+        ctx['__dropout_rng__'] = rng
+    keep_prob = 1.0 - p
+    mask_shape = (x.shape[0],) + (1,) * (x.ndim - 1)
+    mask = (rng.random(mask_shape, dtype=np.float32) < keep_prob).astype(np.float32) / keep_prob
+    mask = np.broadcast_to(mask, x.shape).astype(np.float32)
     ctx[node.outputs[0]] = (x * mask).astype(np.float32)
     ctx[f'__cache_{node.name}'] = {'mask': mask.astype(np.float32)}
 
@@ -714,6 +909,8 @@ _ACTIVATION_KERNEL_SPECS: tuple[KernelSpec, ...] = (
 
 
 DEFAULT_KERNEL_SPECS: tuple[KernelSpec, ...] = (
+    KernelSpec('Add', _kernel_add, 'elementwise'),
+    KernelSpec('Concat', _kernel_concat, 'elementwise'),
     KernelSpec('Conv2d', _kernel_conv2d, 'convolution'),
     KernelSpec('DepthwiseConv2d', _kernel_conv2d, 'convolution'),
     KernelSpec('depthwise_conv2d', _kernel_conv2d, 'convolution'),
@@ -723,11 +920,14 @@ DEFAULT_KERNEL_SPECS: tuple[KernelSpec, ...] = (
     KernelSpec('ConvNeXtBlock', _kernel_convnext_block, 'composite'),
     KernelSpec('convnext_block', _kernel_convnext_block, 'composite'),
     KernelSpec('BatchNorm2d', _kernel_batchnorm2d_eval, 'normalization'),
+    KernelSpec('GroupNorm', _kernel_groupnorm, 'normalization'),
+    KernelSpec('LayerNorm', _kernel_layernorm, 'normalization'),
     KernelSpec('LayerNorm2d', _kernel_layernorm2d, 'normalization'),
     KernelSpec('layernorm2d', _kernel_layernorm2d, 'normalization'),
     *_ACTIVATION_KERNEL_SPECS,
     KernelSpec('Identity', _kernel_identity, 'activation'),
     KernelSpec('Dropout', _kernel_dropout, 'regularization'),
+    KernelSpec('DropPath', _kernel_droppath, 'regularization'),
     KernelSpec('Flatten', _kernel_flatten, 'shape'),
     KernelSpec('Linear', _kernel_linear, 'linear'),
     KernelSpec('MaxPool2d', _kernel_maxpool2d, 'pool'),

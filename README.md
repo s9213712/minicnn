@@ -74,7 +74,7 @@ It is useful when you want one of these:
 | Backend | Role | Current status |
 |---|---|---|
 | `torch` | reference implementation | stable, broadest feature surface, first destination for new model work |
-| `cuda_native` | primary native backend | experimental, graph-based, sequential-only, active growth path |
+| `cuda_native` | primary native backend | experimental, graph-based, ordered-DAG capable, active growth path |
 | `autograd` | correctness oracle | stable, CPU-only, useful for deterministic checks and framework learning |
 | `cuda_legacy` | historical native backend | stable inside a narrow boundary, maintenance-only, not the target for new feature growth |
 
@@ -109,6 +109,9 @@ The current repo state includes:
 - artifact inspection/export and checkpoint payload handling moved into dedicated helper layers
 - JSON-friendly diagnostics and validation surfaces across `healthcheck`, `doctor`, `smoke`, `validate-*`, and inspection commands
 - real `show-model` and `show-graph` introspection commands instead of placeholders
+- `cuda_native` graph semantics broadened from strict sequential graphs to ordered DAG execution with named tensor wiring plus `Add` / `Concat`
+- `cuda_native` training surface broadened to `SGD`, `Adam`, `AdamW`, `RMSprop`, `CrossEntropyLoss`, `BCEWithLogitsLoss`, `MSELoss`, `label_smoothing`, `grad_accum_steps`, and experimental AMP
+- `summary.json` / `metrics.jsonl` now expose planner, AMP, and optimizer-state telemetry through stable reporting keys
 
 The user-facing command surface is intentionally still small, but the internal
 module boundaries are now narrower, the output contracts are more explicit, and
@@ -151,17 +154,20 @@ The active native growth path in the repo, built as a graph-based backend with:
 - memory estimation and reuse (`memory.py` — `memory_footprint()`, `BufferPool`)
 - observability tooling (`debug.py` — `dump_graph()`, `dump_plan()`, `TracingForwardExecutor`)
 
-Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`, `Flatten`, `Linear`.
+Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `DropPath`, `Add`, `Concat`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`, `Flatten`, `Linear`.
 
 Current validated support boundary:
 
 - datasets: `random`, `cifar10`, `mnist`
-- losses: `CrossEntropyLoss`, `MSELoss`
-- optimizer: `SGD` with optional momentum and global gradient clipping
+- losses: `CrossEntropyLoss` (optional `label_smoothing`), `BCEWithLogitsLoss` (binary output only), `MSELoss`
+- optimizer: `SGD`, `Adam`, `AdamW`, `RMSprop`, with optional global gradient clipping
 - scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
-- `train.amp=false`, `train.grad_accum_steps=1`
+- `train.grad_accum_steps >= 1`
+- `train.amp=true|false` with experimental loss scaling / overflow backoff
+- `summary.json` reports `amp_runtime`, `optimizer_runtime`, `planner`, and `performance_report`
+- `metrics.jsonl` rows report per-epoch AMP, optimizer, and planner telemetry
 
-Backward and training prototypes exist, but the backend is still experimental, sequential-only, and not production-ready yet. It is the backend that should grow next; `cuda_legacy` remains a narrow maintenance path.
+Backward and training prototypes exist, but the backend is still experimental and not production-ready yet. It now supports ordered DAG execution with explicit tensor wiring plus `Add` merge semantics; `cuda_legacy` remains a narrow maintenance path.
 
 Hermetic native smoke examples now exist for:
 
@@ -186,6 +192,7 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 ```
 
 See [docs/cuda_native.md](docs/cuda_native.md) for the full guide.
+See [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md) for the staged expansion direction.
 
 ## Quick Start
 

@@ -48,11 +48,11 @@ level.
 | Depthwise Conv2d | Partial | Unclear / not a target | No | Experimental |
 | Pointwise Conv / Linear MLP head | Yes | Partial | No practical fit | Experimental |
 | GELU | Yes | No | No | Experimental |
-| LayerNorm | Torch fallback possible | No | No | Experimental `LayerNorm2d` |
+| LayerNorm | Torch fallback possible | No | No | Experimental `LayerNorm` and `LayerNorm2d` |
 | Residual block semantics | Partial | Partial | No | Experimental composite support |
 | Global pooling classifier tail | Yes | Partial | No practical fit | Experimental |
 | Layer scale | Minimal built-in support | No | No | Experimental in `ConvNeXtBlock` |
-| Stochastic depth / DropPath | No built-in support | No | No | No |
+| Stochastic depth / DropPath | No built-in support | No | No | Experimental |
 | Minimal ConvNeXt-like built-in path | Experimental | No | No | Experimental |
 
 ## Interpretation
@@ -77,7 +77,6 @@ What now exists:
 
 Why this is still not "full ConvNeXt support":
 
-- there is still no `DropPath` / stochastic-depth support
 - there is still no staged architecture family beyond one minimal example
 - there is still no autograd support
 - there is still no `cuda_legacy` support
@@ -127,13 +126,13 @@ What exists:
 
 - explicit primitive execution support
 - `ConvNeXtBlock` composite support
+- experimental `DropPath` support in the broader backend surface
 - hermetic smoke templates for explicit and block-based paths
 - validator and capability coverage in the same patch line
 
 What still does not exist:
 
 - production-ready training stability
-- `DropPath` / stochastic depth
 - a broad architecture family beyond smoke-oriented templates
 
 Conclusion:

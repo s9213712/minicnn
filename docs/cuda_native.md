@@ -12,7 +12,7 @@ A staged, modular backend structured in layers:
 
 - **IR layer** (`graph.py`, `nodes.py`) — graph and tensor representation
 - **Validation layer** (`validators.py`, `shapes.py`) — shape inference and legality checks
-- **Planning layer** (`planner.py`) — conservative buffer allocation
+- **Planning layer** (`planner.py`) — conservative or reuse-aware buffer allocation
 - **Execution layer** (`executor.py`, `kernels.py`) — numpy reference kernels, dispatch table
 - **Backward layer** (`backward.py`) — gradient kernels prototype
 - **Training layer** (`loss.py`, `training.py`) — loss functions and SGD training loop
@@ -25,7 +25,7 @@ A staged, modular backend structured in layers:
 
 - Not a production training backend
 - Not backed by real CUDA kernels (uses numpy reference implementations)
-- Not general-purpose (sequential graphs only, no branching)
+- Not a full general-purpose graph backend yet (`Add`-based ordered DAG support exists, but richer merge ops are still missing)
 
 ## Current Status
 
@@ -35,6 +35,10 @@ A staged, modular backend structured in layers:
 | Shape inference | ✓ Basic |
 | Forward execution | ✓ Basic (numpy) |
 | Planner | ✓ Conservative / experimental |
+| Reuse-aware planning | ✓ Experimental (`make_reuse_plan`, `make_plan(..., strategy="reuse")`) |
+| Liveness analysis | ✓ Experimental (`analyze_live_ranges`, `analyze_live_tensor_sets`, `estimate_peak_live_bytes`) |
+| Reuse cost metrics | ✓ Experimental (`reuse_events`, `release_events`, `allocation_events`, `reuse_slack_bytes`) |
+| Pressure-aware reuse scoring | ✓ Experimental (`max_reuse_slack_ratio`, `pressure_reuse_threshold`) |
 | MaxPool2d, AvgPool2d | ✓ Supported (numpy ref) |
 | Layout validation | ✓ `validate_graph_layouts()` |
 | Memory footprint / pool | ✓ `memory_footprint()`, `BufferPool` |
@@ -44,7 +48,7 @@ A staged, modular backend structured in layers:
 | Training loop | ⚠ Research prototype |
 | Training in production | ✗ Not enabled |
 | Dynamic graph | ✗ Not supported |
-| Mixed precision | ✗ Not supported |
+| Mixed precision | ⚠ Experimental AMP |
 
 ## Supported Ops
 
@@ -63,16 +67,19 @@ A staged, modular backend structured in layers:
 | MaxPool2d | ✓ | Prototype |
 | AvgPool2d | ✓ | Prototype |
 | AdaptiveAvgPool2d (`output_size=(1,1)` only) | ✓ | Prototype |
+| Add | ✓ | Prototype |
+| Concat | ✓ | Prototype |
 | GlobalAvgPool2d | ✓ | Prototype |
 | Flatten | ✓ | Prototype |
 | Linear | ✓ | Prototype |
 | Dropout | ✓ prototype | ✓ prototype |
 | BatchNorm2d | ✓ prototype (eval + train-state update) | ✓ prototype |
+| GroupNorm | ✓ prototype | ✓ prototype |
+| LayerNorm | ✓ prototype | ✓ prototype |
 | LayerNorm2d | ✓ prototype | ✓ prototype |
 | ConvNeXtBlock | ✓ composite prototype | ✓ composite prototype |
-| GroupNorm | ✗ rejected | — |
-| LayerNorm | ✗ rejected | — |
 | ResidualBlock | ✓ composite prototype | ✓ composite prototype |
+| DropPath | ✓ prototype | ✓ prototype |
 
 `BatchNorm2d` now has forward/backward prototype support. It is part of the
 experimental training path, but remains prototype-level rather than stable.
@@ -81,13 +88,25 @@ experimental training path, but remains prototype-level rather than stable.
 composite / reference-kernel paths. They are validation-backed and runnable,
 but remain research-quality rather than production-ready.
 
+`Add` and `Concat` are the first generic merge ops in the backend. Together
+with explicit `inputs: [...]` and `output: ...` tensor wiring in `model.layers[]`,
+they enable ordered DAG execution for residual-style paths and simple channel-join
+paths without requiring every merge to be hidden inside a composite block.
+
 Validated `train-native` support boundary today:
 
 - dataset: `random`, `cifar10`, `mnist`
-- loss: `CrossEntropyLoss`, `MSELoss`
-- optimizer: `SGD` with optional momentum and global gradient clipping
+- loss: `CrossEntropyLoss` (optional `label_smoothing`), `BCEWithLogitsLoss` (binary output only), `MSELoss`
+- optimizer: `SGD`, `Adam`, `AdamW`, or `RMSprop`, with optional global gradient clipping
 - scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
-- `train.amp=false`, `train.grad_accum_steps=1`
+- `train.amp=true|false` (experimental mixed-precision prototype with loss scaling / overflow backoff)
+- `summary.json` now records `amp_config` and `amp_runtime` telemetry for AMP runs
+- `metrics.jsonl` rows now include per-epoch AMP telemetry (`loss_scale`, skipped/overflow steps, cache hits/updates/allocations)
+- `summary.json` now also records `optimizer_runtime` telemetry for optimizer state tensors
+- `metrics.jsonl` rows now include per-epoch optimizer telemetry (`steps_epoch`, state tensor allocations/updates, state tensor bytes)
+- `metrics.jsonl` rows now also include static planner memory telemetry (`strategy`, `peak_live_bytes`, `reuse_events`, `reuse_slack_bytes`)
+- `summary.json` also records static planner/memory telemetry under `planner`
+- `summary.json` now includes `performance_report`, which bundles planner, AMP, optimizer, and training knobs in one place
 
 Hermetic smoke configs:
 
@@ -101,7 +120,7 @@ Hermetic smoke configs:
 |---|---|---|
 | Role | maintenance-only historical backend | primary native backend direction |
 | Kernel type | Real CUDA / cuBLAS | NumPy reference |
-| Graph | Fixed handcrafted pipeline | Explicit graph IR |
+| Graph | Fixed handcrafted pipeline | Explicit ordered graph IR |
 | Validation | Strict boundary check | Graph-level shape and op check |
 | Planner | Implicit | Explicit buffer plan |
 | Dataset | CIFAR-10 only | CIFAR-10, MNIST, random |
@@ -149,7 +168,13 @@ minicnn train-dual --config configs/dual_backend_cnn.yaml engine.backend=cuda_na
 
 ```python
 from minicnn.cuda_native.graph import build_graph
-from minicnn.cuda_native.planner import make_naive_plan
+from minicnn.cuda_native.planner import (
+    make_naive_plan,
+    make_reuse_plan,
+    analyze_live_ranges,
+    analyze_live_tensor_sets,
+    estimate_peak_live_bytes,
+)
 from minicnn.cuda_native.debug import dump_graph, dump_plan, TracingForwardExecutor
 from minicnn.cuda_native.layouts import validate_graph_layouts, infer_layout
 from minicnn.cuda_native.memory import memory_footprint, BufferPool
@@ -169,9 +194,36 @@ print(dump_plan(plan))
 #   step  0  conv2d_0    Conv2d    [buf_0] -> [buf_1]
 #   ...
 
+# Or build an experimental topology-aware reuse plan
+reuse_plan = make_reuse_plan(graph)
+print(dump_plan(reuse_plan))
+
+# Inspect logical liveness
+print(analyze_live_ranges(graph))
+print(analyze_live_tensor_sets(graph))
+print(estimate_peak_live_bytes(graph))
+
+# Reuse plans expose allocator/release behavior
+print(reuse_plan.summary())
+
+# Reuse policy can trade off slack waste against allocation pressure
+reuse_plan = make_reuse_plan(
+    graph,
+    max_reuse_slack_ratio=2.0,
+    pressure_reuse_threshold=0.9,
+)
+
 # Validate layout correctness
 errors = validate_graph_layouts(graph)
 assert errors == []
+
+# Explicit merge wiring is supported
+graph = build_graph([
+    {'type': 'Identity', 'output': 'stem'},
+    {'type': 'Identity', 'inputs': ['stem'], 'output': 'left'},
+    {'type': 'Identity', 'inputs': ['stem'], 'output': 'right'},
+    {'type': 'Add', 'inputs': ['left', 'right'], 'output': 'sum'},
+], input_shape=(8, 16, 32, 32))
 
 # Estimate memory usage
 fp = memory_footprint(graph)
@@ -197,9 +249,9 @@ Config / YAML
   └─ validators.py     (op legality, attrs, shape constraints → fail fast)
   └─ shapes.py         (per-op shape inference)
   └─ nodes.py          (TensorSpec, Node dataclasses)
-  └─ graph.py          (NativeGraph, build_graph)
+  └─ graph.py          (NativeGraph, build_graph, ordered DAG tensor wiring)
   └─ layouts.py        (NCHW/NC layout constants, OP_LAYOUT_RULES, validate_graph_layouts)
-  └─ planner.py        (BufferPlan, ExecutionPlan, make_naive_plan)
+  └─ planner.py        (BufferPlan, ExecutionPlan, liveness analysis, make_naive_plan, make_reuse_plan, make_plan)
   └─ memory.py         (BufferAllocator, BufferPool, memory_footprint)
   └─ kernels.py        (KernelRegistry, numpy reference kernels)
   └─ executor.py       (ForwardExecutor, run / run_inference / run_with_cache)
@@ -306,11 +358,12 @@ native graph/planner/executor 能力公開地逐步長出來；`cuda_legacy`
 | Linear | ✓ | Prototype |
 | Dropout | ✓ prototype | ✓ prototype |
 | BatchNorm2d | ✓ prototype（eval + train 狀態更新） | ✓ prototype |
+| LayerNorm | ✓ prototype | ✓ prototype |
 | LayerNorm2d | ✓ prototype | ✓ prototype |
 | ConvNeXtBlock | ✓ composite prototype | ✓ composite prototype |
-| GroupNorm | ✗ 拒絕 | — |
-| LayerNorm | ✗ 拒絕 | — |
+| GroupNorm | ✓ prototype | ✓ prototype |
 | ResidualBlock | ✓ composite prototype | ✓ composite prototype |
+| DropPath | ✓ prototype | ✓ prototype |
 
 `BatchNorm2d` 現在已有 forward/backward prototype，已可進入實驗性訓練路徑，
 但整體仍屬 prototype 層級，不能視為穩定支援。
@@ -321,10 +374,17 @@ reference-kernel 路徑接通，可驗證、可執行，但仍不是正式穩定
 目前通過驗證的 `train-native` 支援範圍：
 
 - dataset：`random`、`cifar10`、`mnist`
-- loss：`CrossEntropyLoss`、`MSELoss`
-- optimizer：支援 `SGD`，可選 momentum 與 global gradient clipping
+- loss：`CrossEntropyLoss`（可搭配 `label_smoothing`）、`BCEWithLogitsLoss`（僅 binary output）、`MSELoss`
+- optimizer：支援 `SGD`、`Adam`、`AdamW`、`RMSprop`，可選 global gradient clipping
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
-- `train.amp=false`、`train.grad_accum_steps=1`
+- `train.amp=true|false`（帶 loss scaling / overflow backoff 的實驗性 mixed-precision prototype）、`train.grad_accum_steps>=1`
+- `summary.json` 會額外記錄 `amp_config` 與 `amp_runtime` telemetry
+- `metrics.jsonl` 每個 epoch row 也會記錄 AMP telemetry（`loss_scale`、skip/overflow、cache hit/update/allocation）
+- `summary.json` 也會額外記錄 `optimizer_runtime` telemetry（optimizer state tensors）
+- `metrics.jsonl` 每個 epoch row 也會記錄 optimizer telemetry（`steps_epoch`、state tensor allocation/update、state tensor bytes）
+- `metrics.jsonl` 每個 epoch row 也會額外帶 planner/memory telemetry（`strategy`、`peak_live_bytes`、`reuse_events`、`reuse_slack_bytes`）
+- `summary.json` 也會額外記錄靜態 planner/memory telemetry（`planner`）
+- `summary.json` 也包含 `performance_report`，把 planner / AMP / optimizer / training knobs 集中整理
 
 Hermetic smoke config：
 

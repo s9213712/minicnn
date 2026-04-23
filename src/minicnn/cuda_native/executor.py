@@ -107,6 +107,9 @@ class ForwardExecutor:
         for node in graph.topological_order():
             # Save input tensor before kernel mutates ctx
             if node.inputs:
+                cached_inputs = [ctx[inp] for inp in node.inputs if inp in ctx]
+                if cached_inputs:
+                    cache[f'fwd_{node.name}_inputs'] = cached_inputs
                 in_val = ctx.get(node.inputs[0])
                 if in_val is not None:
                     cache[f'fwd_{node.name}_in'] = in_val

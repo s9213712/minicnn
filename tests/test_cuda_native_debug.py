@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from minicnn.cuda_native.graph import build_graph
-from minicnn.cuda_native.planner import make_naive_plan
+from minicnn.cuda_native.planner import make_naive_plan, make_reuse_plan
 from minicnn.cuda_native.debug import (
     dump_graph, dump_plan, inspect,
     TracingForwardExecutor, ExecutionTrace,
@@ -57,6 +57,21 @@ def test_dump_plan_runs_without_error():
     out = dump_plan(plan)
     assert isinstance(out, str)
     assert len(out) > 0
+
+
+def test_dump_reuse_plan_runs_without_error():
+    graph = _smoke_graph()
+    plan = make_reuse_plan(graph)
+    out = dump_plan(plan)
+    assert isinstance(out, str)
+    assert len(out) > 0
+    assert 'strategy=reuse' in out
+    assert 'peak_live=' in out
+    assert 'reuse_events=' in out
+    assert 'alloc=' in out or 'reuse=' in out or 'release=' in out
+    assert 'live=' in out
+    assert 'reserved=' in out
+    assert 'pressure=' in out
 
 
 class TestDumpGraph:

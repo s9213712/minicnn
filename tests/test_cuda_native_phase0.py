@@ -47,6 +47,8 @@ def test_capability_surface_is_versioned_and_sorted():
     assert caps['backend'] == 'cuda_native'
     assert caps['status'] == 'ok'
     assert caps['summary_status'] == 'experimental'
+    assert caps['sequential_only'] is False
+    assert caps['branching_graph'] is True
     assert caps['supported_datasets'] == sorted(caps['supported_datasets'])
     assert caps['supported_schedulers'] == sorted(caps['supported_schedulers'])
 
@@ -60,20 +62,19 @@ def test_capability_surface_exposes_kernel_categories():
         'activation',
         'composite',
         'convolution',
+        'elementwise',
         'linear',
         'normalization',
         'pool',
         'regularization',
         'shape',
     ]
+    assert {'op_name': 'Add', 'category': 'elementwise'} in caps['kernel_registry_surface']
     assert caps['kernel_registry_surface'][0] == {
         'op_name': 'AdaptiveAvgPool2d',
         'category': 'pool',
     }
-    assert caps['kernel_registry_surface'][1] == {
-        'op_name': 'AvgPool2d',
-        'category': 'pool',
-    }
+    assert {'op_name': 'AvgPool2d', 'category': 'pool'} in caps['kernel_registry_surface']
 
 
 def test_capability_experimental_is_true():
@@ -114,18 +115,20 @@ def test_validator_accepts_supported_ops():
         'Flatten',
         'Linear',
         'Dropout',
+        'Add',
+        'Concat',
+        'GroupNorm',
+        'LayerNorm',
+        'DropPath',
         'ResidualBlock',
         'ConvNeXtBlock',
     ):
         assert validate_op_type(op) == [], f'{op} should be accepted'
 
 
-def test_validator_rejects_groupnorm():
+def test_validator_accepts_groupnorm():
     from minicnn.cuda_native.validators import validate_op_type
-    errors = validate_op_type('GroupNorm', node_name='gn1')
-    assert len(errors) == 1
-    assert 'GroupNorm' in errors[0]
-    assert 'gn1' in errors[0]
+    assert validate_op_type('GroupNorm', node_name='gn1') == []
 
 
 def test_validator_accepts_convnext_block():
@@ -155,11 +158,11 @@ def test_validate_layer_list_rejects_unsupported():
     from minicnn.cuda_native.validators import validate_layer_list
     layers = [
         {'type': 'Conv2d', 'out_channels': 32},
-        {'type': 'GroupNorm'},
+        {'type': 'CustomNorm'},
         {'type': 'ReLU'},
     ]
     errors = validate_layer_list(layers)
-    assert any('GroupNorm' in e for e in errors)
+    assert any('CustomNorm' in e for e in errors)
 
 
 def test_validate_layer_list_missing_type():
@@ -179,14 +182,23 @@ def test_api_validate_config_accepts_supported():
     assert validate_cuda_native_config(cfg) == []
 
 
-def test_api_validate_config_rejects_groupnorm():
+def test_api_validate_config_accepts_groupnorm():
     from minicnn.cuda_native.api import validate_cuda_native_config
     cfg = {'model': {'layers': [
         {'type': 'Conv2d', 'out_channels': 16},
-        {'type': 'GroupNorm'},
+        {'type': 'GroupNorm', 'num_groups': 4},
     ]}, 'optimizer': {'type': 'SGD', 'momentum': 0.0}, 'scheduler': {'enabled': False}}
-    errors = validate_cuda_native_config(cfg)
-    assert any('GroupNorm' in e for e in errors)
+    assert validate_cuda_native_config(cfg) == []
+
+
+def test_api_validate_config_accepts_layernorm():
+    from minicnn.cuda_native.api import validate_cuda_native_config
+    cfg = {'model': {'layers': [
+        {'type': 'Flatten'},
+        {'type': 'LayerNorm', 'normalized_shape': 48},
+        {'type': 'Linear', 'out_features': 10},
+    ]}, 'dataset': {'type': 'random', 'input_shape': [3, 4, 4], 'num_classes': 10, 'num_samples': 4, 'val_samples': 2}, 'optimizer': {'type': 'SGD', 'momentum': 0.0}, 'scheduler': {'enabled': False}}
+    assert validate_cuda_native_config(cfg) == []
 
 
 def test_api_validate_config_accepts_convnext_block():
@@ -211,10 +223,10 @@ def test_validate_layer_list_collects_missing_type_and_later_attr_error():
 def test_validate_layer_list_collects_unsupported_and_later_conv_attrs():
     from minicnn.cuda_native.validators import validate_layer_list
     errors = validate_layer_list([
-        {'type': 'GroupNorm'},
+        {'type': 'CustomNorm'},
         {'type': 'Conv2d', 'kernel_size': 'bad'},
     ])
-    assert any('GroupNorm' in e for e in errors)
+    assert any('CustomNorm' in e for e in errors)
     assert any('kernel_size' in e for e in errors)
 
 
@@ -231,7 +243,7 @@ def test_api_build_graph_raises_validation_error_before_not_implemented():
     from minicnn.cuda_native.api import build_cuda_native_graph
     with pytest.raises(ValueError, match='cuda_native validation failed'):
         build_cuda_native_graph(
-            {'layers': [{'type': 'GroupNorm'}]},
+            {'layers': [{'type': 'LayerNorm'}]},
             (1, 3, 32, 32),
         )
 

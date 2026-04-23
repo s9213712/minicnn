@@ -63,14 +63,14 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | MaxPool2d | ✓ | ✓ | ✓ fixed 2×2 | ✓ numpy ref |
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | BatchNorm2d | ✓ | ✓ | ✗ | ✓ forward/backward prototype |
+| GroupNorm | ✓ | ✗ | ✗ | **✓** prototype |
 | LayerNorm2d | ✓ | ✗ | ✗ | **✓** prototype |
-| LayerNorm | ✓ | ✗ | ✗ | ✗ rejected |
+| LayerNorm | ✓ | ✗ | ✗ | **✓** prototype |
 | DepthwiseConv2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | PointwiseConv2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | GlobalAvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | AdaptiveAvgPool2d | ✓ | ✓ | ✗ | **✓** `(1,1)` only |
 | Identity | ✓ | ✓ | ✗ | **✓** numpy ref |
-| GroupNorm | ✓ | ✗ | ✗ | ✗ rejected |
 | ResidualBlock | ✓ | ✓ | ✗ | **✓** composite prototype |
 | ConvNeXtBlock | ✓ experimental | ✗ | ✗ | **✓** composite prototype |
 | Dropout | ✓ | ✓ | ✗ | **✓** prototype |
@@ -84,25 +84,25 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | **Losses** | | | | |
 | CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
 | MSELoss | ✓ | ✓ | Experimental | **✓** numpy |
-| BCEWithLogitsLoss | ✓ binary | ✓ binary | ✗ | ✗ |
-| label_smoothing | ✓ | ✓ | ✗ | ✗ |
+| BCEWithLogitsLoss | ✓ binary | ✓ binary | ✗ | **✓** binary |
+| label_smoothing | ✓ | ✓ | ✗ | **✓** cross-entropy prototype |
 | **Optimizers** | | | | |
 | SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
 | Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Adam | ✓ | ✓ | Experimental | ✗ |
-| AdamW | ✓ | ✓ | ✗ | ✗ |
-| RMSprop | ✓ | ✓ | ✗ | ✗ |
+| Adam | ✓ | ✓ | Experimental | **✓** numpy prototype |
+| AdamW | ✓ | ✓ | ✗ | **✓** numpy prototype |
+| RMSprop | ✓ | ✓ | ✗ | **✓** numpy prototype |
 | **Schedulers** | | | | |
 | None / disabled | ✓ | ✓ | ✓ | ✓ |
 | StepLR | ✓ | ✓ | ✗ | ✓ |
 | CosineAnnealingLR | ✓ | ✓ | ✗ | ✓ |
 | ReduceLROnPlateau | ✓ | ✓ | partial | ✓ |
 | **Regularization** | | | | |
-| weight_decay | ✓ | ✓ | ✓ | ✓ in SGD |
+| weight_decay | ✓ | ✓ | ✓ | ✓ |
 | gradient clipping | ✓ | ✓ | ✓ | ✓ global norm |
-| AMP | ✓ CUDA only | ✗ | ✗ | ✗ |
+| AMP | ✓ CUDA only | ✗ | ✗ | ⚠ experimental |
 | **Frontend** | | | | |
-| `model.layers[]` YAML | ✓ | ✓ | ✓ fixed pattern | ✓ sequential only |
+| `model.layers[]` YAML | ✓ | ✓ | ✓ fixed pattern | ✓ ordered DAG with named tensor wiring |
 | dotted-path components | ✓ | ✗ | ✗ | ✗ |
 | block presets | ✓ | ✗ | ✗ | ✗ |
 | **Training** | | | | |
@@ -155,17 +155,26 @@ Validation failures now return short CLI messages or JSON payloads instead of ra
 
 Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work, but it is still experimental and not production-ready.
 
-Supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`.
+Supported ops: `BatchNorm2d` (forward/backward prototype), `Concat`, `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `DropPath`, `Add`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`.
+
+Graph semantics:
+
+- ordered DAG execution, not just a strict linear chain
+- explicit `inputs: [...]` and `output: ...` tensor wiring in `model.layers[]`
+- generic `Add` / `Concat` merge support for residual-style and channel-join paths
 
 Validated train-native support boundary:
 
 - dataset: `random`, `cifar10`, `mnist`
-- loss: `CrossEntropyLoss`, `MSELoss`
-- optimizer: `SGD` with optional momentum and global gradient clipping
+- loss: `CrossEntropyLoss` (with optional `label_smoothing`), `BCEWithLogitsLoss` (binary output only), `MSELoss`
+- optimizer: `SGD`, `Adam`, `AdamW`, or `RMSprop`, with global gradient clipping
 - scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
-- `train.amp=false`, `train.grad_accum_steps=1`
+- `train.amp=true|false` (experimental mixed-precision prototype with loss scaling / overflow backoff)
+- `train.grad_accum_steps >= 1`
+- `summary.json` exposes `amp_runtime`, `optimizer_runtime`, `planner`, and `performance_report`
+- `metrics.jsonl` exposes per-epoch AMP, optimizer, and planner telemetry
 
-Unsupported (rejected at validation): `GroupNorm`, `LayerNorm`.
+Still rejected at validation or train-native gating: unsupported optimizers outside `SGD` / `Adam` / `AdamW` / `RMSprop`.
 
 Note: backward and training prototypes exist, and `BatchNorm2d` now has a prototype backward path too. The overall backend remains experimental and not production-ready. New native capability work should usually land here, not in `cuda_legacy`.
 
@@ -281,13 +290,13 @@ Debugging order:
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | BatchNorm2d | ✓ | ✓ | ✗ | ✓ forward/backward prototype |
 | LayerNorm2d | ✓ | ✗ | ✗ | **✓** prototype |
-| LayerNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
+| LayerNorm | ✓ | ✗ | ✗ | **✓** prototype |
 | DepthwiseConv2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | PointwiseConv2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | GlobalAvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | AdaptiveAvgPool2d | ✓ | ✓ | ✗ | **✓** 僅 `(1,1)` |
 | Identity | ✓ | ✓ | ✗ | **✓** numpy ref |
-| GroupNorm | ✓ | ✗ | ✗ | ✗ 拒絕 |
+| GroupNorm | ✓ | ✗ | ✗ | **✓** prototype |
 | ResidualBlock | ✓ | ✓ | ✗ | **✓** composite prototype |
 | ConvNeXtBlock | ✓ 實驗性 | ✗ | ✗ | **✓** composite prototype |
 | Dropout | ✓ | ✓ | ✗ | **✓** prototype |
@@ -301,25 +310,25 @@ Debugging order:
 | **損失函數** | | | | |
 | CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
 | MSELoss | ✓ | ✓ | 實驗中 | **✓** numpy |
-| BCEWithLogitsLoss | ✓ binary | ✓ binary | ✗ | ✗ |
-| label_smoothing | ✓ | ✓ | ✗ | ✗ |
+| BCEWithLogitsLoss | ✓ binary | ✓ binary | ✗ | **✓** binary |
+| label_smoothing | ✓ | ✓ | ✗ | **✓** cross-entropy prototype |
 | **優化器** | | | | |
 | SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
 | Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Adam | ✓ | ✓ | 實驗中 | ✗ |
-| AdamW | ✓ | ✓ | ✗ | ✗ |
-| RMSprop | ✓ | ✓ | ✗ | ✗ |
+| Adam | ✓ | ✓ | 實驗中 | **✓** numpy prototype |
+| AdamW | ✓ | ✓ | ✗ | **✓** numpy prototype |
+| RMSprop | ✓ | ✓ | ✗ | **✓** numpy prototype |
 | **Scheduler** | | | | |
 | 無 / 停用 | ✓ | ✓ | ✓ | ✓ |
 | StepLR | ✓ | ✓ | ✗ | ✓ |
 | CosineAnnealingLR | ✓ | ✓ | ✗ | ✓ |
 | ReduceLROnPlateau | ✓ | ✓ | 部分支援 | ✓ |
 | **正則化** | | | | |
-| weight_decay | ✓ | ✓ | ✓ | ✓ SGD 內建 |
+| weight_decay | ✓ | ✓ | ✓ | ✓ |
 | gradient clipping | ✓ | ✓ | ✓ | ✓ global norm |
-| AMP | ✓ CUDA 限定 | ✗ | ✗ | ✗ |
+| AMP | ✓ CUDA 限定 | ✗ | ✗ | ⚠ 實驗性 |
 | **前端便利功能** | | | | |
-| `model.layers[]` YAML | ✓ | ✓ | ✓ 固定 pattern | ✓ sequential only |
+| `model.layers[]` YAML | ✓ | ✓ | ✓ 固定 pattern | ✓ 具名 tensor wiring 的 ordered DAG |
 | dotted-path 自訂元件 | ✓ | ✗ | ✗ | ✗ |
 | block presets | ✓ | ✗ | ✗ | ✗ |
 | **訓練** | | | | |
@@ -375,13 +384,13 @@ Debugging order:
 
 - dataset：`random`、`cifar10`、`mnist`
 - loss：`CrossEntropyLoss`、`MSELoss`
-- optimizer：支援 `SGD`，可選 momentum 與 global gradient clipping
+- optimizer：支援 `SGD`、`Adam`、`AdamW`、`RMSprop`，並支援 global gradient clipping
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
-- `train.amp=false`、`train.grad_accum_steps=1`
+- `train.amp=true|false`（帶 loss scaling / overflow backoff 的實驗性 mixed-precision prototype）
 
-支援 op：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`DepthwiseConv2d`、`PointwiseConv2d`、`LayerNorm2d`、`ResidualBlock`、`ConvNeXtBlock`、`Dropout`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`GELU`、`Identity`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`、`AdaptiveAvgPool2d`（僅 `output_size=(1,1)`）、`GlobalAvgPool2d`。
+支援 op：`BatchNorm2d`（forward/backward prototype）、`Concat`、`Conv2d`、`DepthwiseConv2d`、`PointwiseConv2d`、`GroupNorm`、`LayerNorm`、`LayerNorm2d`、`ResidualBlock`、`ConvNeXtBlock`、`Dropout`、`DropPath`、`Add`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`GELU`、`Identity`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`、`AdaptiveAvgPool2d`（僅 `output_size=(1,1)`）、`GlobalAvgPool2d`。
 
-驗證時拒絕的 op：`GroupNorm`、`LayerNorm`。
+目前驗證或 `train-native` gate 仍拒絕：不在 `SGD` / `Adam` / `AdamW` / `RMSprop` 內的 optimizer。
 
 注意：雖然已有 backward 與 training prototype，且 `BatchNorm2d` 也已有 prototype 級的 backward，但整體 backend 仍屬實驗性，不是正式訓練後端。後續 native 能力通常也應優先長在這裡，而不是回填到 `cuda_legacy`。
 

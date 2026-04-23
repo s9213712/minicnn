@@ -219,6 +219,145 @@ def test_planner_empty_graph():
     assert plan.buffer_plan.total_nbytes == 0
 
 
+def test_reuse_planner_reduces_buffer_count_for_linear_chain():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.planner import make_naive_plan, make_reuse_plan
+
+    g = build_graph([
+        {'type': 'Flatten'},
+        {'type': 'Linear', 'out_features': 10},
+        {'type': 'ReLU'},
+    ], (4, 3, 8, 8))
+
+    naive = make_naive_plan(g)
+    reuse = make_reuse_plan(g)
+
+    assert reuse.strategy == 'reuse'
+    assert reuse.buffer_plan.num_buffers <= naive.buffer_plan.num_buffers
+    assert (
+        reuse.buffer_plan.reuse_events > 0
+        or reuse.buffer_plan.oversized_reuse_avoided > 0
+    )
+
+
+def test_reuse_planner_handles_add_merge_graph():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.planner import (
+        analyze_live_ranges,
+        analyze_live_tensor_sets,
+        estimate_peak_live_bytes,
+        make_reuse_plan,
+    )
+
+    g = build_graph([
+        {'type': 'Identity', 'output': 'stem'},
+        {'type': 'Identity', 'inputs': ['stem'], 'output': 'left'},
+        {'type': 'Identity', 'inputs': ['stem'], 'output': 'right'},
+        {'type': 'Add', 'inputs': ['left', 'right'], 'output': 'sum'},
+    ], (2, 3))
+
+    live_ranges = analyze_live_ranges(g)
+    live_sets = analyze_live_tensor_sets(g)
+    plan = make_reuse_plan(g)
+
+    assert live_ranges['left'] == 3
+    assert live_ranges['right'] == 3
+    assert {'stem', 'left', 'right'} <= live_sets[2]
+    assert estimate_peak_live_bytes(g) > 0
+    assert plan.steps[-1].op_type == 'Add'
+    assert len(plan.steps[-1].input_buffers) == 2
+    assert plan.buffer_plan.reuse_events >= 0
+
+
+def test_make_plan_rejects_unknown_strategy():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.planner import make_plan
+    import pytest
+
+    g = build_graph([{'type': 'ReLU'}], (1, 4))
+    with pytest.raises(ValueError, match='Unsupported cuda_native planning strategy'):
+        make_plan(g, strategy='mystery')
+
+
+def test_plan_summary_exposes_strategy_and_reuse_metrics():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.planner import make_reuse_plan
+
+    g = build_graph([
+        {'type': 'Flatten'},
+        {'type': 'Linear', 'out_features': 10},
+        {'type': 'ReLU'},
+    ], (4, 3, 8, 8))
+    summary = make_reuse_plan(g).summary()
+
+    assert summary['strategy'] == 'reuse'
+    assert 'peak_live_bytes' in summary['buffer_plan']
+    assert 'reuse_events' in summary['buffer_plan']
+    assert 'release_events' in summary['buffer_plan']
+    assert 'allocation_events' in summary['buffer_plan']
+    assert 'reuse_slack_bytes' in summary['buffer_plan']
+    assert 'oversized_reuse_avoided' in summary['buffer_plan']
+
+
+def test_reuse_plan_step_exposes_allocate_reuse_release_lists():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.planner import make_reuse_plan
+
+    g = build_graph([
+        {'type': 'Flatten'},
+        {'type': 'Linear', 'out_features': 10},
+        {'type': 'ReLU'},
+    ], (4, 3, 8, 8))
+    step = make_reuse_plan(g).steps[-1]
+
+    assert isinstance(step.allocated_buffers, list)
+    assert isinstance(step.reused_buffers, list)
+    assert isinstance(step.released_buffers, list)
+    assert isinstance(step.live_bytes_before, int)
+    assert isinstance(step.live_bytes_after, int)
+    assert isinstance(step.reserved_bytes_after, int)
+    assert isinstance(step.pressure_after, float)
+
+
+def test_reuse_plan_can_avoid_oversized_reuse_under_low_pressure():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.planner import make_reuse_plan
+
+    g = build_graph([
+        {'type': 'Flatten', 'output': 'flat'},
+        {'type': 'Linear', 'inputs': ['flat'], 'out_features': 512, 'output': 'wide'},
+        {'type': 'Linear', 'inputs': ['wide'], 'out_features': 4, 'output': 'small'},
+    ], (1, 3, 32, 32))
+
+    plan = make_reuse_plan(
+        g,
+        max_reuse_slack_ratio=0.1,
+        pressure_reuse_threshold=0.99,
+    )
+
+    assert plan.buffer_plan.oversized_reuse_avoided >= 1
+
+
+def test_make_plan_forwards_reuse_kwargs():
+    from minicnn.cuda_native.graph import build_graph
+    from minicnn.cuda_native.planner import make_plan
+
+    g = build_graph([
+        {'type': 'Flatten'},
+        {'type': 'Linear', 'out_features': 16},
+        {'type': 'Linear', 'out_features': 4},
+    ], (1, 3, 8, 8))
+
+    plan = make_plan(
+        g,
+        strategy='reuse',
+        max_reuse_slack_ratio=0.1,
+        pressure_reuse_threshold=0.99,
+    )
+
+    assert plan.strategy == 'reuse'
+
+
 # ---------------------------------------------------------------------------
 # End-to-end with pool
 # ---------------------------------------------------------------------------

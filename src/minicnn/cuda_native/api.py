@@ -67,13 +67,24 @@ def _validate_dataset_cfg(dataset_cfg: dict[str, Any]) -> list[str]:
 
 
 def _validate_loss_cfg(loss_cfg: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
     loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
     if loss_type not in _SUPPORTED_LOSS_TYPES:
         supported = ', '.join(sorted(_SUPPORTED_LOSS_TYPES))
         return [
             f'cuda_native does not support loss.type={loss_type!r}. Supported: {supported}.'
         ]
-    return []
+    if 'label_smoothing' in loss_cfg:
+        smoothing, smoothing_errors = _coerce_float(
+            'loss.label_smoothing',
+            loss_cfg.get('label_smoothing', 0.0),
+        )
+        errors.extend(smoothing_errors)
+        if smoothing is not None and not (0.0 <= smoothing < 1.0):
+            errors.append('loss.label_smoothing must be in [0, 1) for cuda_native.')
+        if smoothing is not None and smoothing > 0.0 and loss_type != 'CrossEntropyLoss':
+            errors.append('cuda_native only supports loss.label_smoothing with CrossEntropyLoss.')
+    return errors
 
 
 def _validate_optimizer_cfg(optim_cfg: dict[str, Any]) -> list[str]:
@@ -89,13 +100,48 @@ def _validate_optimizer_cfg(optim_cfg: dict[str, Any]) -> list[str]:
     base_lr, lr_errors = _coerce_float('optimizer.lr', optim_cfg.get('lr', 0.01))
     errors.extend(lr_errors)
 
-    momentum_val, momentum_errors = _coerce_float(
-        'optimizer.momentum',
-        optim_cfg.get('momentum', 0.0),
-    )
-    errors.extend(momentum_errors)
-    if momentum_val is not None and momentum_val < 0.0:
-        errors.append('optimizer.momentum must be >= 0 for cuda_native.')
+    if opt_type == 'SGD':
+        momentum_val, momentum_errors = _coerce_float(
+            'optimizer.momentum',
+            optim_cfg.get('momentum', 0.0),
+        )
+        errors.extend(momentum_errors)
+        if momentum_val is not None and momentum_val < 0.0:
+            errors.append('optimizer.momentum must be >= 0 for cuda_native.')
+    elif opt_type in {'Adam', 'AdamW'}:
+        for field in ('beta1', 'beta2', 'eps'):
+            if field not in optim_cfg:
+                continue
+            value, value_errors = _coerce_float(f'optimizer.{field}', optim_cfg[field])
+            errors.extend(value_errors)
+            if value is None:
+                continue
+            if field in {'beta1', 'beta2'} and not (0.0 <= value < 1.0):
+                errors.append(f'optimizer.{field} must be in [0, 1) for {opt_type}.')
+            if field == 'eps' and value <= 0.0:
+                errors.append(f'optimizer.eps must be > 0 for {opt_type}.')
+    elif opt_type == 'RMSprop':
+        alpha_val, alpha_errors = _coerce_float(
+            'optimizer.alpha',
+            optim_cfg.get('alpha', 0.99),
+        )
+        errors.extend(alpha_errors)
+        if alpha_val is not None and not (0.0 <= alpha_val < 1.0):
+            errors.append('optimizer.alpha must be in [0, 1) for RMSprop.')
+        eps_val, eps_errors = _coerce_float(
+            'optimizer.eps',
+            optim_cfg.get('eps', 1e-8),
+        )
+        errors.extend(eps_errors)
+        if eps_val is not None and eps_val <= 0.0:
+            errors.append('optimizer.eps must be > 0 for RMSprop.')
+        momentum_val, momentum_errors = _coerce_float(
+            'optimizer.momentum',
+            optim_cfg.get('momentum', 0.0),
+        )
+        errors.extend(momentum_errors)
+        if momentum_val is not None and momentum_val < 0.0:
+            errors.append('optimizer.momentum must be >= 0 for RMSprop.')
 
     grad_clip_val, grad_clip_errors = _coerce_float(
         'optimizer.grad_clip_global',
@@ -203,23 +249,59 @@ def _validate_scheduler_cfg(scheduler_cfg: dict[str, Any]) -> list[str]:
 
 def _validate_train_cfg(train_cfg: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if bool(train_cfg.get('amp', False)):
-        errors.append('cuda_native does not support train.amp=true.')
     grad_accum_steps, grad_accum_errors = _coerce_int(
         'train.grad_accum_steps',
         train_cfg.get('grad_accum_steps', 1),
     )
     errors.extend(grad_accum_errors)
-    if grad_accum_steps is not None and grad_accum_steps != 1:
-        errors.append(
-            'cuda_native does not support train.grad_accum_steps other than 1.'
-        )
+    if grad_accum_steps is not None and grad_accum_steps <= 0:
+        errors.append('train.grad_accum_steps must be >= 1 for cuda_native.')
+    amp_loss_scale, amp_loss_scale_errors = _coerce_float(
+        'train.amp_loss_scale',
+        train_cfg.get('amp_loss_scale', 128.0),
+    )
+    errors.extend(amp_loss_scale_errors)
+    if amp_loss_scale is not None and amp_loss_scale <= 0.0:
+        errors.append('train.amp_loss_scale must be > 0 for cuda_native AMP.')
+    amp_scale_growth, amp_scale_growth_errors = _coerce_float(
+        'train.amp_scale_growth',
+        train_cfg.get('amp_scale_growth', 2.0),
+    )
+    errors.extend(amp_scale_growth_errors)
+    if amp_scale_growth is not None and amp_scale_growth <= 1.0:
+        errors.append('train.amp_scale_growth must be > 1 for cuda_native AMP.')
+    amp_scale_backoff, amp_scale_backoff_errors = _coerce_float(
+        'train.amp_scale_backoff',
+        train_cfg.get('amp_scale_backoff', 0.5),
+    )
+    errors.extend(amp_scale_backoff_errors)
+    if amp_scale_backoff is not None and not (0.0 < amp_scale_backoff < 1.0):
+        errors.append('train.amp_scale_backoff must be in (0, 1) for cuda_native AMP.')
+    amp_scale_window, amp_scale_window_errors = _coerce_int(
+        'train.amp_scale_window',
+        train_cfg.get('amp_scale_window', 200),
+    )
+    errors.extend(amp_scale_window_errors)
+    if amp_scale_window is not None and amp_scale_window <= 0:
+        errors.append('train.amp_scale_window must be >= 1 for cuda_native AMP.')
     device = train_cfg.get('device')
     if device not in {None, 'auto', 'cpu'}:
         errors.append(
             f'cuda_native ignores train.device={device!r}; use "auto" or "cpu".'
         )
     return errors
+
+
+def _validation_input_shape(dataset_cfg: dict[str, Any]) -> tuple[int, ...] | None:
+    input_shape = dataset_cfg.get('input_shape')
+    if isinstance(input_shape, (list, tuple)) and input_shape:
+        return (1, *tuple(int(dim) for dim in input_shape))
+    dtype = str(dataset_cfg.get('type', 'random'))
+    if dtype == 'cifar10':
+        return (1, 3, 32, 32)
+    if dtype == 'mnist':
+        return (1, 1, 28, 28)
+    return None
 
 
 def validate_cuda_native_config(cfg: dict[str, Any]) -> list[str]:
@@ -243,12 +325,31 @@ def validate_cuda_native_config(cfg: dict[str, Any]) -> list[str]:
     errors.extend(scheduler_cfg_errors)
     errors.extend(train_cfg_errors)
 
-    errors.extend(validate_cuda_native_model_config(model_cfg))
+    model_errors = validate_cuda_native_model_config(model_cfg)
+    errors.extend(model_errors)
     errors.extend(_validate_dataset_cfg(dataset_cfg))
     errors.extend(_validate_loss_cfg(loss_cfg))
     errors.extend(_validate_optimizer_cfg(optim_cfg))
     errors.extend(_validate_scheduler_cfg(scheduler_cfg))
     errors.extend(_validate_train_cfg(train_cfg))
+
+    validation_input_shape = _validation_input_shape(dataset_cfg)
+    if validation_input_shape is not None and not model_errors:
+        try:
+            graph = build_cuda_native_graph(model_cfg, validation_input_shape)
+            loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
+            if loss_type == 'BCEWithLogitsLoss':
+                output_shape = tuple(graph.output_spec.shape) if graph.output_spec is not None else ()
+                if len(output_shape) != 2 or int(output_shape[1]) != 1:
+                    errors.append(
+                        'cuda_native requires model output shape (N, 1) for BCEWithLogitsLoss.'
+                    )
+        except ValueError as exc:
+            message = str(exc)
+            if message.startswith('cuda_native validation failed:\n- '):
+                errors.extend(message.removeprefix('cuda_native validation failed:\n- ').split('\n- '))
+            else:
+                errors.append(message)
 
     return errors
 

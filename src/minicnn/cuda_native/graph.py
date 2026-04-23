@@ -1,4 +1,4 @@
-"""Sequential graph container for cuda_native."""
+"""Ordered graph container for cuda_native."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -6,18 +6,18 @@ from typing import Any
 
 from minicnn.cuda_native.nodes import Node, TensorSpec
 from minicnn.cuda_native.shapes import infer_shape
-from minicnn.cuda_native.validators import validate_op_type
+from minicnn.cuda_native.validators import validate_layer_attrs, validate_op_type
 
 
 @dataclass
 class NativeGraph:
-    """Immutable-ish sequential graph produced by build_graph()."""
+    """Immutable-ish ordered graph produced by build_graph()."""
     nodes: list[Node] = field(default_factory=list)
     input_spec: TensorSpec | None = None
     output_spec: TensorSpec | None = None
 
     def topological_order(self) -> list[Node]:
-        """For sequential graphs this is just insertion order."""
+        """For ordered DAGs this is the insertion order established at build time."""
         return list(self.nodes)
 
     def summary(self) -> dict[str, object]:
@@ -57,43 +57,82 @@ def build_graph(
     errors: list[str] = []
     for i, layer in enumerate(layers):
         op = str(layer.get('type', ''))
-        errors.extend(validate_op_type(op, node_name=f'layer_{i}'))
+        node_name = str(layer.get('name') or f'{op.lower()}_{i}')
+        op_errors = validate_op_type(op, node_name=node_name)
+        errors.extend(op_errors)
+        if not op_errors:
+            attrs = {k: v for k, v in layer.items() if k != 'type'}
+            errors.extend(validate_layer_attrs(op, attrs, node_name))
     if errors:
         raise ValueError('cuda_native validation failed:\n- ' + '\n- '.join(errors))
 
     graph = NativeGraph()
-    current_shape = tuple(input_shape)
-    input_tensor = TensorSpec(name='input', shape=current_shape)
+    input_tensor = TensorSpec(name='input', shape=tuple(input_shape))
     graph.input_spec = input_tensor
-
-    # Tensor naming: 'input' for the feed, then 't_1', 't_2', ... for intermediates.
-    # This ensures node.inputs[0] == 'input' for the first node, matching the feed dict.
+    tensor_specs: dict[str, TensorSpec] = {'input': input_tensor}
     prev_name = 'input'
 
     for i, layer in enumerate(layers):
         op = str(layer['type'])
-        attrs = {k: v for k, v in layer.items() if k != 'type'}
-        node_name = f'{op.lower()}_{i}'
+        node_name = str(layer.get('name') or f'{op.lower()}_{i}')
+        attrs = {
+            k: v for k, v in layer.items() if k not in {'type', 'name', 'inputs', 'output'}
+        }
+        input_names_raw = layer.get('inputs')
+        if input_names_raw is None:
+            input_names = [prev_name]
+        elif isinstance(input_names_raw, list):
+            input_names = [str(name) for name in input_names_raw]
+        else:
+            raise ValueError(
+                f'{op} node={node_name}: attr "inputs" must be a list of tensor names'
+            )
 
-        out_shape = infer_shape(op, current_shape, attrs, node_name=node_name)
+        input_specs: list[TensorSpec] = []
+        for input_name in input_names:
+            if input_name not in tensor_specs:
+                raise ValueError(
+                    f'{op} node={node_name}: unknown input tensor {input_name!r}. '
+                    f'Known tensors: {sorted(tensor_specs)}'
+                )
+            spec = tensor_specs[input_name]
+            input_specs.append(
+                TensorSpec(
+                    name=spec.name,
+                    shape=spec.shape,
+                    dtype=spec.dtype,
+                    layout=spec.layout,
+                )
+            )
 
-        in_spec = TensorSpec(name=prev_name, shape=current_shape)
-        out_name = f't_{i + 1}'
+        input_shapes = [spec.shape for spec in input_specs]
+        out_shape = infer_shape(
+            op,
+            input_shapes if len(input_shapes) > 1 else input_shapes[0],
+            attrs,
+            node_name=node_name,
+        )
+
+        out_name = str(layer.get('output', f't_{i + 1}'))
+        if out_name in tensor_specs:
+            raise ValueError(
+                f'{op} node={node_name}: output tensor {out_name!r} already exists. '
+                'Choose a unique output name.'
+            )
         out_spec = TensorSpec(name=out_name, shape=out_shape)
+        tensor_specs[out_name] = out_spec
         prev_name = out_name
 
         node = Node(
             name=node_name,
             op_type=op,
-            inputs=[in_spec.name],
+            inputs=[spec.name for spec in input_specs],
             outputs=[out_spec.name],
             attrs=attrs,
-            input_specs=[in_spec],
+            input_specs=input_specs,
             output_specs=[out_spec],
         )
         graph.nodes.append(node)
-        current_shape = out_shape
 
-    # output_spec.name matches the last node's output tensor name
-    graph.output_spec = TensorSpec(name=prev_name, shape=current_shape)
+    graph.output_spec = tensor_specs[prev_name]
     return graph

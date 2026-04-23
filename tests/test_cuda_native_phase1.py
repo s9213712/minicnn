@@ -102,7 +102,19 @@ def test_infer_shape_missing_out_features():
 def test_infer_shape_unknown_op():
     from minicnn.cuda_native.shapes import infer_shape
     with pytest.raises(ValueError, match='No shape inference rule'):
-        infer_shape('GroupNorm', (1, 16, 8, 8), {})
+        infer_shape('CustomNorm', (1, 16, 8, 8), {})
+
+
+def test_infer_shape_groupnorm_passthrough():
+    from minicnn.cuda_native.shapes import infer_shape
+    out = infer_shape('GroupNorm', (1, 16, 8, 8), {'num_groups': 4})
+    assert out == (1, 16, 8, 8)
+
+
+def test_infer_shape_layernorm_passthrough():
+    from minicnn.cuda_native.shapes import infer_shape
+    out = infer_shape('LayerNorm', (2, 16, 8, 8), {'normalized_shape': [8, 8]})
+    assert out == (2, 16, 8, 8)
 
 
 def test_infer_shape_batchnorm2d_passthrough():
@@ -170,7 +182,22 @@ def test_build_graph_shape_propagation():
 def test_build_graph_rejects_unsupported_op():
     from minicnn.cuda_native.graph import build_graph
     with pytest.raises(ValueError, match='cuda_native validation failed'):
-        build_graph([{'type': 'GroupNorm'}], (1, 3, 32, 32))
+        build_graph([{'type': 'CustomNorm'}], (1, 3, 32, 32))
+
+
+def test_build_graph_accepts_groupnorm():
+    from minicnn.cuda_native.graph import build_graph
+    g = build_graph([{'type': 'GroupNorm', 'num_groups': 1}], (1, 3, 32, 32))
+    assert g.output_spec.shape == (1, 3, 32, 32)
+
+
+def test_build_graph_accepts_layernorm():
+    from minicnn.cuda_native.graph import build_graph
+    g = build_graph(
+        [{'type': 'Flatten'}, {'type': 'LayerNorm', 'normalized_shape': 3072}],
+        (1, 3, 32, 32),
+    )
+    assert g.output_spec.shape == (1, 3072)
 
 
 def test_build_graph_topological_order():

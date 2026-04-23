@@ -11,7 +11,8 @@ Returns grad_in: dL/d(node input), same shape as the node's input tensor.
 Supported backward ops (Phase 3):
     Linear, ReLU, LeakyReLU, Sigmoid, Tanh, SiLU, GELU, Identity,
     Flatten, Conv2d, DepthwiseConv2d, PointwiseConv2d, BatchNorm2d,
-    LayerNorm2d, MaxPool2d, AvgPool2d, AdaptiveAvgPool2d, GlobalAvgPool2d
+    GroupNorm, LayerNorm, LayerNorm2d, MaxPool2d, AvgPool2d,
+    AdaptiveAvgPool2d, GlobalAvgPool2d
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from minicnn.cuda_native.graph import NativeGraph
 from minicnn.cuda_native.nodes import Node
 
 
-BwdKernelFn = Callable[[Node, np.ndarray, dict[str, Any], dict[str, Any]], np.ndarray]
+BwdKernelFn = Callable[[Node, np.ndarray, dict[str, Any], dict[str, Any]], Any]
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +153,81 @@ def _layernorm2d_backward_arrays(
     )
     return grad_in.astype(np.float32), grad_gamma, grad_beta
 
+
+def _groupnorm_backward_arrays(
+    x: np.ndarray,
+    grad_out: np.ndarray,
+    *,
+    gamma: np.ndarray,
+    num_groups: int,
+    eps: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    n, c, h, w = x.shape
+    if c % num_groups != 0:
+        raise ValueError(
+            f'GroupNorm backward expects num_groups={num_groups} to divide channels={c}'
+        )
+    channels_per_group = c // num_groups
+    gamma_r = np.asarray(gamma, dtype=np.float32).reshape(1, c, 1, 1)
+    x_group = x.reshape(n, num_groups, channels_per_group, h, w).astype(np.float32)
+    grad_out_group = grad_out.reshape(n, num_groups, channels_per_group, h, w).astype(np.float32)
+    mean = x_group.mean(axis=(2, 3, 4), keepdims=True).astype(np.float32)
+    var = x_group.var(axis=(2, 3, 4), keepdims=True).astype(np.float32)
+    inv_std = (1.0 / np.sqrt(var + eps)).astype(np.float32)
+    x_hat_group = ((x_group - mean) * inv_std).astype(np.float32)
+    x_hat = x_hat_group.reshape(n, c, h, w).astype(np.float32)
+    grad_gamma = (grad_out * x_hat).sum(axis=(0, 2, 3)).astype(np.float32)
+    grad_beta = grad_out.sum(axis=(0, 2, 3)).astype(np.float32)
+    dxhat = (grad_out * gamma_r).reshape(n, num_groups, channels_per_group, h, w).astype(np.float32)
+    norm_elems = float(channels_per_group * h * w)
+    sum_dxhat = dxhat.sum(axis=(2, 3, 4), keepdims=True).astype(np.float32)
+    sum_dxhat_xhat = (dxhat * x_hat_group).sum(axis=(2, 3, 4), keepdims=True).astype(np.float32)
+    grad_group = (
+        (inv_std / norm_elems)
+        * (norm_elems * dxhat - sum_dxhat - x_hat_group * sum_dxhat_xhat)
+    )
+    return grad_group.reshape(n, c, h, w).astype(np.float32), grad_gamma, grad_beta
+
+
+def _layernorm_backward_arrays(
+    x: np.ndarray,
+    grad_out: np.ndarray,
+    *,
+    gamma: np.ndarray,
+    normalized_shape: tuple[int, ...],
+    eps: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if not normalized_shape:
+        raise ValueError('LayerNorm backward requires non-empty normalized_shape')
+    if x.ndim < len(normalized_shape):
+        raise ValueError(
+            f'LayerNorm backward expects input rank >= {len(normalized_shape)}, got shape {x.shape}'
+        )
+    if tuple(int(v) for v in x.shape[-len(normalized_shape):]) != tuple(normalized_shape):
+        raise ValueError(
+            f'LayerNorm backward expected trailing shape {tuple(normalized_shape)}, got {tuple(x.shape[-len(normalized_shape):])}'
+        )
+    reduce_axes = tuple(range(x.ndim - len(normalized_shape), x.ndim))
+    keep_leading = tuple(range(x.ndim - len(normalized_shape)))
+    mean = x.mean(axis=reduce_axes, keepdims=True).astype(np.float32)
+    var = x.var(axis=reduce_axes, keepdims=True).astype(np.float32)
+    inv_std = (1.0 / np.sqrt(var + eps)).astype(np.float32)
+    x_hat = ((x - mean) * inv_std).astype(np.float32)
+    reshape = (1,) * (x.ndim - len(normalized_shape)) + tuple(normalized_shape)
+    gamma_r = np.asarray(gamma, dtype=np.float32).reshape(reshape)
+    grad_gamma = (grad_out * x_hat).sum(axis=keep_leading).astype(np.float32)
+    grad_beta = grad_out.sum(axis=keep_leading).astype(np.float32)
+    dxhat = (grad_out * gamma_r).astype(np.float32)
+    norm_elems = float(np.prod(normalized_shape))
+    sum_dxhat = dxhat.sum(axis=reduce_axes, keepdims=True).astype(np.float32)
+    sum_dxhat_xhat = (dxhat * x_hat).sum(axis=reduce_axes, keepdims=True).astype(np.float32)
+    grad_in = (
+        (inv_std / norm_elems)
+        * (norm_elems * dxhat - sum_dxhat - x_hat * sum_dxhat_xhat)
+    )
+    return grad_in.astype(np.float32), grad_gamma, grad_beta
+
+
 def _bwd_relu(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
     x = cache[f'fwd_{node.name}_in']
     return (grad_out * (x > 0)).astype(np.float32)
@@ -198,7 +274,97 @@ def _bwd_identity(node: Node, grad_out: np.ndarray, cache: dict, param_grads: di
     return grad_out.astype(np.float32)
 
 
+def _bwd_add(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> list[np.ndarray]:
+    return [np.asarray(grad_out, dtype=np.float32).copy() for _ in node.inputs]
+
+
+def _bwd_concat(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> list[np.ndarray]:
+    input_tensors = cache.get(f'fwd_{node.name}_inputs', [])
+    if len(input_tensors) != len(node.inputs):
+        raise ValueError(
+            f'Concat backward node={node.name}: expected cached inputs for all tensors, got {len(input_tensors)}'
+        )
+    axis = int(node.attrs.get('axis', 1))
+    split_sizes = [np.asarray(arr, dtype=np.float32).shape[axis] for arr in input_tensors]
+    split_points = np.cumsum(split_sizes[:-1], dtype=np.int64)
+    if len(split_points) == 0:
+        return [np.asarray(grad_out, dtype=np.float32)]
+    return [part.astype(np.float32) for part in np.split(grad_out, split_points, axis=axis)]
+
+
+def _bwd_groupnorm(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    x = cache[f'fwd_{node.name}_in']
+    if x.ndim != 4:
+        raise ValueError(
+            f'GroupNorm backward expects 4-D cached input (N,C,H,W), got shape {x.shape}'
+        )
+    channels = x.shape[1]
+    num_groups = int(node.attrs.get('num_groups', 0))
+    if num_groups <= 0:
+        raise ValueError(
+            f'GroupNorm backward node={node.name}: attr "num_groups" must be > 0, got {num_groups}'
+        )
+    eps = float(node.attrs.get('eps', 1e-5))
+    gamma_key = f'_w_{node.name}'
+    beta_key = f'_b_{node.name}'
+    gamma = np.asarray(
+        cache.get(gamma_key, np.ones(channels, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    grad_in, grad_gamma, grad_beta = _groupnorm_backward_arrays(
+        x,
+        grad_out,
+        gamma=gamma,
+        num_groups=num_groups,
+        eps=eps,
+    )
+    if gamma_key in cache:
+        param_grads[gamma_key] = grad_gamma.astype(np.float32)
+    if beta_key in cache:
+        param_grads[beta_key] = grad_beta.astype(np.float32)
+    return grad_in.astype(np.float32)
+
+
+def _bwd_layernorm(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    x = np.asarray(cache[f'fwd_{node.name}_in'], dtype=np.float32)
+    raw_shape = node.attrs.get('normalized_shape')
+    if raw_shape is None:
+        raise ValueError(
+            f'LayerNorm backward node={node.name}: missing required attr "normalized_shape"'
+        )
+    normalized_shape = (
+        (int(raw_shape),)
+        if isinstance(raw_shape, int)
+        else tuple(int(v) for v in raw_shape)
+    )
+    eps = float(node.attrs.get('eps', 1e-5))
+    gamma_key = f'_w_{node.name}'
+    beta_key = f'_b_{node.name}'
+    gamma = np.asarray(
+        cache.get(gamma_key, np.ones(normalized_shape, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    grad_in, grad_gamma, grad_beta = _layernorm_backward_arrays(
+        x,
+        grad_out,
+        gamma=gamma,
+        normalized_shape=normalized_shape,
+        eps=eps,
+    )
+    if gamma_key in cache:
+        param_grads[gamma_key] = grad_gamma.astype(np.float32)
+    if beta_key in cache:
+        param_grads[beta_key] = grad_beta.astype(np.float32)
+    return grad_in.astype(np.float32)
+
+
 def _bwd_dropout(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
+    node_cache = cache.get(f'__cache_{node.name}', {})
+    mask = np.asarray(node_cache.get('mask', np.ones_like(grad_out, dtype=np.float32)), dtype=np.float32)
+    return (grad_out * mask).astype(np.float32)
+
+
+def _bwd_droppath(node: Node, grad_out: np.ndarray, cache: dict, param_grads: dict) -> np.ndarray:
     node_cache = cache.get(f'__cache_{node.name}', {})
     mask = np.asarray(node_cache.get('mask', np.ones_like(grad_out, dtype=np.float32)), dtype=np.float32)
     return (grad_out * mask).astype(np.float32)
@@ -593,6 +759,8 @@ class BackwardRegistry:
 
 def make_default_backward_registry() -> BackwardRegistry:
     reg = BackwardRegistry()
+    reg.register('Add', _bwd_add)
+    reg.register('Concat', _bwd_concat)
     reg.register('ReLU', _bwd_relu)
     reg.register('LeakyReLU', _bwd_leaky_relu)
     reg.register('Sigmoid', _bwd_sigmoid)
@@ -601,6 +769,7 @@ def make_default_backward_registry() -> BackwardRegistry:
     reg.register('GELU', _bwd_gelu)
     reg.register('Identity', _bwd_identity)
     reg.register('Dropout', _bwd_dropout)
+    reg.register('DropPath', _bwd_droppath)
     reg.register('Flatten', _bwd_flatten)
     reg.register('Linear', _bwd_linear)
     reg.register('Conv2d', _bwd_conv2d)
@@ -612,6 +781,8 @@ def make_default_backward_registry() -> BackwardRegistry:
     reg.register('ConvNeXtBlock', _bwd_convnext_block)
     reg.register('convnext_block', _bwd_convnext_block)
     reg.register('BatchNorm2d', _bwd_batchnorm2d)
+    reg.register('GroupNorm', _bwd_groupnorm)
+    reg.register('LayerNorm', _bwd_layernorm)
     reg.register('LayerNorm2d', _bwd_layernorm2d)
     reg.register('layernorm2d', _bwd_layernorm2d)
     reg.register('MaxPool2d', _bwd_maxpool2d)
@@ -630,6 +801,27 @@ class BackwardExecutor:
 
     def __init__(self, registry: BackwardRegistry | None = None) -> None:
         self.registry = registry if registry is not None else make_default_backward_registry()
+
+    @staticmethod
+    def _normalize_input_grads(node: Node, grad_result: Any) -> list[np.ndarray]:
+        if isinstance(grad_result, np.ndarray):
+            if len(node.inputs) != 1:
+                raise ValueError(
+                    f'Backward kernel for {node.op_type} node={node.name} returned a single '
+                    f'gradient for {len(node.inputs)} inputs'
+                )
+            return [grad_result.astype(np.float32)]
+        if isinstance(grad_result, (list, tuple)):
+            if len(grad_result) != len(node.inputs):
+                raise ValueError(
+                    f'Backward kernel for {node.op_type} node={node.name} returned '
+                    f'{len(grad_result)} gradients for {len(node.inputs)} inputs'
+                )
+            return [np.asarray(grad, dtype=np.float32) for grad in grad_result]
+        raise TypeError(
+            f'Backward kernel for {node.op_type} node={node.name} returned unsupported '
+            f'gradient container {type(grad_result)!r}'
+        )
 
     def run(
         self,
@@ -650,10 +842,35 @@ class BackwardExecutor:
               param_grads — dict mapping '_w_{node}' / '_b_{node}' -> gradient array
         """
         param_grads: dict[str, np.ndarray] = {}
-        grad = grad_output
+        if graph.output_spec is None:
+            raise ValueError('Graph has no output_spec; was it built with build_graph()?')
+        if graph.input_spec is None:
+            raise ValueError('Graph has no input_spec; was it built with build_graph()?')
+        tensor_grads: dict[str, np.ndarray] = {
+            graph.output_spec.name: np.asarray(grad_output, dtype=np.float32)
+        }
 
         for node in reversed(graph.topological_order()):
+            grad_out: np.ndarray | None = None
+            for output_name in node.outputs:
+                node_grad = tensor_grads.pop(output_name, None)
+                if node_grad is None:
+                    continue
+                grad_out = node_grad if grad_out is None else (grad_out + node_grad).astype(np.float32)
+            if grad_out is None:
+                continue
             bwd = self.registry.get(node.op_type)
-            grad = bwd(node, grad, cache, param_grads)
+            input_grads = self._normalize_input_grads(node, bwd(node, grad_out, cache, param_grads))
+            for input_name, input_grad in zip(node.inputs, input_grads):
+                if input_name in tensor_grads:
+                    tensor_grads[input_name] = (tensor_grads[input_name] + input_grad).astype(np.float32)
+                else:
+                    tensor_grads[input_name] = input_grad.astype(np.float32)
 
-        return grad, param_grads
+        grad_input = tensor_grads.get(graph.input_spec.name)
+        if grad_input is None:
+            raise ValueError(
+                f'No gradient reached graph input tensor {graph.input_spec.name!r}; '
+                'the graph may be disconnected.'
+            )
+        return grad_input.astype(np.float32), param_grads

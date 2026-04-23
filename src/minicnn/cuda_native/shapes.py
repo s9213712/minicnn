@@ -14,6 +14,20 @@ def _pair(value: int | tuple[int, int]) -> tuple[int, int]:
     return (value, value)
 
 
+def _single_input_shape(
+    op_type: str,
+    input_shape: tuple[int, ...] | list[tuple[int, ...]],
+    loc: str,
+) -> tuple[int, ...]:
+    if isinstance(input_shape, list):
+        if len(input_shape) != 1:
+            raise ValueError(
+                f'{op_type}{loc}: expects exactly one input tensor, got {len(input_shape)}'
+            )
+        return tuple(input_shape[0])
+    return tuple(input_shape)
+
+
 def infer_conv2d(
     input_shape: tuple[int, ...],
     out_channels: int,
@@ -66,6 +80,47 @@ def infer_layernorm2d(
     if num_channels is not None and int(num_channels) != int(input_shape[1]):
         raise ValueError(
             f'LayerNorm2d num_channels={num_channels} does not match input channels={input_shape[1]}'
+        )
+    return input_shape
+
+
+def infer_groupnorm(
+    input_shape: tuple[int, ...],
+    num_groups: int,
+    num_channels: int | None = None,
+) -> tuple[int, ...]:
+    """GroupNorm preserves NCHW shape and validates group divisibility."""
+    if len(input_shape) != 4:
+        raise ValueError(
+            f'GroupNorm expects 4-D input (N,C,H,W), got shape {input_shape}'
+        )
+    channels = int(input_shape[1])
+    if num_channels is not None and int(num_channels) != channels:
+        raise ValueError(
+            f'GroupNorm num_channels={num_channels} does not match input channels={channels}'
+        )
+    if channels % int(num_groups) != 0:
+        raise ValueError(
+            f'GroupNorm num_groups={num_groups} must divide input channels={channels}'
+        )
+    return input_shape
+
+
+def infer_layernorm(
+    input_shape: tuple[int, ...],
+    normalized_shape: int | list[int] | tuple[int, ...],
+) -> tuple[int, ...]:
+    """LayerNorm preserves shape and validates trailing normalized dims."""
+    dims = tuple(int(v) for v in (normalized_shape if isinstance(normalized_shape, (list, tuple)) else [normalized_shape]))
+    if len(dims) == 0:
+        raise ValueError('LayerNorm normalized_shape must contain at least one dimension')
+    if len(input_shape) < len(dims):
+        raise ValueError(
+            f'LayerNorm normalized_shape={dims} is incompatible with input rank {len(input_shape)}'
+        )
+    if tuple(input_shape[-len(dims):]) != dims:
+        raise ValueError(
+            f'LayerNorm normalized_shape={dims} does not match trailing input dims={tuple(input_shape[-len(dims):])}'
         )
     return input_shape
 
@@ -140,9 +195,60 @@ def infer_global_avgpool2d(input_shape: tuple[int, ...]) -> tuple[int, ...]:
     return (n, c, 1, 1)
 
 
+def infer_add(input_shapes: list[tuple[int, ...]]) -> tuple[int, ...]:
+    """Return the common output shape for an elementwise Add op."""
+    if len(input_shapes) < 2:
+        raise ValueError(
+            f'Add expects at least two input tensors, got {len(input_shapes)}'
+        )
+    first_shape = tuple(input_shapes[0])
+    for idx, shape in enumerate(input_shapes[1:], start=1):
+        if tuple(shape) != first_shape:
+            raise ValueError(
+                f'Add expects all input shapes to match, got input[0]={first_shape} '
+                f'and input[{idx}]={tuple(shape)}'
+            )
+    return first_shape
+
+
+def infer_concat(
+    input_shapes: list[tuple[int, ...]],
+    axis: int = 1,
+) -> tuple[int, ...]:
+    """Return the output shape for a Concat op along *axis*."""
+    if len(input_shapes) < 2:
+        raise ValueError(
+            f'Concat expects at least two input tensors, got {len(input_shapes)}'
+        )
+    ref_rank = len(input_shapes[0])
+    if any(len(shape) != ref_rank for shape in input_shapes[1:]):
+        raise ValueError(
+            f'Concat expects all inputs to have the same rank, got {[tuple(shape) for shape in input_shapes]}'
+        )
+    if axis < 0:
+        axis += ref_rank
+    if axis < 0 or axis >= ref_rank:
+        raise ValueError(
+            f'Concat axis={axis} is out of range for rank {ref_rank}'
+        )
+    out_shape = list(input_shapes[0])
+    out_shape[axis] = 0
+    for idx, shape in enumerate(input_shapes):
+        for dim_idx, dim in enumerate(shape):
+            if dim_idx == axis:
+                continue
+            if dim != input_shapes[0][dim_idx]:
+                raise ValueError(
+                    f'Concat expects all non-concat dimensions to match, got input[0]={tuple(input_shapes[0])} '
+                    f'and input[{idx}]={tuple(shape)}'
+                )
+        out_shape[axis] += shape[axis]
+    return tuple(out_shape)
+
+
 def infer_shape(
     op_type: str,
-    input_shape: tuple[int, ...],
+    input_shape: tuple[int, ...] | list[tuple[int, ...]],
     attrs: dict[str, Any],
     node_name: str = '',
 ) -> tuple[int, ...]:
@@ -152,6 +258,18 @@ def infer_shape(
     """
     loc = f' (node={node_name})' if node_name else ''
     try:
+        if op_type == 'Add':
+            if not isinstance(input_shape, list):
+                raise ValueError(f'Add{loc}: expects a list of input shapes')
+            return infer_add([tuple(shape) for shape in input_shape])
+        if op_type == 'Concat':
+            if not isinstance(input_shape, list):
+                raise ValueError(f'Concat{loc}: expects a list of input shapes')
+            return infer_concat(
+                [tuple(shape) for shape in input_shape],
+                axis=int(attrs.get('axis', 1)),
+            )
+        input_shape = _single_input_shape(op_type, input_shape, loc)
         if op_type == 'Conv2d':
             out_ch = attrs.get('out_channels')
             if out_ch is None:
@@ -200,10 +318,25 @@ def infer_shape(
                 stride=1,
                 padding=0,
             )
-        if op_type in ('ReLU', 'LeakyReLU', 'Sigmoid', 'Tanh', 'SiLU', 'GELU', 'Identity', 'Dropout'):
+        if op_type in ('ReLU', 'LeakyReLU', 'Sigmoid', 'Tanh', 'SiLU', 'GELU', 'Identity', 'Dropout', 'DropPath'):
             return infer_activation(input_shape)
         if op_type == 'BatchNorm2d':
             return infer_batchnorm2d(input_shape)
+        if op_type == 'GroupNorm':
+            num_groups = attrs.get('num_groups')
+            if num_groups is None:
+                raise ValueError(f'GroupNorm{loc}: missing required attr "num_groups"')
+            num_channels = attrs.get('num_channels', attrs.get('channels'))
+            return infer_groupnorm(
+                input_shape,
+                num_groups=int(num_groups),
+                num_channels=num_channels,
+            )
+        if op_type == 'LayerNorm':
+            normalized_shape = attrs.get('normalized_shape')
+            if normalized_shape is None:
+                raise ValueError(f'LayerNorm{loc}: missing required attr "normalized_shape"')
+            return infer_layernorm(input_shape, normalized_shape)
         if op_type in ('LayerNorm2d', 'layernorm2d'):
             num_channels = attrs.get('num_channels', attrs.get('channels'))
             return infer_layernorm2d(input_shape, num_channels=num_channels)

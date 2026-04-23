@@ -12,6 +12,7 @@ import numpy as np
 from minicnn.cuda_native.backward import BackwardExecutor
 from minicnn.cuda_native.executor import ForwardExecutor
 from minicnn.cuda_native.graph import NativeGraph
+from minicnn.cuda_native.planner import make_plan
 from minicnn.cuda_native.training import train_step
 from minicnn.flex.runtime import create_run_dir, dump_summary
 from minicnn.unified._cuda_native_bridge import (
@@ -27,6 +28,33 @@ from minicnn.unified._cuda_native_bridge import (
 )
 
 
+def _optimizer_runtime_snapshot(optimizer_state: dict[str, Any]) -> dict[str, Any]:
+    runtime = dict(optimizer_state.get('optimizer_runtime', {}))
+    state_keys = (
+        'velocity',
+        'adamw_m',
+        'adamw_v',
+        'adam_m',
+        'adam_v',
+        'rmsprop_v',
+        'rmsprop_buf',
+    )
+    tensor_count = 0
+    total_bytes = 0
+    for state_key in state_keys:
+        bucket = optimizer_state.get(state_key, {})
+        if not isinstance(bucket, dict):
+            continue
+        for value in bucket.values():
+            if isinstance(value, np.ndarray):
+                tensor_count += 1
+                total_bytes += int(value.nbytes)
+    runtime['state_tensor_count'] = tensor_count
+    runtime['state_total_bytes'] = total_bytes
+    runtime['state_total_kb'] = round(total_bytes / 1024.0, 3)
+    return runtime
+
+
 @dataclass
 class NativeTrainingContext:
     cfg: dict[str, Any]
@@ -37,15 +65,25 @@ class NativeTrainingContext:
     x_val: np.ndarray
     y_val: np.ndarray
     input_shape: tuple[int, ...]
+    planner_summary: dict[str, Any]
     batch_size: int
     epochs: int
     lr: float
+    optimizer_type: str
     weight_decay: float
     momentum: float
     grad_clip_global: float
+    grad_accum_steps: int
+    amp: bool
+    amp_loss_scale: float
+    amp_dynamic_scale: bool
+    amp_scale_growth: float
+    amp_scale_backoff: float
+    amp_scale_window: int
     loss_type: str
     model_cfg: dict[str, Any]
     loss_cfg: dict[str, Any]
+    optimizer_cfg: dict[str, Any]
     scheduler_cfg: dict[str, Any]
 
 
@@ -53,6 +91,7 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
     dataset_cfg = cfg.get('dataset', {})
     train_cfg = cfg.get('train', {})
     model_cfg = cfg.get('model', {})
+    engine_cfg = cfg.get('engine', {})
     optim_cfg = cfg.get('optimizer', {})
     loss_cfg = cfg.get('loss', {})
     scheduler_cfg = cfg.get('scheduler', {})
@@ -61,14 +100,24 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
     batch_size = int(train_cfg.get('batch_size', 64))
     epochs = int(train_cfg.get('epochs', 1))
     lr = float(optim_cfg.get('lr', 0.01))
+    optimizer_type = str(optim_cfg.get('type', 'SGD')).lower()
     weight_decay = float(optim_cfg.get('weight_decay', 0.0))
     momentum = float(optim_cfg.get('momentum', 0.0))
     grad_clip_global = float(optim_cfg.get('grad_clip_global', 0.0))
+    grad_accum_steps = int(train_cfg.get('grad_accum_steps', 1))
+    amp = bool(train_cfg.get('amp', False))
+    amp_loss_scale = float(train_cfg.get('amp_loss_scale', 128.0))
+    amp_dynamic_scale = bool(train_cfg.get('amp_dynamic_scale', True))
+    amp_scale_growth = float(train_cfg.get('amp_scale_growth', 2.0))
+    amp_scale_backoff = float(train_cfg.get('amp_scale_backoff', 0.5))
+    amp_scale_window = int(train_cfg.get('amp_scale_window', 200))
     init_seed = int(train_cfg.get('init_seed', dataset_cfg.get('seed', 42)))
     loss_type = _resolve_loss_type(loss_cfg)
 
     x_train, y_train, x_val, y_val = _load_numpy_data(cfg)
     params = _init_params(graph, seed=init_seed)
+    planner_strategy = str(engine_cfg.get('planner_strategy', 'reuse'))
+    planner_summary = make_plan(graph, strategy=planner_strategy).summary()
 
     return NativeTrainingContext(
         cfg=cfg,
@@ -79,15 +128,25 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
         x_val=x_val,
         y_val=y_val,
         input_shape=input_shape,
+        planner_summary=planner_summary,
         batch_size=batch_size,
         epochs=epochs,
         lr=lr,
+        optimizer_type=optimizer_type,
         weight_decay=weight_decay,
         momentum=momentum,
         grad_clip_global=grad_clip_global,
+        grad_accum_steps=grad_accum_steps,
+        amp=amp,
+        amp_loss_scale=amp_loss_scale,
+        amp_dynamic_scale=amp_dynamic_scale,
+        amp_scale_growth=amp_scale_growth,
+        amp_scale_backoff=amp_scale_backoff,
+        amp_scale_window=amp_scale_window,
         loss_type=loss_type,
         model_cfg=model_cfg,
         loss_cfg=loss_cfg,
+        optimizer_cfg=optim_cfg,
         scheduler_cfg=scheduler_cfg,
     )
 
@@ -96,7 +155,7 @@ def run_training_loop(
     ctx: NativeTrainingContext,
     *,
     run_dir: Path,
-) -> tuple[dict[str, np.ndarray], float]:
+) -> tuple[dict[str, np.ndarray], float, dict[str, Any], dict[str, Any]]:
     metrics_path = run_dir / 'metrics.jsonl'
     fwd = ForwardExecutor()
     bwd = BackwardExecutor()
@@ -107,6 +166,29 @@ def run_training_loop(
     best_params = dict(ctx.params)
     params = ctx.params
     rng = np.random.default_rng(int(ctx.cfg.get('train', {}).get('init_seed', ctx.cfg.get('dataset', {}).get('seed', 42))))
+    prev_amp_snapshot = {
+        'skipped_steps': 0,
+        'overflow_steps': 0,
+        'finite_steps': 0,
+        'cache_allocations': 0,
+        'cache_updates': 0,
+        'cache_hits': 0,
+    }
+    prev_optimizer_snapshot = {
+        'steps': 0,
+        'state_tensor_allocations': 0,
+        'state_tensor_updates': 0,
+    }
+    planner_epoch_state = {
+        'strategy': str(ctx.planner_summary.get('strategy', 'unknown')),
+        'num_buffers': int(ctx.planner_summary.get('num_buffers', 0)),
+        'total_bytes': int(ctx.planner_summary.get('total_bytes', 0)),
+        'total_kb': float(ctx.planner_summary.get('total_kb', 0.0)),
+        'peak_live_bytes': int(ctx.planner_summary.get('peak_live_bytes', 0)),
+        'peak_live_kb': float(ctx.planner_summary.get('peak_live_kb', 0.0)),
+        'reuse_events': int(ctx.planner_summary.get('reuse_events', 0)),
+        'reuse_slack_bytes': int(ctx.planner_summary.get('reuse_slack_bytes', 0)),
+    }
 
     with metrics_path.open('w', encoding='utf-8') as mf:
         for epoch in range(1, ctx.epochs + 1):
@@ -115,11 +197,18 @@ def run_training_loop(
             x_shuf, y_shuf = ctx.x_train[idx], ctx.y_train[idx]
             running_loss = 0.0
             seen = 0
+            num_batches = (x_shuf.shape[0] + ctx.batch_size - 1) // ctx.batch_size
+            batch_idx = 0
             for i in range(0, x_shuf.shape[0], ctx.batch_size):
+                batch_idx += 1
                 xb = x_shuf[i:i + ctx.batch_size]
                 yb = y_shuf[i:i + ctx.batch_size]
                 if xb.shape[0] == 0:
                     continue
+                apply_optimizer_step = (
+                    batch_idx % ctx.grad_accum_steps == 0
+                    or batch_idx == num_batches
+                )
                 loss_val, params = train_step(
                     ctx.graph,
                     xb,
@@ -127,8 +216,18 @@ def run_training_loop(
                     params,
                     lr=optimizer_view.lr,
                     loss_type=ctx.loss_type,
+                    optimizer_type=ctx.optimizer_type,
                     weight_decay=ctx.weight_decay,
                     momentum=ctx.momentum,
+                    label_smoothing=float(ctx.loss_cfg.get('label_smoothing', 0.0)),
+                    grad_accum_steps=ctx.grad_accum_steps,
+                    apply_optimizer_step=apply_optimizer_step,
+                    amp_enabled=ctx.amp,
+                    amp_loss_scale=ctx.amp_loss_scale,
+                    amp_dynamic_scale=ctx.amp_dynamic_scale,
+                    amp_scale_growth=ctx.amp_scale_growth,
+                    amp_scale_backoff=ctx.amp_scale_backoff,
+                    amp_scale_window=ctx.amp_scale_window,
                     optimizer_state=optimizer_state,
                     grad_clip_global=ctx.grad_clip_global,
                     fwd_executor=fwd,
@@ -137,19 +236,74 @@ def run_training_loop(
                 running_loss += loss_val * xb.shape[0]
                 seen += xb.shape[0]
             train_loss = running_loss / max(seen, 1)
-            val_metrics = _evaluate(ctx.graph, ctx.x_val, ctx.y_val, params, ctx.batch_size, ctx.loss_type)
+            val_metrics = _evaluate(
+                ctx.graph,
+                ctx.x_val,
+                ctx.y_val,
+                params,
+                ctx.batch_size,
+                ctx.loss_type,
+                amp_enabled=ctx.amp,
+            )
             if scheduler is not None:
                 if scheduler_kind == 'plateau':
                     scheduler.step(val_metrics['loss'])
                 else:
                     scheduler.step()
             epoch_time = time.perf_counter() - t0
+            amp_epoch_state: dict[str, Any] | None = None
+            optimizer_epoch_state: dict[str, Any] | None = None
+            if ctx.amp:
+                amp_runtime = dict(optimizer_state.get('amp', {}))
+                amp_epoch_state = {
+                    'enabled': True,
+                    'loss_scale': float(amp_runtime.get('loss_scale', ctx.amp_loss_scale)),
+                    'skipped_steps_epoch': int(amp_runtime.get('skipped_steps', 0)) - int(prev_amp_snapshot['skipped_steps']),
+                    'overflow_steps_epoch': int(amp_runtime.get('overflow_steps', 0)) - int(prev_amp_snapshot['overflow_steps']),
+                    'finite_steps_epoch': int(amp_runtime.get('finite_steps', 0)) - int(prev_amp_snapshot['finite_steps']),
+                    'cache_allocations_epoch': int(amp_runtime.get('cache_allocations', 0)) - int(prev_amp_snapshot['cache_allocations']),
+                    'cache_updates_epoch': int(amp_runtime.get('cache_updates', 0)) - int(prev_amp_snapshot['cache_updates']),
+                    'cache_hits_epoch': int(amp_runtime.get('cache_hits', 0)) - int(prev_amp_snapshot['cache_hits']),
+                }
+                prev_amp_snapshot = {
+                    'skipped_steps': int(amp_runtime.get('skipped_steps', 0)),
+                    'overflow_steps': int(amp_runtime.get('overflow_steps', 0)),
+                    'finite_steps': int(amp_runtime.get('finite_steps', 0)),
+                    'cache_allocations': int(amp_runtime.get('cache_allocations', 0)),
+                    'cache_updates': int(amp_runtime.get('cache_updates', 0)),
+                    'cache_hits': int(amp_runtime.get('cache_hits', 0)),
+                }
+            optimizer_runtime = _optimizer_runtime_snapshot(optimizer_state)
+            optimizer_epoch_state = {
+                'optimizer_type': str(optimizer_runtime.get('optimizer_type', ctx.optimizer_type)),
+                'steps': int(optimizer_runtime.get('steps', 0)),
+                'state_tensor_count': int(optimizer_runtime.get('state_tensor_count', 0)),
+                'state_total_bytes': int(optimizer_runtime.get('state_total_bytes', 0)),
+                'state_total_kb': float(optimizer_runtime.get('state_total_kb', 0.0)),
+                'state_tensor_allocations_epoch': (
+                    int(optimizer_runtime.get('state_tensor_allocations', 0))
+                    - int(prev_optimizer_snapshot['state_tensor_allocations'])
+                ),
+                'state_tensor_updates_epoch': (
+                    int(optimizer_runtime.get('state_tensor_updates', 0))
+                    - int(prev_optimizer_snapshot['state_tensor_updates'])
+                ),
+                'steps_epoch': int(optimizer_runtime.get('steps', 0)) - int(prev_optimizer_snapshot['steps']),
+            }
+            prev_optimizer_snapshot = {
+                'steps': int(optimizer_runtime.get('steps', 0)),
+                'state_tensor_allocations': int(optimizer_runtime.get('state_tensor_allocations', 0)),
+                'state_tensor_updates': int(optimizer_runtime.get('state_tensor_updates', 0)),
+            }
             row = _build_epoch_row(
                 epoch=epoch,
                 train_loss=train_loss,
                 val_metrics=val_metrics,
                 lr=float(optimizer_view.lr),
                 epoch_time_s=epoch_time,
+                amp_state=amp_epoch_state,
+                optimizer_state=optimizer_epoch_state,
+                planner_state=planner_epoch_state,
             )
             mf.write(json.dumps(row) + '\n')
             mf.flush()
@@ -164,10 +318,14 @@ def run_training_loop(
                     val_acc=val_metrics['acc'],
                     lr=float(optimizer_view.lr),
                     epoch_time_s=epoch_time,
+                    amp_state=amp_epoch_state,
+                    optimizer_state=optimizer_epoch_state,
                 )
             )
 
-    return best_params, best_val_acc
+    amp_runtime = dict(optimizer_state.get('amp', {}))
+    optimizer_runtime = _optimizer_runtime_snapshot(optimizer_state)
+    return best_params, best_val_acc, amp_runtime, optimizer_runtime
 
 
 def finalize_training_run(
@@ -176,6 +334,8 @@ def finalize_training_run(
     run_dir: Path,
     best_params: dict[str, np.ndarray],
     best_val_acc: float,
+    amp_runtime: dict[str, Any],
+    optimizer_runtime: dict[str, Any],
     capabilities: dict[str, Any],
 ) -> Path:
     best_path = _best_checkpoint_path(run_dir)
@@ -187,10 +347,12 @@ def finalize_training_run(
         input_shape=ctx.input_shape,
         model_cfg=ctx.model_cfg,
         loss_cfg=ctx.loss_cfg,
+        optimizer_cfg=ctx.optimizer_cfg,
+        train_cfg=ctx.cfg.get('train', {}),
+        amp_runtime=amp_runtime,
+        optimizer_runtime=optimizer_runtime,
+        planner_summary=ctx.planner_summary,
         scheduler_cfg=ctx.scheduler_cfg,
-        lr=ctx.lr,
-        momentum=ctx.momentum,
-        grad_clip_global=ctx.grad_clip_global,
         epochs=ctx.epochs,
         capabilities=capabilities,
     )
@@ -206,11 +368,13 @@ def train_and_summarize_native_backend(
 ) -> Path:
     ctx = prepare_training_context(cfg, graph)
     run_dir = create_run_dir(cfg)
-    best_params, best_val_acc = run_training_loop(ctx, run_dir=run_dir)
+    best_params, best_val_acc, amp_runtime, optimizer_runtime = run_training_loop(ctx, run_dir=run_dir)
     return finalize_training_run(
         ctx,
         run_dir=run_dir,
         best_params=best_params,
         best_val_acc=best_val_acc,
+        amp_runtime=amp_runtime,
+        optimizer_runtime=optimizer_runtime,
         capabilities=capabilities,
     )

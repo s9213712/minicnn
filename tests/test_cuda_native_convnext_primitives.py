@@ -41,6 +41,8 @@ def test_cuda_native_capabilities_include_convnext_primitives():
 
     assert caps['supports_depthwise_conv'] is True
     assert caps['supports_pointwise_conv'] is True
+    assert caps['supports_groupnorm'] is True
+    assert caps['supports_layernorm'] is True
     assert caps['supports_layernorm2d'] is True
     assert caps['supports_gelu'] is True
     assert caps['supports_residual_add'] is True
@@ -48,6 +50,8 @@ def test_cuda_native_capabilities_include_convnext_primitives():
     for op in (
         'DepthwiseConv2d',
         'PointwiseConv2d',
+        'GroupNorm',
+        'LayerNorm',
         'LayerNorm2d',
         'GELU',
         'GlobalAvgPool2d',
@@ -76,3 +80,18 @@ def test_trainer_accepts_explicit_convnext_primitives_on_cuda_native(tmp_path):
 
     assert run_dir.exists()
     assert (run_dir / 'summary.json').exists()
+
+
+def test_validate_cuda_native_accepts_groupnorm(tmp_path):
+    from minicnn.cuda_native.api import validate_cuda_native_config
+
+    cfg = _minimal_convnext_native_cfg(tmp_path)
+    cfg['model']['layers'] = [
+        {'type': 'Conv2d', 'out_channels': 16, 'kernel_size': 3, 'stride': 1, 'padding': 1},
+        {'type': 'GroupNorm', 'num_groups': 4},
+        {'type': 'GlobalAvgPool2d'},
+        {'type': 'Flatten'},
+        {'type': 'Linear', 'out_features': 10},
+    ]
+
+    assert validate_cuda_native_config(cfg) == []

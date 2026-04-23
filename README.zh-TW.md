@@ -63,7 +63,7 @@ MiniCNN 不是要取代 PyTorch。
 | Backend | 角色 | 目前狀態 |
 |---|---|---|
 | `torch` | reference implementation | 穩定，功能最廣，新模型功能優先落這裡 |
-| `cuda_native` | 主要 native backend | 實驗中、graph-based、僅支援 sequential graph，是目前主成長方向 |
+| `cuda_native` | 主要 native backend | 實驗中、graph-based、已具備 ordered DAG 能力，是目前主成長方向 |
 | `autograd` | correctness oracle | 穩定、CPU-only，適合 deterministic 檢查與框架學習 |
 | `cuda_legacy` | 歷史 native backend | 在窄邊界內穩定，但屬 maintenance-only，不是新功能擴充主戰場 |
 
@@ -98,6 +98,9 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 - artifact inspect/export 與 checkpoint payload handling 已移到獨立 helper 層
 - `healthcheck`、`doctor`、`smoke`、`validate-*` 與 inspection 指令都有 JSON-friendly 的診斷/驗證介面
 - `show-model` 與 `show-graph` 已是實際可用的 introspection 指令，不再是 placeholder
+- `cuda_native` graph semantics 已從單純 sequential graph 擴成具名 tensor wiring 的 ordered DAG，並支援 `Add` / `Concat`
+- `cuda_native` training surface 已擴到 `SGD`、`Adam`、`AdamW`、`RMSprop`、`CrossEntropyLoss`、`BCEWithLogitsLoss`、`MSELoss`、`label_smoothing`、`grad_accum_steps` 與實驗性 AMP
+- `summary.json` / `metrics.jsonl` 現在也會穩定輸出 planner、AMP 與 optimizer-state telemetry
 
 結果是：對使用者來說，主要命令集合仍維持精簡；對維護者來說，模組邊界更清楚、
 輸出契約更明確，backend 角色文件也和實際程式行為對齊。
@@ -139,17 +142,20 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 - 記憶體估算與 pool（`memory.py` — `memory_footprint()`、`BufferPool`）
 - 觀測工具（`debug.py` — `dump_graph()`、`dump_plan()`、`TracingForwardExecutor`）
 
-支援 op：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`DepthwiseConv2d`、`PointwiseConv2d`、`LayerNorm2d`、`ResidualBlock`、`ConvNeXtBlock`、`Dropout`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`GELU`、`Identity`、`MaxPool2d`、`AvgPool2d`、`AdaptiveAvgPool2d`（僅 `output_size=(1,1)`）、`GlobalAvgPool2d`、`Flatten`、`Linear`。
+支援 op：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`DepthwiseConv2d`、`PointwiseConv2d`、`GroupNorm`、`LayerNorm`、`LayerNorm2d`、`ResidualBlock`、`ConvNeXtBlock`、`Dropout`、`DropPath`、`Add`、`Concat`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`GELU`、`Identity`、`MaxPool2d`、`AvgPool2d`、`AdaptiveAvgPool2d`（僅 `output_size=(1,1)`）、`GlobalAvgPool2d`、`Flatten`、`Linear`。
 
 目前通過驗證的支援範圍：
 
 - dataset：`random`、`cifar10`、`mnist`
-- loss：`CrossEntropyLoss`、`MSELoss`
-- optimizer：支援 `SGD`，可選 momentum 與 global gradient clipping
+- loss：`CrossEntropyLoss`（可搭配 `label_smoothing`）、`BCEWithLogitsLoss`（僅 binary output）、`MSELoss`
+- optimizer：支援 `SGD`、`Adam`、`AdamW`、`RMSprop`，可選 global gradient clipping
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
-- `train.amp=false`、`train.grad_accum_steps=1`
+- `train.grad_accum_steps >= 1`
+- `train.amp=true|false`，帶實驗性的 loss scaling / overflow backoff
+- `summary.json` 會輸出 `amp_runtime`、`optimizer_runtime`、`planner` 與 `performance_report`
+- `metrics.jsonl` 每個 epoch row 會輸出 AMP、optimizer 與 planner telemetry
 
-雖然已經有 backward 與 training prototype，但這條 backend 仍屬實驗性、只支援 sequential graph，也還不適合正式使用。後續 native 功能應優先往這條線發展；`cuda_legacy` 則維持窄邊界維護。
+雖然已經有 backward 與 training prototype，但這條 backend 仍屬實驗性，也還不適合正式使用。它現在已支援具名 tensor wiring 與 `Add` merge 的 ordered DAG 執行；後續 native 功能仍應優先往這條線發展，`cuda_legacy` 則維持窄邊界維護。
 
 目前也已有 hermetic native smoke 範本可直接用於：
 
@@ -174,6 +180,7 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 ```
 
 完整說明請見 [docs/cuda_native.md](docs/cuda_native.md)。
+後續擴充方向請見 [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md)。
 
 ## 快速開始
 

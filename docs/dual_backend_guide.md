@@ -53,7 +53,7 @@ Architecture is described through `model.layers[]`.
 
 - **Torch**: consumes the list directly through the flex builder
 - **cuda_legacy**: validates the list against one fixed pattern, then compiles it into the stage-oriented experiment config
-- **cuda_native**: validates against supported op types, then builds a sequential NativeGraph
+- **cuda_native**: validates against supported op types, then builds an ordered NativeGraph with named tensor wiring
 
 The same YAML key exists on all sides, but the accepted semantic surface is different.
 
@@ -70,12 +70,14 @@ Accepts:
 Accepts:
 
 - dataset type: `cifar10`, `mnist`, or `random`
-- any sequential graph with supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`, `Flatten`, `Linear`
-- loss type: `CrossEntropyLoss` or `MSELoss`
-- optimizer: `SGD` with optional momentum and global gradient clipping
+- any ordered DAG with supported ops: `BatchNorm2d` (forward/backward prototype), `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `DropPath`, `Add`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`, `Flatten`, `Linear`
+- loss type: `CrossEntropyLoss` (optional `label_smoothing`), `BCEWithLogitsLoss` (binary output only), or `MSELoss`
+- optimizer: `SGD`, `Adam`, `AdamW`, or `RMSprop`, with optional global gradient clipping
 - scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
-- requires: `train.amp=false`, `train.grad_accum_steps=1`
-- rejects at validation: `GroupNorm`, `LayerNorm`
+- `train.grad_accum_steps >= 1`
+- `train.amp=true|false` (experimental mixed-precision prototype with loss scaling / overflow backoff)
+- reporting: `summary.json` exposes `amp_runtime`, `optimizer_runtime`, `planner`, and `performance_report`; `metrics.jsonl` exposes per-epoch AMP/optimizer/planner telemetry
+- still rejects at validation or train-native gating: unsupported optimizers outside `SGD` / `Adam` / `AdamW` / `RMSprop`
 
 ## Variant Selection (cuda_legacy)
 
@@ -104,6 +106,8 @@ Not YAML-only: new layer types, different pool structure, branching topology. Th
 ### cuda_native
 
 Add a new op: implement kernel in `kernels.py`, add backward in `backward.py`, register in `capabilities.py` and `validators.py`, add shape inference in `shapes.py`.
+
+For training-surface expansion, also update `training.py`, runtime/support reporting, capability docs, and at least one smoke-backed regression test that locks the public summary/metrics contract.
 
 ## Change-Impact Table
 
@@ -171,7 +175,7 @@ minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 
 - **Torch**：透過 flex builder 直接使用
 - **cuda_legacy**：對照固定 pattern 驗證後，編譯成 stage-oriented experiment config
-- **cuda_native**：對照支援 op 列表驗證後，建立 sequential NativeGraph
+- **cuda_native**：對照支援 op 列表驗證後，建立具名 tensor wiring 的 ordered NativeGraph
 
 同一個 YAML key 在各個 backend 的接受範圍不同。
 
@@ -186,12 +190,12 @@ minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 
 接受：
 - 資料集：`cifar10`、`mnist`、`random`
-- 任何 sequential graph，op 限於：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`MaxPool2d`、`AvgPool2d`、`Flatten`、`Linear`
-- loss：`CrossEntropyLoss` 或 `MSELoss`
-- optimizer：支援 `SGD`，可選 momentum 與 global gradient clipping
+- 任何 ordered DAG graph，op 限於：`BatchNorm2d`（forward/backward prototype）、`Conv2d`、`DepthwiseConv2d`、`PointwiseConv2d`、`GroupNorm`、`LayerNorm`、`LayerNorm2d`、`ResidualBlock`、`ConvNeXtBlock`、`Dropout`、`DropPath`、`Add`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`GELU`、`Identity`、`MaxPool2d`、`AvgPool2d`、`AdaptiveAvgPool2d`（僅 `output_size=(1,1)`）、`GlobalAvgPool2d`、`Flatten`、`Linear`
+- loss：`CrossEntropyLoss`（可搭配 `label_smoothing`）、`BCEWithLogitsLoss`（僅 binary output）、或 `MSELoss`
+- optimizer：支援 `SGD`、`Adam`、`AdamW`、`RMSprop`，可選 global gradient clipping
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
-- 仍要求：`train.amp=false`、`train.grad_accum_steps=1`
-- 驗證時拒絕：`GroupNorm`、`LayerNorm`、`ResidualBlock`
+- 可用 `train.amp=true|false`（帶 loss scaling / overflow backoff 的實驗性 mixed-precision prototype）
+- 目前驗證或 `train-native` gate 仍拒絕：不在 `SGD` / `Adam` / `AdamW` / `RMSprop` 內的 optimizer
 
 ## Variant 選擇（cuda_legacy）
 

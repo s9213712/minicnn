@@ -49,6 +49,7 @@ class TestLayoutConstants:
 
     def test_op_layout_rules_cover_supported_ops(self):
         for op in (
+            'Add',
             'Conv2d',
             'DepthwiseConv2d',
             'PointwiseConv2d',
@@ -126,6 +127,10 @@ class TestInferLayout:
 
 
 class TestExpectedLayouts:
+    def test_add_is_layout_passthrough_contract(self):
+        assert expected_input_layout('Add') is None
+        assert expected_output_layout('Add') is None
+
     def test_conv2d_expects_nchw(self):
         assert expected_input_layout('Conv2d') == NCHW
         assert expected_output_layout('Conv2d') == NCHW
@@ -166,6 +171,48 @@ class TestValidateGraphLayouts:
     def test_returns_list(self):
         g = _graph()
         assert isinstance(validate_graph_layouts(g), list)
+
+    def test_add_graph_with_matching_layouts_is_valid(self):
+        g = build_graph(
+            [
+                {'type': 'Identity', 'output': 'stem'},
+                {'type': 'Identity', 'inputs': ['stem'], 'output': 'left'},
+                {'type': 'Identity', 'inputs': ['stem'], 'output': 'right'},
+                {'type': 'Add', 'inputs': ['left', 'right'], 'output': 'sum'},
+            ],
+            input_shape=(2, 3, 8, 8),
+        )
+        assert validate_graph_layouts(g) == []
+
+    def test_add_graph_shape_mismatch_is_rejected_at_build_time(self):
+        with pytest.raises(ValueError, match='Add expects all input shapes to match'):
+            build_graph(
+                [
+                    {'type': 'Identity', 'output': 'image'},
+                    {'type': 'Flatten', 'inputs': ['image'], 'output': 'flat'},
+                    {'type': 'Add', 'inputs': ['image', 'flat'], 'output': 'sum'},
+                ],
+                input_shape=(2, 3, 8, 8),
+            )
+
+
+class TestPlannerWithAdd:
+    def test_naive_plan_preserves_multi_input_step_buffers(self):
+        g = build_graph(
+            [
+                {'type': 'Identity', 'output': 'stem'},
+                {'type': 'Identity', 'inputs': ['stem'], 'output': 'left'},
+                {'type': 'Identity', 'inputs': ['stem'], 'output': 'right'},
+                {'type': 'Add', 'inputs': ['left', 'right'], 'output': 'sum'},
+            ],
+            input_shape=(2, 3),
+        )
+        plan = make_naive_plan(g)
+        step = plan.steps[-1]
+        assert step.op_type == 'Add'
+        assert step.inputs == ['left', 'right']
+        assert len(step.input_buffers) == 2
+        assert step.output_buffers
 
 
 # ---------------------------------------------------------------------------

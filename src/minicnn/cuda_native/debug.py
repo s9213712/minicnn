@@ -16,6 +16,15 @@ from typing import Any
 # Graph dump
 # ---------------------------------------------------------------------------
 
+
+def _format_tensor_shapes(specs) -> object:
+    if not specs:
+        return '?'
+    if len(specs) == 1:
+        return specs[0].shape
+    return [spec.shape for spec in specs]
+
+
 def dump_graph(graph, indent: int = 2) -> str:
     """Return a human-readable string representation of a NativeGraph.
 
@@ -31,8 +40,8 @@ def dump_graph(graph, indent: int = 2) -> str:
     out_shape = graph.output_spec.shape if graph.output_spec else '?'
     buf.write(f'NativeGraph  input={in_shape}  output={out_shape}  nodes={len(graph.nodes)}\n')
     for i, node in enumerate(graph.nodes):
-        in_s = node.input_specs[0].shape if node.input_specs else '?'
-        out_s = node.output_specs[0].shape if node.output_specs else '?'
+        in_s = _format_tensor_shapes(node.input_specs)
+        out_s = _format_tensor_shapes(node.output_specs)
         attrs_str = '  ' + '  '.join(f'{k}={v}' for k, v in node.attrs.items()) if node.attrs else ''
         buf.write(
             f'{pad}[{i}] {node.name:<14} {node.op_type:<12} '
@@ -66,13 +75,27 @@ def dump_plan(plan, indent: int = 2) -> str:
     bp = plan.buffer_plan
     buf = io.StringIO()
     total_kb = round(bp.total_nbytes / 1024, 2)
-    buf.write(f'ExecutionPlan  buffers={bp.num_buffers}  total={total_kb} KB\n')
+    peak_live_kb = round(bp.peak_live_bytes / 1024, 2)
+    strategy = getattr(plan, 'strategy', 'naive')
+    buf.write(
+        f'ExecutionPlan  strategy={strategy}  buffers={bp.num_buffers}  total={total_kb} KB  '
+        f'peak_live={peak_live_kb} KB  reuse_events={bp.reuse_events}\n'
+    )
     for i, step in enumerate(plan.steps):
         ins = ', '.join(step.input_buffers)
         outs = ', '.join(step.output_buffers)
+        allocated = f' alloc={step.allocated_buffers}' if step.allocated_buffers else ''
+        reused = f' reuse={step.reused_buffers}' if step.reused_buffers else ''
+        released = f' release={step.released_buffers}' if step.released_buffers else ''
+        live = (
+            f' live={round(step.live_bytes_before / 1024, 2)}->{round(step.live_bytes_after / 1024, 2)}KB'
+        )
+        reserved = f' reserved={round(step.reserved_bytes_after / 1024, 2)}KB'
+        pressure = f' pressure={step.pressure_after:.2f}'
+        slack = f' slack={step.reuse_slack_bytes}B' if step.reuse_slack_bytes else ''
         buf.write(
             f'{pad}step {i:>2}  {step.node_name:<14} {step.op_type:<12} '
-            f'[{ins}] -> [{outs}]\n'
+            f'[{ins}] -> [{outs}]{allocated}{reused}{released}{live}{reserved}{pressure}{slack}\n'
         )
     buf.write(f'{pad}Buffers:\n')
     buf_to_tensor = {v: k for k, v in bp.tensor_to_buffer.items()}

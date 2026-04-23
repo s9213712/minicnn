@@ -37,6 +37,8 @@ Read these in order if you want the current, operational picture of the repo:
 7. [docs/example_expansion_plan.md](docs/example_expansion_plan.md) — the canonical example-growth and onboarding path
 8. [docs/convnext_yaml_ir_decision.md](docs/convnext_yaml_ir_decision.md) — why ConvNeXt currently stays inside `model.layers[]` without new schema work
 9. [docs/convnext_support_blueprint.md](docs/convnext_support_blueprint.md) — the compact "what exists / what is still forbidden" execution brief
+10. [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md) — the current staged expansion plan for the primary native backend
+11. [docs/optimization_progress.md](docs/optimization_progress.md) — recent engineering progress and current phase framing
 
 ## By Task
 
@@ -89,6 +91,8 @@ Dataset split note:
 ### I want to work on `cuda_native`
 
 - [docs/cuda_native.md](docs/cuda_native.md) — full guide to the primary native backend direction
+- [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md) — staged plan for broadening graph, training, and capability coverage
+- [docs/optimization_progress.md](docs/optimization_progress.md) — current progress snapshot and next-phase framing
 - [docs/cuda_native_phase5_rfc.md](docs/cuda_native_phase5_rfc.md) — future extension RFCs
 - [docs/backend_capabilities.md](docs/backend_capabilities.md) — current validated support boundary
 - [docs/convnext_explicit_smoke_index.md](docs/convnext_explicit_smoke_index.md) — hermetic native smoke entrypoints for explicit and block-based ConvNeXt paths

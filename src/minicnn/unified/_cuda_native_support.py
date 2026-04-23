@@ -8,13 +8,41 @@ import numpy as np
 
 from minicnn.cuda_native.executor import ForwardExecutor
 from minicnn.cuda_native.graph import NativeGraph
-from minicnn.cuda_native.loss import cross_entropy_loss, mse_loss
+from minicnn.cuda_native.loss import bce_with_logits_loss, cross_entropy_loss, mse_loss
 from minicnn.paths import BEST_MODELS_ROOT
 from minicnn.schedulers.cosine import CosineAnnealingLR
 from minicnn.schedulers.plateau import ReduceLROnPlateau
 from minicnn.schedulers.step import StepLR
 
 TRAINING_SUMMARY_SCHEMA_VERSION = 1
+
+
+def _sanitize_amp_runtime(amp_runtime: dict[str, Any] | None) -> dict[str, Any]:
+    raw = dict(amp_runtime or {})
+    sanitized: dict[str, Any] = {}
+    for key, value in raw.items():
+        if isinstance(value, (str, bool, int, float)) or value is None:
+            sanitized[key] = value
+            continue
+        if isinstance(value, np.generic):
+            sanitized[key] = value.item()
+            continue
+        if key == 'params_fp16_cache' and isinstance(value, dict):
+            sanitized['cached_param_tensors'] = int(len(value))
+            continue
+    return sanitized
+
+
+def _sanitize_optimizer_runtime(optimizer_runtime: dict[str, Any] | None) -> dict[str, Any]:
+    raw = dict(optimizer_runtime or {})
+    sanitized: dict[str, Any] = {}
+    for key, value in raw.items():
+        if isinstance(value, (str, bool, int, float)) or value is None:
+            sanitized[key] = value
+            continue
+        if isinstance(value, np.generic):
+            sanitized[key] = value.item()
+    return sanitized
 
 
 def load_numpy_data(cfg: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -89,6 +117,8 @@ def evaluate_native_graph(
     params: dict[str, np.ndarray],
     batch_size: int,
     loss_type: str,
+    *,
+    amp_enabled: bool = False,
 ) -> dict[str, float]:
     fwd = ForwardExecutor()
     out_name = graph.output_spec.name
@@ -96,15 +126,31 @@ def evaluate_native_graph(
     correct = 0
     seen = 0
     n = x.shape[0]
+    eval_params = params
+    if amp_enabled:
+        eval_params = {
+            key: (
+                value.astype(np.float16)
+                if isinstance(value, np.ndarray) and np.issubdtype(value.dtype, np.floating)
+                else value
+            )
+            for key, value in params.items()
+        }
     for i in range(0, n, batch_size):
         xb = x[i:i + batch_size]
         yb = y[i:i + batch_size]
-        ctx = fwd.run(graph, {graph.input_spec.name: xb}, params=params)
+        fwd_input = xb.astype(np.float16) if amp_enabled else xb
+        ctx = fwd.run(graph, {graph.input_spec.name: fwd_input}, params=eval_params)
         logits = ctx[out_name]
         if loss_type == 'cross_entropy':
             loss_val, _ = cross_entropy_loss(logits, yb)
             preds = logits.argmax(axis=1)
             correct += int((preds == yb).sum())
+        elif loss_type == 'bce_with_logits':
+            loss_val, _ = bce_with_logits_loss(logits, yb.astype(np.float32))
+            probs = 1.0 / (1.0 + np.exp(-logits.reshape(-1)))
+            preds = (probs >= 0.5).astype(np.int64)
+            correct += int((preds == yb.reshape(-1).astype(np.int64)).sum())
         else:
             loss_val, _ = mse_loss(logits, yb.astype(np.float32))
             preds = logits.argmax(axis=1)
@@ -151,19 +197,33 @@ def make_scheduler(
 
 
 def resolve_loss_type(loss_cfg: dict[str, Any]) -> str:
-    loss_map = {'CrossEntropyLoss': 'cross_entropy', 'MSELoss': 'mse'}
+    loss_map = {
+        'CrossEntropyLoss': 'cross_entropy',
+        'BCEWithLogitsLoss': 'bce_with_logits',
+        'MSELoss': 'mse',
+    }
     loss_type_str = str(loss_cfg.get('type', 'CrossEntropyLoss'))
     loss_type = loss_map.get(loss_type_str)
     if loss_type is None:
         raise ValueError(
             f'cuda_native does not support loss.type={loss_type_str!r}. '
-            'Supported: CrossEntropyLoss, MSELoss.'
+            'Supported: CrossEntropyLoss, BCEWithLogitsLoss, MSELoss.'
         )
     return loss_type
 
 
-def build_epoch_row(*, epoch: int, train_loss: float, val_metrics: dict[str, float], lr: float, epoch_time_s: float) -> dict[str, Any]:
-    return {
+def build_epoch_row(
+    *,
+    epoch: int,
+    train_loss: float,
+    val_metrics: dict[str, float],
+    lr: float,
+    epoch_time_s: float,
+    amp_state: dict[str, Any] | None = None,
+    optimizer_state: dict[str, Any] | None = None,
+    planner_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    row = {
         'epoch': epoch,
         'train_loss': train_loss,
         'val_loss': val_metrics['loss'],
@@ -171,16 +231,58 @@ def build_epoch_row(*, epoch: int, train_loss: float, val_metrics: dict[str, flo
         'lr': lr,
         'epoch_time_s': epoch_time_s,
     }
+    if amp_state:
+        row['amp'] = dict(amp_state)
+    if optimizer_state:
+        row['optimizer_runtime'] = _sanitize_optimizer_runtime(optimizer_state)
+    if planner_state:
+        row['planner'] = dict(planner_state)
+    return row
 
 
-def epoch_log_message(*, epoch: int, epochs: int, train_loss: float, val_acc: float, lr: float, epoch_time_s: float) -> str:
-    return (
+def epoch_log_message(
+    *,
+    epoch: int,
+    epochs: int,
+    train_loss: float,
+    val_acc: float,
+    lr: float,
+    epoch_time_s: float,
+    amp_state: dict[str, Any] | None = None,
+    optimizer_state: dict[str, Any] | None = None,
+) -> str:
+    message = (
         f"[cuda_native] Epoch {epoch}/{epochs}: "
         f"train_loss={train_loss:.4f}, "
         f"val_acc={val_acc * 100:.2f}%, "
         f"lr={lr:.6f}, "
         f"time={epoch_time_s:.1f}s"
     )
+    if amp_state:
+        parts: list[str] = []
+        if 'loss_scale' in amp_state:
+            parts.append(f"amp_scale={float(amp_state['loss_scale']):.1f}")
+        if 'skipped_steps_epoch' in amp_state or 'overflow_steps_epoch' in amp_state:
+            parts.append(
+                f"amp_skip={int(amp_state.get('skipped_steps_epoch', 0))}"
+                f"/ovf={int(amp_state.get('overflow_steps_epoch', 0))}"
+            )
+        if 'cache_hits_epoch' in amp_state or 'cache_allocations_epoch' in amp_state:
+            parts.append(
+                f"amp_cache=h{int(amp_state.get('cache_hits_epoch', 0))}"
+                f"/u{int(amp_state.get('cache_updates_epoch', 0))}"
+                f"/a{int(amp_state.get('cache_allocations_epoch', 0))}"
+            )
+        if parts:
+            message += ", " + ", ".join(parts)
+    if optimizer_state:
+        message += (
+            f", opt_state=t{int(optimizer_state.get('state_tensor_count', 0))}"
+            f"/{float(optimizer_state.get('state_total_kb', 0.0)):.1f}kb"
+            f",a{int(optimizer_state.get('state_tensor_allocations_epoch', 0))}"
+            f"/u{int(optimizer_state.get('state_tensor_updates_epoch', 0))}"
+        )
+    return message
 
 
 def best_checkpoint_path(run_dir: Path) -> Path:
@@ -197,12 +299,41 @@ def build_training_summary(
     model_cfg: dict[str, Any],
     loss_cfg: dict[str, Any],
     scheduler_cfg: dict[str, Any],
-    lr: float,
-    momentum: float,
-    grad_clip_global: float,
+    optimizer_cfg: dict[str, Any],
+    train_cfg: dict[str, Any],
+    amp_runtime: dict[str, Any] | None,
+    optimizer_runtime: dict[str, Any] | None,
+    planner_summary: dict[str, Any] | None,
     epochs: int,
     capabilities: dict[str, Any],
 ) -> dict[str, Any]:
+    optim_type = str(optimizer_cfg.get('type', 'SGD'))
+    optimizer_summary = {
+        'type': optim_type,
+        'lr': float(optimizer_cfg.get('lr', 0.01)),
+        'weight_decay': float(optimizer_cfg.get('weight_decay', 0.0)),
+        'grad_clip_global': float(optimizer_cfg.get('grad_clip_global', 0.0)),
+    }
+    if optim_type in {'SGD', 'RMSprop'}:
+        optimizer_summary['momentum'] = float(optimizer_cfg.get('momentum', 0.0))
+    if optim_type in {'Adam', 'AdamW'}:
+        optimizer_summary['beta1'] = float(optimizer_cfg.get('beta1', 0.9))
+        optimizer_summary['beta2'] = float(optimizer_cfg.get('beta2', 0.999))
+        optimizer_summary['eps'] = float(optimizer_cfg.get('eps', 1e-8))
+    if optim_type == 'RMSprop':
+        optimizer_summary['alpha'] = float(optimizer_cfg.get('alpha', 0.99))
+    sanitized_amp_runtime = _sanitize_amp_runtime(amp_runtime)
+    sanitized_optimizer_runtime = _sanitize_optimizer_runtime(optimizer_runtime)
+    performance_report = {
+        'planner': dict(planner_summary or {}),
+        'amp': sanitized_amp_runtime,
+        'optimizer': sanitized_optimizer_runtime,
+        'training': {
+            'batch_size': int(train_cfg.get('batch_size', 64)),
+            'grad_accum_steps': int(train_cfg.get('grad_accum_steps', 1)),
+            'amp_enabled': bool(train_cfg.get('amp', False)),
+        },
+    }
     return {
         'schema_version': TRAINING_SUMMARY_SCHEMA_VERSION,
         'artifact_kind': 'training_run_summary',
@@ -215,14 +346,26 @@ def build_training_summary(
         'best_val_acc': best_val_acc,
         'input_shape': list(input_shape),
         'model_layers': [layer.get('type') for layer in model_cfg.get('layers', [])],
-        'optimizer': {
-            'type': 'SGD',
-            'lr': float(lr),
-            'momentum': float(momentum),
-            'grad_clip_global': float(grad_clip_global),
-        },
+        'optimizer': optimizer_summary,
         'scheduler': scheduler_cfg.get('type') if bool(scheduler_cfg.get('enabled', False)) else None,
-        'loss': loss_cfg.get('type', 'CrossEntropyLoss'),
+        'loss': {
+            'type': loss_cfg.get('type', 'CrossEntropyLoss'),
+            'label_smoothing': float(loss_cfg.get('label_smoothing', 0.0)),
+        },
+        'grad_accum_steps': int(train_cfg.get('grad_accum_steps', 1)),
+        'amp': bool(train_cfg.get('amp', False)),
+        'amp_config': {
+            'enabled': bool(train_cfg.get('amp', False)),
+            'loss_scale': float(train_cfg.get('amp_loss_scale', 128.0)),
+            'dynamic_scale': bool(train_cfg.get('amp_dynamic_scale', True)),
+            'scale_growth': float(train_cfg.get('amp_scale_growth', 2.0)),
+            'scale_backoff': float(train_cfg.get('amp_scale_backoff', 0.5)),
+            'scale_window': int(train_cfg.get('amp_scale_window', 200)),
+        },
+        'amp_runtime': sanitized_amp_runtime,
+        'optimizer_runtime': sanitized_optimizer_runtime,
+        'planner': dict(planner_summary or {}),
+        'performance_report': performance_report,
         'epochs': epochs,
         'periodic_checkpoints': [],
         'test_loss': None,

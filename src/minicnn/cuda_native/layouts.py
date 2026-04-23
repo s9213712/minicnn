@@ -45,6 +45,8 @@ SUPPORTED_ACTIVATION_LAYOUTS: frozenset[str] = frozenset({NCHW, NC})
 #: Maps op_type -> (expected_input_layout, produced_output_layout).
 #: None means the layout passes through unchanged.
 OP_LAYOUT_RULES: dict[str, tuple[str | None, str | None]] = {
+    'Add':               (None,  None),   # validated separately: all inputs must match
+    'Concat':            (None,  None),   # validated separately: all inputs must match layout
     'Conv2d':            (NCHW,  NCHW),
     'DepthwiseConv2d':   (NCHW,  NCHW),
     'depthwise_conv2d':  (NCHW,  NCHW),
@@ -54,6 +56,8 @@ OP_LAYOUT_RULES: dict[str, tuple[str | None, str | None]] = {
     'ConvNeXtBlock':     (NCHW,  NCHW),
     'convnext_block':    (NCHW,  NCHW),
     'BatchNorm2d':       (NCHW,  NCHW),
+    'GroupNorm':         (NCHW,  NCHW),
+    'LayerNorm':         (None,  None),
     'LayerNorm2d':       (NCHW,  NCHW),
     'layernorm2d':       (NCHW,  NCHW),
     'ReLU':              (None,  None),   # passthrough
@@ -64,6 +68,7 @@ OP_LAYOUT_RULES: dict[str, tuple[str | None, str | None]] = {
     'GELU':              (None,  None),   # passthrough
     'Identity':          (None,  None),   # passthrough
     'Dropout':           (None,  None),   # passthrough
+    'DropPath':          (None,  None),   # passthrough
     'MaxPool2d':         (NCHW,  NCHW),
     'AvgPool2d':         (NCHW,  NCHW),
     'AdaptiveAvgPool2d': (NCHW,  NCHW),
@@ -176,6 +181,25 @@ def validate_graph_layouts(graph) -> list[str]:
     """
     errors: list[str] = []
     for node in graph.topological_order():
+        input_layouts = [infer_layout(spec.shape) for spec in node.input_specs]
+        if node.op_type in {'Add', 'Concat'}:
+            if len(input_layouts) < 2:
+                errors.append(
+                    f'Node {node.name} ({node.op_type}): expected at least two input layouts, got {len(input_layouts)}'
+                )
+                continue
+            first_layout = input_layouts[0]
+            if first_layout not in SUPPORTED_ACTIVATION_LAYOUTS:
+                errors.append(
+                    f'Node {node.name} ({node.op_type}): unsupported input layout {first_layout!r}'
+                )
+            for layout in input_layouts[1:]:
+                if layout != first_layout:
+                    errors.append(
+                        f'Node {node.name} ({node.op_type}): expected all input layouts to match, '
+                        f'got {input_layouts!r}'
+                    )
+            continue
         for spec in node.input_specs:
             layout = infer_layout(spec.shape)
             errors.extend(validate_op_layout(node.op_type, layout, node.name))

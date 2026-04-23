@@ -1,9 +1,9 @@
-"""cuda_native — experimental sequential native backend prototype.
+"""cuda_native — experimental ordered-graph native backend prototype.
 
 Status: experimental
 Training: prototype only
 Backward: prototype only
-Graph mode: sequential only
+Graph mode: ordered DAG (experimental)
 """
 from minicnn.cuda_native.capabilities import CUDA_NATIVE_CAPABILITIES, get_cuda_native_capabilities
 from minicnn.cuda_native.api import (
@@ -13,7 +13,17 @@ from minicnn.cuda_native.api import (
 )
 from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.executor import ForwardExecutor
-from minicnn.cuda_native.planner import BufferPlan, BufferType, ExecutionPlan, make_naive_plan
+from minicnn.cuda_native.planner import (
+    BufferPlan,
+    BufferType,
+    ExecutionPlan,
+    analyze_live_tensor_sets,
+    estimate_peak_live_bytes,
+    analyze_live_ranges,
+    make_naive_plan,
+    make_plan,
+    make_reuse_plan,
+)
 from minicnn.cuda_native.backward import BackwardExecutor, make_default_backward_registry
 from minicnn.cuda_native.loss import cross_entropy_loss, mse_loss
 from minicnn.cuda_native.training import train_step, sgd_update
@@ -45,7 +55,12 @@ __all__ = [
     'ExecutionPlan',
     'BufferPlan',
     'BufferType',
+    'analyze_live_tensor_sets',
+    'estimate_peak_live_bytes',
+    'analyze_live_ranges',
     'make_naive_plan',
+    'make_reuse_plan',
+    'make_plan',
     'BackwardExecutor',
     'make_default_backward_registry',
     'cross_entropy_loss',

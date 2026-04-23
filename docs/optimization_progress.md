@@ -1,6 +1,6 @@
 # Optimization And Backend Progress
 
-Last updated: 2026-04-21
+Last updated: 2026-04-23
 
 This file tracks the current technical direction of MiniCNN without binding the
 status to a specific historic PR number or branch name.
@@ -39,6 +39,10 @@ prototype-level rather than a stable training backend.
 - NumPy autograd teaching path
 - validator-driven `cuda_legacy` bridge
 - documentation for backend boundaries and capability differences
+- `cuda_native` ordered DAG graph path with named tensor wiring plus generic `Add` / `Concat`
+- `cuda_native` normalization/regularization slice: `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `Dropout`, `DropPath`
+- `cuda_native` modern training slice: `Adam`, `AdamW`, `RMSprop`, `BCEWithLogitsLoss`, `label_smoothing`, `grad_accum_steps`, experimental AMP
+- planner / AMP / optimizer-state telemetry now wired into `summary.json` and `metrics.jsonl`
 
 ## What Is Still Constrained
 
@@ -48,7 +52,7 @@ Current limits include:
 
 - CIFAR-10-centered training boundary
 - fixed validated Conv/Pool/Linear pattern
-- no `BatchNorm2d`, `LayerNorm`, `GroupNorm`, or `ResidualBlock`
+- no production-grade native training quality or performance guarantees
 - no shared scheduler bridge
 - no shared augmentation bridge
 - no `BCEWithLogitsLoss`
@@ -62,12 +66,13 @@ These are not project-wide limitations. They are backend-specific limits.
 
 - keep docs and capability tables aligned with actual code
 - keep frontend surfaces broader than native backends
+- consolidate runtime observability around stable reporting keys
 - expand tests that compare native behavior against reference paths
 
 ### Medium-term
 
-- broaden native backend coverage where the value is clear
-- avoid silent config fallbacks
+- improve runtime efficiency of the `cuda_native` research stack
+- reduce tensor/state churn in planner, executor, and optimizer paths
 - promote only tested native capabilities into the public backend surface
 
 ### Long-term
@@ -91,3 +96,18 @@ If those three answers do not line up, the repo accumulates fake parity.
 - [comparison_completion_report.md](comparison_completion_report.md)
 - [generalization_roadmap.md](generalization_roadmap.md)
 - [dual_backend_guide.md](dual_backend_guide.md)
+
+## Current Phase
+
+The last major expansion phase is functionally complete:
+
+- graph semantics: ordered DAG + `Add` / `Concat`
+- normalization / regularization: `GroupNorm`, `LayerNorm`, `DropPath`
+- training surface: modern optimizers, richer losses, grad accumulation, experimental AMP
+- reporting: planner / AMP / optimizer telemetry in artifacts
+
+The next phase is narrower and more technical:
+
+- runtime efficiency
+- memory / state reuse quality
+- stronger performance-oriented reporting without overstating production readiness

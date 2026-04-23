@@ -68,6 +68,24 @@ def _init_params(graph: NativeGraph, seed: int = 42) -> dict[str, np.ndarray]:
             params[f'_b_{node.name}'] = np.zeros(channels, dtype=np.float32)
             params[f'_running_mean_{node.name}'] = np.zeros(channels, dtype=np.float32)
             params[f'_running_var_{node.name}'] = np.ones(channels, dtype=np.float32)
+        elif node.op_type == 'GroupNorm':
+            s = node.input_specs[0].shape if node.input_specs else None
+            if s is None:
+                continue
+            channels = int(s[1])
+            params[f'_w_{node.name}'] = np.ones(channels, dtype=np.float32)
+            params[f'_b_{node.name}'] = np.zeros(channels, dtype=np.float32)
+        elif node.op_type == 'LayerNorm':
+            raw_shape = node.attrs.get('normalized_shape')
+            if raw_shape is None:
+                continue
+            normalized_shape = (
+                (int(raw_shape),)
+                if isinstance(raw_shape, int)
+                else tuple(int(v) for v in raw_shape)
+            )
+            params[f'_w_{node.name}'] = np.ones(normalized_shape, dtype=np.float32)
+            params[f'_b_{node.name}'] = np.zeros(normalized_shape, dtype=np.float32)
         elif node.op_type in {'LayerNorm2d', 'layernorm2d'}:
             s = node.input_specs[0].shape if node.input_specs else None
             if s is None:

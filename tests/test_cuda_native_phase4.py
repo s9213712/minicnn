@@ -72,12 +72,32 @@ class TestValidateCudaNativeConfig:
     def test_unsupported_op_rejected(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
         cfg = self._minimal_cfg([
-            {'type': 'GroupNorm'},
+            {'type': 'CustomNorm'},
             {'type': 'Flatten'},
             {'type': 'Linear', 'out_features': 2},
         ])
         errors = validate_cuda_native_config(cfg)
         assert len(errors) > 0
+
+    def test_groupnorm_accepted(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'GroupNorm', 'num_groups': 1},
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        errors = validate_cuda_native_config(cfg)
+        assert errors == []
+
+    def test_layernorm_accepted(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'LayerNorm', 'normalized_shape': 64},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        errors = validate_cuda_native_config(cfg)
+        assert errors == []
 
     def test_convnext_block_accepted(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
@@ -128,7 +148,17 @@ class TestValidateCudaNativeConfig:
         errors = validate_cuda_native_config(cfg)
         assert any('dataset.type' in e for e in errors)
 
-    def test_loss_bcewithlogits_rejected(self):
+    def test_loss_bcewithlogits_accepted_for_binary_output(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 1},
+        ])
+        cfg['loss']['type'] = 'BCEWithLogitsLoss'
+        errors = validate_cuda_native_config(cfg)
+        assert errors == []
+
+    def test_loss_bcewithlogits_rejects_non_binary_output(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
         cfg = self._minimal_cfg([
             {'type': 'Flatten'},
@@ -136,9 +166,9 @@ class TestValidateCudaNativeConfig:
         ])
         cfg['loss']['type'] = 'BCEWithLogitsLoss'
         errors = validate_cuda_native_config(cfg)
-        assert any('loss.type' in e for e in errors)
+        assert any('BCEWithLogitsLoss' in e for e in errors)
 
-    def test_optimizer_adam_rejected(self):
+    def test_optimizer_adam_is_allowed(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
         cfg = self._minimal_cfg([
             {'type': 'Flatten'},
@@ -146,7 +176,27 @@ class TestValidateCudaNativeConfig:
         ])
         cfg['optimizer']['type'] = 'Adam'
         errors = validate_cuda_native_config(cfg)
-        assert any('optimizer.type' in e for e in errors)
+        assert errors == []
+
+    def test_optimizer_adamw_is_allowed(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        cfg['optimizer']['type'] = 'AdamW'
+        errors = validate_cuda_native_config(cfg)
+        assert errors == []
+
+    def test_optimizer_rmsprop_is_allowed(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        cfg['optimizer']['type'] = 'RMSprop'
+        errors = validate_cuda_native_config(cfg)
+        assert errors == []
 
     def test_optimizer_momentum_is_allowed(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
@@ -188,7 +238,7 @@ class TestValidateCudaNativeConfig:
         errors = validate_cuda_native_config(cfg)
         assert errors == []
 
-    def test_amp_and_grad_accum_rejected(self):
+    def test_amp_and_grad_accum_allowed(self):
         from minicnn.cuda_native.api import validate_cuda_native_config
         cfg = self._minimal_cfg([
             {'type': 'Flatten'},
@@ -197,8 +247,17 @@ class TestValidateCudaNativeConfig:
         cfg['train']['amp'] = True
         cfg['train']['grad_accum_steps'] = 2
         errors = validate_cuda_native_config(cfg)
-        assert any('train.amp=true' in e for e in errors)
-        assert any('train.grad_accum_steps' in e for e in errors)
+        assert errors == []
+
+    def test_cross_entropy_label_smoothing_allowed(self):
+        from minicnn.cuda_native.api import validate_cuda_native_config
+        cfg = self._minimal_cfg([
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 2},
+        ])
+        cfg['loss']['label_smoothing'] = 0.1
+        errors = validate_cuda_native_config(cfg)
+        assert errors == []
 
 
 # ---------------------------------------------------------------------------
@@ -269,15 +328,15 @@ class TestTrainerBridge:
         assert run_dir.exists()
         assert (run_dir / 'summary.json').exists()
 
-    def test_trainer_rejects_unsupported_optimizer_before_runtime(self):
+    def test_trainer_accepts_adam_optimizer(self):
         import warnings
         from minicnn.unified.trainer import train_unified_from_config
         cfg = self._minimal_cfg()
         cfg['optimizer']['type'] = 'Adam'
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
-            with pytest.raises(ValueError, match='optimizer.type'):
-                train_unified_from_config(cfg)
+            run_dir = train_unified_from_config(cfg)
+        assert run_dir.exists()
 
     def test_validate_cuda_native_cli_rejects_invalid_optimizer(self, tmp_path, capsys):
         from minicnn.cli import main
@@ -290,10 +349,10 @@ class TestTrainerBridge:
                 {'type': 'Linear', 'out_features': 2},
             ]},
             'train': {'batch_size': 2, 'epochs': 1},
-            'optimizer': {'type': 'Adam', 'lr': 0.01},
+            'optimizer': {'type': 'Adagrad', 'lr': 0.01},
             'loss': {'type': 'CrossEntropyLoss'},
         }
-        cfg['optimizer']['type'] = 'Adam'
+        cfg['optimizer']['type'] = 'Adagrad'
         config_path = tmp_path / 'cuda_native_invalid.yaml'
         config_path.write_text(yaml.safe_dump(cfg), encoding='utf-8')
 
