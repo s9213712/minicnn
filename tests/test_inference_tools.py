@@ -131,6 +131,38 @@ def test_load_best_model_path_from_summary_rejects_unknown_schema_version(tmp_pa
         load_best_model_path_from_summary(summary_path)
 
 
+def test_load_best_model_path_from_summary_accepts_extra_cuda_native_metadata(tmp_path):
+    from minicnn.inference import load_best_model_path_from_summary
+
+    summary_path = tmp_path / 'summary.json'
+    summary_path.write_text(json.dumps({
+        'schema_name': 'minicnn.cuda_native.training.summary',
+        'schema_version': 1,
+        'artifact_kind': 'training_run_summary',
+        'best_model_path': '/tmp/best.npz',
+        'checkpoint_contract': {
+            'format': 'npz',
+            'version': 1,
+            'best_model_path_key': 'best_model_path',
+        },
+    }), encoding='utf-8')
+
+    assert load_best_model_path_from_summary(summary_path) == '/tmp/best.npz'
+
+
+def test_load_best_model_path_from_summary_keeps_backward_compat_without_schema_name(tmp_path):
+    from minicnn.inference import load_best_model_path_from_summary
+
+    summary_path = tmp_path / 'summary.json'
+    summary_path.write_text(json.dumps({
+        'schema_version': 1,
+        'artifact_kind': 'training_run_summary',
+        'best_model_path': 'legacy_best.npz',
+    }), encoding='utf-8')
+
+    assert load_best_model_path_from_summary(summary_path) == 'legacy_best.npz'
+
+
 def test_cli_evaluate_checkpoint_outputs_structured_json(tmp_path, capsys):
     from minicnn.cli import main
 

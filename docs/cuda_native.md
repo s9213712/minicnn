@@ -118,6 +118,47 @@ Hermetic smoke configs:
 - `templates/cifar10/convnext_tiny_cuda_native_smoke.yaml`
 - `templates/cifar10/resnet_like_cuda_native_smoke.yaml`
 
+## Support Tiers
+
+`cuda_native` is still experimental as a whole backend, but its public surface
+is no longer one undifferentiated bucket.
+
+Current tiering:
+
+### Stable
+
+- ordered DAG graph execution
+- named tensor wiring
+- `Add`
+- `Concat`
+- `Conv2d`
+- `Linear`
+- `Flatten`
+- `ReLU`
+- `CrossEntropyLoss`
+- `SGD`
+- `AdamW`
+- `grad_accum_steps`
+- artifact reporting contracts
+
+### Beta
+
+- `GroupNorm`
+- `LayerNorm`
+- `LayerNorm2d`
+- `BCEWithLogitsLoss`
+- `RMSprop`
+- AMP
+- planner reuse heuristics
+
+### Experimental
+
+- `ResidualBlock`
+- `ConvNeXtBlock`
+- `DropPath`
+- composite lowering policies
+- aggressive planner heuristics
+
 ## How It Differs From cuda_legacy
 
 | | cuda_legacy | cuda_native |

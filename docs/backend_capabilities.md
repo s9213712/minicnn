@@ -213,6 +213,45 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 See [docs/cuda_native.md](cuda_native.md) for the full guide.
 See [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md) for future extension RFCs.
 
+## cuda_native Support Tiers
+
+Use these tiers as the current public positioning, not as a promise that every
+listed item is production-ready.
+
+### Stable
+
+- ordered DAG graph execution
+- named tensor wiring
+- `Add`
+- `Concat`
+- `Conv2d`
+- `Linear`
+- `Flatten`
+- `ReLU`
+- `CrossEntropyLoss`
+- `SGD`
+- `AdamW`
+- `grad_accum_steps`
+- artifact reporting contracts
+
+### Beta
+
+- `GroupNorm`
+- `LayerNorm`
+- `LayerNorm2d`
+- `BCEWithLogitsLoss`
+- `RMSprop`
+- AMP
+- planner reuse heuristics
+
+### Experimental
+
+- `ResidualBlock`
+- `ConvNeXtBlock`
+- `DropPath`
+- composite lowering policies
+- aggressive planner heuristics
+
 ## Reading Validation Errors
 
 If a config runs on `torch` but fails on `cuda_legacy`, that is an expected backend boundary, not a parser bug.

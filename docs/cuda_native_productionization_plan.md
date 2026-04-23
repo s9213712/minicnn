@@ -105,6 +105,7 @@ Current status:
 - `validate-cuda-native-config` now exposes explicit validation-result schema metadata
 - `train-native` now exposes stable user-facing failure categories for contract-level regression tests
 - canonical smoke matrix is now documented separately in `cuda_native_smoke_matrix.md`
+- support tiers are now published in `cuda_native.md` and `backend_capabilities.md`
 
 ## Phase 2: Runtime Hardening
 
