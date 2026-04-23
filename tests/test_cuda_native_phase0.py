@@ -105,6 +105,14 @@ def test_validator_rejects_groupnorm():
     assert 'gn1' in errors[0]
 
 
+def test_validator_rejects_convnext_block():
+    from minicnn.cuda_native.validators import validate_op_type
+    errors = validate_op_type('ConvNeXtBlock', node_name='cnx1')
+    assert len(errors) == 1
+    assert 'ConvNeXtBlock' in errors[0]
+    assert 'cnx1' in errors[0]
+
+
 def test_validator_rejects_unknown_op():
     from minicnn.cuda_native.validators import validate_op_type
     errors = validate_op_type('MyCustomOp', node_name='node0')
@@ -159,6 +167,16 @@ def test_api_validate_config_rejects_groupnorm():
     ]}, 'optimizer': {'type': 'SGD', 'momentum': 0.0}, 'scheduler': {'enabled': False}}
     errors = validate_cuda_native_config(cfg)
     assert any('GroupNorm' in e for e in errors)
+
+
+def test_api_validate_config_rejects_convnext_block():
+    from minicnn.cuda_native.api import validate_cuda_native_config
+    cfg = {'model': {'layers': [
+        {'type': 'Conv2d', 'out_channels': 16},
+        {'type': 'ConvNeXtBlock'},
+    ]}, 'optimizer': {'type': 'SGD', 'momentum': 0.0}, 'scheduler': {'enabled': False}}
+    errors = validate_cuda_native_config(cfg)
+    assert any('ConvNeXtBlock' in e for e in errors)
 
 
 def test_validate_layer_list_collects_missing_type_and_later_attr_error():

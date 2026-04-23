@@ -4,7 +4,7 @@ import json
 import pytest
 
 from minicnn.flex.trainer import train_from_config
-from minicnn.paths import BEST_MODELS_ROOT
+from minicnn.paths import BEST_MODELS_ROOT, PROJECT_ROOT
 
 
 def test_train_from_random_config(tmp_path: Path):
@@ -126,6 +126,14 @@ def test_override_parser_updates_layer_list_index():
     cfg = load_flex_config(None, ['model.layers.1.out_features=7'])
 
     assert cfg['model']['layers'][1]['out_features'] == 7
+
+
+def test_load_flex_config_resolves_repo_relative_dataset_root_for_templates():
+    from minicnn.flex.config import load_flex_config
+
+    cfg = load_flex_config(Path(__file__).resolve().parents[1] / 'templates' / 'cifar10' / 'convnext_like.yaml')
+
+    assert cfg['dataset']['data_root'] == str((PROJECT_ROOT / 'data/cifar-10-batches-py').resolve())
 
 
 def test_optimizer_ignores_cuda_legacy_lr_fields_for_torch():

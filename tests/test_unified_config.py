@@ -4,6 +4,7 @@ from pathlib import Path
 
 from minicnn.unified.config import load_unified_config
 from minicnn.unified.cuda_legacy import validate_cuda_legacy_compatibility, compile_to_legacy_experiment
+from minicnn.paths import PROJECT_ROOT
 
 
 def test_unified_config_override_backend():
@@ -28,6 +29,12 @@ def test_unified_config_sorts_type_override_before_other_fields():
     cfg = load_unified_config(None, ['optimizer.lr=0.001', 'optimizer.type=Adam'])
 
     assert cfg['optimizer'] == {'type': 'Adam', 'lr': 0.001}
+
+
+def test_unified_config_resolves_repo_relative_dataset_root():
+    cfg = load_unified_config(None, ['dataset.data_root=data/cifar-10-batches-py'])
+
+    assert cfg['dataset']['data_root'] == str((PROJECT_ROOT / 'data/cifar-10-batches-py').resolve())
 
 
 def test_compile_supported_dual_config():

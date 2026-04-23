@@ -7,6 +7,7 @@ from typing import Any
 import yaml
 
 from minicnn.config.parsing import parse_override_parts, parse_scalar, set_nested_value
+from minicnn.paths import PROJECT_ROOT
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -74,6 +75,17 @@ def _deep_update(dst: dict[str, Any], src: dict[str, Any]) -> dict[str, Any]:
     return dst
 
 
+def _normalize_repo_relative_paths(cfg: dict[str, Any]) -> dict[str, Any]:
+    dataset_cfg = cfg.get('dataset')
+    if isinstance(dataset_cfg, dict):
+        data_root = dataset_cfg.get('data_root')
+        if isinstance(data_root, str) and data_root.strip():
+            candidate = Path(data_root).expanduser()
+            if not candidate.is_absolute():
+                dataset_cfg['data_root'] = str((PROJECT_ROOT / candidate).resolve())
+    return cfg
+
+
 def load_flex_config(path: str | Path | None = None, overrides: list[str] | None = None) -> dict[str, Any]:
     data = copy.deepcopy(DEFAULT_CONFIG)
     if path:
@@ -90,7 +102,7 @@ def load_flex_config(path: str | Path | None = None, overrides: list[str] | None
         parsed_overrides.sort(key=lambda item: 0 if item[0][-1] == 'type' else 1)
         for parts, value in parsed_overrides:
             set_nested_value(data, parts, value, clear_on_type_change=True)
-    return data
+    return _normalize_repo_relative_paths(data)
 
 
 def dump_template() -> str:

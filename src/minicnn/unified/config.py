@@ -7,7 +7,7 @@ from typing import Any
 import yaml
 
 from minicnn.config.parsing import parse_override_parts, parse_scalar, set_nested_value
-from minicnn.flex.config import _deep_update, DEFAULT_CONFIG
+from minicnn.flex.config import _deep_update, _normalize_repo_relative_paths, DEFAULT_CONFIG
 
 UNIFIED_DEFAULT_CONFIG: dict[str, Any] = copy.deepcopy(DEFAULT_CONFIG)
 UNIFIED_DEFAULT_CONFIG['engine'] = {
@@ -33,7 +33,7 @@ def load_unified_config(path: str | Path | None = None, overrides: list[str] | N
         parsed_overrides.sort(key=lambda item: 0 if item[0][-1] == 'type' else 1)
         for parts, value in parsed_overrides:
             set_nested_value(data, parts, value, clear_on_type_change=True)
-    return data
+    return _normalize_repo_relative_paths(data)
 
 
 def dump_unified_template() -> str:

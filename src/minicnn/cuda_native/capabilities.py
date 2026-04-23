@@ -46,6 +46,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     ],
     'planned_ops': [],
     'unsupported_ops': [
+        'ConvNeXtBlock',
         'GroupNorm',
         'LayerNorm',
         'ResidualBlock',
