@@ -91,22 +91,20 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 
 ## Recent Engineering Progress
 
-The current cleanup and refactor work has pushed more orchestration logic out of
-the hottest entrypoint files without changing the public CLI surface.
+The recent cleanup and refactor program is now part of `main`.
 
-Recent passes include:
+The current repo state includes:
 
-- CLI dispatch now splits parser construction, readonly commands, and
-  training/compare commands into focused helper modules
-- `flex` training now separates context setup, run orchestration, reporting,
-  device resolution, and step-level execution
-- `cuda_native` unified training now separates bridge helpers, runtime loop
-  helpers, and support/reporting helpers
-- artifact inspection/export and legacy checkpoint payload handling now live in
-  dedicated helper layers instead of staying mixed into larger modules
+- CLI dispatch split into dedicated parser, readonly, and training/compare helper modules
+- `flex` training split across context setup, run orchestration, reporting, device resolution, and step helpers
+- unified `cuda_native` training split across bridge, runtime-loop, and support/reporting helpers
+- artifact inspection/export and checkpoint payload handling moved into dedicated helper layers
+- JSON-friendly diagnostics and validation surfaces across `healthcheck`, `doctor`, `smoke`, `validate-*`, and inspection commands
+- real `show-model` and `show-graph` introspection commands instead of placeholders
 
-The result is the same user-facing command set, but with narrower module
-responsibilities and cleaner rollback points for deeper native optimization work.
+The user-facing command surface is intentionally still small, but the internal
+module boundaries are now narrower, the output contracts are more explicit, and
+the backend role docs are aligned with the actual code.
 
 ## What You Can Run Today
 
