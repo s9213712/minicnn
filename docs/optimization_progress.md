@@ -1,6 +1,6 @@
 # Optimization And Backend Progress
 
-Last updated: 2026-04-23
+Last updated: 2026-04-24
 
 This file tracks the current technical direction of MiniCNN without binding the
 status to a specific historic PR number or branch name.
@@ -105,6 +105,12 @@ The last major expansion phase is functionally complete:
 - normalization / regularization: `GroupNorm`, `LayerNorm`, `DropPath`
 - training surface: modern optimizers, richer losses, grad accumulation, experimental AMP
 - reporting: planner / AMP / optimizer telemetry in artifacts
+- runtime hardening slice now includes:
+  - persistent grad-buffer reuse with active/capacity telemetry
+  - AMP cache telemetry and reduced refresh churn
+  - epoch-level efficiency telemetry in `metrics.jsonl`
+  - train/eval hotspot summaries plus train/eval diff summaries
+  - bottleneck-oriented runtime summaries in `summary.json`
 
 The next phase is narrower and more technical:
 

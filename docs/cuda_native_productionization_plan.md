@@ -137,6 +137,24 @@ Priority order:
 
 Phase 2 is about runtime quality, not adding more ops.
 
+Current status:
+
+- planner/static telemetry is already exposed through `summary.json` and `metrics.jsonl`
+- AMP runtime now includes loss-scaling / overflow telemetry plus cache hit/update/allocation counters
+- optimizer runtime now includes state-churn and grad-buffer reuse metrics
+- `performance_report.runtime` now includes:
+  - epoch timing / throughput summary
+  - `train_hotspots`
+  - `eval_hotspots`
+  - `hotspot_diff`
+- `performance_report.bottlenecks` now condenses planner / AMP / grad-buffer / hotspot signals into a direct runtime summary
+
+Remaining Phase 2 emphasis:
+
+- parity between runtime telemetry usefulness and actual runtime cost
+- further reduction of temporary tensor churn in optimizer/update hot paths
+- deeper profiling only where it materially improves actionability
+
 ## Phase 3: Correctness Hardening
 
 Goal:
