@@ -7,6 +7,9 @@ surface. It covers hermetic reference-math parity for the narrow native GPU
 training helpers. Real-hardware parity remains pending until the local CUDA
 driver/runtime mismatch is resolved.
 
+For the closure/status summary, see
+[cuda_native_gpu_enablement_status.md](cuda_native_gpu_enablement_status.md).
+
 ## Current training subset matrix
 
 | Subset | Helper | Evidence | Hardware status |

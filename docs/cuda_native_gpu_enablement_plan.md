@@ -22,6 +22,7 @@ See also:
 - [cuda_native_expansion_plan.md](cuda_native_expansion_plan.md)
 - [backend_capabilities.md](backend_capabilities.md)
 - [cuda_native_gpu_parity_matrix.md](cuda_native_gpu_parity_matrix.md)
+- [cuda_native_gpu_enablement_status.md](cuda_native_gpu_enablement_status.md)
 
 ## Current State
 
