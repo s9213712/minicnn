@@ -155,6 +155,50 @@ def _profile_hotspots(
     }
 
 
+def _build_hotspot_diff_summary(
+    train_hotspots: dict[str, Any],
+    eval_hotspots: dict[str, Any],
+    *,
+    top_k: int = 5,
+) -> dict[str, Any]:
+    train_ops = {
+        str(item.get('op')): float(item.get('elapsed_ms', 0.0))
+        for item in train_hotspots.get('top_ops', [])
+        if isinstance(item, dict) and item.get('op') is not None
+    }
+    eval_ops = {
+        str(item.get('op')): float(item.get('elapsed_ms', 0.0))
+        for item in eval_hotspots.get('top_ops', [])
+        if isinstance(item, dict) and item.get('op') is not None
+    }
+    all_ops = sorted(set(train_ops) | set(eval_ops))
+    op_deltas = []
+    for op in all_ops:
+        train_elapsed = train_ops.get(op, 0.0)
+        eval_elapsed = eval_ops.get(op, 0.0)
+        op_deltas.append(
+            {
+                'op': op,
+                'train_elapsed_ms': round(train_elapsed, 3),
+                'eval_elapsed_ms': round(eval_elapsed, 3),
+                'delta_ms': round(train_elapsed - eval_elapsed, 3),
+                'train_eval_ratio': (
+                    round(train_elapsed / eval_elapsed, 3) if eval_elapsed > 0.0 else None
+                ),
+            }
+        )
+    op_deltas.sort(key=lambda item: abs(float(item.get('delta_ms', 0.0))), reverse=True)
+    train_total = float(train_hotspots.get('trace_total_ms', 0.0))
+    eval_total = float(eval_hotspots.get('trace_total_ms', 0.0))
+    return {
+        'train_total_ms': round(train_total, 3),
+        'eval_total_ms': round(eval_total, 3),
+        'delta_ms': round(train_total - eval_total, 3),
+        'train_eval_ratio': round(train_total / eval_total, 3) if eval_total > 0.0 else None,
+        'top_op_deltas': op_deltas[:top_k],
+    }
+
+
 @dataclass
 class NativeTrainingContext:
     cfg: dict[str, Any]
@@ -496,6 +540,7 @@ def run_training_loop(
         'train_hotspots': train_hotspot_profile,
         'eval_hotspots': eval_hotspot_profile,
         'hotspots': eval_hotspot_profile,
+        'hotspot_diff': _build_hotspot_diff_summary(train_hotspot_profile, eval_hotspot_profile),
     }
     return best_params, best_val_acc, amp_runtime, optimizer_runtime, runtime_profile
 

@@ -73,6 +73,7 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert 'hotspots' in summary['performance_report']['runtime']
     assert 'train_hotspots' in summary['performance_report']['runtime']
     assert 'eval_hotspots' in summary['performance_report']['runtime']
+    assert 'hotspot_diff' in summary['performance_report']['runtime']
     assert summary['performance_report']['runtime']['train_hotspots']['profile_mode'] == 'train'
     assert summary['performance_report']['runtime']['eval_hotspots']['profile_mode'] == 'eval'
     assert summary['performance_report']['runtime']['hotspots']['profile_mode'] == 'eval'
@@ -81,6 +82,14 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert 'top_categories' in summary['performance_report']['runtime']['hotspots']
     assert 'calls' in summary['performance_report']['runtime']['hotspots']['top_ops'][0]
     assert 'avg_ms' in summary['performance_report']['runtime']['hotspots']['top_ops'][0]
+    assert 'top_op_deltas' in summary['performance_report']['runtime']['hotspot_diff']
+    assert 'train_total_ms' in summary['performance_report']['runtime']['hotspot_diff']
+    assert 'eval_total_ms' in summary['performance_report']['runtime']['hotspot_diff']
+    assert 'delta_ms' in summary['performance_report']['runtime']['hotspot_diff']
+    assert 'op' in summary['performance_report']['runtime']['hotspot_diff']['top_op_deltas'][0]
+    assert 'train_elapsed_ms' in summary['performance_report']['runtime']['hotspot_diff']['top_op_deltas'][0]
+    assert 'eval_elapsed_ms' in summary['performance_report']['runtime']['hotspot_diff']['top_op_deltas'][0]
+    assert 'delta_ms' in summary['performance_report']['runtime']['hotspot_diff']['top_op_deltas'][0]
     assert 'state_allocations_per_step' in summary['performance_report']['efficiency']
     assert 'grad_buffer_reuse_ratio' in summary['performance_report']['efficiency']
     assert 'grad_buffer_active_tensor_fraction' in summary['performance_report']['efficiency']
