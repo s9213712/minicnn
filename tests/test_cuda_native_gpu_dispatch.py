@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from minicnn.cuda_native.api import build_cuda_native_graph
+from minicnn.cuda_native.gpu_bridge import build_gpu_bridge_trace
 from minicnn.cuda_native.gpu_dispatch import build_gpu_dispatch_plan, build_gpu_launch_trace
 
 
@@ -155,3 +156,26 @@ def test_gpu_launch_trace_builds_normalized_packets():
     assert packets[1].tensor_args[2]['binding'] == '_w_linear_1'
     assert packets[1].tensor_args[2]['layout'] == 'OI'
     assert packets[1].scalar_args == ()
+
+
+def test_gpu_bridge_trace_builds_stub_requests():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 8},
+                {'type': 'ReLU'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 8, 8),
+    )
+
+    packets = build_gpu_launch_trace(build_gpu_dispatch_plan(graph))
+    requests = build_gpu_bridge_trace(packets)
+
+    assert len(requests) == 4
+    assert requests[0].request_id == 'flatten_0:0'
+    assert requests[1].dispatch_mode == 'gpu_bridge_stub'
+    assert requests[1].launch_family == 'gemm_affine'
+    assert requests[1].tensor_args[2]['binding'] == '_w_linear_1'

@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from minicnn.cuda_native.device_runtime import DeviceRuntime
+from minicnn.cuda_native.gpu_bridge import GpuKernelBridgeRequest, build_gpu_bridge_trace
 from minicnn.cuda_native.gpu_dispatch import (
     GpuDispatchPlan,
     GpuLaunchPacket,
@@ -27,6 +28,7 @@ class GpuStubExecutionResult:
     output: np.ndarray
     dispatch_plan: GpuDispatchPlan
     launch_trace: tuple[GpuLaunchPacket, ...]
+    bridge_trace: tuple[GpuKernelBridgeRequest, ...]
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -34,6 +36,7 @@ class GpuStubExecutionResult:
             'output_shape': list(self.output.shape),
             'dispatch_plan': self.dispatch_plan.summary(),
             'launch_trace': [packet.summary() for packet in self.launch_trace],
+            'bridge_trace': [request.summary() for request in self.bridge_trace],
         }
 
 
@@ -141,9 +144,18 @@ class GpuStubExecutor:
                 self.device_runtime.release_buffer(tensor)
                 tensors.pop(tensor_name)
         self.device_runtime.release_buffer(output_tensor)
+        bridge_trace = build_gpu_bridge_trace(tuple(launch_trace))
+        for request in bridge_trace:
+            self.device_runtime.record_execution(
+                f'gpu_stub_bridge:{request.launch_family}',
+                input_name=request.tensor_args[0]['binding'] if request.tensor_args else None,
+                output_name=request.node_name,
+                node_count=0,
+            )
         return GpuStubExecutionResult(
             output_name=graph.output_spec.name,
             output=host_output,
             dispatch_plan=dispatch_plan,
             launch_trace=tuple(launch_trace),
+            bridge_trace=bridge_trace,
         )
