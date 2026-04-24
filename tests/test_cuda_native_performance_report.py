@@ -71,8 +71,12 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert 'avg_epoch_time_s' in summary['performance_report']['runtime']
     assert 'train_samples_per_sec' in summary['performance_report']['runtime']
     assert 'hotspots' in summary['performance_report']['runtime']
+    assert summary['performance_report']['runtime']['hotspots']['profile_mode'] == 'eval'
     assert 'top_nodes' in summary['performance_report']['runtime']['hotspots']
     assert 'top_ops' in summary['performance_report']['runtime']['hotspots']
+    assert 'top_categories' in summary['performance_report']['runtime']['hotspots']
+    assert 'calls' in summary['performance_report']['runtime']['hotspots']['top_ops'][0]
+    assert 'avg_ms' in summary['performance_report']['runtime']['hotspots']['top_ops'][0]
     assert 'state_allocations_per_step' in summary['performance_report']['efficiency']
     assert 'grad_buffer_reuse_ratio' in summary['performance_report']['efficiency']
     assert 'grad_buffer_active_tensor_fraction' in summary['performance_report']['efficiency']

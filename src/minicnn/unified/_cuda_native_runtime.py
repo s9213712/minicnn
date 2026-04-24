@@ -116,23 +116,41 @@ def _profile_hotspots(
         {
             'node': step.get('node'),
             'op': step.get('op'),
+            'category': step.get('category'),
             'elapsed_ms': step.get('elapsed_ms'),
         }
         for step in sorted_steps[:top_k]
     ]
     op_totals: dict[str, float] = {}
+    op_counts: dict[str, int] = {}
+    category_totals: dict[str, float] = {}
     for step in sorted_steps:
         op = str(step.get('op', 'unknown'))
+        category = str(step.get('category', 'unknown'))
         op_totals[op] = op_totals.get(op, 0.0) + float(step.get('elapsed_ms', 0.0))
+        op_counts[op] = op_counts.get(op, 0) + 1
+        category_totals[category] = category_totals.get(category, 0.0) + float(step.get('elapsed_ms', 0.0))
     top_ops = [
-        {'op': op, 'elapsed_ms': round(elapsed, 3)}
+        {
+            'op': op,
+            'elapsed_ms': round(elapsed, 3),
+            'calls': op_counts[op],
+            'avg_ms': round(elapsed / float(max(op_counts[op], 1)), 3),
+        }
         for op, elapsed in sorted(op_totals.items(), key=lambda item: item[1], reverse=True)[:top_k]
     ]
+    top_categories = [
+        {'category': category, 'elapsed_ms': round(elapsed, 3)}
+        for category, elapsed in sorted(category_totals.items(), key=lambda item: item[1], reverse=True)[:top_k]
+    ]
     return {
+        'profile_mode': 'eval',
+        'sample_batch_size': int(x_sample.shape[0]),
         'trace_total_ms': round(float(trace_summary.get('total_ms', 0.0)), 3),
         'trace_steps': len(steps),
         'top_nodes': top_nodes,
         'top_ops': top_ops,
+        'top_categories': top_categories,
     }
 
 
