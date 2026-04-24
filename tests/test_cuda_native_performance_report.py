@@ -109,6 +109,8 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert summary['optimizer_runtime']['optimizer_type'] == 'adamw'
     assert summary['optimizer_runtime']['state_tensor_count'] > 0
     assert summary['optimizer_runtime']['state_total_bytes'] > 0
+    assert 'scratch_tensor_count' in summary['optimizer_runtime']
+    assert 'scratch_total_bytes' in summary['optimizer_runtime']
     assert 'grad_buffer_allocations' in summary['optimizer_runtime']
     assert 'grad_buffer_reset_events' in summary['optimizer_runtime']
     assert 'cache_allocations' in summary['amp_runtime']
@@ -124,6 +126,8 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert row['optimizer_runtime']['state_tensor_count'] > 0
     assert 'state_tensor_allocations_epoch' in row['optimizer_runtime']
     assert 'state_tensor_updates_epoch' in row['optimizer_runtime']
+    assert 'scratch_tensor_allocations_epoch' in row['optimizer_runtime']
+    assert 'scratch_tensor_updates_epoch' in row['optimizer_runtime']
     assert 'grad_buffer_allocations_epoch' in row['optimizer_runtime']
     assert 'grad_buffer_reset_events_epoch' in row['optimizer_runtime']
     assert row['planner']['strategy'] == 'reuse'
@@ -132,3 +136,5 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert 'efficiency' in row
     assert 'grad_buffer_reuse_ratio' in row['efficiency']
     assert 'amp_cache_hit_ratio' in row['efficiency']
+    assert 'scratch_allocations_per_step' in row['efficiency']
+    assert 'scratch_updates_per_step' in row['efficiency']

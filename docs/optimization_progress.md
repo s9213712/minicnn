@@ -108,6 +108,7 @@ The last major expansion phase is functionally complete:
 - runtime hardening slice now includes:
   - persistent grad-buffer reuse with active/capacity telemetry
   - AMP cache telemetry and reduced refresh churn
+  - reusable optimizer scratch buffers with telemetry for Adam/AdamW/RMSprop
   - epoch-level efficiency telemetry in `metrics.jsonl`
   - train/eval hotspot summaries plus train/eval diff summaries
   - bottleneck-oriented runtime summaries in `summary.json`

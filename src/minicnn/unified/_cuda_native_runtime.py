@@ -52,6 +52,17 @@ def _optimizer_runtime_snapshot(optimizer_state: dict[str, Any]) -> dict[str, An
     runtime['state_tensor_count'] = tensor_count
     runtime['state_total_bytes'] = total_bytes
     runtime['state_total_kb'] = round(total_bytes / 1024.0, 3)
+    scratch_bucket = optimizer_state.get('optimizer_scratch', {})
+    scratch_tensor_count = 0
+    scratch_total_bytes = 0
+    if isinstance(scratch_bucket, dict):
+        for value in scratch_bucket.values():
+            if isinstance(value, np.ndarray):
+                scratch_tensor_count += 1
+                scratch_total_bytes += int(value.nbytes)
+    runtime['scratch_tensor_count'] = scratch_tensor_count
+    runtime['scratch_total_bytes'] = scratch_total_bytes
+    runtime['scratch_total_kb'] = round(scratch_total_bytes / 1024.0, 3)
     grad_buffer = optimizer_state.get('grad_buffer', {})
     if isinstance(grad_buffer, dict):
         grad_buffer_tensors = 0
@@ -387,6 +398,8 @@ def run_training_loop(
         'steps': 0,
         'state_tensor_allocations': 0,
         'state_tensor_updates': 0,
+        'scratch_tensor_allocations': 0,
+        'scratch_tensor_updates': 0,
         'grad_buffer_allocations': 0,
         'grad_buffer_reuses': 0,
         'grad_buffer_reset_events': 0,
@@ -495,6 +508,9 @@ def run_training_loop(
                 'state_tensor_count': int(optimizer_runtime.get('state_tensor_count', 0)),
                 'state_total_bytes': int(optimizer_runtime.get('state_total_bytes', 0)),
                 'state_total_kb': float(optimizer_runtime.get('state_total_kb', 0.0)),
+                'scratch_tensor_count': int(optimizer_runtime.get('scratch_tensor_count', 0)),
+                'scratch_total_bytes': int(optimizer_runtime.get('scratch_total_bytes', 0)),
+                'scratch_total_kb': float(optimizer_runtime.get('scratch_total_kb', 0.0)),
                 'grad_buffer_tensor_count': int(optimizer_runtime.get('grad_buffer_tensor_count', 0)),
                 'grad_buffer_total_bytes': int(optimizer_runtime.get('grad_buffer_total_bytes', 0)),
                 'grad_buffer_total_kb': float(optimizer_runtime.get('grad_buffer_total_kb', 0.0)),
@@ -508,6 +524,14 @@ def run_training_loop(
                 'state_tensor_updates_epoch': (
                     int(optimizer_runtime.get('state_tensor_updates', 0))
                     - int(prev_optimizer_snapshot['state_tensor_updates'])
+                ),
+                'scratch_tensor_allocations_epoch': (
+                    int(optimizer_runtime.get('scratch_tensor_allocations', 0))
+                    - int(prev_optimizer_snapshot['scratch_tensor_allocations'])
+                ),
+                'scratch_tensor_updates_epoch': (
+                    int(optimizer_runtime.get('scratch_tensor_updates', 0))
+                    - int(prev_optimizer_snapshot['scratch_tensor_updates'])
                 ),
                 'grad_buffer_allocations_epoch': (
                     int(optimizer_runtime.get('grad_buffer_allocations', 0))
@@ -531,6 +555,8 @@ def run_training_loop(
                 'steps': int(optimizer_runtime.get('steps', 0)),
                 'state_tensor_allocations': int(optimizer_runtime.get('state_tensor_allocations', 0)),
                 'state_tensor_updates': int(optimizer_runtime.get('state_tensor_updates', 0)),
+                'scratch_tensor_allocations': int(optimizer_runtime.get('scratch_tensor_allocations', 0)),
+                'scratch_tensor_updates': int(optimizer_runtime.get('scratch_tensor_updates', 0)),
                 'grad_buffer_allocations': int(optimizer_runtime.get('grad_buffer_allocations', 0)),
                 'grad_buffer_reuses': int(optimizer_runtime.get('grad_buffer_reuses', 0)),
                 'grad_buffer_reset_events': int(optimizer_runtime.get('grad_buffer_reset_events', 0)),

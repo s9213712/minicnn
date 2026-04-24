@@ -141,7 +141,7 @@ Current status:
 
 - planner/static telemetry is already exposed through `summary.json` and `metrics.jsonl`
 - AMP runtime now includes loss-scaling / overflow telemetry plus cache hit/update/allocation counters
-- optimizer runtime now includes state-churn and grad-buffer reuse metrics
+- optimizer runtime now includes state-churn, reusable scratch-buffer telemetry, and grad-buffer reuse metrics
 - `performance_report.runtime` now includes:
   - epoch timing / throughput summary
   - `train_hotspots`

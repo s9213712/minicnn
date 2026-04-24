@@ -110,6 +110,7 @@ def adamw_update(
     runtime = _optimizer_runtime_state(optimizer_state, optimizer_type='adamw')
     m_state: dict[str, np.ndarray] = state.setdefault('adamw_m', {})
     v_state: dict[str, np.ndarray] = state.setdefault('adamw_v', {})
+    scratch_state: dict[str, np.ndarray] = state.setdefault('optimizer_scratch', {})
     step = int(state.get('adamw_step', 0)) + 1
     state['adamw_step'] = step
 
@@ -129,12 +130,19 @@ def adamw_update(
         m_prev += (1.0 - beta1) * grad
         v_prev *= beta2
         v_prev += (1.0 - beta2) * grad_sq
-        m_hat = m_prev / bias_correction1
-        v_hat = v_prev / bias_correction2
+        m_hat = _get_or_init_scratch_tensor(scratch_state, f'{key}:adamw_m_hat', val_f32, runtime)
+        v_hat = _get_or_init_scratch_tensor(scratch_state, f'{key}:adamw_v_hat', val_f32, runtime)
+        np.copyto(m_hat, m_prev)
+        np.copyto(v_hat, v_prev)
+        m_hat /= bias_correction1
+        v_hat /= bias_correction2
+        np.sqrt(v_hat, out=v_hat)
+        v_hat += eps
+        m_hat /= v_hat
         next_val = val_f32.copy()
         if weight_decay > 0.0:
-            next_val = next_val - lr * weight_decay * next_val
-        next_val = next_val - lr * (m_hat / (np.sqrt(v_hat) + eps))
+            next_val *= (1.0 - lr * weight_decay)
+        next_val -= lr * m_hat
         updated[key] = next_val
     return updated
 
@@ -155,6 +163,7 @@ def adam_update(
     state = optimizer_state if optimizer_state is not None else {}
     m_state: dict[str, np.ndarray] = state.setdefault('adam_m', {})
     v_state: dict[str, np.ndarray] = state.setdefault('adam_v', {})
+    scratch_state: dict[str, np.ndarray] = state.setdefault('optimizer_scratch', {})
     runtime = _optimizer_runtime_state(optimizer_state, optimizer_type='adam')
     step = int(state.get('adam_step', 0)) + 1
     state['adam_step'] = step
@@ -176,10 +185,17 @@ def adam_update(
         m_prev += (1.0 - beta1) * grad
         v_prev *= beta2
         v_prev += (1.0 - beta2) * np.square(grad, dtype=np.float32)
-        m_hat = m_prev / bias_correction1
-        v_hat = v_prev / bias_correction2
+        m_hat = _get_or_init_scratch_tensor(scratch_state, f'{key}:adam_m_hat', val_f32, runtime)
+        v_hat = _get_or_init_scratch_tensor(scratch_state, f'{key}:adam_v_hat', val_f32, runtime)
+        np.copyto(m_hat, m_prev)
+        np.copyto(v_hat, v_prev)
+        m_hat /= bias_correction1
+        v_hat /= bias_correction2
+        np.sqrt(v_hat, out=v_hat)
+        v_hat += eps
+        m_hat /= v_hat
         next_val = val_f32.copy()
-        next_val -= lr * (m_hat / (np.sqrt(v_hat) + eps))
+        next_val -= lr * m_hat
         updated[key] = next_val
     return updated
 
@@ -200,6 +216,7 @@ def rmsprop_update(
     state = optimizer_state if optimizer_state is not None else {}
     v_state: dict[str, np.ndarray] = state.setdefault('rmsprop_v', {})
     buf_state: dict[str, np.ndarray] = state.setdefault('rmsprop_buf', {})
+    scratch_state: dict[str, np.ndarray] = state.setdefault('optimizer_scratch', {})
     runtime = _optimizer_runtime_state(optimizer_state, optimizer_type='rmsprop')
     updated: dict[str, np.ndarray] = {}
     for key, val in params.items():
@@ -213,7 +230,11 @@ def rmsprop_update(
         v_prev = _get_or_init_state_tensor(v_state, key, val_f32, runtime)
         v_prev *= alpha
         v_prev += (1.0 - alpha) * np.square(grad, dtype=np.float32)
-        step_grad = (grad / (np.sqrt(v_prev) + eps)).astype(np.float32)
+        step_grad = _get_or_init_scratch_tensor(scratch_state, f'{key}:rmsprop_step', val_f32, runtime)
+        np.copyto(step_grad, v_prev)
+        np.sqrt(step_grad, out=step_grad)
+        step_grad += eps
+        np.divide(grad, step_grad, out=step_grad)
         if momentum > 0.0:
             buf_prev = _get_or_init_state_tensor(buf_state, key, val_f32, runtime)
             buf_prev *= momentum
@@ -341,6 +362,8 @@ def _optimizer_runtime_state(
     runtime['steps'] = int(runtime.get('steps', 0)) + 1
     runtime.setdefault('state_tensor_allocations', 0)
     runtime.setdefault('state_tensor_updates', 0)
+    runtime.setdefault('scratch_tensor_allocations', 0)
+    runtime.setdefault('scratch_tensor_updates', 0)
     runtime.setdefault('grad_buffer_allocations', 0)
     runtime.setdefault('grad_buffer_reuses', 0)
     runtime.setdefault('grad_buffer_reset_events', 0)
@@ -361,6 +384,22 @@ def _get_or_init_state_tensor(
     current = np.zeros_like(like, dtype=np.float32)
     bucket[key] = current
     runtime['state_tensor_allocations'] = int(runtime.get('state_tensor_allocations', 0)) + 1
+    return current
+
+
+def _get_or_init_scratch_tensor(
+    bucket: dict[str, np.ndarray],
+    key: str,
+    like: np.ndarray,
+    runtime: dict[str, Any],
+) -> np.ndarray:
+    current = bucket.get(key)
+    if isinstance(current, np.ndarray) and current.shape == like.shape and current.dtype == np.float32:
+        runtime['scratch_tensor_updates'] = int(runtime.get('scratch_tensor_updates', 0)) + 1
+        return current
+    current = np.zeros_like(like, dtype=np.float32)
+    bucket[key] = current
+    runtime['scratch_tensor_allocations'] = int(runtime.get('scratch_tensor_allocations', 0)) + 1
     return current
 
 

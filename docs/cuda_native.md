@@ -114,6 +114,7 @@ Validated `train-native` support boundary today:
 - `performance_report.runtime.*hotspots` records representative traced forward-pass hotspot summaries (`top_nodes`, `top_ops`, `top_categories`) and includes per-op call counts / average time; `hotspot_diff.top_op_deltas`, `hotspot_diff.top_node_deltas`, and `hotspot_diff.top_category_deltas` highlight the largest train/eval timing differences
 - `performance_report.bottlenecks` folds planner/AMP/grad-buffer/hotspot signals into a direct runtime bottleneck summary so the main issues are readable without manually inspecting every telemetry ratio
 - `metrics.jsonl` epoch rows now also carry an `efficiency` block so long-running jobs can be inspected incrementally instead of relying only on final `summary.json`
+- optimizer runtime telemetry now also tracks reusable scratch buffers so Adam/AdamW/RMSprop temporary-array churn is observable in both `summary.json` and `metrics.jsonl`
 - `summary.json` and `metrics.jsonl` now both expose explicit `schema_name` / `schema_version`
 - `summary.json` now includes `checkpoint_contract` metadata instead of silently implying the checkpoint format
 - `validate-cuda-native-config` now has an explicit validation-result schema contract (`schema_name`, `schema_version`, `artifact_kind`)
@@ -444,6 +445,7 @@ reference-kernel 路徑接通，可驗證、可執行，但仍不是正式穩定
 - `performance_report.runtime.*hotspots` 也會記錄代表性 traced forward pass 的 hotspot 摘要（`top_nodes`、`top_ops`、`top_categories`），並提供 per-op call count / average time；`hotspot_diff.top_op_deltas`、`hotspot_diff.top_node_deltas`、`hotspot_diff.top_category_deltas` 會標出 train/eval 差異最大的 op、node、category
 - `performance_report.bottlenecks` 會把 planner/AMP/grad-buffer/hotspot 訊號收斂成可直接閱讀的 runtime bottleneck 摘要，避免每次都要人工比對所有 telemetry ratio
 - `metrics.jsonl` 的 epoch row 現在也會帶 `efficiency` 區塊，讓長時間訓練可以逐 epoch 觀察效率，而不是只能看最後的 `summary.json`
+- optimizer runtime telemetry 現在也會追蹤可重用的 scratch buffers，讓 Adam/AdamW/RMSprop 的 temporary-array churn 可以在 `summary.json` 與 `metrics.jsonl` 中被直接觀察
 - `summary.json` 與 `metrics.jsonl` 現在都會帶明確的 `schema_name` / `schema_version`
 - `summary.json` 也會帶 `checkpoint_contract` metadata，而不是把 checkpoint 格式隱含在實作裡
 - `validate-cuda-native-config` 也已有明確的 validation-result schema contract（`schema_name`、`schema_version`、`artifact_kind`）

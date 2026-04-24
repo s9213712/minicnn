@@ -58,6 +58,8 @@ def _build_efficiency_summary(
     steps = max(1, int(optimizer_runtime.get('steps', 0) or 0))
     state_allocations = int(optimizer_runtime.get('state_tensor_allocations', 0) or 0)
     state_updates = int(optimizer_runtime.get('state_tensor_updates', 0) or 0)
+    scratch_allocations = int(optimizer_runtime.get('scratch_tensor_allocations', 0) or 0)
+    scratch_updates = int(optimizer_runtime.get('scratch_tensor_updates', 0) or 0)
     grad_allocations = int(optimizer_runtime.get('grad_buffer_allocations', 0) or 0)
     grad_reuses = int(optimizer_runtime.get('grad_buffer_reuses', 0) or 0)
     grad_resets = int(optimizer_runtime.get('grad_buffer_reset_events', 0) or 0)
@@ -75,6 +77,8 @@ def _build_efficiency_summary(
     return {
         'state_allocations_per_step': round(state_allocations / float(steps), 6),
         'state_updates_per_step': round(state_updates / float(steps), 6),
+        'scratch_allocations_per_step': round(scratch_allocations / float(steps), 6),
+        'scratch_updates_per_step': round(scratch_updates / float(steps), 6),
         'grad_buffer_allocations_per_step': round(grad_allocations / float(steps), 6),
         'grad_buffer_resets_per_step': round(grad_resets / float(steps), 6),
         'grad_buffer_reuse_ratio': round(grad_reuses / float(grad_total), 6) if grad_total > 0 else 0.0,
