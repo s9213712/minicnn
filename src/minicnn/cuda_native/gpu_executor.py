@@ -23,6 +23,7 @@ from minicnn.cuda_native.gpu_bridge_adapter import (
     GpuFixedBridgeAdapter,
     GpuFlatBridgeAdapter,
     GpuKernelBridgeAdapter,
+    GpuNativeLibraryBridgeAdapter,
     GpuStubBridgeAdapter,
 )
 from minicnn.cuda_native.gpu_dispatch import (
@@ -241,3 +242,35 @@ class GpuStubExecutor:
             fixed_bridge_results=tuple(fixed_bridge_results),
             c_abi_bridge_results=tuple(c_abi_bridge_results),
         )
+
+
+def make_native_gpu_forward_executor(
+    *,
+    bound_lib: Any | None = None,
+    reserve_bytes: int = 0,
+    reserve_buffers: int = 0,
+    workspace_bytes: int = 0,
+    lowering_registry: GpuLoweringRegistry | None = None,
+) -> GpuStubExecutor:
+    """Create a partial native-forward GPU executor with a bound CUDA library."""
+
+    if bound_lib is None:
+        from minicnn.core._cuda_library import bind_symbols, load_library
+
+        bound_lib = bind_symbols(load_library())
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=bound_lib,
+    )
+    if reserve_bytes > 0 or reserve_buffers > 0 or workspace_bytes > 0:
+        runtime.reserve_from_planner(
+            total_bytes=int(reserve_bytes),
+            num_buffers=int(reserve_buffers),
+            workspace_bytes=int(workspace_bytes),
+        )
+    return GpuStubExecutor(
+        lowering_registry=lowering_registry,
+        device_runtime=runtime,
+        c_abi_bridge_adapter=GpuNativeLibraryBridgeAdapter(bound_lib=bound_lib),
+    )

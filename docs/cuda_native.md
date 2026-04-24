@@ -245,6 +245,28 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml \
   scheduler.enabled=true scheduler.type=StepLR scheduler.step_size=5
 ```
 
+Create a partial native-forward GPU executor from Python:
+
+```python
+import numpy as np
+
+from minicnn.cuda_native import build_cuda_native_graph, make_native_gpu_forward_executor
+
+graph = build_cuda_native_graph(
+    {
+        "layers": [
+            {"type": "Flatten", "output": "flat"},
+            {"type": "Add", "inputs": ["flat", "flat"], "output": "sum"},
+        ],
+    },
+    (1, 4),
+)
+
+executor = make_native_gpu_forward_executor(reserve_bytes=4096, reserve_buffers=4)
+result = executor.run(graph, np.asarray([[1.0, -2.0, 3.0, -4.0]], dtype=np.float32))
+print(result.output)
+```
+
 Validation payloads now also include `support_tier_assessment`, so a config can
 be accepted while still being marked as touching `beta`
 surfaces such as `amp` or composite blocks.

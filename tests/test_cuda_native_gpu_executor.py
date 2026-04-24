@@ -7,7 +7,7 @@ import numpy as np
 from minicnn.cuda_native.api import build_cuda_native_graph
 from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.gpu_bridge_adapter import GpuNativeLibraryBridgeAdapter
-from minicnn.cuda_native.gpu_executor import GpuStubExecutor
+from minicnn.cuda_native.gpu_executor import GpuStubExecutor, make_native_gpu_forward_executor
 from minicnn.unified._cuda_native_bridge import _init_params
 
 
@@ -269,6 +269,36 @@ def test_gpu_stub_executor_can_use_native_library_bridge_adapter():
     assert linear_result['symbol_available'] is True
     assert linear_result['requires_device_pointers'] is True
     assert linear_result['executed'] is False
+
+
+def test_make_native_gpu_forward_executor_wires_runtime_and_native_adapter():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten', 'output': 'flat'},
+                {'type': 'Add', 'inputs': ['flat', 'flat'], 'output': 'sum'},
+            ],
+        },
+        (1, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    executor = make_native_gpu_forward_executor(
+        bound_lib=fake_lib,
+        reserve_bytes=4096,
+        reserve_buffers=4,
+    )
+
+    x = np.asarray([[1.0, 2.0, -3.0, -4.0]], dtype=np.float32)
+    result = executor.run(graph, x, params={})
+
+    np.testing.assert_allclose(result.output, (x * 2.0).astype(np.float32))
+    runtime_summary = executor.device_runtime.summary()
+    assert runtime_summary['native_device_pointers_enabled'] is True
+    assert runtime_summary['execution_kinds']['gpu_native_kernel:add_forward'] == 1
+
+    exec_summary = result.summary()
+    assert exec_summary['c_abi_bridge_results'][1]['dispatch_mode'] == 'gpu_native_library_bridge'
+    assert exec_summary['c_abi_bridge_results'][1]['required_symbols'] == ['add_forward']
 
 
 def test_gpu_stub_executor_uses_native_dense_forward_when_device_pointers_available():
