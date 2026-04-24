@@ -122,6 +122,7 @@ The next phase is narrower and more technical:
 - machine-readable `support_tiers` / `support_tier_assessment` now expose which configs stay on `stable` surfaces and which touch `beta` / `experimental` areas
   - the same `support_tier_assessment` is now persisted into `summary.json` and `metrics.jsonl`
   - trivial `Flatten -> Linear` native training paths now stay on the `stable` tier instead of being artificially forced into `beta`
+  - `ResidualBlock` is now published as `beta` instead of `experimental`, backed by train/eval parity and hermetic smoke coverage
   - current parity baseline: `Add`, `Concat`, `Linear`, `Conv2d` (including grouped/depthwise), `BatchNorm2d`, `LayerNorm`, `LayerNorm2d`, `GroupNorm` forward/backward
   - `BatchNorm2d` train-mode running-stat semantics are now aligned with PyTorch (`running_var` uses unbiased batch variance)
   - composite parity now covers:
@@ -131,5 +132,6 @@ The next phase is narrower and more technical:
     - `ConvNeXtBlock` forward/backward with `layer_scale`
   - fixed-seed smoke reproducibility is now locked for a minimal `cuda_native` training path
   - canonical `fp32`, `AMP`, and `grad_accum` native runs now have an explicit tolerance-matrix regression gate
+  - `ResidualBlock` smoke variants now also have a dedicated `fp32` vs `grad_accum` tolerance gate
 
 For the formal productionization path, see [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md).

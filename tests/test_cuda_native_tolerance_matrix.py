@@ -8,9 +8,15 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SMOKE_TEMPLATE = "templates/cifar10/convnext_explicit_cuda_native_smoke.yaml"
+RESIDUAL_SMOKE_TEMPLATE = "templates/cifar10/resnet_like_cuda_native_smoke.yaml"
 
 
-def _run_native_variant(tmp_path: Path, variant: str, *overrides: str) -> tuple[dict, dict]:
+def _run_native_variant(
+    tmp_path: Path,
+    variant: str,
+    *overrides: str,
+    template: str = SMOKE_TEMPLATE,
+) -> tuple[dict, dict]:
     artifacts_root = tmp_path / variant
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH")
@@ -24,7 +30,7 @@ def _run_native_variant(tmp_path: Path, variant: str, *overrides: str) -> tuple[
         "minicnn.cli",
         "train-native",
         "--config",
-        SMOKE_TEMPLATE,
+        template,
         "project.name=tolerance-matrix",
         f"project.artifacts_root={artifacts_root}",
         "train.seed=123",
@@ -105,4 +111,35 @@ def test_cuda_native_tolerance_matrix_stays_within_bounds(tmp_path: Path) -> Non
 
     assert abs(fp32_last["train_loss"] - accum_last["train_loss"]) <= 0.5
     assert abs(fp32_last["val_loss"] - accum_last["val_loss"]) <= 0.5
+    assert abs(fp32_last["val_acc"] - accum_last["val_acc"]) <= 25.0
+
+
+def test_cuda_native_residualblock_tolerance_matrix_stays_within_bounds(tmp_path: Path) -> None:
+    fp32_summary, fp32_last = _run_native_variant(
+        tmp_path,
+        "residual-fp32",
+        "train.batch_size=16",
+        "train.grad_accum_steps=1",
+        "train.amp=false",
+        template=RESIDUAL_SMOKE_TEMPLATE,
+    )
+    accum_summary, accum_last = _run_native_variant(
+        tmp_path,
+        "residual-grad-accum",
+        "train.batch_size=8",
+        "train.grad_accum_steps=2",
+        "train.amp=false",
+        template=RESIDUAL_SMOKE_TEMPLATE,
+    )
+
+    assert fp32_summary["support_tier_assessment"]["highest_tier"] == "beta"
+    assert accum_summary["support_tier_assessment"]["highest_tier"] == "beta"
+    assert "ResidualBlock" in fp32_summary["support_tier_assessment"]["ops_by_tier"]["beta"]
+    assert "ResidualBlock" in accum_summary["support_tier_assessment"]["ops_by_tier"]["beta"]
+    assert accum_summary["grad_accum_steps"] == 2
+    assert accum_summary["optimizer_runtime"]["grad_buffer_tensor_count"] >= 1
+    assert accum_last["optimizer_runtime"]["grad_buffer_tensor_count"] >= 1
+
+    assert abs(fp32_last["train_loss"] - accum_last["train_loss"]) <= 0.75
+    assert abs(fp32_last["val_loss"] - accum_last["val_loss"]) <= 0.75
     assert abs(fp32_last["val_acc"] - accum_last["val_acc"]) <= 25.0

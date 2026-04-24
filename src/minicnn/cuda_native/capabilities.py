@@ -36,11 +36,12 @@ CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
     },
     'beta': {
         'ops': [
-            'AdaptiveAvgPool2d',
-            'AvgPool2d',
-            'Dropout',
-            'GELU',
-            'GlobalAvgPool2d',
+        'AdaptiveAvgPool2d',
+        'AvgPool2d',
+        'Dropout',
+        'ResidualBlock',
+        'GELU',
+        'GlobalAvgPool2d',
             'LeakyReLU',
             'MaxPool2d',
             'ReLU',
@@ -61,7 +62,6 @@ CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
         'ops': [
             'ConvNeXtBlock',
             'DropPath',
-            'ResidualBlock',
         ],
         'optimizers': [],
         'losses': [],
