@@ -39,6 +39,7 @@ CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
         'AdaptiveAvgPool2d',
         'AvgPool2d',
         'ConvNeXtBlock',
+        'DropPath',
         'Dropout',
         'ResidualBlock',
         'GELU',
@@ -60,14 +61,11 @@ CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
         ],
     },
     'experimental': {
-        'ops': [
-            'DropPath',
-        ],
+        'ops': [],
         'optimizers': [],
         'losses': [],
         'features': [
             'amp',
-            'composite_block_training',
         ],
     },
 }
@@ -106,7 +104,7 @@ CUDA_NATIVE_GRADUATION_GATES: dict[str, object] = {
             'global training_stable is still false',
             'global backward_stable is still false',
             'AMP remains experimental',
-            'experimental surfaces such as DropPath and composite block training are not yet globally graduated',
+            'the backend still has experimental training-wide surfaces, primarily AMP',
         ],
     },
 }
@@ -182,7 +180,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'Backward and training are research prototypes, not production-ready.',
         'BatchNorm2d forward/backward exist as prototypes; training remains experimental.',
         'DepthwiseConv2d, PointwiseConv2d, GroupNorm, LayerNorm, LayerNorm2d, GELU, and global pooling use numpy reference kernels.',
-        'ResidualBlock, ConvNeXtBlock, Dropout, and DropPath run through experimental composite/reference numpy kernels.',
+        'ResidualBlock, ConvNeXtBlock, Dropout, and DropPath run through composite/reference numpy kernels; support tier is published separately.',
         'Explicit ordered DAG wiring is supported through named tensor outputs plus Add/Concat multi-input nodes.',
         'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and experimental AMP with loss scaling / overflow backoff.',
         'validate-cuda-native-config enforces the current train-native support boundary.',

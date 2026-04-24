@@ -195,3 +195,36 @@ def test_cuda_native_fixed_seed_smoke_is_reproducible(tmp_path):
         assert ckpt_a.files == ckpt_b.files
         for key in ckpt_a.files:
             np.testing.assert_array_equal(ckpt_a[key], ckpt_b[key])
+
+
+def test_cuda_native_droppath_smoke(tmp_path):
+    cfg = {
+        'engine': {'backend': 'cuda_native', 'planner_strategy': 'reuse'},
+        'dataset': {
+            'type': 'random',
+            'input_shape': [3, 8, 8],
+            'num_classes': 2,
+            'num_samples': 8,
+            'val_samples': 4,
+            'seed': 41,
+        },
+        'model': {
+            'layers': [
+                {'type': 'Conv2d', 'out_channels': 4, 'kernel_size': 3, 'padding': 1},
+                {'type': 'DropPath', 'p': 0.2},
+                {'type': 'GlobalAvgPool2d'},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        'train': {'batch_size': 2, 'epochs': 1, 'init_seed': 41},
+        'optimizer': {'type': 'SGD', 'lr': 0.01},
+        'loss': {'type': 'CrossEntropyLoss'},
+        'project': {'artifacts_root': str(tmp_path)},
+    }
+
+    run_dir = _train(tmp_path, cfg)
+    summary, _row = _assert_minimum_artifact_contract(run_dir)
+
+    assert summary['support_tier_assessment']['highest_tier'] == 'beta'
+    assert 'DropPath' in summary['support_tier_assessment']['ops_by_tier']['beta']

@@ -207,6 +207,7 @@ Current status:
 - `ResidualBlock` hermetic smoke variants are now covered by an additional `fp32` vs `grad_accum` tolerance gate
 - `ConvNeXtBlock` hermetic smoke variants are now covered by an additional `fp32` vs `grad_accum` tolerance gate
 - named-model resolution now prefers the registered model spec over loader placeholder `model.layers`, so `convnext_tiny` support-tier assessment and train-path artifacts reflect the real expanded graph
+- `DropPath` now has deterministic train/eval correctness coverage and a dedicated train smoke path, and is published in the `beta` tier rather than `experimental`
 - `cuda-native-capabilities` and `validate-cuda-native-config` now expose machine-readable support-tier metadata instead of leaving `Stable` / `Beta` / `Experimental` only in prose
 - `summary.json` and `metrics.jsonl` now persist the same support-tier assessment, so successful runs keep their tier boundary in artifact form
 - `cuda-native-capabilities` now also exposes machine-readable `graduation_gates`, separating the ready `core_beta_subset` from the still-blocked full-backend graduation path

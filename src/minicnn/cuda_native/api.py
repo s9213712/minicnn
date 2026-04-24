@@ -78,9 +78,6 @@ def assess_cuda_native_support_tier(cfg: dict[str, Any]) -> dict[str, object]:
         for layer in resolved_model_cfg.get('layers', [])
     ):
         features.add('branching_graph')
-    if layer_types & {'DropPath'}:
-        features.add('composite_block_training')
-
     matches = {
         'ops': _matched_support_tiers(layer_types, 'ops'),
         'optimizers': _matched_support_tiers(optimizer_types, 'optimizers'),

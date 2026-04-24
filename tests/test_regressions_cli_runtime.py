@@ -359,7 +359,7 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert 'BCEWithLogitsLoss' in payload['support_tiers']['beta']['losses']
     assert 'ResidualBlock' in payload['support_tiers']['beta']['ops']
     assert 'ConvNeXtBlock' in payload['support_tiers']['beta']['ops']
-    assert 'DropPath' in payload['support_tiers']['experimental']['ops']
+    assert 'DropPath' in payload['support_tiers']['beta']['ops']
     assert 'amp' in payload['support_tiers']['experimental']['features']
     assert payload['support_tier_counts']['stable']['ops'] >= 1
     assert payload['graduation_gates']['core_beta_subset']['ready'] is True
