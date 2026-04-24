@@ -206,6 +206,7 @@ Current status:
 - canonical `fp32`, `AMP`, and `grad_accum` native variants are now covered by an explicit tolerance-matrix regression test
 - `cuda-native-capabilities` and `validate-cuda-native-config` now expose machine-readable support-tier metadata instead of leaving `Stable` / `Beta` / `Experimental` only in prose
 - `summary.json` and `metrics.jsonl` now persist the same support-tier assessment, so successful runs keep their tier boundary in artifact form
+- `cuda-native-capabilities` now also exposes machine-readable `graduation_gates`, separating the ready `core_beta_subset` from the still-blocked full-backend graduation path
 
 ## Phase 4: Support Tiers
 

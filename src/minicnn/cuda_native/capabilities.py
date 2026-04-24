@@ -72,6 +72,45 @@ CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
     },
 }
 
+CUDA_NATIVE_GRADUATION_GATES: dict[str, object] = {
+    'core_beta_subset': {
+        'ready': True,
+        'criteria': {
+            'artifact_contract_frozen': True,
+            'validation_contract_frozen': True,
+            'smoke_matrix_present': True,
+            'tolerance_matrix_present': True,
+            'support_tiers_published': True,
+            'support_tiers_machine_readable': True,
+            'core_parity_baseline_present': True,
+            'composite_parity_baseline_present': True,
+        },
+        'remaining_blockers': [],
+    },
+    'full_backend_non_experimental': {
+        'ready': False,
+        'criteria': {
+            'artifact_contract_frozen': True,
+            'validation_contract_frozen': True,
+            'smoke_matrix_present': True,
+            'tolerance_matrix_present': True,
+            'support_tiers_published': True,
+            'support_tiers_machine_readable': True,
+            'core_parity_baseline_present': True,
+            'composite_parity_baseline_present': True,
+            'training_stable': False,
+            'backward_stable': False,
+            'amp_graduated': False,
+        },
+        'remaining_blockers': [
+            'global training_stable is still false',
+            'global backward_stable is still false',
+            'AMP remains experimental',
+            'experimental surfaces such as DropPath and composite block training are not yet globally graduated',
+        ],
+    },
+}
+
 CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     'experimental': True,
     'production_ready': False,
@@ -165,6 +204,23 @@ def _normalized_support_tiers() -> dict[str, dict[str, list[str]]]:
     }
 
 
+def _normalized_graduation_gates() -> dict[str, object]:
+    normalized: dict[str, object] = {}
+    for gate_name, gate in CUDA_NATIVE_GRADUATION_GATES.items():
+        gate_dict = dict(gate)
+        gate_dict['criteria'] = {
+            str(key): bool(value)
+            for key, value in dict(gate_dict.get('criteria', {})).items()
+        }
+        gate_dict['remaining_blockers'] = [
+            str(item)
+            for item in gate_dict.get('remaining_blockers', [])
+        ]
+        gate_dict['ready'] = bool(gate_dict.get('ready', False))
+        normalized[gate_name] = gate_dict
+    return normalized
+
+
 def _kernel_registry_surface() -> list[dict[str, str]]:
     from minicnn.cuda_native.kernels import DEFAULT_KERNEL_SPECS
 
@@ -189,6 +245,7 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
     caps['supported_schedulers'] = _sorted_unique_strings(caps['supported_schedulers'])
     caps['notes'] = [str(note) for note in caps['notes']]
     support_tiers = _normalized_support_tiers()
+    graduation_gates = _normalized_graduation_gates()
     kernel_surface = _kernel_registry_surface()
     caps.update({
         'schema_version': CAPABILITY_SCHEMA_VERSION,
@@ -204,6 +261,7 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
             }
             for tier, buckets in support_tiers.items()
         },
+        'graduation_gates': graduation_gates,
         'supported_op_categories': sorted({entry['category'] for entry in kernel_surface}),
         'kernel_registry_surface': kernel_surface,
     })

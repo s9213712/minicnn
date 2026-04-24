@@ -201,6 +201,14 @@ only documentation labels.
 For the explicit graduation checklist behind those markers, see
 [cuda_native_contract.md](cuda_native_contract.md).
 
+The same payload now also includes machine-readable `graduation_gates`, so the
+current state of:
+
+- `core_beta_subset`
+- `full_backend_non_experimental`
+
+is visible without manually reading the roadmap.
+
 Validate a config:
 
 ```bash

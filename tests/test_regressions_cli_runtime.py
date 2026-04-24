@@ -329,6 +329,7 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['summary_status'] == 'experimental'
     assert 'support_tiers' in payload
     assert 'support_tier_counts' in payload
+    assert 'graduation_gates' in payload
     assert payload['supports_depthwise_conv'] is True
     assert payload['supports_pointwise_conv'] is True
     assert payload['supports_groupnorm'] is True
@@ -359,6 +360,10 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert 'DropPath' in payload['support_tiers']['experimental']['ops']
     assert 'amp' in payload['support_tiers']['experimental']['features']
     assert payload['support_tier_counts']['stable']['ops'] >= 1
+    assert payload['graduation_gates']['core_beta_subset']['ready'] is True
+    assert payload['graduation_gates']['full_backend_non_experimental']['ready'] is False
+    assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['training_stable'] is False
+    assert payload['graduation_gates']['full_backend_non_experimental']['remaining_blockers']
     assert 'supported_op_categories' in payload
     assert 'kernel_registry_surface' in payload
 
