@@ -6,6 +6,79 @@ from typing import Any
 from minicnn.cuda_native.gpu_dispatch import GpuLaunchPacket
 
 
+def _scalar_arg_map(packet: GpuLaunchPacket) -> dict[str, Any]:
+    return {
+        str(arg['name']): arg['value']
+        for arg in packet.scalar_args
+    }
+
+
+def _input_arg(packet: GpuLaunchPacket, index: int = 0) -> dict[str, Any]:
+    inputs = [arg for arg in packet.tensor_args if arg.get('kind') == 'input']
+    return dict(inputs[index])
+
+
+def _output_arg(packet: GpuLaunchPacket, index: int = 0) -> dict[str, Any]:
+    outputs = [arg for arg in packet.tensor_args if arg.get('kind') == 'output']
+    return dict(outputs[index])
+
+
+def _param_args(packet: GpuLaunchPacket) -> list[dict[str, Any]]:
+    return [dict(arg) for arg in packet.tensor_args if arg.get('kind') == 'param']
+
+
+def _build_bridge_payload(packet: GpuLaunchPacket) -> dict[str, Any]:
+    scalar_args = _scalar_arg_map(packet)
+    input_arg = _input_arg(packet)
+    output_arg = _output_arg(packet)
+    payload: dict[str, Any] = {
+        'op_name': packet.op_name,
+        'launch_family': packet.launch_family,
+        'preferred_layout': packet.preferred_layout,
+        'input_shape': list(input_arg.get('shape', [])),
+        'output_shape': list(output_arg.get('shape', [])),
+        'tensor_dtype': input_arg.get('dtype', 'float32'),
+    }
+    if packet.op_name == 'Linear':
+        weight_arg = _param_args(packet)[0]
+        payload.update({
+            'matmul_m': int(input_arg['shape'][0]),
+            'matmul_k': int(input_arg['shape'][-1]),
+            'matmul_n': int(output_arg['shape'][-1]),
+            'weight_binding': weight_arg['binding'],
+            'weight_layout': weight_arg['layout'],
+            'has_bias': any(arg['binding'].startswith('_b_') for arg in _param_args(packet)),
+        })
+    elif packet.op_name == 'Conv2d':
+        weight_arg = _param_args(packet)[0]
+        n, c_in, h, w = [int(v) for v in input_arg['shape']]
+        _, c_out, h_out, w_out = [int(v) for v in output_arg['shape']]
+        payload.update({
+            'batch_size': n,
+            'in_channels': c_in,
+            'out_channels': c_out,
+            'input_hw': [h, w],
+            'output_hw': [h_out, w_out],
+            'stride': scalar_args.get('stride', 1),
+            'padding': scalar_args.get('padding', 0),
+            'groups': int(scalar_args.get('groups', 1)),
+            'weight_binding': weight_arg['binding'],
+            'weight_layout': weight_arg['layout'],
+            'has_bias': any(arg['binding'].startswith('_b_') for arg in _param_args(packet)),
+        })
+    elif packet.op_name == 'Concat':
+        payload['axis'] = int(scalar_args.get('axis', 1))
+    elif packet.op_name == 'LeakyReLU':
+        payload['negative_slope'] = float(scalar_args.get('negative_slope', 0.01))
+    elif packet.op_name == 'MaxPool2d':
+        payload.update({
+            'kernel_size': scalar_args.get('kernel_size', 2),
+            'stride': scalar_args.get('stride', 2),
+            'padding': scalar_args.get('padding', 0),
+        })
+    return payload
+
+
 @dataclass(frozen=True)
 class GpuKernelBridgeRequest:
     request_id: str
@@ -16,6 +89,7 @@ class GpuKernelBridgeRequest:
     preferred_layout: str
     tensor_args: tuple[dict[str, Any], ...]
     scalar_args: tuple[dict[str, Any], ...]
+    bridge_payload: dict[str, Any]
     dispatch_mode: str = 'gpu_bridge_stub'
 
     def summary(self) -> dict[str, Any]:
@@ -29,6 +103,7 @@ class GpuKernelBridgeRequest:
             'dispatch_mode': self.dispatch_mode,
             'tensor_args': [dict(arg) for arg in self.tensor_args],
             'scalar_args': [dict(arg) for arg in self.scalar_args],
+            'bridge_payload': dict(self.bridge_payload),
         }
 
 
@@ -42,6 +117,7 @@ def build_gpu_bridge_request(packet: GpuLaunchPacket, *, index: int) -> GpuKerne
         preferred_layout=packet.preferred_layout,
         tensor_args=tuple(dict(arg) for arg in packet.tensor_args),
         scalar_args=tuple(dict(arg) for arg in packet.scalar_args),
+        bridge_payload=_build_bridge_payload(packet),
     )
 
 

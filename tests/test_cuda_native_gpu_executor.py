@@ -34,12 +34,16 @@ def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     assert summary['dispatch_plan']['num_steps'] == 4
     assert len(summary['launch_trace']) == 4
     assert len(summary['bridge_trace']) == 4
+    assert len(summary['bridge_results']) == 4
     assert summary['launch_trace'][0]['launch_family'] == 'reshape_view'
     assert summary['launch_trace'][1]['launch_family'] == 'gemm_affine'
     assert summary['launch_trace'][1]['tensor_args'][2]['binding'] == '_w_linear_1'
     assert summary['bridge_trace'][1]['dispatch_mode'] == 'gpu_bridge_stub'
     assert summary['bridge_trace'][1]['launch_family'] == 'gemm_affine'
     assert summary['bridge_trace'][1]['tensor_args'][2]['binding'] == '_w_linear_1'
+    assert summary['bridge_trace'][1]['bridge_payload']['matmul_n'] == 8
+    assert summary['bridge_results'][1]['accepted'] is True
+    assert summary['bridge_results'][1]['dispatch_mode'] == 'gpu_bridge_stub'
     assert tuple(summary['output_shape']) == (1, 2)
     assert runtime_summary['tensor_execution_device'] == 'gpu'
     assert runtime_summary['execution_kinds']['gpu_stub_forward'] == 1

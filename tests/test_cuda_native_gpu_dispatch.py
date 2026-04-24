@@ -179,3 +179,17 @@ def test_gpu_bridge_trace_builds_stub_requests():
     assert requests[1].dispatch_mode == 'gpu_bridge_stub'
     assert requests[1].launch_family == 'gemm_affine'
     assert requests[1].tensor_args[2]['binding'] == '_w_linear_1'
+    assert requests[1].bridge_payload == {
+        'op_name': 'Linear',
+        'launch_family': 'gemm_affine',
+        'preferred_layout': 'row_major',
+        'input_shape': [1, 64],
+        'output_shape': [1, 8],
+        'tensor_dtype': 'float32',
+        'matmul_m': 1,
+        'matmul_k': 64,
+        'matmul_n': 8,
+        'weight_binding': '_w_linear_1',
+        'weight_layout': 'OI',
+        'has_bias': True,
+    }
