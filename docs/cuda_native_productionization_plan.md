@@ -14,6 +14,7 @@ calling parts of it implementation-grade with explicit support tiers.
 See also:
 
 - [cuda_native.md](cuda_native.md)
+- [cuda_native_contract.md](cuda_native_contract.md)
 - [cuda_native_expansion_plan.md](cuda_native_expansion_plan.md)
 - [backend_capabilities.md](backend_capabilities.md)
 - [dual_backend_guide.md](dual_backend_guide.md)

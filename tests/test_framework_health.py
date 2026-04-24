@@ -48,3 +48,19 @@ def test_healthcheck_reports_windows_native_artifacts(monkeypatch, tmp_path: Pat
     assert artifact_check['ok'] is True
     assert artifact_check['details']['native_artifacts'] == ['minimal_cuda_cnn_handmade.dll']
     assert artifact_check['details']['shared_objects'] == ['minimal_cuda_cnn_handmade.dll']
+
+
+def test_build_diagnostic_payload_keeps_ok_when_only_optional_checks_fail():
+    from minicnn.framework.health import _check, build_diagnostic_payload
+
+    payload = build_diagnostic_payload(
+        checks=[
+            _check('required_ok', True, required=True),
+            _check('optional_missing', False, required=False),
+        ]
+    )
+
+    assert payload['status'] == 'ok'
+    assert payload['summary_status'] == 'ok'
+    assert payload['warnings'] == ['optional_missing']
+    assert payload['errors'] == []

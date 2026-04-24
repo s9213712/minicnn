@@ -28,8 +28,6 @@ def _check(name: str, ok: bool, *, required: bool = True, details: dict[str, obj
 def _summary_status(checks: list[dict[str, object]]) -> str:
     if any((not bool(check['ok'])) and bool(check['required']) for check in checks):
         return 'error'
-    if any(not bool(check['ok']) for check in checks):
-        return 'warning'
     return 'ok'
 
 

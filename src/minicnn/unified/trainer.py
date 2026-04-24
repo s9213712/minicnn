@@ -125,9 +125,9 @@ def train_unified_from_config(cfg: dict[str, Any]) -> Path:
         return run_dir
 
     if backend == 'cuda_native':
+        from minicnn.cuda_native.contract import emit_experimental_warning
         from minicnn.unified.cuda_native import run_cuda_native_training
-        import warnings
-        warnings.warn(
+        emit_experimental_warning(
             'engine.backend=cuda_native is experimental. '
             'Training loop is a research prototype, not production-ready.',
             stacklevel=2,

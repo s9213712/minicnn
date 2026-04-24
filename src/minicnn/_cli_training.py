@@ -297,12 +297,12 @@ def handle_compare(args, parser) -> int:
 
 
 def handle_train_native(args) -> int:
-    import warnings
+    from minicnn.cuda_native.contract import emit_experimental_warning
     from minicnn.cuda_native.api import get_capability_summary as get_cuda_native_summary
     from minicnn.unified.trainer import train_unified_from_config
 
     cfg = _load_unified_config_or_exit(args.config, ['engine.backend=cuda_native', *common_train_overrides(args), *args.overrides])
-    warnings.warn(
+    emit_experimental_warning(
         '[EXPERIMENTAL] cuda_native backend: backward/training prototypes exist, '
         'but the validated support boundary remains narrow and not production-ready.',
         stacklevel=1,

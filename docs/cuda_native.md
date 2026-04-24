@@ -198,6 +198,9 @@ The capability payload now includes machine-readable `support_tiers` and
 `support_tier_counts` so `Stable` / `Beta` / `Experimental` claims are not
 only documentation labels.
 
+For the explicit graduation checklist behind those markers, see
+[cuda_native_contract.md](cuda_native_contract.md).
+
 Validate a config:
 
 ```bash
