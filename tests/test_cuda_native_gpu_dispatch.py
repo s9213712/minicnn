@@ -36,12 +36,22 @@ def test_gpu_dispatch_plan_supports_bootstrap_subset_graph():
     assert summary['steps'][0]['launch_descriptor']['output_bindings'] == ['t_1']
     assert summary['steps'][0]['launch_descriptor']['param_bindings'] == []
     assert summary['steps'][0]['launch_descriptor']['attr_bindings'] == {}
+    assert summary['steps'][0]['launch_descriptor']['input_shapes'] == [[1, 8, 8]]
+    assert summary['steps'][0]['launch_descriptor']['output_shapes'] == [[1, 64]]
+    assert summary['steps'][0]['launch_descriptor']['tensor_dtype'] == 'float32'
+    assert summary['steps'][0]['launch_descriptor']['param_layouts'] == {}
     assert summary['steps'][0]['supported'] is True
     assert summary['steps'][1]['category'] == 'linear'
     assert summary['steps'][1]['launch_family'] == 'gemm_affine'
     assert summary['steps'][1]['param_keys'] == ['_w_linear_1', '_b_linear_1']
     assert summary['steps'][1]['lowering_kind'] == 'linear_affine_shim'
     assert summary['steps'][1]['launch_descriptor']['param_bindings'] == ['_w_linear_1', '_b_linear_1']
+    assert summary['steps'][1]['launch_descriptor']['input_shapes'] == [[1, 64]]
+    assert summary['steps'][1]['launch_descriptor']['output_shapes'] == [[1, 8]]
+    assert summary['steps'][1]['launch_descriptor']['param_layouts'] == {
+        '_w_linear_1': 'OI',
+        '_b_linear_1': 'O',
+    }
 
 
 def test_gpu_dispatch_plan_marks_ops_outside_bootstrap_subset():
@@ -66,5 +76,6 @@ def test_gpu_dispatch_plan_marks_ops_outside_bootstrap_subset():
     assert summary['steps'][0]['launch_family'] == 'unsupported'
     assert summary['steps'][0]['lowering_kind'] == 'unsupported'
     assert summary['steps'][0]['launch_descriptor']['launch_family'] == 'unsupported'
+    assert summary['steps'][0]['launch_descriptor']['input_shapes'] == [[1, 1, 8, 8]]
     assert summary['steps'][0]['forward_status'] == 'unsupported'
     assert summary['steps'][2]['param_keys'] == ['_w_linear_2', '_b_linear_2']

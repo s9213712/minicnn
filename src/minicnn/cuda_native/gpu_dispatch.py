@@ -15,6 +15,10 @@ class GpuLaunchDescriptor:
     output_bindings: tuple[str, ...]
     param_bindings: tuple[str, ...]
     attr_bindings: dict[str, Any]
+    input_shapes: tuple[tuple[int, ...], ...]
+    output_shapes: tuple[tuple[int, ...], ...]
+    tensor_dtype: str
+    param_layouts: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -68,6 +72,10 @@ class GpuDispatchPlan:
                         'output_bindings': list(step.launch_descriptor.output_bindings),
                         'param_bindings': list(step.launch_descriptor.param_bindings),
                         'attr_bindings': dict(step.launch_descriptor.attr_bindings),
+                        'input_shapes': [list(shape) for shape in step.launch_descriptor.input_shapes],
+                        'output_shapes': [list(shape) for shape in step.launch_descriptor.output_shapes],
+                        'tensor_dtype': step.launch_descriptor.tensor_dtype,
+                        'param_layouts': dict(step.launch_descriptor.param_layouts),
                     },
                     'forward_status': step.forward_status,
                     'backward_status': step.backward_status,
@@ -104,6 +112,20 @@ def _node_attr_bindings(node) -> dict[str, Any]:
     return bindings
 
 
+def _node_param_layouts(node, param_keys: tuple[str, ...]) -> dict[str, str]:
+    layouts: dict[str, str] = {}
+    if node.op_type == 'Conv2d':
+        for key in param_keys:
+            layouts[key] = 'OIHW' if key.startswith('_w_') else 'O'
+    elif node.op_type == 'Linear':
+        for key in param_keys:
+            layouts[key] = 'OI' if key.startswith('_w_') else 'O'
+    else:
+        for key in param_keys:
+            layouts[key] = 'match_op_default'
+    return layouts
+
+
 def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
     registry = {
         spec.op_name: spec
@@ -138,6 +160,10 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                         output_bindings=tuple(str(name) for name in node.outputs),
                         param_bindings=tuple(),
                         attr_bindings={},
+                        input_shapes=tuple(tuple(spec.shape) for spec in node.input_specs),
+                        output_shapes=tuple(tuple(spec.shape) for spec in node.output_specs),
+                        tensor_dtype=str(node.output_specs[0].dtype if node.output_specs else 'float32'),
+                        param_layouts={},
                     ),
                     forward_status='unsupported',
                     backward_status='unsupported',
@@ -149,6 +175,7 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
         lowering_spec = lowering_specs.get(node.op_type)
         if lowering_spec is not None:
             lowering_kind = str(lowering_spec.lowering_kind)
+        param_keys = _node_param_keys(node)
         steps.append(
             GpuDispatchStep(
                 node_name=str(node.name),
@@ -157,7 +184,7 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                 launch_family=str(spec.launch_family),
                 input_names=tuple(str(name) for name in node.inputs),
                 output_names=tuple(str(name) for name in node.outputs),
-                param_keys=_node_param_keys(node),
+                param_keys=param_keys,
                 input_arity=int(spec.input_arity),
                 output_arity=int(spec.output_arity),
                 preferred_layout=str(spec.preferred_layout),
@@ -166,8 +193,12 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                     launch_family=str(spec.launch_family),
                     input_bindings=tuple(str(name) for name in node.inputs),
                     output_bindings=tuple(str(name) for name in node.outputs),
-                    param_bindings=_node_param_keys(node),
+                    param_bindings=param_keys,
                     attr_bindings=_node_attr_bindings(node),
+                    input_shapes=tuple(tuple(spec.shape) for spec in node.input_specs),
+                    output_shapes=tuple(tuple(spec.shape) for spec in node.output_specs),
+                    tensor_dtype=str(node.output_specs[0].dtype if node.output_specs else 'float32'),
+                    param_layouts=_node_param_layouts(node, param_keys),
                 ),
                 forward_status=str(spec.forward_status),
                 backward_status=str(spec.backward_status),
