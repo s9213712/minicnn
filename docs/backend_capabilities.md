@@ -462,6 +462,10 @@ minicnn cuda-native-capabilities
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml
 ```
 
+`minicnn cuda-native-capabilities` 目前也會回傳 machine-readable
+`support_tiers` / `support_tier_counts`，讓 `Stable` / `Beta` /
+`Experimental` 分級可被測試與工具直接消費。
+
 `validate-*`、`doctor`、`healthcheck`、`smoke` 現在都會輸出 JSON-friendly 結果。
 `healthcheck`、`doctor`、`smoke` 也支援 `--format text`。
 

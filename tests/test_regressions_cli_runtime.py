@@ -327,6 +327,8 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['backend'] == 'cuda_native'
     assert payload['status'] == 'ok'
     assert payload['summary_status'] == 'experimental'
+    assert 'support_tiers' in payload
+    assert 'support_tier_counts' in payload
     assert payload['supports_depthwise_conv'] is True
     assert payload['supports_pointwise_conv'] is True
     assert payload['supports_groupnorm'] is True
@@ -350,6 +352,12 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
         'DropPath',
     ):
         assert op in payload['supported_ops']
+    assert 'Conv2d' in payload['support_tiers']['stable']['ops']
+    assert 'AdamW' in payload['support_tiers']['stable']['optimizers']
+    assert 'BCEWithLogitsLoss' in payload['support_tiers']['beta']['losses']
+    assert 'DropPath' in payload['support_tiers']['experimental']['ops']
+    assert 'amp' in payload['support_tiers']['experimental']['features']
+    assert payload['support_tier_counts']['stable']['ops'] >= 1
     assert 'supported_op_categories' in payload
     assert 'kernel_registry_surface' in payload
 
@@ -652,6 +660,8 @@ def test_cli_validate_cuda_native_config_returns_structured_json(capsys):
     assert payload['status'] == 'ok'
     assert payload['backend'] == 'cuda_native'
     assert payload['ok'] is True
+    assert 'support_tier_assessment' in payload
+    assert payload['support_tier_assessment']['highest_tier'] in {'stable', 'beta', 'experimental'}
     assert 'note' in payload
 
 
@@ -697,8 +707,50 @@ def test_cli_validate_cuda_native_config_rejects_invalid_optimizer_with_stable_c
     assert payload['status'] == 'error'
     assert payload['backend'] == 'cuda_native'
     assert payload['ok'] is False
-    assert payload['errors']
-    assert any('optimizer' in str(item).lower() for item in payload['errors'])
+    assert payload['support_tier_assessment']['ops_by_tier']['stable'] == ['Linear']
+    assert payload['support_tier_assessment']['losses_by_tier']['stable'] == ['CrossEntropyLoss']
+    assert payload['support_tier_assessment']['optimizers_by_tier']['stable'] == []
+
+
+def test_cli_validate_cuda_native_config_reports_experimental_amp_tier(capsys, tmp_path):
+    import json
+
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cuda_native_amp_tier.yaml'
+    config_path.write_text(
+        'engine:\n'
+        '  backend: cuda_native\n'
+        'dataset:\n'
+        '  type: random\n'
+        '  input_shape: [1, 8, 8]\n'
+        '  num_classes: 2\n'
+        '  num_samples: 8\n'
+        '  val_samples: 4\n'
+        'model:\n'
+        '  layers:\n'
+        '    - type: Flatten\n'
+        '    - type: Linear\n'
+        '      out_features: 2\n'
+        'optimizer:\n'
+        '  type: AdamW\n'
+        'loss:\n'
+        '  type: CrossEntropyLoss\n'
+        'train:\n'
+        '  epochs: 1\n'
+        '  batch_size: 4\n'
+        '  amp: true\n',
+        encoding='utf-8',
+    )
+
+    rc = main(['validate-cuda-native-config', '--config', str(config_path)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['ok'] is True
+    assert payload['support_tier_assessment']['highest_tier'] == 'experimental'
+    assert payload['support_tier_assessment']['optimizers_by_tier']['stable'] == ['AdamW']
+    assert payload['support_tier_assessment']['features_by_tier']['experimental'] == ['amp']
 
 
 def test_train_native_rejects_unsupported_config_with_failure_category(capsys, tmp_path):

@@ -10,6 +10,68 @@ from typing import Any
 
 CAPABILITY_SCHEMA_VERSION = 1
 
+CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
+    'stable': {
+        'ops': [
+            'Add',
+            'BatchNorm2d',
+            'Concat',
+            'Conv2d',
+            'DepthwiseConv2d',
+            'GroupNorm',
+            'Identity',
+            'LayerNorm',
+            'LayerNorm2d',
+            'Linear',
+            'PointwiseConv2d',
+        ],
+        'optimizers': ['AdamW', 'SGD'],
+        'losses': ['CrossEntropyLoss', 'MSELoss'],
+        'features': [
+            'artifact_contracts',
+            'ordered_dag',
+            'validation_contracts',
+        ],
+    },
+    'beta': {
+        'ops': [
+            'AdaptiveAvgPool2d',
+            'AvgPool2d',
+            'Dropout',
+            'Flatten',
+            'GELU',
+            'GlobalAvgPool2d',
+            'LeakyReLU',
+            'MaxPool2d',
+            'ReLU',
+            'Sigmoid',
+            'SiLU',
+            'Tanh',
+        ],
+        'optimizers': ['Adam', 'RMSprop'],
+        'losses': ['BCEWithLogitsLoss'],
+        'features': [
+            'branching_graph',
+            'performance_report',
+            'reproducibility_smoke',
+            'tolerance_matrix',
+        ],
+    },
+    'experimental': {
+        'ops': [
+            'ConvNeXtBlock',
+            'DropPath',
+            'ResidualBlock',
+        ],
+        'optimizers': [],
+        'losses': [],
+        'features': [
+            'amp',
+            'composite_block_training',
+        ],
+    },
+}
+
 CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     'experimental': True,
     'production_ready': False,
@@ -93,6 +155,16 @@ def _sorted_unique_strings(items: object) -> list[str]:
     return sorted({str(item) for item in items if str(item)})
 
 
+def _normalized_support_tiers() -> dict[str, dict[str, list[str]]]:
+    return {
+        tier: {
+            bucket: _sorted_unique_strings(values)
+            for bucket, values in buckets.items()
+        }
+        for tier, buckets in CUDA_NATIVE_SUPPORT_TIERS.items()
+    }
+
+
 def _kernel_registry_surface() -> list[dict[str, str]]:
     from minicnn.cuda_native.kernels import DEFAULT_KERNEL_SPECS
 
@@ -116,6 +188,7 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
     caps['supported_optimizers'] = _sorted_unique_strings(caps['supported_optimizers'])
     caps['supported_schedulers'] = _sorted_unique_strings(caps['supported_schedulers'])
     caps['notes'] = [str(note) for note in caps['notes']]
+    support_tiers = _normalized_support_tiers()
     kernel_surface = _kernel_registry_surface()
     caps.update({
         'schema_version': CAPABILITY_SCHEMA_VERSION,
@@ -123,6 +196,14 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
         'status': 'ok',
         'summary_status': 'experimental',
         'capability_kind': 'backend_capability_summary',
+        'support_tiers': support_tiers,
+        'support_tier_counts': {
+            tier: {
+                bucket: len(values)
+                for bucket, values in buckets.items()
+            }
+            for tier, buckets in support_tiers.items()
+        },
         'supported_op_categories': sorted({entry['category'] for entry in kernel_surface}),
         'kernel_registry_surface': kernel_surface,
     })

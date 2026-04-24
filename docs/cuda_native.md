@@ -194,6 +194,10 @@ Check capabilities:
 minicnn cuda-native-capabilities
 ```
 
+The capability payload now includes machine-readable `support_tiers` and
+`support_tier_counts` so `Stable` / `Beta` / `Experimental` claims are not
+only documentation labels.
+
 Validate a config:
 
 ```bash
@@ -201,6 +205,10 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml \
   optimizer.momentum=0.9 optimizer.grad_clip_global=1.0 \
   scheduler.enabled=true scheduler.type=StepLR scheduler.step_size=5
 ```
+
+Validation payloads now also include `support_tier_assessment`, so a config can
+be accepted while still being marked as touching `beta` or `experimental`
+surfaces such as `amp` or composite blocks.
 
 Run (experimental, research only):
 

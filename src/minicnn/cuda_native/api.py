@@ -5,6 +5,7 @@ from typing import Any
 
 from minicnn.cuda_native.capabilities import (
     CUDA_NATIVE_CAPABILITIES,
+    CUDA_NATIVE_SUPPORT_TIERS,
     get_cuda_native_capabilities,
 )
 from minicnn.cuda_native.graph import NativeGraph, build_graph
@@ -32,6 +33,72 @@ _SCHEDULER_ALIASES = {
     'plateau': 'ReduceLROnPlateau',
     'reducelronplateau': 'ReduceLROnPlateau',
 }
+_SUPPORT_TIER_ORDER = ('stable', 'beta', 'experimental')
+
+
+def _matched_support_tiers(items: set[str], bucket: str) -> dict[str, list[str]]:
+    return {
+        tier: sorted(items & set(values.get(bucket, [])))
+        for tier, values in CUDA_NATIVE_SUPPORT_TIERS.items()
+    }
+
+
+def _highest_tier_from_matches(matches: dict[str, list[str]]) -> str:
+    highest = 'stable'
+    for tier in _SUPPORT_TIER_ORDER:
+        if matches.get(tier):
+            highest = tier
+    return highest
+
+
+def assess_cuda_native_support_tier(cfg: dict[str, Any]) -> dict[str, object]:
+    model_cfg, _ = _as_mapping('model', cfg.get('model'))
+    optimizer_cfg, _ = _as_mapping('optimizer', cfg.get('optimizer'))
+    loss_cfg, _ = _as_mapping('loss', cfg.get('loss'))
+    train_cfg, _ = _as_mapping('train', cfg.get('train'))
+
+    resolved_model_cfg = resolve_model_config(model_cfg)
+    layer_types = {
+        str(layer.get('type'))
+        for layer in resolved_model_cfg.get('layers', [])
+        if isinstance(layer, dict) and layer.get('type')
+    }
+    optimizer_types = {str(optimizer_cfg.get('type', 'SGD'))}
+    loss_types = {str(loss_cfg.get('type', 'CrossEntropyLoss'))}
+    features: set[str] = set()
+    if bool(train_cfg.get('amp', False)):
+        features.add('amp')
+    if any(isinstance(layer, dict) and layer.get('output') for layer in resolved_model_cfg.get('layers', [])):
+        features.add('ordered_dag')
+    if any(
+        isinstance(layer, dict) and (
+            str(layer.get('type')) in {'Add', 'Concat'}
+            or (isinstance(layer.get('inputs'), list) and len(layer.get('inputs')) > 1)
+        )
+        for layer in resolved_model_cfg.get('layers', [])
+    ):
+        features.add('branching_graph')
+    if layer_types & {'ResidualBlock', 'ConvNeXtBlock', 'DropPath'}:
+        features.add('composite_block_training')
+
+    matches = {
+        'ops': _matched_support_tiers(layer_types, 'ops'),
+        'optimizers': _matched_support_tiers(optimizer_types, 'optimizers'),
+        'losses': _matched_support_tiers(loss_types, 'losses'),
+        'features': _matched_support_tiers(features, 'features'),
+    }
+    highest_tier = 'stable'
+    for bucket_matches in matches.values():
+        bucket_highest = _highest_tier_from_matches(bucket_matches)
+        if _SUPPORT_TIER_ORDER.index(bucket_highest) > _SUPPORT_TIER_ORDER.index(highest_tier):
+            highest_tier = bucket_highest
+    return {
+        'highest_tier': highest_tier,
+        'ops_by_tier': matches['ops'],
+        'optimizers_by_tier': matches['optimizers'],
+        'losses_by_tier': matches['losses'],
+        'features_by_tier': matches['features'],
+    }
 
 
 def _as_mapping(name: str, value: Any) -> tuple[dict[str, Any], list[str]]:

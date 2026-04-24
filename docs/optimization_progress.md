@@ -119,6 +119,7 @@ The next phase is narrower and more technical:
 - memory / state reuse quality
 - stronger performance-oriented reporting without overstating production readiness
 - initial torch parity coverage for selected sensitive ops
+- machine-readable `support_tiers` / `support_tier_assessment` now expose which configs stay on `stable` surfaces and which touch `beta` / `experimental` areas
   - current parity baseline: `Add`, `Concat`, `Linear`, `Conv2d` (including grouped/depthwise), `BatchNorm2d`, `LayerNorm`, `LayerNorm2d`, `GroupNorm` forward/backward
   - `BatchNorm2d` train-mode running-stat semantics are now aligned with PyTorch (`running_var` uses unbiased batch variance)
   - composite forward parity now covers `ResidualBlock` and `ConvNeXtBlock`
