@@ -3,6 +3,40 @@
 #include "cuda_check.h"
 
 extern "C" {
+    int cuda_runtime_status() {
+        int device_count = 0;
+        cudaError_t err = cudaGetDeviceCount(&device_count);
+        if (err != cudaSuccess) {
+            cudaGetLastError();
+            return static_cast<int>(err);
+        }
+        return 0;
+    }
+
+    int cuda_runtime_driver_version() {
+        int version = 0;
+        cudaError_t err = cudaDriverGetVersion(&version);
+        if (err != cudaSuccess) {
+            cudaGetLastError();
+            return 0;
+        }
+        return version;
+    }
+
+    int cuda_runtime_version() {
+        int version = 0;
+        cudaError_t err = cudaRuntimeGetVersion(&version);
+        if (err != cudaSuccess) {
+            cudaGetLastError();
+            return 0;
+        }
+        return version;
+    }
+
+    const char* cuda_runtime_status_string(int status) {
+        return cudaGetErrorString(static_cast<cudaError_t>(status));
+    }
+
     void* gpu_malloc(size_t size) {
         void* ptr = nullptr;
         CUDA_CHECK(cudaMalloc(&ptr, size));

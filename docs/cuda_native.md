@@ -30,7 +30,7 @@ A staged, modular backend structured in layers:
 ## What cuda_native Is Not
 
 - Not a production training backend
-- Not backed by real CUDA kernels (uses numpy reference implementations)
+- Default execution is still the NumPy reference path; `engine.execution_mode=gpu_native` is a partial real CUDA device-pointer path, not the full backend default
 - Not a full general-purpose graph backend yet (`Add`-based ordered DAG support exists, but richer merge ops are still missing)
 
 For the staged plan to move from NumPy reference execution to real GPU
@@ -58,6 +58,7 @@ execution, see [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_p
 | Training in production | ✗ Not enabled |
 | Dynamic graph | ✗ Not supported |
 | Mixed precision | ✓ Beta AMP |
+| `gpu_native` training | ⚠ Partial Linear / Linear+ReLU / MaxPool+Linear / Conv2d(valid, bias=false)+Linear subset |
 
 ## Supported Ops
 
@@ -236,6 +237,23 @@ Validation payloads and the `train-native` preamble now also include
 - whether that mode is actually ready
 - which requested ops are already inside the GPU bootstrap subset
 - which requested ops still fall outside that subset
+
+Current `train-native engine.execution_mode=gpu_native` training subsets:
+
+- `Flatten -> Linear`
+- `Flatten -> Linear -> ReLU -> Linear`
+- `MaxPool2d -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> Flatten -> Linear`
+
+These subsets execute through native GPU helper paths for forward, loss-gradient,
+covered backward kernels, and SGD/momentum updates. General graph-level GPU
+backward lowering is still pending.
+
+If `gpu_native` fails with `CUDA runtime preflight failed`, the Python runtime
+reached the real CUDA library but the installed NVIDIA driver/runtime pair is
+not compatible. Update the driver, rebuild against a compatible CUDA toolkit, or
+select a compatible `MINICNN_CUDA_VARIANT` before treating the machine as a valid
+GPU smoke environment.
 
 Validate a config:
 

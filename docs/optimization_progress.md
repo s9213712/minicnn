@@ -1,6 +1,6 @@
 # Optimization And Backend Progress
 
-Last updated: 2026-04-24
+Last updated: 2026-04-25
 
 This file tracks the current technical direction of MiniCNN without binding the
 status to a specific historic PR number or branch name.
@@ -179,4 +179,5 @@ For the separate path from reference execution to real GPU execution, see
 - `gpu_native` is now explicitly published as a partial native-forward execution track rather than an implied full-training capability
 - `DeviceRuntime` / `DeviceTensor` now support native device pointers, host/device sync accounting, and real forward calls for the current bootstrap subset when a CUDA library is bound
 - native forward bridge coverage currently includes Flatten aliasing plus Linear, ReLU, LeakyReLU, Add, Concat, MaxPool2d, and constrained Conv2d lowering
-- `train-native engine.execution_mode=gpu_native` now runs the narrow `Flatten -> Linear`, `Flatten -> Linear -> ReLU -> Linear`, and `MaxPool2d -> Flatten -> Linear` / `CrossEntropyLoss` / `SGD` subset through native GPU forward, activation/pool backward, loss-gradient, dense-backward, and SGD/momentum-update calls
+- `train-native engine.execution_mode=gpu_native` now runs the narrow `Flatten -> Linear`, `Flatten -> Linear -> ReLU -> Linear`, `MaxPool2d -> Flatten -> Linear`, and `Conv2d(valid, bias=false) -> Flatten -> Linear` / `CrossEntropyLoss` / `SGD` subset through native GPU forward, activation/pool/conv backward, loss-gradient, dense-backward, and SGD/momentum-update calls
+- `gpu_native` runtime setup now performs a CUDA driver/runtime preflight so incompatible machines fail with a Python `RuntimeError` before CUDA allocation instead of aborting in native code

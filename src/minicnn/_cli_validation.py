@@ -66,7 +66,8 @@ def handle_validate_cuda_native_config(args) -> int:
     if not errors:
         payload['note'] = (
             'beta-grade backend; reference_numpy is broadly supported, while gpu_native is '
-            'supported for the narrow Flatten/Linear + CrossEntropyLoss + SGD training subset'
+            'supported for the narrow Linear, Linear+ReLU, MaxPool+Linear, '
+            'and Conv2d(valid, bias=false)+Linear / CrossEntropyLoss / SGD training subsets'
         )
     _print_validation_result(payload, command='validate-cuda-native-config', output_format=args.format)
     return 0 if not errors else 2

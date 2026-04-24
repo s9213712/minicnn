@@ -110,7 +110,7 @@ def test_validate_cuda_native_config_accepts_gpu_native_linear_training_subset(t
     assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['Linear']['backward_status'] == 'partial_native'
     assert payload['execution_readiness_assessment']['dispatch_plan']['ready'] is True
     assert payload['execution_readiness_assessment']['dispatch_plan']['num_steps'] == 2
-    assert 'gpu_conv_training_not_integrated' in payload['execution_readiness_assessment']['remaining_blockers']
+    assert 'gpu_conv_activation_pool_composition_pending' in payload['execution_readiness_assessment']['remaining_blockers']
     assert payload['errors'] == []
 
 

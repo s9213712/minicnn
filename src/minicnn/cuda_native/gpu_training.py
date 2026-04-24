@@ -71,12 +71,40 @@ class NativeGpuPoolLinearTrainingStepResult:
     runtime_summary: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class NativeGpuConvLinearTrainingStepResult:
+    logits: np.ndarray
+    probabilities: np.ndarray
+    conv_output: np.ndarray
+    grad_logits: np.ndarray
+    grad_conv_output: np.ndarray
+    grad_input: np.ndarray
+    grad_conv_weight: np.ndarray
+    grad_linear_weight: np.ndarray
+    grad_linear_bias: np.ndarray
+    updated_conv_weight: np.ndarray
+    updated_linear_weight: np.ndarray
+    updated_linear_bias: np.ndarray
+    updated_conv_weight_velocity: np.ndarray | None
+    updated_linear_weight_velocity: np.ndarray | None
+    updated_linear_bias_velocity: np.ndarray | None
+    loss_sum: float
+    loss_mean: float
+    correct_count: int
+    runtime_summary: dict[str, Any]
+
+
 def _load_bound_lib(bound_lib: Any | None) -> Any:
     if bound_lib is not None:
-        return bound_lib
-    from minicnn.core._cuda_library import bind_symbols, load_library
+        from minicnn.core._cuda_library import ensure_cuda_runtime_available
 
-    return bind_symbols(load_library())
+        ensure_cuda_runtime_available(bound_lib)
+        return bound_lib
+    from minicnn.core._cuda_library import bind_symbols, ensure_cuda_runtime_available, load_library
+
+    lib = bind_symbols(load_library())
+    ensure_cuda_runtime_available(lib)
+    return lib
 
 
 def native_gpu_linear_training_step(
@@ -709,6 +737,231 @@ def native_gpu_pool_linear_training_step(
             updated_bias=updated_bias,
             updated_weight_velocity=updated_weight_velocity,
             updated_bias_velocity=updated_bias_velocity,
+            loss_sum=loss_sum,
+            loss_mean=loss_sum / float(n),
+            correct_count=correct_count,
+            runtime_summary=runtime.summary(),
+        )
+    finally:
+        for tensor in tensors:
+            runtime.release_buffer(tensor)
+
+
+def native_gpu_conv_linear_training_step(
+    x: np.ndarray,
+    labels: np.ndarray,
+    conv_weight: np.ndarray,
+    linear_weight: np.ndarray,
+    linear_bias: np.ndarray,
+    *,
+    lr: float,
+    momentum: float = 0.0,
+    conv_weight_velocity: np.ndarray | None = None,
+    linear_weight_velocity: np.ndarray | None = None,
+    linear_bias_velocity: np.ndarray | None = None,
+    bound_lib: Any | None = None,
+    reserve_bytes: int = 0,
+    reserve_buffers: int = 0,
+) -> NativeGpuConvLinearTrainingStepResult:
+    """Run one native GPU Conv2d(valid, no bias) + Linear + SoftmaxCE + SGD step."""
+
+    x_f32 = np.ascontiguousarray(x, dtype=np.float32)
+    labels_i32 = np.ascontiguousarray(labels, dtype=np.int32)
+    conv_w_f32 = np.ascontiguousarray(conv_weight, dtype=np.float32)
+    linear_w_f32 = np.ascontiguousarray(linear_weight, dtype=np.float32)
+    linear_b_f32 = np.ascontiguousarray(linear_bias, dtype=np.float32)
+    conv_wv_f32 = (
+        np.zeros_like(conv_w_f32)
+        if conv_weight_velocity is None
+        else np.ascontiguousarray(conv_weight_velocity, dtype=np.float32)
+    )
+    linear_wv_f32 = (
+        np.zeros_like(linear_w_f32)
+        if linear_weight_velocity is None
+        else np.ascontiguousarray(linear_weight_velocity, dtype=np.float32)
+    )
+    linear_bv_f32 = (
+        np.zeros_like(linear_b_f32)
+        if linear_bias_velocity is None
+        else np.ascontiguousarray(linear_bias_velocity, dtype=np.float32)
+    )
+    if x_f32.ndim != 4:
+        raise ValueError(f'native_gpu_conv_linear_training_step expects x with shape (N, C, H, W), got {x_f32.shape}')
+    if conv_w_f32.ndim != 4:
+        raise ValueError(
+            'native_gpu_conv_linear_training_step expects conv_weight with shape (out_c, in_c, kh, kw), '
+            f'got {conv_w_f32.shape}'
+        )
+    n, in_c, height, width = [int(v) for v in x_f32.shape]
+    out_c, conv_in_c, kh, kw = [int(v) for v in conv_w_f32.shape]
+    if conv_in_c != in_c:
+        raise ValueError(f'conv_weight input channels {conv_in_c} do not match x channels {in_c}')
+    out_h = height - kh + 1
+    out_w = width - kw + 1
+    if out_h <= 0 or out_w <= 0:
+        raise ValueError('native_gpu_conv_linear_training_step requires valid Conv2d output dimensions.')
+    flat_features = out_c * out_h * out_w
+    if linear_w_f32.ndim != 2 or linear_w_f32.shape[1] != flat_features:
+        raise ValueError(
+            'native_gpu_conv_linear_training_step expects linear_weight with shape (classes, out_c*out_h*out_w), '
+            f'got linear_weight={linear_w_f32.shape} for conv_features={flat_features}'
+        )
+    if linear_b_f32.shape != (linear_w_f32.shape[0],):
+        raise ValueError(
+            'native_gpu_conv_linear_training_step expects linear_bias with shape (classes,), '
+            f'got {linear_b_f32.shape}'
+        )
+    if labels_i32.ndim != 1 or labels_i32.shape[0] != n:
+        raise ValueError(
+            'native_gpu_conv_linear_training_step expects labels with shape (N,), '
+            f'got labels={labels_i32.shape} for x={x_f32.shape}'
+        )
+    if np.any(labels_i32 < 0) or np.any(labels_i32 >= linear_w_f32.shape[0]):
+        raise ValueError('native_gpu_conv_linear_training_step labels must be in [0, classes)')
+
+    lib = _load_bound_lib(bound_lib)
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=lib,
+    )
+    if reserve_bytes > 0 or reserve_buffers > 0:
+        runtime.reserve_from_planner(total_bytes=int(reserve_bytes), num_buffers=int(reserve_buffers))
+
+    classes = int(linear_w_f32.shape[0])
+    patch_size = in_c * kh * kw
+    spatial_size = n * out_h * out_w
+    tensors = []
+
+    def stage(array: np.ndarray, name: str):
+        tensor = runtime.stage_to_device(array, name=name)
+        tensors.append(tensor)
+        return tensor
+
+    def alloc(shape: tuple[int, ...], name: str, dtype: str = 'float32'):
+        tensor = runtime.allocate(shape, dtype=dtype, name=name)
+        tensors.append(tensor)
+        return tensor
+
+    input_t = stage(x_f32, 'input')
+    labels_t = stage(labels_i32, 'labels')
+    conv_w_t = stage(conv_w_f32, 'conv_weight')
+    linear_w_t = stage(linear_w_f32, 'linear_weight')
+    linear_b_t = stage(linear_b_f32, 'linear_bias')
+    conv_wv_t = stage(conv_wv_f32, 'conv_weight_velocity')
+    linear_wv_t = stage(linear_wv_f32, 'linear_weight_velocity')
+    linear_bv_t = stage(linear_bv_f32, 'linear_bias_velocity')
+    col_t = alloc((patch_size, spatial_size), 'conv_col')
+    conv_raw_t = alloc((out_c, n, out_h, out_w), 'conv_raw_cnhw')
+    conv_t = alloc((n, out_c, out_h, out_w), 'conv_output')
+    logits_t = alloc((n, classes), 'logits')
+    probs_t = alloc((n, classes), 'probs')
+    grad_logits_t = alloc((n, classes), 'grad_logits')
+    grad_conv_t = alloc((n, out_c, out_h, out_w), 'grad_conv_output')
+    grad_conv_cnhw_t = alloc((out_c, n, out_h, out_w), 'grad_conv_cnhw')
+    grad_input_t = alloc((n, in_c, height, width), 'grad_input')
+    grad_conv_w_t = alloc((out_c, in_c, kh, kw), 'grad_conv_weight')
+    grad_linear_w_t = alloc((classes, flat_features), 'grad_linear_weight')
+    grad_linear_b_t = alloc((classes,), 'grad_linear_bias')
+    loss_sum_t = alloc((1,), 'loss_sum')
+    correct_t = alloc((1,), 'correct_count', dtype='int32')
+
+    try:
+        lib.gpu_memset(loss_sum_t.device_ptr, 0, loss_sum_t.nbytes)
+        lib.gpu_memset(correct_t.device_ptr, 0, correct_t.nbytes)
+        lib.im2col_forward(input_t.device_ptr, col_t.device_ptr, n, in_c, height, width, kh, kw, out_h, out_w)
+        lib.gemm_forward(conv_w_t.device_ptr, col_t.device_ptr, conv_raw_t.device_ptr, out_c, spatial_size, patch_size)
+        lib.cnhw_to_nchw(conv_raw_t.device_ptr, conv_t.device_ptr, n, out_c, out_h, out_w)
+        runtime.record_execution('gpu_native_train:conv2d_im2col_gemm', input_name='input', output_name='conv_output', node_count=1)
+        lib.dense_forward(conv_t.device_ptr, linear_w_t.device_ptr, linear_b_t.device_ptr, logits_t.device_ptr, n, flat_features, classes)
+        runtime.record_execution('gpu_native_train:dense_forward', input_name='conv_output', output_name='logits', node_count=1)
+        lib.softmax_xent_grad_loss_acc(
+            logits_t.device_ptr,
+            labels_t.device_ptr,
+            probs_t.device_ptr,
+            grad_logits_t.device_ptr,
+            loss_sum_t.device_ptr,
+            correct_t.device_ptr,
+            n,
+            classes,
+        )
+        runtime.record_execution('gpu_native_train:softmax_xent_grad_loss_acc', input_name='logits', output_name='grad_logits', node_count=1)
+        lib.dense_backward_full(
+            grad_logits_t.device_ptr,
+            conv_t.device_ptr,
+            linear_w_t.device_ptr,
+            grad_conv_t.device_ptr,
+            grad_linear_w_t.device_ptr,
+            grad_linear_b_t.device_ptr,
+            n,
+            flat_features,
+            classes,
+        )
+        runtime.record_execution('gpu_native_train:dense_backward_full', input_name='grad_logits', output_name='grad_linear_weight', node_count=1)
+        lib.nchw_to_cnhw(grad_conv_t.device_ptr, grad_conv_cnhw_t.device_ptr, n, out_c, out_h, out_w)
+        lib.conv_backward(
+            grad_conv_cnhw_t.device_ptr,
+            input_t.device_ptr,
+            conv_w_t.device_ptr,
+            grad_conv_w_t.device_ptr,
+            grad_input_t.device_ptr,
+            n,
+            in_c,
+            height,
+            width,
+            kh,
+            kw,
+            out_h,
+            out_w,
+            out_c,
+        )
+        runtime.record_execution('gpu_native_train:conv_backward', input_name='grad_conv_output', output_name='grad_conv_weight', node_count=1)
+        if float(momentum) != 0.0:
+            lib.apply_momentum_update(conv_w_t.device_ptr, grad_conv_w_t.device_ptr, conv_wv_t.device_ptr, float(lr), float(momentum), int(conv_w_f32.size))
+            lib.apply_momentum_update(linear_w_t.device_ptr, grad_linear_w_t.device_ptr, linear_wv_t.device_ptr, float(lr), float(momentum), int(linear_w_f32.size))
+            lib.apply_momentum_update(linear_b_t.device_ptr, grad_linear_b_t.device_ptr, linear_bv_t.device_ptr, float(lr), float(momentum), int(linear_b_f32.size))
+            update_kind = 'gpu_native_train:apply_momentum_update'
+        else:
+            lib.apply_sgd_update(conv_w_t.device_ptr, grad_conv_w_t.device_ptr, float(lr), int(conv_w_f32.size))
+            lib.apply_sgd_update(linear_w_t.device_ptr, grad_linear_w_t.device_ptr, float(lr), int(linear_w_f32.size))
+            lib.apply_sgd_update(linear_b_t.device_ptr, grad_linear_b_t.device_ptr, float(lr), int(linear_b_f32.size))
+            update_kind = 'gpu_native_train:apply_sgd_update'
+        runtime.record_execution(update_kind, input_name='grad_conv_weight', output_name='conv_weight', node_count=1)
+
+        logits = runtime.stage_to_host(logits_t)
+        probabilities = runtime.stage_to_host(probs_t)
+        conv_output = runtime.stage_to_host(conv_t)
+        grad_logits = runtime.stage_to_host(grad_logits_t)
+        grad_conv_output = runtime.stage_to_host(grad_conv_t)
+        grad_input = runtime.stage_to_host(grad_input_t)
+        grad_conv_weight = runtime.stage_to_host(grad_conv_w_t)
+        grad_linear_weight = runtime.stage_to_host(grad_linear_w_t)
+        grad_linear_bias = runtime.stage_to_host(grad_linear_b_t)
+        updated_conv_weight = runtime.stage_to_host(conv_w_t)
+        updated_linear_weight = runtime.stage_to_host(linear_w_t)
+        updated_linear_bias = runtime.stage_to_host(linear_b_t)
+        updated_conv_weight_velocity = runtime.stage_to_host(conv_wv_t)
+        updated_linear_weight_velocity = runtime.stage_to_host(linear_wv_t)
+        updated_linear_bias_velocity = runtime.stage_to_host(linear_bv_t)
+        loss_sum = float(runtime.stage_to_host(loss_sum_t)[0])
+        correct_count = int(runtime.stage_to_host(correct_t)[0])
+        runtime.synchronize('gpu-native-conv-linear-training-step')
+        return NativeGpuConvLinearTrainingStepResult(
+            logits=logits,
+            probabilities=probabilities,
+            conv_output=conv_output,
+            grad_logits=grad_logits,
+            grad_conv_output=grad_conv_output,
+            grad_input=grad_input,
+            grad_conv_weight=grad_conv_weight,
+            grad_linear_weight=grad_linear_weight,
+            grad_linear_bias=grad_linear_bias,
+            updated_conv_weight=updated_conv_weight,
+            updated_linear_weight=updated_linear_weight,
+            updated_linear_bias=updated_linear_bias,
+            updated_conv_weight_velocity=updated_conv_weight_velocity,
+            updated_linear_weight_velocity=updated_linear_weight_velocity,
+            updated_linear_bias_velocity=updated_linear_bias_velocity,
             loss_sum=loss_sum,
             loss_mean=loss_sum / float(n),
             correct_count=correct_count,

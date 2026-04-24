@@ -96,6 +96,18 @@ def load_library(path: str | os.PathLike[str] | None = None):
 
 
 def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
+    if hasattr(bound_lib, 'cuda_runtime_status'):
+        bound_lib.cuda_runtime_status.argtypes = []
+        bound_lib.cuda_runtime_status.restype = c_int
+    if hasattr(bound_lib, 'cuda_runtime_driver_version'):
+        bound_lib.cuda_runtime_driver_version.argtypes = []
+        bound_lib.cuda_runtime_driver_version.restype = c_int
+    if hasattr(bound_lib, 'cuda_runtime_version'):
+        bound_lib.cuda_runtime_version.argtypes = []
+        bound_lib.cuda_runtime_version.restype = c_int
+    if hasattr(bound_lib, 'cuda_runtime_status_string'):
+        bound_lib.cuda_runtime_status_string.argtypes = [c_int]
+        bound_lib.cuda_runtime_status_string.restype = ctypes.c_char_p
     bound_lib.gpu_malloc.argtypes = [ctypes.c_size_t]
     bound_lib.gpu_malloc.restype = c_void_p
     bound_lib.gpu_free.argtypes = [c_void_p]
@@ -198,3 +210,41 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
         c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
     ]
     return bound_lib
+
+
+def _format_cuda_version(raw_version: int) -> str:
+    if raw_version <= 0:
+        return 'unknown'
+    return f'{raw_version // 1000}.{(raw_version % 1000) // 10}'
+
+
+def ensure_cuda_runtime_available(bound_lib: ctypes.CDLL) -> None:
+    """Fail before cuda_native enters CUDA allocation calls that abort on error."""
+
+    if not hasattr(bound_lib, 'cuda_runtime_status'):
+        return
+    status = int(bound_lib.cuda_runtime_status())
+    if status == 0:
+        return
+    status_message = 'unknown CUDA runtime error'
+    if hasattr(bound_lib, 'cuda_runtime_status_string'):
+        raw_message = bound_lib.cuda_runtime_status_string(status)
+        if raw_message:
+            status_message = raw_message.decode('utf-8', errors='replace')
+    driver_version = (
+        int(bound_lib.cuda_runtime_driver_version())
+        if hasattr(bound_lib, 'cuda_runtime_driver_version')
+        else 0
+    )
+    runtime_version = (
+        int(bound_lib.cuda_runtime_version())
+        if hasattr(bound_lib, 'cuda_runtime_version')
+        else 0
+    )
+    raise RuntimeError(
+        'CUDA runtime preflight failed before cuda_native gpu_native allocation: '
+        f'{status_message} (status={status}, '
+        f'driver={_format_cuda_version(driver_version)}, '
+        f'runtime={_format_cuda_version(runtime_version)}). '
+        'Update the NVIDIA driver or rebuild/select a CUDA toolkit variant compatible with the installed driver.'
+    )

@@ -17,9 +17,11 @@ from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.executor import ForwardExecutor
 from minicnn.cuda_native.gpu_executor import GpuStubExecutor, make_native_gpu_forward_executor
 from minicnn.cuda_native.gpu_training import (
+    NativeGpuConvLinearTrainingStepResult,
     NativeGpuLinearTrainingStepResult,
     NativeGpuPoolLinearTrainingStepResult,
     NativeGpuTwoLinearReluTrainingStepResult,
+    native_gpu_conv_linear_training_step,
     native_gpu_linear_training_step,
     native_gpu_pool_linear_training_step,
     native_gpu_two_linear_relu_training_step,
@@ -65,9 +67,11 @@ __all__ = [
     'ForwardExecutor',
     'GpuStubExecutor',
     'make_native_gpu_forward_executor',
+    'NativeGpuConvLinearTrainingStepResult',
     'NativeGpuLinearTrainingStepResult',
     'NativeGpuPoolLinearTrainingStepResult',
     'NativeGpuTwoLinearReluTrainingStepResult',
+    'native_gpu_conv_linear_training_step',
     'native_gpu_linear_training_step',
     'native_gpu_pool_linear_training_step',
     'native_gpu_two_linear_relu_training_step',
