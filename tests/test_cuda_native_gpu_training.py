@@ -6,6 +6,7 @@ import numpy as np
 
 from minicnn.cuda_native.gpu_training import (
     native_gpu_linear_training_step,
+    native_gpu_pool_linear_training_step,
     native_gpu_two_linear_relu_training_step,
 )
 
@@ -53,6 +54,33 @@ class _RawFakeCudaLib:
         data = self._float(d_data)
         grad = self._float(d_grad)
         grad[:int(size)] = np.where(data[:int(size)] > 0.0, grad[:int(size)], 0.0)
+
+    def apply_maxpool(self, d_input, d_output, n, c, h, w):
+        x = self._float(d_input).reshape(int(n), int(c), int(h), int(w))
+        out_h = int(h) // 2
+        out_w = int(w) // 2
+        out = np.zeros((int(n), int(c), out_h, out_w), dtype=np.float32)
+        for ni in range(int(n)):
+            for ci in range(int(c)):
+                for oh in range(out_h):
+                    for ow in range(out_w):
+                        out[ni, ci, oh, ow] = np.max(x[ni, ci, oh * 2:oh * 2 + 2, ow * 2:ow * 2 + 2])
+        self._float(d_output)[:] = out.reshape(-1)
+
+    def maxpool_backward_nchw(self, d_grad_out, d_input, d_grad_input, n, c, in_h, in_w, out_h, out_w):
+        grad_out = self._float(d_grad_out).reshape(int(n), int(c), int(out_h), int(out_w))
+        x = self._float(d_input).reshape(int(n), int(c), int(in_h), int(in_w))
+        grad_input = np.zeros((int(n), int(c), int(in_h), int(in_w)), dtype=np.float32)
+        for ni in range(int(n)):
+            for ci in range(int(c)):
+                for oh in range(int(out_h)):
+                    for ow in range(int(out_w)):
+                        window = x[ni, ci, oh * 2:oh * 2 + 2, ow * 2:ow * 2 + 2]
+                        flat_idx = int(np.argmax(window))
+                        ih = oh * 2 + flat_idx // 2
+                        iw = ow * 2 + flat_idx % 2
+                        grad_input[ni, ci, ih, iw] += grad_out[ni, ci, oh, ow]
+        self._float(d_grad_input)[:] = grad_input.reshape(-1)
 
     def softmax_xent_grad_loss_acc(
         self,
@@ -209,3 +237,64 @@ def test_native_gpu_two_linear_relu_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_relu_backward'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full_1'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full_2'] == 1
+
+
+def test_native_gpu_pool_linear_training_step_matches_reference_math():
+    x = np.asarray(
+        [
+            [
+                [[1.0, 2.0, -1.0, 0.0], [3.0, 4.0, 2.0, 1.0], [0.5, -0.5, 1.5, 2.5], [1.0, 0.0, 3.0, 2.0]]
+            ],
+            [
+                [[-1.0, 1.0, 0.5, 2.0], [2.0, 0.0, 1.0, 3.0], [1.5, 2.5, -0.5, 0.5], [0.0, 1.0, 2.0, 4.0]]
+            ],
+        ],
+        dtype=np.float32,
+    )
+    labels = np.asarray([1, 0], dtype=np.int32)
+    weight = np.asarray([[0.1, -0.2, 0.3, 0.05], [-0.05, 0.25, -0.15, 0.2]], dtype=np.float32)
+    bias = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.05
+
+    result = native_gpu_pool_linear_training_step(x, labels, weight, bias, lr=lr, bound_lib=_RawFakeCudaLib())
+
+    pooled = np.asarray(
+        [
+            [[[4.0, 2.0], [1.0, 3.0]]],
+            [[[2.0, 3.0], [2.5, 4.0]]],
+        ],
+        dtype=np.float32,
+    )
+    flat = pooled.reshape(2, -1)
+    logits = flat @ weight.T + bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_weight = grad_logits.T @ flat
+    grad_bias = grad_logits.sum(axis=0)
+    grad_pooled = (grad_logits @ weight).reshape(pooled.shape)
+    grad_input = np.zeros_like(x)
+    for ni in range(x.shape[0]):
+        for oh in range(2):
+            for ow in range(2):
+                window = x[ni, 0, oh * 2:oh * 2 + 2, ow * 2:ow * 2 + 2]
+                flat_idx = int(np.argmax(window))
+                ih = oh * 2 + flat_idx // 2
+                iw = ow * 2 + flat_idx % 2
+                grad_input[ni, 0, ih, iw] += grad_pooled[ni, 0, oh, ow]
+
+    np.testing.assert_allclose(result.pooled, pooled, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.logits, logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.probabilities, probs, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_pooled, grad_pooled, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_input, grad_input, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_weight, grad_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_bias, grad_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight, weight - lr * grad_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias, bias - lr * grad_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_maxpool'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:maxpool_backward_nchw'] == 1

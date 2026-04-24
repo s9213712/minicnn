@@ -180,11 +180,13 @@ def _validate_gpu_native_training_subset(
         ['Flatten', 'Linear'],
         ['Linear', 'ReLU', 'Linear'],
         ['Flatten', 'Linear', 'ReLU', 'Linear'],
+        ['MaxPool2d', 'Flatten', 'Linear'],
     ):
         errors.append(
             'cuda_native gpu_native train-native currently supports only the narrow '
             'Linear training subset ops=[Linear], [Flatten, Linear], '
-            f'[Linear, ReLU, Linear], or [Flatten, Linear, ReLU, Linear], got {ops}.'
+            '[Linear, ReLU, Linear], [Flatten, Linear, ReLU, Linear], '
+            f'or [MaxPool2d, Flatten, Linear], got {ops}.'
         )
     if str(loss_cfg.get('type', 'CrossEntropyLoss')) != 'CrossEntropyLoss':
         errors.append('cuda_native gpu_native train-native currently supports only CrossEntropyLoss.')

@@ -163,6 +163,34 @@ def test_train_native_runs_gpu_native_two_linear_relu_training_subset(tmp_path, 
     assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Flatten', 'Linear', 'ReLU']
 
 
+def test_train_native_runs_gpu_native_pool_linear_training_subset(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding='utf-8').replace(
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: MaxPool2d\n      kernel_size: 2\n      stride: 2\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+        ),
+        encoding='utf-8',
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        rc = main(['train-native', '--config', str(config_path), 'engine.execution_mode=gpu_native'])
+    assert rc == 0
+    stdout = capsys.readouterr().out
+    json_text = stdout.split('Artifacts written to:')[0].strip()
+    payload, _ = json.JSONDecoder().raw_decode(json_text)
+
+    assert payload['selected_execution_mode'] == 'gpu_native'
+    assert payload['effective_execution_mode'] == 'gpu_native'
+    assert payload['tensor_execution_device'] == 'gpu'
+    assert payload['gpu_execution'] is True
+    assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Flatten', 'Linear', 'MaxPool2d']
+
+
 def test_validate_cuda_native_config_reports_ops_outside_gpu_bootstrap_subset(tmp_path, capsys):
     from minicnn.cli import main
 

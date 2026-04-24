@@ -288,6 +288,9 @@ The same GPU training substrate also supports the narrow
 `Linear -> ReLU -> Linear` path through `native_gpu_two_linear_relu_training_step`
 and through `train-native engine.execution_mode=gpu_native` when the model graph
 is `Flatten -> Linear -> ReLU -> Linear`.
+MaxPool backward is also covered for the narrow
+`MaxPool2d -> Flatten -> Linear` graph through `native_gpu_pool_linear_training_step`
+and the same `train-native` execution mode.
 
 Validation payloads now also include `support_tier_assessment`, so a config can
 be accepted while still being marked as touching `beta`
