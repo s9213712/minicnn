@@ -212,6 +212,23 @@ class _RawFakeCudaLib:
         velocity[:int(size)] = float(momentum) * velocity[:int(size)] - float(lr) * grads[:int(size)]
         values[:int(size)] += velocity[:int(size)]
 
+    def sgd_update_fused(self, d_weight, d_grad, d_velocity, lr, momentum, weight_decay, clip_val, normalizer, size):
+        values = self._float(d_weight)
+        grads = self._float(d_grad)
+        velocity = self._float(d_velocity)
+        g = grads[:int(size)] / float(normalizer)
+        if float(clip_val) > 0.0:
+            g = np.clip(g, -float(clip_val), float(clip_val))
+        if float(momentum) > 0.0:
+            g = g + float(weight_decay) * values[:int(size)]
+            velocity[:int(size)] = float(momentum) * velocity[:int(size)] - float(lr) * g
+            values[:int(size)] += velocity[:int(size)]
+        else:
+            next_values = values[:int(size)].copy()
+            if float(weight_decay) > 0.0:
+                next_values *= 1.0 - float(lr) * float(weight_decay)
+            values[:int(size)] = next_values - float(lr) * g
+
     def adam_update_fused(
         self,
         d_weight,
@@ -310,6 +327,46 @@ def test_native_gpu_linear_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:softmax_xent_grad_loss_acc'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_sgd_update'] == 1
+
+
+def test_native_gpu_linear_training_step_sgd_weight_decay_matches_reference_math():
+    x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)
+    labels = np.asarray([2, 0], dtype=np.int32)
+    weight = np.asarray(
+        [
+            [0.2, -0.1, 0.05],
+            [-0.3, 0.4, 0.1],
+            [0.15, -0.2, 0.3],
+        ],
+        dtype=np.float32,
+    )
+    bias = np.asarray([0.01, -0.02, 0.03], dtype=np.float32)
+    lr = 0.25
+    weight_decay = 0.1
+
+    result = native_gpu_linear_training_step(
+        x,
+        labels,
+        weight,
+        bias,
+        lr=lr,
+        weight_decay=weight_decay,
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    logits = x @ weight.T + bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_weight = grad_logits.T @ x
+    grad_bias = grad_logits.sum(axis=0)
+
+    np.testing.assert_allclose(result.updated_weight, weight * (1.0 - lr * weight_decay) - lr * grad_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias, bias * (1.0 - lr * weight_decay) - lr * grad_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:sgd_update_fused'] == 1
 
 
 def test_native_gpu_linear_training_step_mse_matches_reference_math():
@@ -428,7 +485,7 @@ def test_native_gpu_linear_training_step_adamw_matches_reference_math():
     np.testing.assert_allclose(result.updated_bias_m, bias_m, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.updated_bias_v, bias_v, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.updated_weight, weight - weight_update - lr * weight_decay * weight, rtol=1e-6, atol=1e-6)
-    np.testing.assert_allclose(result.updated_bias, bias - bias_update, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias, bias - bias_update - lr * weight_decay * bias, rtol=1e-6, atol=1e-6)
     assert result.runtime_summary['execution_kinds']['gpu_native_train:adam_update_fused'] == 1
 
 
@@ -482,7 +539,7 @@ def test_native_gpu_linear_training_step_rmsprop_matches_reference_math():
     grad_weight = grad_logits.T @ x
     grad_bias = grad_logits.sum(axis=0)
     weight_rmsprop_grad = grad_weight + weight_decay * weight
-    bias_rmsprop_grad = grad_bias
+    bias_rmsprop_grad = grad_bias + weight_decay * bias
     next_weight_v = alpha * weight_rmsprop_v + (1.0 - alpha) * weight_rmsprop_grad * weight_rmsprop_grad
     next_bias_v = alpha * bias_rmsprop_v + (1.0 - alpha) * bias_rmsprop_grad * bias_rmsprop_grad
     weight_step = weight_rmsprop_grad / (np.sqrt(next_weight_v) + eps)

@@ -510,6 +510,8 @@ def _validate_gpu_native_training_context(ctx: NativeTrainingContext) -> None:
             raise ValueError('cuda_native gpu_native non-Linear train-native currently requires optimizer.weight_decay=0.0.')
     if ctx.grad_accum_steps != 1:
         raise ValueError('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
+    if ctx.grad_clip_global != 0.0:
+        raise ValueError('cuda_native gpu_native train-native currently requires optimizer.grad_clip_global=0.0; global-norm clipping is still reference_numpy-only.')
     if ctx.amp:
         raise ValueError('cuda_native gpu_native train-native currently requires train.amp=false.')
 

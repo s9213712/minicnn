@@ -158,6 +158,7 @@ def native_gpu_linear_training_step(
     loss_type: str = 'cross_entropy',
     optimizer_type: str = 'sgd',
     weight_decay: float = 0.0,
+    grad_clip_value: float = 0.0,
     beta1: float = 0.9,
     beta2: float = 0.999,
     eps: float = 1e-8,
@@ -177,7 +178,7 @@ def native_gpu_linear_training_step(
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuLinearTrainingStepResult:
-    """Run one native GPU Linear + SoftmaxCE + SGD training step.
+    """Run one native GPU Linear training step.
 
     This is intentionally narrow: it proves the native C ABI can execute a
     complete forward/backward/update cycle without host-side gradient math.
@@ -411,7 +412,7 @@ def native_gpu_linear_training_step(
                 float(beta1),
                 float(beta2),
                 float(eps),
-                0.0,
+                adam_weight_decay,
                 0.0,
                 1.0,
                 float(bias_corr1),
@@ -443,12 +444,36 @@ def native_gpu_linear_training_step(
                 float(rmsprop_alpha),
                 float(eps),
                 float(momentum),
-                0.0,
+                float(weight_decay),
                 0.0,
                 1.0,
                 int(bias_f32.size),
             )
             update_kind = 'gpu_native_train:rmsprop_update_fused'
+        elif float(weight_decay) != 0.0 or float(grad_clip_value) > 0.0:
+            lib.sgd_update_fused(
+                weight_t.device_ptr,
+                grad_weight_t.device_ptr,
+                weight_velocity_t.device_ptr,
+                float(lr),
+                float(momentum),
+                float(weight_decay),
+                float(grad_clip_value),
+                1.0,
+                int(weight_f32.size),
+            )
+            lib.sgd_update_fused(
+                bias_t.device_ptr,
+                grad_bias_t.device_ptr,
+                bias_velocity_t.device_ptr,
+                float(lr),
+                float(momentum),
+                float(weight_decay),
+                float(grad_clip_value),
+                1.0,
+                int(bias_f32.size),
+            )
+            update_kind = 'gpu_native_train:sgd_update_fused'
         elif float(momentum) != 0.0:
             lib.apply_momentum_update(
                 weight_t.device_ptr,

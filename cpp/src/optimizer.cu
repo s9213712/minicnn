@@ -22,6 +22,44 @@ __global__ void momentum_update_kernel(
     }
 }
 
+// SGD fused update kernel.
+// Matches minicnn.cuda_native.training.sgd_update:
+// - no momentum: decoupled weight decay, then SGD step
+// - momentum: coupled weight decay in the gradient, then momentum step
+// clip_val <= 0 disables per-element clipping. The public gpu_native runtime
+// still gates optimizer.grad_clip_global because global-norm clipping needs a
+// separate cross-parameter reduction.
+__global__ void sgd_update_fused_kernel(
+    float* weights,
+    const float* grad,
+    float* velocity,
+    float lr,
+    float momentum,
+    float weight_decay,
+    float clip_val,
+    float normalizer,
+    int size
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+
+    float g = grad[idx] / normalizer;
+    if (clip_val > 0.0f) {
+        g = fmaxf(-clip_val, fminf(clip_val, g));
+    }
+    if (momentum > 0.0f) {
+        g += weight_decay * weights[idx];
+        velocity[idx] = momentum * velocity[idx] - lr * g;
+        weights[idx] += velocity[idx];
+    } else {
+        float next_weight = weights[idx];
+        if (weight_decay > 0.0f) {
+            next_weight *= (1.0f - lr * weight_decay);
+        }
+        weights[idx] = next_weight - lr * g;
+    }
+}
+
 __global__ void conv_update_fused_kernel(
     float* weights,
     float* grad,
@@ -141,6 +179,26 @@ extern "C" {
         int tpb = 256;
         int bpg = (size + tpb - 1) / tpb;
         momentum_update_kernel<<<bpg, tpb>>>(d_weights, d_grad, d_velocity, lr, momentum, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void sgd_update_fused(
+        float* d_weights,
+        const float* d_grad,
+        float* d_velocity,
+        float lr,
+        float momentum,
+        float weight_decay,
+        float clip_val,
+        float normalizer,
+        int size
+    ) {
+        int tpb = 256;
+        int bpg = (size + tpb - 1) / tpb;
+        sgd_update_fused_kernel<<<bpg, tpb>>>(
+            d_weights, d_grad, d_velocity,
+            lr, momentum, weight_decay, clip_val, normalizer, size
+        );
         CUDA_KERNEL_CHECK();
     }
 

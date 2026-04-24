@@ -174,6 +174,10 @@ Validated train-native support boundary:
 - `summary.json` exposes `amp_runtime`, `optimizer_runtime`, `planner`, and `performance_report`
 - `metrics.jsonl` exposes per-epoch AMP, optimizer, and planner telemetry
 
+`gpu_native` train-native currently requires `optimizer.grad_clip_global=0.0`;
+global-norm clipping remains available on `reference_numpy` while native
+reduction support is pending.
+
 Still rejected at validation or train-native gating: unsupported optimizers outside `SGD` / `Adam` / `AdamW` / `RMSprop`.
 
 Note: backward and training now meet the current beta graduation gate, and `BatchNorm2d` now has a prototype backward path too. The overall backend is beta, not production-ready. New native capability work should usually land here, not in `cuda_legacy`.
@@ -423,6 +427,9 @@ Debugging order:
 - optimizer：支援 `SGD`、`Adam`、`AdamW`、`RMSprop`，並支援 global gradient clipping
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
 - `train.amp=true|false`（帶 loss scaling / overflow backoff 的實驗性 mixed-precision prototype）
+
+`gpu_native` train-native 目前要求 `optimizer.grad_clip_global=0.0`；
+global-norm clipping 仍屬於 `reference_numpy` 路徑，等待 native reduction 支援後再開放。
 
 支援 op：`BatchNorm2d`（forward/backward prototype）、`Concat`、`Conv2d`、`DepthwiseConv2d`、`PointwiseConv2d`、`GroupNorm`、`LayerNorm`、`LayerNorm2d`、`ResidualBlock`、`ConvNeXtBlock`、`Dropout`、`DropPath`、`Add`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`GELU`、`Identity`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`、`AdaptiveAvgPool2d`（僅 `output_size=(1,1)`）、`GlobalAvgPool2d`。
 

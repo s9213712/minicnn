@@ -23,6 +23,7 @@ Completed:
   `gpu_native` training subsets
 - native `Adam`, `AdamW`, and `RMSprop` update helpers for Linear
   `gpu_native` training subsets
+- native SGD fused update helper for Linear `gpu_native` weight-decay parity
   subsets
 
 ## Current `gpu_native` training subsets
@@ -66,6 +67,10 @@ The following remain `reference_numpy`-only for training:
 These are not silently treated as GPU-supported. `gpu_native` validation rejects
 them outside the supported subsets.
 
+`optimizer.grad_clip_global` also remains `reference_numpy`-only for now.
+`gpu_native` validation rejects nonzero global-norm clipping instead of silently
+ignoring it.
+
 ## Remaining hard blocker
 
 The local machine still fails real CUDA execution with:
@@ -83,7 +88,7 @@ from this machine. The repo now fails before allocation with a Python
 Current repo-side validation:
 
 ```text
-129 passed
+131 passed
 ```
 
 Covered test subset:

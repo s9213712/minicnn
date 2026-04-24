@@ -184,3 +184,4 @@ For the separate path from reference execution to real GPU execution, see
 - repeated-Conv real-data smoke entrypoint now exists at `examples/cuda_native_gpu_two_conv_training_cifar10_demo.py`; it runs the two-Conv native GPU helper on a CIFAR-10 batch and compares against a NumPy reference step when the CUDA environment is valid
 - `gpu_native` Linear subsets now use native CUDA loss-gradient helpers for `CrossEntropyLoss`, `MSELoss`, and `BCEWithLogitsLoss`; Conv-family subsets remain on `CrossEntropyLoss`
 - `gpu_native` Linear subsets now use native CUDA update helpers for `SGD`, `Adam`, `AdamW`, and `RMSprop`; Conv-family subsets remain on `SGD`
+- `gpu_native` now rejects nonzero `optimizer.grad_clip_global` instead of silently ignoring global-norm clipping; native reduction-based clipping is still pending

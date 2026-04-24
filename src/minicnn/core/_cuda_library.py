@@ -150,6 +150,12 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
     bound_lib.count_correct.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int]
     bound_lib.apply_sgd_update.argtypes = [c_void_p, c_void_p, c_float, c_int]
     bound_lib.apply_momentum_update.argtypes = [c_void_p, c_void_p, c_void_p, c_float, c_float, c_int]
+    if hasattr(bound_lib, 'sgd_update_fused'):
+        bound_lib.sgd_update_fused.argtypes = [
+            c_void_p, c_void_p, c_void_p,
+            c_float, c_float, c_float, c_float, c_float,
+            c_int,
+        ]
     bound_lib.conv_update_fused.argtypes = [
         c_void_p, c_void_p, c_void_p,
         c_float, c_float, c_float, c_float, c_float,
