@@ -178,7 +178,7 @@ def run_training_loop(
     ctx: NativeTrainingContext,
     *,
     run_dir: Path,
-) -> tuple[dict[str, np.ndarray], float, dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, np.ndarray], float, dict[str, Any], dict[str, Any], dict[str, Any]]:
     metrics_path = run_dir / 'metrics.jsonl'
     fwd = ForwardExecutor()
     bwd = BackwardExecutor()
@@ -206,6 +206,7 @@ def run_training_loop(
         'grad_buffer_reset_events': 0,
         'grad_buffer_zeroed_tensors': 0,
     }
+    epoch_times: list[float] = []
     planner_epoch_state = {
         'strategy': str(ctx.planner_summary.get('strategy', 'unknown')),
         'num_buffers': int(ctx.planner_summary.get('num_buffers', 0)),
@@ -278,6 +279,7 @@ def run_training_loop(
                 else:
                     scheduler.step()
             epoch_time = time.perf_counter() - t0
+            epoch_times.append(epoch_time)
             amp_epoch_state: dict[str, Any] | None = None
             optimizer_epoch_state: dict[str, Any] | None = None
             if ctx.amp:
@@ -378,7 +380,24 @@ def run_training_loop(
 
     amp_runtime = dict(optimizer_state.get('amp', {}))
     optimizer_runtime = _optimizer_runtime_snapshot(optimizer_state)
-    return best_params, best_val_acc, amp_runtime, optimizer_runtime
+    total_epoch_time = float(sum(epoch_times))
+    epochs_completed = len(epoch_times)
+    train_samples_per_epoch = int(ctx.x_train.shape[0])
+    runtime_profile = {
+        'epochs_completed': epochs_completed,
+        'train_samples_per_epoch': train_samples_per_epoch,
+        'val_samples_per_epoch': int(ctx.x_val.shape[0]),
+        'total_epoch_time_s': round(total_epoch_time, 6),
+        'avg_epoch_time_s': round(total_epoch_time / float(max(epochs_completed, 1)), 6),
+        'min_epoch_time_s': round(min(epoch_times), 6) if epoch_times else 0.0,
+        'max_epoch_time_s': round(max(epoch_times), 6) if epoch_times else 0.0,
+        'train_samples_per_sec': (
+            round((train_samples_per_epoch * epochs_completed) / total_epoch_time, 6)
+            if total_epoch_time > 0.0 and epochs_completed > 0
+            else 0.0
+        ),
+    }
+    return best_params, best_val_acc, amp_runtime, optimizer_runtime, runtime_profile
 
 
 def finalize_training_run(
@@ -389,6 +408,7 @@ def finalize_training_run(
     best_val_acc: float,
     amp_runtime: dict[str, Any],
     optimizer_runtime: dict[str, Any],
+    runtime_profile: dict[str, Any],
     capabilities: dict[str, Any],
 ) -> Path:
     best_path = _best_checkpoint_path(run_dir)
@@ -405,6 +425,7 @@ def finalize_training_run(
         amp_runtime=amp_runtime,
         optimizer_runtime=optimizer_runtime,
         planner_summary=ctx.planner_summary,
+        runtime_profile=runtime_profile,
         scheduler_cfg=ctx.scheduler_cfg,
         epochs=ctx.epochs,
         capabilities=capabilities,
@@ -421,7 +442,7 @@ def train_and_summarize_native_backend(
 ) -> Path:
     ctx = prepare_training_context(cfg, graph)
     run_dir = create_run_dir(cfg)
-    best_params, best_val_acc, amp_runtime, optimizer_runtime = run_training_loop(ctx, run_dir=run_dir)
+    best_params, best_val_acc, amp_runtime, optimizer_runtime, runtime_profile = run_training_loop(ctx, run_dir=run_dir)
     return finalize_training_run(
         ctx,
         run_dir=run_dir,
@@ -429,5 +450,6 @@ def train_and_summarize_native_backend(
         best_val_acc=best_val_acc,
         amp_runtime=amp_runtime,
         optimizer_runtime=optimizer_runtime,
+        runtime_profile=runtime_profile,
         capabilities=capabilities,
     )

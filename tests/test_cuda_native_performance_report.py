@@ -63,8 +63,13 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert 'performance_report' in summary
     assert summary['performance_report']['planner']['strategy'] == 'reuse'
     assert 'efficiency' in summary['performance_report']
+    assert 'runtime' in summary['performance_report']
     assert summary['performance_report']['training']['grad_accum_steps'] == 2
     assert summary['performance_report']['training']['amp_enabled'] is True
+    assert summary['performance_report']['runtime']['epochs_completed'] == 1
+    assert summary['performance_report']['runtime']['train_samples_per_epoch'] == 8
+    assert 'avg_epoch_time_s' in summary['performance_report']['runtime']
+    assert 'train_samples_per_sec' in summary['performance_report']['runtime']
     assert 'state_allocations_per_step' in summary['performance_report']['efficiency']
     assert 'grad_buffer_reuse_ratio' in summary['performance_report']['efficiency']
     assert 'grad_buffer_active_tensor_fraction' in summary['performance_report']['efficiency']

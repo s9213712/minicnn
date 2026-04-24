@@ -352,6 +352,7 @@ def build_training_summary(
     amp_runtime: dict[str, Any] | None,
     optimizer_runtime: dict[str, Any] | None,
     planner_summary: dict[str, Any] | None,
+    runtime_profile: dict[str, Any] | None,
     epochs: int,
     capabilities: dict[str, Any],
 ) -> dict[str, Any]:
@@ -383,6 +384,7 @@ def build_training_summary(
         'amp': sanitized_amp_runtime,
         'optimizer': sanitized_optimizer_runtime,
         'efficiency': efficiency_summary,
+        'runtime': dict(runtime_profile or {}),
         'training': {
             'batch_size': int(train_cfg.get('batch_size', 64)),
             'grad_accum_steps': int(train_cfg.get('grad_accum_steps', 1)),
