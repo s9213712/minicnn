@@ -196,6 +196,7 @@ Current status:
   - `GroupNorm`
 - this creates a first reference-backed slice before widening to larger composite blocks
 - `BatchNorm2d` training-mode running-stat semantics now match PyTorch's biased-for-output / unbiased-for-running-var split
+- composite forward reference checks now also cover `ResidualBlock` and `ConvNeXtBlock`
 
 ## Phase 4: Support Tiers
 

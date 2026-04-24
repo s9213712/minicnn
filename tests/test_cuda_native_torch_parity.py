@@ -231,6 +231,72 @@ def test_conv2d_backward_matches_torch():
     assert np.allclose(native_param_grads['_b_conv2d_0'], tb.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
 
 
+def test_residualblock_eval_forward_matches_torch_reference():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'ResidualBlock', 'channels': 4, 'stride': 1, 'bias': False}],
+        (2, 4, 5, 5),
+    )
+    node_name = graph.nodes[0].name
+    x = np.random.default_rng(65).standard_normal((2, 4, 5, 5)).astype(np.float32)
+    w1 = np.random.default_rng(66).standard_normal((4, 4, 3, 3)).astype(np.float32)
+    w2 = np.random.default_rng(67).standard_normal((4, 4, 3, 3)).astype(np.float32)
+    bn1_w = np.random.default_rng(68).standard_normal((4,)).astype(np.float32)
+    bn1_b = np.random.default_rng(69).standard_normal((4,)).astype(np.float32)
+    bn2_w = np.random.default_rng(70).standard_normal((4,)).astype(np.float32)
+    bn2_b = np.random.default_rng(71).standard_normal((4,)).astype(np.float32)
+    rm1 = np.random.default_rng(72).standard_normal((4,)).astype(np.float32)
+    rv1 = np.abs(np.random.default_rng(73).standard_normal((4,)).astype(np.float32)) + 0.5
+    rm2 = np.random.default_rng(74).standard_normal((4,)).astype(np.float32)
+    rv2 = np.abs(np.random.default_rng(75).standard_normal((4,)).astype(np.float32)) + 0.5
+    params = {
+        f'_w_conv1_{node_name}': w1,
+        f'_w_conv2_{node_name}': w2,
+        f'_w_bn1_{node_name}': bn1_w,
+        f'_b_bn1_{node_name}': bn1_b,
+        f'_running_mean_bn1_{node_name}': rm1.copy(),
+        f'_running_var_bn1_{node_name}': rv1.copy(),
+        f'_w_bn2_{node_name}': bn2_w,
+        f'_b_bn2_{node_name}': bn2_b,
+        f'_running_mean_bn2_{node_name}': rm2.copy(),
+        f'_running_var_bn2_{node_name}': rv2.copy(),
+    }
+
+    native = ForwardExecutor().run_inference(graph, x, params=params, mode='eval')
+
+    tx = torch.from_numpy(x)
+    t = F.conv2d(tx, weight=torch.from_numpy(w1), bias=None, stride=1, padding=1)
+    t = F.batch_norm(
+        t,
+        running_mean=torch.from_numpy(rm1),
+        running_var=torch.from_numpy(rv1),
+        weight=torch.from_numpy(bn1_w),
+        bias=torch.from_numpy(bn1_b),
+        training=False,
+        momentum=0.1,
+        eps=1e-5,
+    )
+    t = F.relu(t)
+    t = F.conv2d(t, weight=torch.from_numpy(w2), bias=None, stride=1, padding=1)
+    t = F.batch_norm(
+        t,
+        running_mean=torch.from_numpy(rm2),
+        running_var=torch.from_numpy(rv2),
+        weight=torch.from_numpy(bn2_w),
+        bias=torch.from_numpy(bn2_b),
+        training=False,
+        momentum=0.1,
+        eps=1e-5,
+    )
+    expected = F.relu(t + tx).detach().cpu().numpy()
+
+    assert np.allclose(native, expected, atol=1e-4, rtol=1e-4)
+
+
 def test_layernorm_forward_matches_torch():
     import torch.nn.functional as F
 
@@ -493,6 +559,63 @@ def test_layernorm2d_forward_matches_torch():
     ).permute(0, 3, 1, 2).contiguous().detach().cpu().numpy()
 
     assert np.allclose(native, expected, atol=1e-5, rtol=1e-5)
+
+
+def test_convnextblock_forward_matches_torch_reference():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'ConvNeXtBlock', 'kernel_size': 7, 'bias': True}],
+        (2, 4, 5, 5),
+    )
+    node_name = graph.nodes[0].name
+    x = np.random.default_rng(76).standard_normal((2, 4, 5, 5)).astype(np.float32)
+    w_dw = np.random.default_rng(77).standard_normal((4, 1, 7, 7)).astype(np.float32)
+    b_dw = np.random.default_rng(78).standard_normal((4,)).astype(np.float32)
+    ln_w = np.random.default_rng(79).standard_normal((4,)).astype(np.float32)
+    ln_b = np.random.default_rng(80).standard_normal((4,)).astype(np.float32)
+    w_pw1 = np.random.default_rng(81).standard_normal((16, 4, 1, 1)).astype(np.float32)
+    b_pw1 = np.random.default_rng(82).standard_normal((16,)).astype(np.float32)
+    w_pw2 = np.random.default_rng(83).standard_normal((4, 16, 1, 1)).astype(np.float32)
+    b_pw2 = np.random.default_rng(84).standard_normal((4,)).astype(np.float32)
+    params = {
+        f'_w_depthwise_{node_name}': w_dw,
+        f'_b_depthwise_{node_name}': b_dw,
+        f'_w_ln_{node_name}': ln_w,
+        f'_b_ln_{node_name}': ln_b,
+        f'_w_pw1_{node_name}': w_pw1,
+        f'_b_pw1_{node_name}': b_pw1,
+        f'_w_pw2_{node_name}': w_pw2,
+        f'_b_pw2_{node_name}': b_pw2,
+    }
+
+    native = ForwardExecutor().run_inference(graph, x, params=params, mode='eval')
+
+    tx = torch.from_numpy(x)
+    t = F.conv2d(
+        tx,
+        weight=torch.from_numpy(w_dw),
+        bias=torch.from_numpy(b_dw),
+        stride=1,
+        padding=3,
+        groups=4,
+    )
+    t = F.layer_norm(
+        t.permute(0, 2, 3, 1),
+        normalized_shape=(4,),
+        weight=torch.from_numpy(ln_w),
+        bias=torch.from_numpy(ln_b),
+        eps=1e-6,
+    ).permute(0, 3, 1, 2).contiguous()
+    t = F.conv2d(t, weight=torch.from_numpy(w_pw1), bias=torch.from_numpy(b_pw1), stride=1, padding=0)
+    t = F.gelu(t, approximate='tanh')
+    t = F.conv2d(t, weight=torch.from_numpy(w_pw2), bias=torch.from_numpy(b_pw2), stride=1, padding=0)
+    expected = (tx + t).detach().cpu().numpy()
+
+    assert np.allclose(native, expected, atol=1e-4, rtol=1e-4)
 
 
 def test_layernorm_backward_matches_torch():
