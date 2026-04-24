@@ -106,3 +106,13 @@ PYTHONPATH=src python3 examples/cuda_native_gpu_forward_cifar10_demo.py \
 ```
 
 This demo loads an official CIFAR-10 test batch, executes `Conv2d -> ReLU -> MaxPool2d -> Flatten -> Linear` through the native GPU forward executor, compares against the NumPy reference executor, and prints the native kernel execution kinds.
+
+Run the narrow native GPU training-step demo against CIFAR-10:
+
+```bash
+PYTHONPATH=src python3 examples/cuda_native_gpu_linear_training_cifar10_demo.py \
+  --data-root data/cifar-10-batches-py \
+  --batch-size 8
+```
+
+This demo flattens an official CIFAR-10 test batch and executes one `Linear + SoftmaxCE + dense backward + SGD` step through native GPU C ABI calls, then compares the updated parameters against NumPy reference math.

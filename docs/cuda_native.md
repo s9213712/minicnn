@@ -267,6 +267,23 @@ result = executor.run(graph, np.asarray([[1.0, -2.0, 3.0, -4.0]], dtype=np.float
 print(result.output)
 ```
 
+Run one narrow native GPU training step for `Linear + SoftmaxCE + SGD`:
+
+```python
+import numpy as np
+
+from minicnn.cuda_native import native_gpu_linear_training_step
+
+step = native_gpu_linear_training_step(
+    np.asarray([[1.0, 2.0, -1.0]], dtype=np.float32),
+    np.asarray([2], dtype=np.int32),
+    np.asarray([[0.1, 0.0, -0.1], [0.0, 0.2, 0.1], [0.3, -0.2, 0.0]], dtype=np.float32),
+    np.zeros((3,), dtype=np.float32),
+    lr=0.01,
+)
+print(step.loss_mean, step.runtime_summary["execution_kinds"])
+```
+
 Validation payloads now also include `support_tier_assessment`, so a config can
 be accepted while still being marked as touching `beta`
 surfaces such as `amp` or composite blocks.

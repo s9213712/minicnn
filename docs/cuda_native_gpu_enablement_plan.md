@@ -139,7 +139,8 @@ Current status:
 - native device-pointer forward execution now exists for the bootstrap subset:
   - `Flatten` uses device-pointer aliasing
   - `Linear`, `ReLU`, `LeakyReLU`, `Add`, `Concat`, `MaxPool2d`, and a constrained `Conv2d` path lower to native CUDA symbols when a bound library is attached
-  - remaining blockers are backward lowering, training-loop integration, and a full GPU parity matrix
+  - `Linear + SoftmaxCE + SGD` now has a narrow native GPU training-step helper that exercises forward, loss gradient, dense backward, and optimizer update through the C ABI
+  - remaining blockers are graph-level backward lowering, train-native training-loop integration, and a full GPU parity matrix
 
 Goal:
 
