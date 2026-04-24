@@ -173,6 +173,25 @@ class _RawFakeCudaLib:
         self._float(d_loss_sum)[0] = float(-np.log(probs[np.arange(int(n)), labels] + 1e-10).sum())
         self._int(d_correct_count)[0] = int(np.sum(np.argmax(logits, axis=1) == labels))
 
+    def mse_fwd_grad_loss_acc(self, d_logits, d_labels, d_grad_logits, d_loss_sum, d_correct_count, n, features):
+        logits = self._float(d_logits).reshape(int(n), int(features))
+        labels = self._int(d_labels)[:int(n)]
+        targets = np.zeros_like(logits)
+        targets[np.arange(int(n)), labels] = 1.0
+        diff = logits - targets
+        self._float(d_grad_logits)[:] = (2.0 * diff / float(int(n) * int(features))).reshape(-1)
+        self._float(d_loss_sum)[0] = float(np.mean(diff * diff, axis=1).sum())
+        self._int(d_correct_count)[0] = int(np.sum(np.argmax(logits, axis=1) == labels))
+
+    def bce_fwd_grad_loss_acc(self, d_logits, d_labels, d_grad_logits, d_loss_sum, d_correct_count, n):
+        logits = self._float(d_logits).reshape(int(n), 1)
+        labels = self._int(d_labels)[:int(n)].astype(np.float32).reshape(int(n), 1)
+        sig = 1.0 / (1.0 + np.exp(-logits))
+        self._float(d_grad_logits)[:] = ((sig - labels) / float(int(n))).reshape(-1)
+        loss = np.maximum(logits, 0.0) - logits * labels + np.log1p(np.exp(-np.abs(logits)))
+        self._float(d_loss_sum)[0] = float(loss.sum())
+        self._int(d_correct_count)[0] = int(np.sum((logits.reshape(-1) >= 0.0).astype(np.int32) == labels.reshape(-1).astype(np.int32)))
+
     def dense_backward_full(self, d_dout, d_input, d_weight, d_din, d_dweight, d_dbias, n, in_f, out_f):
         grad = self._float(d_dout).reshape(int(n), int(out_f))
         x = self._float(d_input).reshape(int(n), int(in_f))
@@ -233,6 +252,68 @@ def test_native_gpu_linear_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:softmax_xent_grad_loss_acc'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_sgd_update'] == 1
+
+
+def test_native_gpu_linear_training_step_mse_matches_reference_math():
+    x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)
+    labels = np.asarray([2, 0], dtype=np.int32)
+    weight = np.asarray(
+        [
+            [0.2, -0.1, 0.05],
+            [-0.3, 0.4, 0.1],
+            [0.15, -0.2, 0.3],
+        ],
+        dtype=np.float32,
+    )
+    bias = np.asarray([0.01, -0.02, 0.03], dtype=np.float32)
+    lr = 0.05
+
+    result = native_gpu_linear_training_step(x, labels, weight, bias, lr=lr, loss_type='mse', bound_lib=_RawFakeCudaLib())
+
+    logits = x @ weight.T + bias
+    targets = np.zeros_like(logits)
+    targets[np.arange(labels.shape[0]), labels] = 1.0
+    grad_logits = 2.0 * (logits - targets) / float(labels.shape[0] * logits.shape[1])
+    grad_weight = grad_logits.T @ x
+    grad_bias = grad_logits.sum(axis=0)
+
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.loss_mean, float(np.mean((logits - targets) ** 2, axis=1).mean()), rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight, weight - lr * grad_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias, bias - lr * grad_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:mse_fwd_grad_loss_acc'] == 1
+
+
+def test_native_gpu_linear_training_step_bce_matches_reference_math():
+    x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)
+    labels = np.asarray([1, 0], dtype=np.int32)
+    weight = np.asarray([[0.2, -0.1, 0.05]], dtype=np.float32)
+    bias = np.asarray([0.01], dtype=np.float32)
+    lr = 0.05
+
+    result = native_gpu_linear_training_step(
+        x,
+        labels,
+        weight,
+        bias,
+        lr=lr,
+        loss_type='bce_with_logits',
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    logits = x @ weight.T + bias
+    targets = labels.astype(np.float32).reshape(-1, 1)
+    sig = 1.0 / (1.0 + np.exp(-logits))
+    grad_logits = (sig - targets) / float(labels.shape[0])
+    grad_weight = grad_logits.T @ x
+    grad_bias = grad_logits.sum(axis=0)
+    loss = np.maximum(logits, 0.0) - logits * targets + np.log1p(np.exp(-np.abs(logits)))
+
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.loss_mean, float(loss.mean()), rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight, weight - lr * grad_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias, bias - lr * grad_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:bce_fwd_grad_loss_acc'] == 1
 
 
 def test_native_gpu_two_linear_relu_training_step_matches_reference_math():
@@ -657,6 +738,8 @@ def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
     }
 
     assert set(matrix) == expected_ops
+    assert matrix[('Linear',)]['losses'] == ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss']
+    assert matrix[('Flatten', 'Linear')]['losses'] == ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss']
     for item in matrix.values():
         assert item['parity'] == 'hermetic_reference_math'
         assert item['helper'].startswith('native_gpu_')

@@ -21,12 +21,14 @@ GPU_NATIVE_TRAINING_SUBSETS = [
     {
         'name': 'linear',
         'ops': ['Linear'],
+        'losses': ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss'],
         'helper': 'native_gpu_linear_training_step',
         'parity': 'hermetic_reference_math',
     },
     {
         'name': 'flatten_linear',
         'ops': ['Flatten', 'Linear'],
+        'losses': ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss'],
         'helper': 'native_gpu_linear_training_step',
         'parity': 'hermetic_reference_math',
     },
@@ -251,6 +253,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'Explicit ordered DAG wiring is supported through named tensor outputs plus Add/Concat multi-input nodes.',
         'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and beta AMP with loss scaling / overflow backoff.',
         'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, and two-Conv ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
+        'gpu_native Linear subsets support native CrossEntropyLoss, MSELoss, and BCEWithLogitsLoss loss-gradient helpers; Conv-family subsets currently support CrossEntropyLoss.',
         'validate-cuda-native-config enforces the current train-native support boundary.',
     ],
 }

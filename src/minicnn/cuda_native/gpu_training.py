@@ -147,6 +147,7 @@ def native_gpu_linear_training_step(
     *,
     lr: float,
     momentum: float = 0.0,
+    loss_type: str = 'cross_entropy',
     weight_velocity: np.ndarray | None = None,
     bias_velocity: np.ndarray | None = None,
     bound_lib: Any | None = None,
@@ -201,7 +202,18 @@ def native_gpu_linear_training_step(
             'native_gpu_linear_training_step expects bias_velocity with same shape as bias, '
             f'got bias_velocity={bias_velocity_f32.shape} and bias={bias_f32.shape}'
         )
-    if np.any(labels_i32 < 0) or np.any(labels_i32 >= weight_f32.shape[0]):
+    normalized_loss_type = str(loss_type)
+    if normalized_loss_type not in {'cross_entropy', 'mse', 'bce_with_logits'}:
+        raise ValueError(
+            'native_gpu_linear_training_step loss_type must be one of '
+            f'cross_entropy, mse, bce_with_logits; got {loss_type!r}'
+        )
+    if normalized_loss_type == 'bce_with_logits':
+        if weight_f32.shape[0] != 1:
+            raise ValueError('native_gpu_linear_training_step BCEWithLogitsLoss requires out_f=1.')
+        if np.any(labels_i32 < 0) or np.any(labels_i32 > 1):
+            raise ValueError('native_gpu_linear_training_step BCEWithLogitsLoss labels must be in {0, 1}.')
+    elif np.any(labels_i32 < 0) or np.any(labels_i32 >= weight_f32.shape[0]):
         raise ValueError('native_gpu_linear_training_step labels must be in [0, out_f)')
 
     lib = _load_bound_lib(bound_lib)
@@ -243,18 +255,41 @@ def native_gpu_linear_training_step(
             out_f,
         )
         runtime.record_execution('gpu_native_train:dense_forward', input_name='input', output_name='logits', node_count=1)
-        lib.softmax_xent_grad_loss_acc(
-            logits_t.device_ptr,
-            labels_t.device_ptr,
-            probs_t.device_ptr,
-            grad_logits_t.device_ptr,
-            loss_sum_t.device_ptr,
-            correct_t.device_ptr,
-            n,
-            out_f,
-        )
+        if normalized_loss_type == 'cross_entropy':
+            lib.softmax_xent_grad_loss_acc(
+                logits_t.device_ptr,
+                labels_t.device_ptr,
+                probs_t.device_ptr,
+                grad_logits_t.device_ptr,
+                loss_sum_t.device_ptr,
+                correct_t.device_ptr,
+                n,
+                out_f,
+            )
+            loss_kind = 'gpu_native_train:softmax_xent_grad_loss_acc'
+        elif normalized_loss_type == 'mse':
+            lib.mse_fwd_grad_loss_acc(
+                logits_t.device_ptr,
+                labels_t.device_ptr,
+                grad_logits_t.device_ptr,
+                loss_sum_t.device_ptr,
+                correct_t.device_ptr,
+                n,
+                out_f,
+            )
+            loss_kind = 'gpu_native_train:mse_fwd_grad_loss_acc'
+        else:
+            lib.bce_fwd_grad_loss_acc(
+                logits_t.device_ptr,
+                labels_t.device_ptr,
+                grad_logits_t.device_ptr,
+                loss_sum_t.device_ptr,
+                correct_t.device_ptr,
+                n,
+            )
+            loss_kind = 'gpu_native_train:bce_fwd_grad_loss_acc'
         runtime.record_execution(
-            'gpu_native_train:softmax_xent_grad_loss_acc',
+            loss_kind,
             input_name='logits',
             output_name='grad_logits',
             node_count=1,

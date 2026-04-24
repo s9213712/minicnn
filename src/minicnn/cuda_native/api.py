@@ -230,8 +230,9 @@ def _validate_gpu_native_training_subset(
                 errors.append('cuda_native gpu_native Conv2d train-native subset currently requires padding=0.')
             if _pair(conv_attrs.get('dilation', 1), 1) != (1, 1):
                 errors.append('cuda_native gpu_native Conv2d train-native subset currently requires dilation=1.')
-    if str(loss_cfg.get('type', 'CrossEntropyLoss')) != 'CrossEntropyLoss':
-        errors.append('cuda_native gpu_native train-native currently supports only CrossEntropyLoss.')
+    loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
+    if loss_type != 'CrossEntropyLoss' and ops not in (['Linear'], ['Flatten', 'Linear']):
+        errors.append('cuda_native gpu_native train-native currently supports MSELoss/BCEWithLogitsLoss only for the Linear subset.')
     if str(optim_cfg.get('type', 'SGD')).lower() != 'sgd':
         errors.append('cuda_native gpu_native train-native currently supports only optimizer.type=SGD.')
     if float(optim_cfg.get('weight_decay', 0.0)) != 0.0:

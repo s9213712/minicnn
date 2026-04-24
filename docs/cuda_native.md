@@ -255,6 +255,11 @@ These subsets execute through native GPU helper paths for forward, loss-gradient
 covered backward kernels, and SGD/momentum updates. General graph-level GPU
 backward lowering is still pending.
 
+`gpu_native` loss support is currently:
+
+- Linear subsets: `CrossEntropyLoss`, `MSELoss`, `BCEWithLogitsLoss`
+- Conv-family subsets: `CrossEntropyLoss`
+
 If `gpu_native` fails with `CUDA runtime preflight failed`, the Python runtime
 reached the real CUDA library but the installed NVIDIA driver/runtime pair is
 not compatible. Update the driver, rebuild against a compatible CUDA toolkit, or

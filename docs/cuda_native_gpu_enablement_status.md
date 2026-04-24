@@ -19,6 +19,8 @@ Completed:
 - hermetic reference-math parity matrix
 - real-data CIFAR-10 smoke entrypoints for linear and repeated-conv native GPU training
 - docs and capability payloads aligned with the implemented surface
+- native `MSELoss` and `BCEWithLogitsLoss` loss-gradient helpers for Linear
+  `gpu_native` training subsets
 
 ## Current `gpu_native` training subsets
 
@@ -37,6 +39,11 @@ Supported through native GPU helper paths:
 
 These subsets are intentionally narrow. They are the first usable native-GPU
 training tier, not a claim of full graph backward generalization.
+
+Loss support:
+
+- Linear subsets: `CrossEntropyLoss`, `MSELoss`, `BCEWithLogitsLoss`
+- Conv-family subsets: `CrossEntropyLoss`
 
 ## Explicitly out of scope for this tier
 

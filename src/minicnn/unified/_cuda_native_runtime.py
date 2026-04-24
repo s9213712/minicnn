@@ -495,9 +495,9 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
 
 
 def _validate_gpu_native_training_context(ctx: NativeTrainingContext) -> None:
-    _gpu_native_training_plan(ctx.graph)
-    if ctx.loss_type != 'cross_entropy':
-        raise ValueError('cuda_native gpu_native train-native currently supports only CrossEntropyLoss.')
+    plan = _gpu_native_training_plan(ctx.graph)
+    if ctx.loss_type != 'cross_entropy' and plan['kind'] != 'linear':
+        raise ValueError('cuda_native gpu_native train-native currently supports MSELoss/BCEWithLogitsLoss only for the Linear subset.')
     if ctx.optimizer_type != 'sgd':
         raise ValueError('cuda_native gpu_native train-native currently supports only optimizer.type=SGD.')
     if ctx.weight_decay != 0.0:
@@ -621,6 +621,7 @@ def run_training_loop(
                             params[bias_key],
                             lr=float(optimizer_view.lr),
                             momentum=float(ctx.momentum),
+                            loss_type=ctx.loss_type,
                             weight_velocity=velocity_state.get(weight_key),
                             bias_velocity=velocity_state.get(bias_key),
                             bound_lib=ctx.device_runtime.bound_lib,
