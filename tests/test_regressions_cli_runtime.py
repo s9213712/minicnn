@@ -802,6 +802,53 @@ def test_train_native_rejects_unsupported_config_with_failure_category(capsys, t
     assert 'validate-cuda-native-config' in captured.err
 
 
+def test_train_native_preamble_exposes_support_tier_assessment(capsys, tmp_path, monkeypatch):
+    import json
+
+    from minicnn.cli import main
+    import minicnn._cli_training as cli_training
+    import minicnn.unified.trainer as unified_trainer
+
+    config_path = tmp_path / 'cuda_native_train_preamble.yaml'
+    config_path.write_text(
+        'engine:\n'
+        '  backend: cuda_native\n'
+        'dataset:\n'
+        '  type: random\n'
+        '  input_shape: [1, 8, 8]\n'
+        '  num_classes: 2\n'
+        '  num_samples: 8\n'
+        '  val_samples: 4\n'
+        'model:\n'
+        '  layers:\n'
+        '    - type: Flatten\n'
+        '    - type: Linear\n'
+        '      out_features: 2\n'
+        'optimizer:\n'
+        '  type: SGD\n'
+        '  lr: 0.01\n'
+        'loss:\n'
+        '  type: CrossEntropyLoss\n'
+        'train:\n'
+        '  epochs: 1\n'
+        '  batch_size: 4\n',
+        encoding='utf-8',
+    )
+
+    monkeypatch.setattr(unified_trainer, 'train_unified_from_config', lambda cfg: tmp_path / 'fake-run')
+    monkeypatch.setattr(cli_training, '_print_run_dir', lambda run_dir: 0)
+
+    rc = main(['train-native', '--config', str(config_path)])
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+
+    assert rc == 0
+    assert payload['backend'] == 'cuda_native'
+    assert payload['status'] == 'experimental'
+    assert payload['support_tier_assessment']['highest_tier'] == 'stable'
+    assert payload['support_tier_assessment']['ops_by_tier']['stable'] == ['Flatten', 'Linear']
+
+
 def test_cli_show_cuda_mapping_returns_structured_json(capsys):
     import json
 

@@ -298,7 +298,10 @@ def handle_compare(args, parser) -> int:
 
 def handle_train_native(args) -> int:
     from minicnn.cuda_native.contract import emit_experimental_warning
-    from minicnn.cuda_native.api import get_capability_summary as get_cuda_native_summary
+    from minicnn.cuda_native.api import (
+        assess_cuda_native_support_tier,
+        get_capability_summary as get_cuda_native_summary,
+    )
     from minicnn.unified.trainer import train_unified_from_config
 
     cfg = _load_unified_config_or_exit(args.config, ['engine.backend=cuda_native', *common_train_overrides(args), *args.overrides])
@@ -318,6 +321,7 @@ def handle_train_native(args) -> int:
             'schedulers': summary.get('supported_schedulers', []),
             'ops': summary.get('supported_ops', []),
         },
+        'support_tier_assessment': assess_cuda_native_support_tier(cfg),
     })
     try:
         with _training_output_scope(args):

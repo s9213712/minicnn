@@ -127,6 +127,7 @@ The next phase is narrower and more technical:
   - named-model resolution now ignores loader placeholder `model.layers`, so `model.name=convnext_tiny` consistently expands to the intended `ConvNeXtBlock` graph
   - `DropPath` is now published as `beta`, backed by deterministic train/eval correctness checks and a dedicated train smoke path
   - `AMP` is now the only remaining explicitly-published `experimental` surface in `support_tiers`
+  - `train-native` preamble JSON now includes `support_tier_assessment`, so the entrypoint tells you whether the requested config is on `stable`, `beta`, or `experimental` surfaces before training starts
   - current parity baseline: `Add`, `Concat`, `Linear`, `Conv2d` (including grouped/depthwise), `BatchNorm2d`, `LayerNorm`, `LayerNorm2d`, `GroupNorm` forward/backward
   - `BatchNorm2d` train-mode running-stat semantics are now aligned with PyTorch (`running_var` uses unbiased batch variance)
   - composite parity now covers:

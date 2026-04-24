@@ -225,6 +225,9 @@ The same `support_tier_assessment` is now persisted into `summary.json` and
 `metrics.jsonl`, so artifact consumers can tell whether a successful run stayed
 on `stable` surfaces or crossed into `beta` / `experimental` ones.
 
+`train-native` now also emits the same `support_tier_assessment` in its initial
+JSON preamble, so the requested config's tier is visible before training starts.
+
 Run (experimental, research only):
 
 ```bash
