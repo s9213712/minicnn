@@ -210,6 +210,10 @@ Validation payloads now also include `support_tier_assessment`, so a config can
 be accepted while still being marked as touching `beta` or `experimental`
 surfaces such as `amp` or composite blocks.
 
+The same `support_tier_assessment` is now persisted into `summary.json` and
+`metrics.jsonl`, so artifact consumers can tell whether a successful run stayed
+on `stable` surfaces or crossed into `beta` / `experimental` ones.
+
 Run (experimental, research only):
 
 ```bash

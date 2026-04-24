@@ -335,6 +335,7 @@ def build_epoch_row(
     amp_state: dict[str, Any] | None = None,
     optimizer_state: dict[str, Any] | None = None,
     planner_state: dict[str, Any] | None = None,
+    support_tier_assessment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     row = {
         'schema_name': TRAINING_METRICS_SCHEMA_NAME,
@@ -353,6 +354,8 @@ def build_epoch_row(
         row['optimizer_runtime'] = _sanitize_optimizer_runtime(optimizer_state)
     if planner_state:
         row['planner'] = dict(planner_state)
+    if support_tier_assessment:
+        row['support_tier_assessment'] = dict(support_tier_assessment)
     if amp_state or optimizer_state or planner_state:
         row['efficiency'] = _build_efficiency_summary(
             planner_summary=dict(planner_state or {}),
@@ -429,6 +432,7 @@ def build_training_summary(
     runtime_profile: dict[str, Any] | None,
     epochs: int,
     capabilities: dict[str, Any],
+    support_tier_assessment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     optim_type = str(optimizer_cfg.get('type', 'SGD'))
     optimizer_summary = {
@@ -467,6 +471,7 @@ def build_training_summary(
             'batch_size': int(train_cfg.get('batch_size', 64)),
             'grad_accum_steps': int(train_cfg.get('grad_accum_steps', 1)),
             'amp_enabled': bool(train_cfg.get('amp', False)),
+            'support_tier': dict(support_tier_assessment or {}),
         },
     }
     return {
@@ -507,6 +512,7 @@ def build_training_summary(
         },
         'planner': planner_payload,
         'performance_report': performance_report,
+        'support_tier_assessment': dict(support_tier_assessment or {}),
         'epochs': epochs,
         'periodic_checkpoints': [],
         'test_loss': None,

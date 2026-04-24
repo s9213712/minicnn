@@ -60,6 +60,8 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert summary['amp'] is True
     assert 'amp_runtime' in summary
     assert 'optimizer_runtime' in summary
+    assert 'support_tier_assessment' in summary
+    assert summary['support_tier_assessment']['highest_tier'] == 'experimental'
     assert 'performance_report' in summary
     assert summary['performance_report']['planner']['strategy'] == 'reuse'
     assert 'efficiency' in summary['performance_report']
@@ -67,6 +69,7 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert 'runtime' in summary['performance_report']
     assert summary['performance_report']['training']['grad_accum_steps'] == 2
     assert summary['performance_report']['training']['amp_enabled'] is True
+    assert summary['performance_report']['training']['support_tier']['highest_tier'] == 'experimental'
     assert summary['performance_report']['runtime']['epochs_completed'] == 1
     assert summary['performance_report']['runtime']['train_samples_per_epoch'] == 8
     assert 'avg_epoch_time_s' in summary['performance_report']['runtime']
@@ -118,6 +121,7 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert row['schema_name'] == 'minicnn.cuda_native.training.metrics.epoch'
     assert row['schema_version'] == 1
     assert row['artifact_kind'] == 'training_metrics_epoch'
+    assert row['support_tier_assessment']['highest_tier'] == 'experimental'
     assert row['amp']['enabled'] is True
     assert 'loss_scale' in row['amp']
     assert 'optimizer_runtime' in row

@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from minicnn.cuda_native.api import assess_cuda_native_support_tier
 from minicnn.cuda_native.backward import BackwardExecutor
 from minicnn.cuda_native.executor import ForwardExecutor
 from minicnn.cuda_native.graph import NativeGraph
@@ -305,6 +306,7 @@ class NativeTrainingContext:
     loss_cfg: dict[str, Any]
     optimizer_cfg: dict[str, Any]
     scheduler_cfg: dict[str, Any]
+    support_tier_assessment: dict[str, Any]
 
 
 def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeTrainingContext:
@@ -368,6 +370,7 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
         loss_cfg=loss_cfg,
         optimizer_cfg=optim_cfg,
         scheduler_cfg=scheduler_cfg,
+        support_tier_assessment=assess_cuda_native_support_tier(cfg),
     )
 
 
@@ -571,6 +574,7 @@ def run_training_loop(
                 amp_state=amp_epoch_state,
                 optimizer_state=optimizer_epoch_state,
                 planner_state=planner_epoch_state,
+                support_tier_assessment=ctx.support_tier_assessment,
             )
             mf.write(json.dumps(row) + '\n')
             mf.flush()
@@ -665,6 +669,7 @@ def finalize_training_run(
         scheduler_cfg=ctx.scheduler_cfg,
         epochs=ctx.epochs,
         capabilities=capabilities,
+        support_tier_assessment=ctx.support_tier_assessment,
     )
     dump_summary(run_dir, summary)
     return run_dir

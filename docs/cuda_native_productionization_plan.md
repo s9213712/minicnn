@@ -200,6 +200,7 @@ Current status:
 - fixed-seed smoke reproducibility is now regression-tested for a minimal `cuda_native` training path
 - canonical `fp32`, `AMP`, and `grad_accum` native variants are now covered by an explicit tolerance-matrix regression test
 - `cuda-native-capabilities` and `validate-cuda-native-config` now expose machine-readable support-tier metadata instead of leaving `Stable` / `Beta` / `Experimental` only in prose
+- `summary.json` and `metrics.jsonl` now persist the same support-tier assessment, so successful runs keep their tier boundary in artifact form
 
 ## Phase 4: Support Tiers
 
