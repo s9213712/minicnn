@@ -9,6 +9,15 @@ from minicnn.cuda_native.graph import NativeGraph
 
 
 @dataclass(frozen=True)
+class GpuLaunchDescriptor:
+    launch_family: str
+    input_bindings: tuple[str, ...]
+    output_bindings: tuple[str, ...]
+    param_bindings: tuple[str, ...]
+    attr_bindings: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class GpuDispatchStep:
     node_name: str
     op_name: str
@@ -21,6 +30,7 @@ class GpuDispatchStep:
     output_arity: int
     preferred_layout: str
     lowering_kind: str
+    launch_descriptor: GpuLaunchDescriptor
     forward_status: str
     backward_status: str
     supported: bool = True
@@ -52,6 +62,13 @@ class GpuDispatchPlan:
                     'output_arity': step.output_arity,
                     'preferred_layout': step.preferred_layout,
                     'lowering_kind': step.lowering_kind,
+                    'launch_descriptor': {
+                        'launch_family': step.launch_descriptor.launch_family,
+                        'input_bindings': list(step.launch_descriptor.input_bindings),
+                        'output_bindings': list(step.launch_descriptor.output_bindings),
+                        'param_bindings': list(step.launch_descriptor.param_bindings),
+                        'attr_bindings': dict(step.launch_descriptor.attr_bindings),
+                    },
                     'forward_status': step.forward_status,
                     'backward_status': step.backward_status,
                     'supported': step.supported,
@@ -68,6 +85,23 @@ def _node_param_keys(node) -> tuple[str, ...]:
         if bool(node.attrs.get('bias', True)):
             keys.append(f'_b_{node.name}')
     return tuple(keys)
+
+
+def _node_attr_bindings(node) -> dict[str, Any]:
+    bindings: dict[str, Any] = {}
+    if node.op_type == 'Conv2d':
+        bindings['stride'] = node.attrs.get('stride', 1)
+        bindings['padding'] = node.attrs.get('padding', 0)
+        bindings['groups'] = int(node.attrs.get('groups', 1))
+    elif node.op_type == 'MaxPool2d':
+        bindings['kernel_size'] = node.attrs.get('kernel_size', 2)
+        bindings['stride'] = node.attrs.get('stride', node.attrs.get('kernel_size', 2))
+        bindings['padding'] = node.attrs.get('padding', 0)
+    elif node.op_type == 'LeakyReLU':
+        bindings['negative_slope'] = float(node.attrs.get('negative_slope', 0.01))
+    elif node.op_type == 'Concat':
+        bindings['axis'] = int(node.attrs.get('axis', 1))
+    return bindings
 
 
 def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
@@ -98,6 +132,13 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                     output_arity=len(node.outputs),
                     preferred_layout='unknown',
                     lowering_kind='unsupported',
+                    launch_descriptor=GpuLaunchDescriptor(
+                        launch_family='unsupported',
+                        input_bindings=tuple(str(name) for name in node.inputs),
+                        output_bindings=tuple(str(name) for name in node.outputs),
+                        param_bindings=tuple(),
+                        attr_bindings={},
+                    ),
                     forward_status='unsupported',
                     backward_status='unsupported',
                     supported=False,
@@ -121,6 +162,13 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                 output_arity=int(spec.output_arity),
                 preferred_layout=str(spec.preferred_layout),
                 lowering_kind=lowering_kind,
+                launch_descriptor=GpuLaunchDescriptor(
+                    launch_family=str(spec.launch_family),
+                    input_bindings=tuple(str(name) for name in node.inputs),
+                    output_bindings=tuple(str(name) for name in node.outputs),
+                    param_bindings=_node_param_keys(node),
+                    attr_bindings=_node_attr_bindings(node),
+                ),
                 forward_status=str(spec.forward_status),
                 backward_status=str(spec.backward_status),
                 supported=True,

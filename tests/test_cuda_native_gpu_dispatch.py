@@ -32,11 +32,16 @@ def test_gpu_dispatch_plan_supports_bootstrap_subset_graph():
     assert summary['steps'][0]['preferred_layout'] == 'row_major'
     assert summary['steps'][0]['param_keys'] == []
     assert summary['steps'][0]['lowering_kind'] == 'shape_flatten_shim'
+    assert summary['steps'][0]['launch_descriptor']['input_bindings'] == ['input']
+    assert summary['steps'][0]['launch_descriptor']['output_bindings'] == ['t_1']
+    assert summary['steps'][0]['launch_descriptor']['param_bindings'] == []
+    assert summary['steps'][0]['launch_descriptor']['attr_bindings'] == {}
     assert summary['steps'][0]['supported'] is True
     assert summary['steps'][1]['category'] == 'linear'
     assert summary['steps'][1]['launch_family'] == 'gemm_affine'
     assert summary['steps'][1]['param_keys'] == ['_w_linear_1', '_b_linear_1']
     assert summary['steps'][1]['lowering_kind'] == 'linear_affine_shim'
+    assert summary['steps'][1]['launch_descriptor']['param_bindings'] == ['_w_linear_1', '_b_linear_1']
 
 
 def test_gpu_dispatch_plan_marks_ops_outside_bootstrap_subset():
@@ -60,5 +65,6 @@ def test_gpu_dispatch_plan_marks_ops_outside_bootstrap_subset():
     assert summary['steps'][0]['supported'] is False
     assert summary['steps'][0]['launch_family'] == 'unsupported'
     assert summary['steps'][0]['lowering_kind'] == 'unsupported'
+    assert summary['steps'][0]['launch_descriptor']['launch_family'] == 'unsupported'
     assert summary['steps'][0]['forward_status'] == 'unsupported'
     assert summary['steps'][2]['param_keys'] == ['_w_linear_2', '_b_linear_2']
