@@ -88,6 +88,40 @@ __global__ void adam_update_fused_kernel(
     weights[idx] -= update + lr * weight_decay * weights[idx];
 }
 
+// RMSprop fused update kernel.
+// weight_decay is coupled into the gradient, matching minicnn.cuda_native.training.rmsprop_update.
+// clip_val <= 0 disables gradient clipping.
+__global__ void rmsprop_update_fused_kernel(
+    float* weights,
+    const float* grad,
+    float* square_avg,
+    float* momentum_buffer,
+    float lr,
+    float alpha,
+    float eps,
+    float momentum,
+    float weight_decay,
+    float clip_val,
+    float normalizer,
+    int size
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+
+    float g = grad[idx] / normalizer + weight_decay * weights[idx];
+    if (clip_val > 0.0f) {
+        g = fmaxf(-clip_val, fminf(clip_val, g));
+    }
+
+    square_avg[idx] = alpha * square_avg[idx] + (1.0f - alpha) * g * g;
+    float step = g / (sqrtf(square_avg[idx]) + eps);
+    if (momentum > 0.0f) {
+        momentum_buffer[idx] = momentum * momentum_buffer[idx] + step;
+        step = momentum_buffer[idx];
+    }
+    weights[idx] -= lr * step;
+}
+
 extern "C" {
     void apply_sgd_update(float* d_weights, float* d_grad, float lr, int size) {
         int tpb = 256;
@@ -160,6 +194,30 @@ extern "C" {
             lr, beta1, beta2, eps,
             weight_decay, clip_val, normalizer,
             bias_corr1, bias_corr2, size
+        );
+        CUDA_KERNEL_CHECK();
+    }
+
+    void rmsprop_update_fused(
+        float* d_weights,
+        const float* d_grad,
+        float* d_square_avg,
+        float* d_momentum_buffer,
+        float lr,
+        float alpha,
+        float eps,
+        float momentum,
+        float weight_decay,
+        float clip_val,
+        float normalizer,
+        int size
+    ) {
+        int tpb = 256;
+        int bpg = (size + tpb - 1) / tpb;
+        rmsprop_update_fused_kernel<<<bpg, tpb>>>(
+            d_weights, d_grad, d_square_avg, d_momentum_buffer,
+            lr, alpha, eps, momentum,
+            weight_decay, clip_val, normalizer, size
         );
         CUDA_KERNEL_CHECK();
     }

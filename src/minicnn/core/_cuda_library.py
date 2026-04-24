@@ -188,6 +188,12 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
             c_float, c_float, c_float, c_float, c_float, c_float, c_float, c_float, c_float,
             c_int,
         ]
+    if hasattr(bound_lib, 'rmsprop_update_fused'):
+        bound_lib.rmsprop_update_fused.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p,
+            c_float, c_float, c_float, c_float, c_float, c_float, c_float,
+            c_int,
+        ]
     bound_lib.nchw_to_cnhw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
     bound_lib.cnhw_to_nchw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
     bound_lib.maxpool_forward_store.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]

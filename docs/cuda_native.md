@@ -252,8 +252,8 @@ Current `train-native engine.execution_mode=gpu_native` training subsets:
 - `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
 
 These subsets execute through native GPU helper paths for forward, loss-gradient,
-covered backward kernels, and SGD/momentum updates. General graph-level GPU
-backward lowering is still pending.
+covered backward kernels, and supported optimizer updates. General graph-level
+GPU backward lowering is still pending.
 
 `gpu_native` loss support is currently:
 
@@ -262,7 +262,7 @@ backward lowering is still pending.
 
 `gpu_native` optimizer support is currently:
 
-- Linear subsets: `SGD`, `Adam`, `AdamW`
+- Linear subsets: `SGD`, `Adam`, `AdamW`, `RMSprop`
 - Conv-family subsets: `SGD`
 
 If `gpu_native` fails with `CUDA runtime preflight failed`, the Python runtime

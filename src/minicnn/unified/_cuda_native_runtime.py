@@ -499,8 +499,8 @@ def _validate_gpu_native_training_context(ctx: NativeTrainingContext) -> None:
     if ctx.loss_type != 'cross_entropy' and plan['kind'] != 'linear':
         raise ValueError('cuda_native gpu_native train-native currently supports MSELoss/BCEWithLogitsLoss only for the Linear subset.')
     if plan['kind'] == 'linear':
-        if ctx.optimizer_type not in {'sgd', 'adam', 'adamw'}:
-            raise ValueError('cuda_native gpu_native Linear train-native currently supports optimizer.type in {SGD, Adam, AdamW}.')
+        if ctx.optimizer_type not in {'sgd', 'adam', 'adamw', 'rmsprop'}:
+            raise ValueError('cuda_native gpu_native Linear train-native currently supports optimizer.type in {SGD, Adam, AdamW, RMSprop}.')
         if ctx.optimizer_type == 'adam' and ctx.weight_decay != 0.0:
             raise ValueError('cuda_native gpu_native Linear train-native currently requires Adam weight_decay=0.0; use AdamW for decoupled weight decay.')
     else:
@@ -560,6 +560,8 @@ def run_training_loop(
         optimizer_state['adam_v'] = {}
         optimizer_state['adamw_m'] = {}
         optimizer_state['adamw_v'] = {}
+        optimizer_state['rmsprop_v'] = {}
+        optimizer_state['rmsprop_buf'] = {}
     best_val_acc = float('-inf')
     best_params = dict(ctx.params)
     params = ctx.params
@@ -637,13 +639,42 @@ def run_training_loop(
                             beta1=float(ctx.optimizer_cfg.get('beta1', 0.9)),
                             beta2=float(ctx.optimizer_cfg.get('beta2', 0.999)),
                             eps=float(ctx.optimizer_cfg.get('eps', 1e-8)),
+                            rmsprop_alpha=float(ctx.optimizer_cfg.get('alpha', 0.99)),
                             step_index=int(optimizer_state.get('optimizer_runtime', {}).get('steps', 0)) + 1,
                             weight_velocity=velocity_state.get(weight_key),
                             bias_velocity=velocity_state.get(bias_key),
-                            weight_m=optimizer_state.setdefault('adamw_m' if ctx.optimizer_type == 'adamw' else 'adam_m', {}).get(weight_key),
-                            weight_v=optimizer_state.setdefault('adamw_v' if ctx.optimizer_type == 'adamw' else 'adam_v', {}).get(weight_key),
-                            bias_m=optimizer_state.setdefault('adamw_m' if ctx.optimizer_type == 'adamw' else 'adam_m', {}).get(bias_key),
-                            bias_v=optimizer_state.setdefault('adamw_v' if ctx.optimizer_type == 'adamw' else 'adam_v', {}).get(bias_key),
+                            weight_m=(
+                                optimizer_state.setdefault('adamw_m' if ctx.optimizer_type == 'adamw' else 'adam_m', {}).get(weight_key)
+                                if ctx.optimizer_type in {'adam', 'adamw'} else None
+                            ),
+                            weight_v=(
+                                optimizer_state.setdefault('adamw_v' if ctx.optimizer_type == 'adamw' else 'adam_v', {}).get(weight_key)
+                                if ctx.optimizer_type in {'adam', 'adamw'} else None
+                            ),
+                            bias_m=(
+                                optimizer_state.setdefault('adamw_m' if ctx.optimizer_type == 'adamw' else 'adam_m', {}).get(bias_key)
+                                if ctx.optimizer_type in {'adam', 'adamw'} else None
+                            ),
+                            bias_v=(
+                                optimizer_state.setdefault('adamw_v' if ctx.optimizer_type == 'adamw' else 'adam_v', {}).get(bias_key)
+                                if ctx.optimizer_type in {'adam', 'adamw'} else None
+                            ),
+                            weight_rmsprop_v=(
+                                optimizer_state.setdefault('rmsprop_v', {}).get(weight_key)
+                                if ctx.optimizer_type == 'rmsprop' else None
+                            ),
+                            weight_rmsprop_buf=(
+                                optimizer_state.setdefault('rmsprop_buf', {}).get(weight_key)
+                                if ctx.optimizer_type == 'rmsprop' else None
+                            ),
+                            bias_rmsprop_v=(
+                                optimizer_state.setdefault('rmsprop_v', {}).get(bias_key)
+                                if ctx.optimizer_type == 'rmsprop' else None
+                            ),
+                            bias_rmsprop_buf=(
+                                optimizer_state.setdefault('rmsprop_buf', {}).get(bias_key)
+                                if ctx.optimizer_type == 'rmsprop' else None
+                            ),
                             bound_lib=ctx.device_runtime.bound_lib,
                         )
                         params = dict(params)
@@ -658,6 +689,13 @@ def run_training_loop(
                             v_bucket[weight_key] = step.updated_weight_v
                             m_bucket[bias_key] = step.updated_bias_m
                             v_bucket[bias_key] = step.updated_bias_v
+                        if ctx.optimizer_type == 'rmsprop':
+                            v_bucket = optimizer_state.setdefault('rmsprop_v', {})
+                            buf_bucket = optimizer_state.setdefault('rmsprop_buf', {})
+                            v_bucket[weight_key] = step.updated_weight_rmsprop_v
+                            buf_bucket[weight_key] = step.updated_weight_rmsprop_buf
+                            v_bucket[bias_key] = step.updated_bias_rmsprop_v
+                            buf_bucket[bias_key] = step.updated_bias_rmsprop_buf
                     elif gpu_training_plan['kind'] == 'two_linear_relu':
                         first_linear, second_linear = gpu_training_plan['linear_nodes']
                         w1_key = f'_w_{first_linear.name}'

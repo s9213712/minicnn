@@ -241,6 +241,35 @@ class _RawFakeCudaLib:
         update = float(lr) * (m[:int(size)] / float(bias_corr1)) / (np.sqrt(v[:int(size)] / float(bias_corr2)) + float(eps))
         values[:int(size)] -= update + float(lr) * float(weight_decay) * values[:int(size)]
 
+    def rmsprop_update_fused(
+        self,
+        d_weight,
+        d_grad,
+        d_square_avg,
+        d_momentum_buffer,
+        lr,
+        alpha,
+        eps,
+        momentum,
+        weight_decay,
+        clip_val,
+        normalizer,
+        size,
+    ):
+        values = self._float(d_weight)
+        grads = self._float(d_grad)
+        square_avg = self._float(d_square_avg)
+        momentum_buffer = self._float(d_momentum_buffer)
+        g = grads[:int(size)] / float(normalizer) + float(weight_decay) * values[:int(size)]
+        if float(clip_val) > 0.0:
+            g = np.clip(g, -float(clip_val), float(clip_val))
+        square_avg[:int(size)] = float(alpha) * square_avg[:int(size)] + (1.0 - float(alpha)) * g * g
+        step = g / (np.sqrt(square_avg[:int(size)]) + float(eps))
+        if float(momentum) > 0.0:
+            momentum_buffer[:int(size)] = float(momentum) * momentum_buffer[:int(size)] + step
+            step = momentum_buffer[:int(size)]
+        values[:int(size)] -= float(lr) * step
+
 
 def test_native_gpu_linear_training_step_matches_reference_math():
     x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)
@@ -401,6 +430,73 @@ def test_native_gpu_linear_training_step_adamw_matches_reference_math():
     np.testing.assert_allclose(result.updated_weight, weight - weight_update - lr * weight_decay * weight, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.updated_bias, bias - bias_update, rtol=1e-6, atol=1e-6)
     assert result.runtime_summary['execution_kinds']['gpu_native_train:adam_update_fused'] == 1
+
+
+def test_native_gpu_linear_training_step_rmsprop_matches_reference_math():
+    x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)
+    labels = np.asarray([2, 0], dtype=np.int32)
+    weight = np.asarray(
+        [
+            [0.2, -0.1, 0.05],
+            [-0.3, 0.4, 0.1],
+            [0.15, -0.2, 0.3],
+        ],
+        dtype=np.float32,
+    )
+    bias = np.asarray([0.01, -0.02, 0.03], dtype=np.float32)
+    weight_rmsprop_v = np.full_like(weight, 0.02)
+    weight_rmsprop_buf = np.full_like(weight, -0.03)
+    bias_rmsprop_v = np.full_like(bias, 0.01)
+    bias_rmsprop_buf = np.full_like(bias, 0.04)
+    lr = 0.05
+    alpha = 0.8
+    eps = 1e-6
+    momentum = 0.5
+    weight_decay = 0.1
+
+    result = native_gpu_linear_training_step(
+        x,
+        labels,
+        weight,
+        bias,
+        lr=lr,
+        optimizer_type='rmsprop',
+        weight_decay=weight_decay,
+        momentum=momentum,
+        eps=eps,
+        rmsprop_alpha=alpha,
+        weight_rmsprop_v=weight_rmsprop_v,
+        weight_rmsprop_buf=weight_rmsprop_buf,
+        bias_rmsprop_v=bias_rmsprop_v,
+        bias_rmsprop_buf=bias_rmsprop_buf,
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    logits = x @ weight.T + bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_weight = grad_logits.T @ x
+    grad_bias = grad_logits.sum(axis=0)
+    weight_rmsprop_grad = grad_weight + weight_decay * weight
+    bias_rmsprop_grad = grad_bias
+    next_weight_v = alpha * weight_rmsprop_v + (1.0 - alpha) * weight_rmsprop_grad * weight_rmsprop_grad
+    next_bias_v = alpha * bias_rmsprop_v + (1.0 - alpha) * bias_rmsprop_grad * bias_rmsprop_grad
+    weight_step = weight_rmsprop_grad / (np.sqrt(next_weight_v) + eps)
+    bias_step = bias_rmsprop_grad / (np.sqrt(next_bias_v) + eps)
+    next_weight_buf = momentum * weight_rmsprop_buf + weight_step
+    next_bias_buf = momentum * bias_rmsprop_buf + bias_step
+
+    np.testing.assert_allclose(result.updated_weight_rmsprop_v, next_weight_v, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight_rmsprop_buf, next_weight_buf, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias_rmsprop_v, next_bias_v, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias_rmsprop_buf, next_bias_buf, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight, weight - lr * next_weight_buf, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias, bias - lr * next_bias_buf, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:rmsprop_update_fused'] == 1
 
 
 def test_native_gpu_two_linear_relu_training_step_matches_reference_math():
@@ -827,8 +923,8 @@ def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
     assert set(matrix) == expected_ops
     assert matrix[('Linear',)]['losses'] == ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss']
     assert matrix[('Flatten', 'Linear')]['losses'] == ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss']
-    assert matrix[('Linear',)]['optimizers'] == ['SGD', 'Adam', 'AdamW']
-    assert matrix[('Flatten', 'Linear')]['optimizers'] == ['SGD', 'Adam', 'AdamW']
+    assert matrix[('Linear',)]['optimizers'] == ['SGD', 'Adam', 'AdamW', 'RMSprop']
+    assert matrix[('Flatten', 'Linear')]['optimizers'] == ['SGD', 'Adam', 'AdamW', 'RMSprop']
     for item in matrix.values():
         assert item['parity'] == 'hermetic_reference_math'
         assert item['helper'].startswith('native_gpu_')

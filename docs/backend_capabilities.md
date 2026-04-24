@@ -87,11 +87,11 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is now beta-
 | BCEWithLogitsLoss | ✓ binary | ✓ binary | ✗ | **✓** binary |
 | label_smoothing | ✓ | ✓ | ✗ | **✓** cross-entropy prototype |
 | **Optimizers** | | | | |
-| SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Adam | ✓ | ✓ | Experimental | **✓** numpy prototype |
-| AdamW | ✓ | ✓ | ✗ | **✓** numpy prototype |
-| RMSprop | ✓ | ✓ | ✗ | **✓** numpy prototype |
+| SGD | ✓ | ✓ | ✓ | ✓ numpy + gpu_native |
+| Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy + gpu_native |
+| Adam | ✓ | ✓ | Experimental | **✓** numpy + gpu_native Linear |
+| AdamW | ✓ | ✓ | ✗ | **✓** numpy + gpu_native Linear |
+| RMSprop | ✓ | ✓ | ✗ | **✓** numpy + gpu_native Linear |
 | **Schedulers** | | | | |
 | None / disabled | ✓ | ✓ | ✓ | ✓ |
 | StepLR | ✓ | ✓ | ✗ | ✓ |
@@ -349,11 +349,11 @@ Debugging order:
 | BCEWithLogitsLoss | ✓ binary | ✓ binary | ✗ | **✓** binary |
 | label_smoothing | ✓ | ✓ | ✗ | **✓** cross-entropy prototype |
 | **優化器** | | | | |
-| SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Adam | ✓ | ✓ | 實驗中 | **✓** numpy prototype |
-| AdamW | ✓ | ✓ | ✗ | **✓** numpy prototype |
-| RMSprop | ✓ | ✓ | ✗ | **✓** numpy prototype |
+| SGD | ✓ | ✓ | ✓ | ✓ numpy + gpu_native |
+| Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy + gpu_native |
+| Adam | ✓ | ✓ | 實驗中 | **✓** numpy + gpu_native Linear |
+| AdamW | ✓ | ✓ | ✗ | **✓** numpy + gpu_native Linear |
+| RMSprop | ✓ | ✓ | ✗ | **✓** numpy + gpu_native Linear |
 | **Scheduler** | | | | |
 | 無 / 停用 | ✓ | ✓ | ✓ | ✓ |
 | StepLR | ✓ | ✓ | ✗ | ✓ |

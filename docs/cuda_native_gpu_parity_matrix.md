@@ -14,8 +14,8 @@ For the closure/status summary, see
 
 | Subset | Helper | Evidence | Hardware status |
 |---|---|---|---|
-| `Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE and SGD/AdamW | Pending real GPU run |
-| `Flatten -> Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE and SGD/AdamW | Pending real GPU run |
+| `Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE and SGD/Adam/AdamW/RMSprop | Pending real GPU run |
+| `Flatten -> Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE and SGD/Adam/AdamW/RMSprop | Pending real GPU run |
 | `Linear -> ReLU -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
 | `Flatten -> Linear -> ReLU -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
 | `MaxPool2d -> Flatten -> Linear` | `native_gpu_pool_linear_training_step` | Hermetic reference math | Pending real GPU run |

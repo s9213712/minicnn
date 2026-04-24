@@ -235,8 +235,8 @@ def _validate_gpu_native_training_subset(
         errors.append('cuda_native gpu_native train-native currently supports MSELoss/BCEWithLogitsLoss only for the Linear subset.')
     optimizer_type = str(optim_cfg.get('type', 'SGD')).lower()
     if ops in (['Linear'], ['Flatten', 'Linear']):
-        if optimizer_type not in {'sgd', 'adam', 'adamw'}:
-            errors.append('cuda_native gpu_native Linear train-native currently supports optimizer.type in {SGD, Adam, AdamW}.')
+        if optimizer_type not in {'sgd', 'adam', 'adamw', 'rmsprop'}:
+            errors.append('cuda_native gpu_native Linear train-native currently supports optimizer.type in {SGD, Adam, AdamW, RMSprop}.')
         if optimizer_type == 'adam' and float(optim_cfg.get('weight_decay', 0.0)) != 0.0:
             errors.append('cuda_native gpu_native Linear train-native currently requires Adam weight_decay=0.0; use AdamW for decoupled weight decay.')
     else:

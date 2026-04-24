@@ -21,7 +21,8 @@ Completed:
 - docs and capability payloads aligned with the implemented surface
 - native `MSELoss` and `BCEWithLogitsLoss` loss-gradient helpers for Linear
   `gpu_native` training subsets
-- native `Adam` and `AdamW` update helpers for Linear `gpu_native` training
+- native `Adam`, `AdamW`, and `RMSprop` update helpers for Linear
+  `gpu_native` training subsets
   subsets
 
 ## Current `gpu_native` training subsets
@@ -49,7 +50,7 @@ Loss support:
 
 Optimizer support:
 
-- Linear subsets: `SGD`, `Adam`, `AdamW`
+- Linear subsets: `SGD`, `Adam`, `AdamW`, `RMSprop`
 - Conv-family subsets: `SGD`
 
 ## Explicitly out of scope for this tier
@@ -82,7 +83,7 @@ from this machine. The repo now fails before allocation with a Python
 Current repo-side validation:
 
 ```text
-125 passed
+129 passed
 ```
 
 Covered test subset:
