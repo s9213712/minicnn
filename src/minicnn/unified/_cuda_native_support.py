@@ -261,10 +261,10 @@ def evaluate_native_graph(
         staged_input = device_runtime.stage_to_device(x_batch, name=input_name)
         ctx = fwd.run(graph, {input_name: staged_input.data}, params=eval_params)
         logits = ctx[out_name]
-        host_logits = device_runtime.stage_to_host(
-            device_runtime.stage_to_device(logits, name=out_name, copy=False),
-            copy=True,
-        )
+        staged_output = device_runtime.allocate_staging_buffer(logits.shape, dtype=logits.dtype, name=out_name)
+        np.copyto(staged_output.data, logits)
+        host_logits = device_runtime.stage_to_host(staged_output, copy=True)
+        device_runtime.release_buffer(staged_output)
         device_runtime.record_execution(
             'eval_forward',
             input_name=input_name,

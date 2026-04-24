@@ -75,6 +75,8 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert summary['device_runtime']['reserved_buffer_count'] >= 1
     assert summary['device_runtime']['reserved_bytes'] >= 1
     assert summary['device_runtime']['execution_events'] >= 1
+    assert summary['device_runtime']['reserved_buffer_reuse_events'] >= 1
+    assert summary['device_runtime']['reserved_buffer_release_events'] >= 1
     assert 'train_batch' in summary['device_runtime']['execution_kinds']
     assert 'eval_forward' in summary['device_runtime']['execution_kinds']
     assert summary['performance_report']['runtime']['epochs_completed'] == 1
@@ -83,6 +85,7 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert summary['performance_report']['runtime']['device_runtime']['reserved_buffer_count'] >= 1
     assert summary['performance_report']['runtime']['device_runtime']['reserved_bytes'] >= 1
     assert summary['performance_report']['runtime']['device_runtime']['execution_events'] >= 1
+    assert summary['performance_report']['runtime']['device_runtime']['reserved_buffer_reuse_events'] >= 1
     assert summary['performance_report']['runtime']['train_samples_per_epoch'] == 8
     assert 'avg_epoch_time_s' in summary['performance_report']['runtime']
     assert 'train_samples_per_sec' in summary['performance_report']['runtime']
@@ -139,6 +142,7 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert row['device_runtime']['reserved_buffer_count'] >= 1
     assert row['device_runtime']['reserved_bytes'] >= 1
     assert row['device_runtime']['execution_events'] >= 1
+    assert row['device_runtime']['reserved_buffer_reuse_events'] >= 1
     assert row['amp']['enabled'] is True
     assert 'loss_scale' in row['amp']
     assert 'optimizer_runtime' in row

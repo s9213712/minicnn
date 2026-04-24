@@ -12,6 +12,7 @@ class DeviceTensor:
     device: str
     execution_mode: str
     name: str | None = None
+    reservation_id: str | None = None
 
     @property
     def nbytes(self) -> int:
@@ -26,6 +27,8 @@ class DeviceRuntime:
     reserved_buffer_count: int = 0
     reserved_bytes: int = 0
     workspace_bytes: int = 0
+    reserved_buffer_reuse_events: int = 0
+    reserved_buffer_release_events: int = 0
     host_to_device_transfer_events: int = 0
     host_to_device_transfer_bytes: int = 0
     device_to_host_transfer_events: int = 0
@@ -39,6 +42,8 @@ class DeviceRuntime:
     execution_kinds: dict[str, int] = field(default_factory=dict)
     last_input_name: str | None = None
     last_output_name: str | None = None
+    _reserved_pool: dict[str, int] = field(default_factory=dict)
+    _available_reserved_ids: list[str] = field(default_factory=list)
 
     @property
     def gpu_execution(self) -> bool:
@@ -72,11 +77,59 @@ class DeviceRuntime:
         total_bytes: int,
         num_buffers: int,
         workspace_bytes: int = 0,
+        buffer_capacities: dict[str, int] | None = None,
     ) -> None:
         self.reserve_events += 1
         self.reserved_buffer_count = int(num_buffers)
         self.reserved_bytes = int(total_bytes)
         self.workspace_bytes = int(workspace_bytes)
+        self._reserved_pool.clear()
+        self._available_reserved_ids.clear()
+        if buffer_capacities:
+            for buffer_id, capacity in buffer_capacities.items():
+                buffer_name = str(buffer_id)
+                self._reserved_pool[buffer_name] = int(capacity)
+                self._available_reserved_ids.append(buffer_name)
+        else:
+            avg_capacity = int(total_bytes // max(num_buffers, 1)) if num_buffers > 0 else 0
+            for idx in range(int(num_buffers)):
+                buffer_name = f'reserved_{idx}'
+                self._reserved_pool[buffer_name] = avg_capacity
+                self._available_reserved_ids.append(buffer_name)
+
+    def allocate_staging_buffer(
+        self,
+        shape: tuple[int, ...],
+        *,
+        dtype: str | np.dtype = 'float32',
+        name: str | None = None,
+    ) -> DeviceTensor:
+        dtype_obj = np.dtype(dtype)
+        required_bytes = int(np.prod(shape, dtype=np.int64)) * int(dtype_obj.itemsize)
+        chosen_id = None
+        for idx, buffer_id in enumerate(self._available_reserved_ids):
+            if int(self._reserved_pool.get(buffer_id, 0)) >= required_bytes:
+                chosen_id = self._available_reserved_ids.pop(idx)
+                break
+        array = np.zeros(shape, dtype=dtype_obj)
+        if chosen_id is not None:
+            self.reserved_buffer_reuse_events += 1
+            return DeviceTensor(
+                array,
+                self.tensor_execution_device,
+                self.execution_mode,
+                name=name,
+                reservation_id=chosen_id,
+            )
+        self.allocation_events += 1
+        self.allocated_bytes += int(array.nbytes)
+        return DeviceTensor(array, self.tensor_execution_device, self.execution_mode, name=name)
+
+    def release_buffer(self, tensor: DeviceTensor) -> None:
+        if tensor.reservation_id is None:
+            return
+        self.reserved_buffer_release_events += 1
+        self._available_reserved_ids.append(tensor.reservation_id)
 
     def synchronize(self, reason: str = 'explicit') -> None:
         self.synchronization_events += 1
@@ -108,6 +161,9 @@ class DeviceRuntime:
             'reserved_buffer_count': self.reserved_buffer_count,
             'reserved_bytes': self.reserved_bytes,
             'workspace_bytes': self.workspace_bytes,
+            'reserved_buffer_reuse_events': self.reserved_buffer_reuse_events,
+            'reserved_buffer_release_events': self.reserved_buffer_release_events,
+            'available_reserved_buffer_count': len(self._available_reserved_ids),
             'host_to_device_transfer_events': self.host_to_device_transfer_events,
             'host_to_device_transfer_bytes': self.host_to_device_transfer_bytes,
             'device_to_host_transfer_events': self.device_to_host_transfer_events,

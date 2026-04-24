@@ -359,6 +359,7 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
         total_bytes=int(planner_summary.get('total_bytes', 0)),
         num_buffers=int(planner_summary.get('num_buffers', 0)),
         workspace_bytes=0,
+        buffer_capacities=planner_summary.get('buffers'),
     )
 
     return NativeTrainingContext(

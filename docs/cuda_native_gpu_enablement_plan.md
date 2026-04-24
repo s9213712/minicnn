@@ -124,6 +124,7 @@ Current status:
   - artifact telemetry seam for future GPU-runtime wiring
 - planner reservation accounting now lands in `device_runtime`
 - eval forward now runs through an explicit staged helper with execution telemetry
+- reserved planner buffers now back staged output allocation/release telemetry
 
 Goal:
 

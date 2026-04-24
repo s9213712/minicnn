@@ -61,6 +61,8 @@ def test_cuda_native_artifact_schema_is_explicit(tmp_path):
     assert summary['device_runtime']['reserved_buffer_count'] >= 1
     assert summary['device_runtime']['reserved_bytes'] >= 1
     assert summary['device_runtime']['execution_events'] >= 1
+    assert summary['device_runtime']['reserved_buffer_reuse_events'] >= 1
+    assert summary['device_runtime']['reserved_buffer_release_events'] >= 1
     assert 'eval_forward' in summary['device_runtime']['execution_kinds']
     assert summary['support_tier_assessment']['highest_tier'] == 'stable'
     assert summary['checkpoint_contract']['format'] == 'npz'
@@ -78,4 +80,5 @@ def test_cuda_native_artifact_schema_is_explicit(tmp_path):
     assert row['device_runtime']['reserved_buffer_count'] >= 1
     assert row['device_runtime']['reserved_bytes'] >= 1
     assert row['device_runtime']['execution_events'] >= 1
+    assert row['device_runtime']['reserved_buffer_reuse_events'] >= 1
     assert row['support_tier_assessment']['highest_tier'] == 'stable'
