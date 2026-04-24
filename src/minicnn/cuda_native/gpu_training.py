@@ -313,6 +313,7 @@ def native_gpu_linear_training_step(
     grad_bias_t = runtime.allocate((out_f,), dtype='float32', name='grad_bias')
     loss_sum_t = runtime.allocate((1,), dtype='float32', name='loss_sum')
     correct_t = runtime.allocate((1,), dtype='int32', name='correct_count')
+    grad_norm_sumsq_t = runtime.allocate((1,), dtype='float32', name='grad_norm_sumsq')
 
     try:
         lib.gpu_memset(loss_sum_t.device_ptr, 0, loss_sum_t.nbytes)
@@ -383,6 +384,22 @@ def native_gpu_linear_training_step(
             output_name='grad_weight',
             node_count=1,
         )
+        if float(grad_clip_value) > 0.0:
+            lib.gpu_memset(grad_norm_sumsq_t.device_ptr, 0, grad_norm_sumsq_t.nbytes)
+            lib.grad_l2_sumsq(grad_weight_t.device_ptr, grad_norm_sumsq_t.device_ptr, int(weight_f32.size))
+            lib.grad_l2_sumsq(grad_bias_t.device_ptr, grad_norm_sumsq_t.device_ptr, int(bias_f32.size))
+            grad_sumsq = float(runtime.stage_to_host(grad_norm_sumsq_t)[0])
+            grad_norm = float(np.sqrt(max(grad_sumsq, 0.0)))
+            if grad_norm > float(grad_clip_value) and grad_norm > 0.0:
+                clip_scale = float(grad_clip_value) / (grad_norm + 1e-12)
+                lib.scale_inplace(grad_weight_t.device_ptr, clip_scale, int(weight_f32.size))
+                lib.scale_inplace(grad_bias_t.device_ptr, clip_scale, int(bias_f32.size))
+            runtime.record_execution(
+                'gpu_native_train:grad_clip_global',
+                input_name='grad_weight',
+                output_name='grad_weight',
+                node_count=1,
+            )
         if normalized_optimizer_type in {'adam', 'adamw'}:
             bias_corr1 = 1.0 - float(beta1) ** int(step_index)
             bias_corr2 = 1.0 - float(beta2) ** int(step_index)
@@ -458,7 +475,7 @@ def native_gpu_linear_training_step(
                 float(lr),
                 float(momentum),
                 float(weight_decay),
-                float(grad_clip_value),
+                0.0,
                 1.0,
                 int(weight_f32.size),
             )
@@ -469,7 +486,7 @@ def native_gpu_linear_training_step(
                 float(lr),
                 float(momentum),
                 float(weight_decay),
-                float(grad_clip_value),
+                0.0,
                 1.0,
                 int(bias_f32.size),
             )
@@ -572,6 +589,7 @@ def native_gpu_linear_training_step(
             grad_bias_t,
             loss_sum_t,
             correct_t,
+            grad_norm_sumsq_t,
         ):
             runtime.release_buffer(tensor)
 

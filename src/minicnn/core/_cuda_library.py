@@ -162,6 +162,10 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
         c_int,
     ]
     bound_lib.clip_inplace.argtypes = [c_void_p, c_float, c_int]
+    if hasattr(bound_lib, 'grad_l2_sumsq'):
+        bound_lib.grad_l2_sumsq.argtypes = [c_void_p, c_void_p, c_int]
+    if hasattr(bound_lib, 'scale_inplace'):
+        bound_lib.scale_inplace.argtypes = [c_void_p, c_float, c_int]
     if hasattr(bound_lib, 'layer_norm_forward'):
         bound_lib.layer_norm_forward.argtypes = [
             c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_float,

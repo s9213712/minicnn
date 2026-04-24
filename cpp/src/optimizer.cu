@@ -87,6 +87,21 @@ __global__ void clip_inplace_kernel(float* values, float clip_val, int size) {
     }
 }
 
+__global__ void grad_l2_sumsq_kernel(const float* grad, float* sumsq, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        float g = grad[idx];
+        atomicAdd(sumsq, g * g);
+    }
+}
+
+__global__ void scale_inplace_kernel(float* values, float scale, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        values[idx] *= scale;
+    }
+}
+
 // Adam/AdamW fused update kernel.
 // bias_corr1 = 1 - beta1^t, bias_corr2 = 1 - beta2^t (computed on host each step).
 // weight_decay is applied in decoupled AdamW style (after the adaptive step).
@@ -226,6 +241,20 @@ extern "C" {
         int tpb = 256;
         int bpg = (size + tpb - 1) / tpb;
         clip_inplace_kernel<<<bpg, tpb>>>(d_values, clip_val, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void grad_l2_sumsq(const float* d_grad, float* d_sumsq, int size) {
+        int tpb = 256;
+        int bpg = (size + tpb - 1) / tpb;
+        grad_l2_sumsq_kernel<<<bpg, tpb>>>(d_grad, d_sumsq, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void scale_inplace(float* d_values, float scale, int size) {
+        int tpb = 256;
+        int bpg = (size + tpb - 1) / tpb;
+        scale_inplace_kernel<<<bpg, tpb>>>(d_values, scale, size);
         CUDA_KERNEL_CHECK();
     }
 

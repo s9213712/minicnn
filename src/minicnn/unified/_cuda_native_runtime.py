@@ -510,8 +510,8 @@ def _validate_gpu_native_training_context(ctx: NativeTrainingContext) -> None:
             raise ValueError('cuda_native gpu_native non-Linear train-native currently requires optimizer.weight_decay=0.0.')
     if ctx.grad_accum_steps != 1:
         raise ValueError('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
-    if ctx.grad_clip_global != 0.0:
-        raise ValueError('cuda_native gpu_native train-native currently requires optimizer.grad_clip_global=0.0; global-norm clipping is still reference_numpy-only.')
+    if ctx.grad_clip_global != 0.0 and plan['kind'] != 'linear':
+        raise ValueError('cuda_native gpu_native train-native currently supports optimizer.grad_clip_global only for the Linear subset.')
     if ctx.amp:
         raise ValueError('cuda_native gpu_native train-native currently requires train.amp=false.')
 
@@ -638,6 +638,7 @@ def run_training_loop(
                             loss_type=ctx.loss_type,
                             optimizer_type=ctx.optimizer_type,
                             weight_decay=float(ctx.weight_decay),
+                            grad_clip_value=float(ctx.grad_clip_global),
                             beta1=float(ctx.optimizer_cfg.get('beta1', 0.9)),
                             beta2=float(ctx.optimizer_cfg.get('beta2', 0.999)),
                             eps=float(ctx.optimizer_cfg.get('eps', 1e-8)),

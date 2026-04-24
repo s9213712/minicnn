@@ -27,6 +27,7 @@ Completed:
 - native `Adam`, `AdamW`, and `RMSprop` update helpers for Linear
   `gpu_native` training subsets
 - native SGD fused update helper for Linear `gpu_native` weight-decay parity
+- native global-norm gradient clipping for Linear `gpu_native` training subsets
   subsets
 
 ## Current `gpu_native` training subsets
@@ -70,9 +71,9 @@ The following remain `reference_numpy`-only for training:
 These are not silently treated as GPU-supported. `gpu_native` validation rejects
 them outside the supported subsets.
 
-`optimizer.grad_clip_global` also remains `reference_numpy`-only for now.
-`gpu_native` validation rejects nonzero global-norm clipping instead of silently
-ignoring it.
+`optimizer.grad_clip_global` is native for Linear `gpu_native` subsets. Conv-family
+subsets still reject nonzero global-norm clipping until the reduction path is
+generalized across multi-node helper graphs.
 
 ## Real-hardware smoke evidence
 
@@ -82,6 +83,8 @@ Current real CUDA evidence:
   execution kinds
 - minimal Linear RMSprop smoke passed and emitted
   `gpu_native_train:rmsprop_update_fused`
+- minimal Linear global grad-clip smoke passed and emitted
+  `gpu_native_train:grad_clip_global` plus `gpu_native_train:sgd_update_fused`
 - CIFAR-10 repeated-Conv smoke used `official:cifar10:test_batch`; updated
   Conv/Linear weights matched NumPy reference with max absolute diffs around
   `1e-9`
@@ -96,14 +99,15 @@ Still not claimed as complete:
 
 - full graph-level GPU backward generalization
 - composite/block training lowering for residual and ConvNeXt-style models
-- native global-norm gradient clipping reduction for `gpu_native`
+- native global-norm gradient clipping reduction for Conv-family `gpu_native`
+  subsets
 
 ## Validation evidence
 
 Current repo-side validation:
 
 ```text
-132 passed
+133 passed
 ```
 
 Covered test subset:

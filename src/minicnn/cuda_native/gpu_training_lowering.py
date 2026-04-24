@@ -235,15 +235,27 @@ def _optimizer_step(
         reasons.append(f'unsupported gpu_native optimizer: {optimizer_type}')
         return tuple(), reasons
 
-    return (
+    steps: list[GpuTrainingLoweringStep] = []
+    if float(optim_cfg.get('grad_clip_global', 0.0)) != 0.0:
+        steps.append(
+            GpuTrainingLoweringStep(
+                phase='optimizer',
+                op_name='GlobalGradClip',
+                lowering_kind='grad_l2_sumsq_scale',
+                launch_family='optimizer_global_norm_clip',
+                param_keys=tuple(param_keys),
+            )
+        )
+    steps.append(
         GpuTrainingLoweringStep(
             phase='optimizer',
             op_name=optimizer_type,
             lowering_kind=lowering_kind,
             launch_family=launch_family,
             param_keys=tuple(param_keys),
-        ),
-    ), reasons
+        )
+    )
+    return tuple(steps), reasons
 
 
 def build_gpu_training_lowering_plan(
@@ -278,8 +290,8 @@ def build_gpu_training_lowering_plan(
         unsupported_reasons.append('gpu_native training lowering currently requires train.grad_accum_steps=1')
     if bool(train_cfg.get('amp', False)):
         unsupported_reasons.append('gpu_native training lowering currently requires train.amp=false')
-    if float(optim_cfg.get('grad_clip_global', 0.0)) != 0.0:
-        unsupported_reasons.append('gpu_native training lowering currently requires optimizer.grad_clip_global=0.0')
+    if float(optim_cfg.get('grad_clip_global', 0.0)) != 0.0 and subset_name not in {'linear', 'flatten_linear'}:
+        unsupported_reasons.append('gpu_native training lowering currently supports optimizer.grad_clip_global only for Linear subsets')
 
     forward_steps = tuple(_forward_training_step(step) for step in dispatch_plan.steps)
     backward_steps = _backward_steps(graph, subset_name) if subset_name is not None else tuple()

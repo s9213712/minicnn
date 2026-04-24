@@ -269,9 +269,9 @@ only report the coarse helper-pattern name.
 
 - Linear subsets: `SGD`, `Adam`, `AdamW`, `RMSprop`
 - Conv-family subsets: `SGD`
-- `gpu_native` currently requires `optimizer.grad_clip_global=0.0`;
-  global-norm clipping remains available on `reference_numpy` until a native
-  reduction-based clipping path lands.
+- Linear subsets support native `optimizer.grad_clip_global`; Conv-family
+  subsets still require `optimizer.grad_clip_global=0.0` until multi-node
+  reduction support lands.
 
 If `gpu_native` fails with `CUDA runtime preflight failed`, the Python runtime
 reached the real CUDA library but the installed NVIDIA driver/runtime pair is

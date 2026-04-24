@@ -13,8 +13,8 @@ For the closure/status summary, see
 
 | Subset | Helper | Evidence | Hardware status |
 |---|---|---|---|
-| `Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE and SGD/Adam/AdamW/RMSprop | Real CUDA smoke passed for SGD and RMSprop |
-| `Flatten -> Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE and SGD/Adam/AdamW/RMSprop | Covered by Linear helper smoke; full CLI smoke pending |
+| `Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE, SGD/Adam/AdamW/RMSprop, and global grad clip | Real CUDA smoke passed for SGD and RMSprop |
+| `Flatten -> Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE, SGD/Adam/AdamW/RMSprop, and global grad clip | Covered by Linear helper smoke; full CLI smoke pending |
 | `Linear -> ReLU -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
 | `Flatten -> Linear -> ReLU -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
 | `MaxPool2d -> Flatten -> Linear` | `native_gpu_pool_linear_training_step` | Hermetic reference math | Pending real GPU run |
@@ -31,6 +31,8 @@ Representative real CUDA smoke now passes on this machine:
 - minimal Linear SGD smoke emits `gpu_native_train:dense_forward`,
   `softmax_xent_grad_loss_acc`, `dense_backward_full`, and `apply_sgd_update`
 - minimal Linear RMSprop smoke emits `gpu_native_train:rmsprop_update_fused`
+- minimal Linear global grad-clip smoke emits `gpu_native_train:grad_clip_global`
+  and clips the reported gradient norm to the requested threshold
 - CIFAR-10 repeated-Conv smoke uses `official:cifar10:test_batch` and matches
   NumPy reference updated weights with max absolute diffs around `1e-9`
 

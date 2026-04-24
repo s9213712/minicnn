@@ -42,6 +42,12 @@ class _RawFakeCudaLib:
     def gpu_memset(self, ptr, value, nbytes):
         self.memory[int(ptr)][:int(nbytes)] = bytes([int(value) & 0xFF]) * int(nbytes)
 
+    def grad_l2_sumsq(self, d_grad, d_sumsq, size):
+        self._float(d_sumsq)[0] += float(np.sum(self._float(d_grad)[:int(size)] ** 2))
+
+    def scale_inplace(self, d_values, scale, size):
+        self._float(d_values)[:int(size)] *= float(scale)
+
     def im2col_forward(self, d_input, d_col, n, c, h, w, kh, kw, out_h, out_w):
         x = self._float(d_input).reshape(int(n), int(c), int(h), int(w))
         col = np.zeros((int(c) * int(kh) * int(kw), int(n) * int(out_h) * int(out_w)), dtype=np.float32)
@@ -367,6 +373,52 @@ def test_native_gpu_linear_training_step_sgd_weight_decay_matches_reference_math
     np.testing.assert_allclose(result.updated_weight, weight * (1.0 - lr * weight_decay) - lr * grad_weight, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.updated_bias, bias * (1.0 - lr * weight_decay) - lr * grad_bias, rtol=1e-6, atol=1e-6)
     assert result.runtime_summary['execution_kinds']['gpu_native_train:sgd_update_fused'] == 1
+
+
+def test_native_gpu_linear_training_step_global_grad_clip_matches_reference_math():
+    x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)
+    labels = np.asarray([2, 0], dtype=np.int32)
+    weight = np.asarray(
+        [
+            [0.2, -0.1, 0.05],
+            [-0.3, 0.4, 0.1],
+            [0.15, -0.2, 0.3],
+        ],
+        dtype=np.float32,
+    )
+    bias = np.asarray([0.01, -0.02, 0.03], dtype=np.float32)
+    lr = 0.25
+    max_norm = 0.25
+
+    result = native_gpu_linear_training_step(
+        x,
+        labels,
+        weight,
+        bias,
+        lr=lr,
+        grad_clip_value=max_norm,
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    logits = x @ weight.T + bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_weight = grad_logits.T @ x
+    grad_bias = grad_logits.sum(axis=0)
+    grad_norm = float(np.sqrt(np.sum(grad_weight ** 2) + np.sum(grad_bias ** 2)))
+    clip_scale = max_norm / (grad_norm + 1e-12)
+    clipped_weight_grad = grad_weight * clip_scale
+    clipped_bias_grad = grad_bias * clip_scale
+
+    np.testing.assert_allclose(result.grad_weight, clipped_weight_grad, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_bias, clipped_bias_grad, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight, weight - lr * clipped_weight_grad, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias, bias - lr * clipped_bias_grad, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:grad_clip_global'] == 1
 
 
 def test_native_gpu_linear_training_step_mse_matches_reference_math():

@@ -321,7 +321,7 @@ def test_validate_cuda_native_config_reports_ops_outside_gpu_bootstrap_subset(tm
     assert any("got ['BatchNorm2d', 'Flatten', 'Linear']" in err for err in payload['errors'])
 
 
-def test_validate_cuda_native_config_rejects_gpu_native_global_grad_clip(tmp_path, capsys):
+def test_validate_cuda_native_config_accepts_gpu_native_linear_global_grad_clip(tmp_path, capsys):
     from minicnn.cli import main
 
     config_path = tmp_path / 'cfg.yaml'
@@ -338,8 +338,9 @@ def test_validate_cuda_native_config_rejects_gpu_native_global_grad_clip(tmp_pat
     ])
     payload = json.loads(capsys.readouterr().out)
 
-    assert rc == 2
-    assert any('optimizer.grad_clip_global=0.0' in err for err in payload['errors'])
+    assert rc == 0
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['optimizer_steps'][0]['lowering_kind'] == 'grad_l2_sumsq_scale'
+    assert payload['errors'] == []
 
 
 def test_execution_mode_sets_are_disjoint():
