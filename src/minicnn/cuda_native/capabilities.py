@@ -255,6 +255,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'Explicit ordered DAG wiring is supported through named tensor outputs plus Add/Concat multi-input nodes.',
         'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and beta AMP with loss scaling / overflow backoff.',
         'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, and two-Conv ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
+        'gpu_native readiness diagnostics expose a training_lowering_plan that decomposes helper subsets into forward, loss, backward, and optimizer lowering steps.',
         'gpu_native Linear subsets support native CrossEntropyLoss, MSELoss, and BCEWithLogitsLoss loss-gradient helpers; Conv-family subsets currently support CrossEntropyLoss.',
         'gpu_native Linear subsets support native SGD, Adam, AdamW, and RMSprop update helpers; Conv-family subsets currently support SGD.',
         'gpu_native train-native currently requires optimizer.grad_clip_global=0.0; global-norm clipping remains reference_numpy-only until native reduction support lands.',

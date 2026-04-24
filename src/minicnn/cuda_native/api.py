@@ -10,6 +10,7 @@ from minicnn.cuda_native.capabilities import (
 )
 from minicnn.cuda_native.gpu_dispatch import build_gpu_dispatch_plan
 from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
+from minicnn.cuda_native.gpu_training_lowering import build_gpu_training_lowering_plan
 from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.validators import validate_cuda_native_model_config
 from minicnn.model_spec import resolve_model_config
@@ -77,14 +78,26 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
     missing_ops = sorted(op for op in layer_types if op not in bootstrap_subset)
     remaining_blockers = [str(item) for item in mode_readiness.get('remaining_blockers', [])]
     dispatch_plan_summary: dict[str, object] | None = None
+    training_lowering_plan_summary: dict[str, object] | None = None
     validation_input_shape = _validation_input_shape(dataset_cfg)
     if validation_input_shape is not None:
         try:
             graph = build_cuda_native_graph(model_cfg, validation_input_shape)
             dispatch_plan = build_gpu_dispatch_plan(graph)
             dispatch_plan_summary = dispatch_plan.summary()
+            loss_cfg, _ = _as_mapping('loss', cfg.get('loss'))
+            optim_cfg, _ = _as_mapping('optimizer', cfg.get('optimizer'))
+            train_cfg, _ = _as_mapping('train', cfg.get('train'))
+            training_lowering_plan = build_gpu_training_lowering_plan(
+                graph,
+                loss_cfg=loss_cfg,
+                optim_cfg=optim_cfg,
+                train_cfg=train_cfg,
+            )
+            training_lowering_plan_summary = training_lowering_plan.summary()
         except ValueError:
             dispatch_plan_summary = None
+            training_lowering_plan_summary = None
     return {
         'selected_execution_mode': selected_mode,
         'status': str(mode_readiness.get('status', 'unknown')),
@@ -106,6 +119,7 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
             for op_name in layer_types
         },
         'dispatch_plan': dispatch_plan_summary,
+        'training_lowering_plan': training_lowering_plan_summary,
         'remaining_blockers': remaining_blockers,
     }
 

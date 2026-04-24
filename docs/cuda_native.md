@@ -255,6 +255,11 @@ These subsets execute through native GPU helper paths for forward, loss-gradient
 covered backward kernels, and supported optimizer updates. General graph-level
 GPU backward lowering is still pending.
 
+`validate-cuda-native-config` now emits a `training_lowering_plan` for
+`gpu_native`. The plan decomposes each accepted helper subset into explicit
+forward, loss, backward, and optimizer lowering steps so diagnostics no longer
+only report the coarse helper-pattern name.
+
 `gpu_native` loss support is currently:
 
 - Linear subsets: `CrossEntropyLoss`, `MSELoss`, `BCEWithLogitsLoss`

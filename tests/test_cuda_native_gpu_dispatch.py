@@ -8,6 +8,7 @@ from minicnn.cuda_native.gpu_bridge import (
     build_gpu_bridge_trace,
 )
 from minicnn.cuda_native.gpu_dispatch import build_gpu_dispatch_plan, build_gpu_launch_trace
+from minicnn.cuda_native.gpu_training_lowering import build_gpu_training_lowering_plan
 
 
 def test_gpu_dispatch_plan_supports_bootstrap_subset_graph():
@@ -136,6 +137,36 @@ def test_gpu_dispatch_plan_marks_ops_outside_bootstrap_subset():
     assert summary['steps'][0]['launch_descriptor']['normalized_tensor_args'][0]['binding'] == 'input'
     assert summary['steps'][0]['forward_status'] == 'unsupported'
     assert summary['steps'][2]['param_keys'] == ['_w_linear_2', '_b_linear_2']
+
+
+def test_gpu_training_lowering_plan_records_linear_rmsprop_manifest():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 8, 8),
+    )
+
+    plan = build_gpu_training_lowering_plan(
+        graph,
+        loss_cfg={'type': 'MSELoss'},
+        optim_cfg={'type': 'RMSprop', 'alpha': 0.9, 'momentum': 0.1},
+        train_cfg={'grad_accum_steps': 1, 'amp': False},
+    )
+    summary = plan.summary()
+
+    assert summary['ready'] is True
+    assert summary['subset_name'] == 'flatten_linear'
+    assert summary['helper'] == 'native_gpu_linear_training_step'
+    assert [step['op_name'] for step in summary['forward_steps']] == ['Flatten', 'Linear']
+    assert summary['loss_step']['lowering_kind'] == 'mse_fwd_grad_loss_acc'
+    assert summary['backward_steps'][0]['lowering_kind'] == 'dense_backward_full'
+    assert summary['optimizer_steps'][0]['lowering_kind'] == 'rmsprop_update_fused'
+    assert summary['optimizer_steps'][0]['param_keys'] == ['_w_linear_1', '_b_linear_1']
+    assert summary['unsupported_reasons'] == []
 
 
 def test_gpu_launch_trace_builds_normalized_packets():
