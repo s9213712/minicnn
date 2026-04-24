@@ -7,7 +7,8 @@ NumPy-reference-only backend toward a real `gpu_native` training backend.
 
 ## Repo-side status
 
-Repo-side implementation for the first `gpu_native` training tier is complete.
+Repo-side implementation for the first `gpu_native` training tier is complete,
+and representative real CUDA smoke now passes on this machine.
 
 Completed:
 
@@ -73,17 +74,29 @@ them outside the supported subsets.
 `gpu_native` validation rejects nonzero global-norm clipping instead of silently
 ignoring it.
 
-## Remaining hard blocker
+## Real-hardware smoke evidence
 
-The local machine still fails real CUDA execution with:
+Current real CUDA evidence:
 
-```text
-CUDA driver version is insufficient for CUDA runtime version
-```
+- minimal Linear SGD smoke passed and emitted native `gpu_native_train:*`
+  execution kinds
+- minimal Linear RMSprop smoke passed and emitted
+  `gpu_native_train:rmsprop_update_fused`
+- CIFAR-10 repeated-Conv smoke used `official:cifar10:test_batch`; updated
+  Conv/Linear weights matched NumPy reference with max absolute diffs around
+  `1e-9`
 
-Because of that environment issue, real-hardware GPU smoke cannot be certified
-from this machine. The repo now fails before allocation with a Python
-`RuntimeError` instead of aborting inside `cudaMalloc`.
+If a future machine fails with `CUDA runtime preflight failed`, the repo still
+fails before allocation with a Python `RuntimeError` instead of aborting inside
+`cudaMalloc`.
+
+## Remaining structural blockers
+
+Still not claimed as complete:
+
+- full graph-level GPU backward generalization
+- composite/block training lowering for residual and ConvNeXt-style models
+- native global-norm gradient clipping reduction for `gpu_native`
 
 ## Validation evidence
 

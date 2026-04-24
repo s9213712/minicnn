@@ -15,7 +15,6 @@ GPU_NATIVE_BOOTSTRAP_OPS = [spec.op_name for spec in list_gpu_kernel_specs()]
 GPU_NATIVE_BOOTSTRAP_BLOCKERS = [
     'gpu_graph_backward_generalization_pending',
     'gpu_composite_block_training_pending',
-    'gpu_real_hardware_parity_pending',
 ]
 GPU_NATIVE_TRAINING_SUBSETS = [
     {

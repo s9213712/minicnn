@@ -285,6 +285,11 @@ Repeated-Conv real-data GPU smoke entrypoint:
 PYTHONPATH=src python3 examples/cuda_native_gpu_two_conv_training_cifar10_demo.py --batch-size 2
 ```
 
+Current evidence: representative real CUDA smoke passes for minimal Linear SGD,
+minimal Linear RMSprop, and the CIFAR-10 repeated-Conv helper; the repeated-Conv
+smoke uses `official:cifar10:test_batch` when available and compares updated
+weights against NumPy reference.
+
 Validate a config:
 
 ```bash
