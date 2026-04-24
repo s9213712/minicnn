@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
+from minicnn.cuda_native.gpu_lowering import list_gpu_lowering_specs
 from minicnn.cuda_native.graph import NativeGraph
 
 
@@ -15,6 +16,7 @@ class GpuDispatchStep:
     input_names: tuple[str, ...]
     output_names: tuple[str, ...]
     param_keys: tuple[str, ...]
+    lowering_kind: str
     forward_status: str
     backward_status: str
     supported: bool = True
@@ -41,6 +43,7 @@ class GpuDispatchPlan:
                     'input_names': list(step.input_names),
                     'output_names': list(step.output_names),
                     'param_keys': list(step.param_keys),
+                    'lowering_kind': step.lowering_kind,
                     'forward_status': step.forward_status,
                     'backward_status': step.backward_status,
                     'supported': step.supported,
@@ -64,6 +67,10 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
         spec.op_name: spec
         for spec in list_gpu_kernel_specs()
     }
+    lowering_specs = {
+        spec.op_name: spec
+        for spec in list_gpu_lowering_specs()
+    }
     steps: list[GpuDispatchStep] = []
     unsupported_ops: list[str] = []
     for node in graph.topological_order():
@@ -78,12 +85,17 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                     input_names=tuple(str(name) for name in node.inputs),
                     output_names=tuple(str(name) for name in node.outputs),
                     param_keys=tuple(),
+                    lowering_kind='unsupported',
                     forward_status='unsupported',
                     backward_status='unsupported',
                     supported=False,
                 )
             )
             continue
+        lowering_kind = 'unbound'
+        lowering_spec = lowering_specs.get(node.op_type)
+        if lowering_spec is not None:
+            lowering_kind = str(lowering_spec.lowering_kind)
         steps.append(
             GpuDispatchStep(
                 node_name=str(node.name),
@@ -92,6 +104,7 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                 input_names=tuple(str(name) for name in node.inputs),
                 output_names=tuple(str(name) for name in node.outputs),
                 param_keys=_node_param_keys(node),
+                lowering_kind=lowering_kind,
                 forward_status=str(spec.forward_status),
                 backward_status=str(spec.backward_status),
                 supported=True,
