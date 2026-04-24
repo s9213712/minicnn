@@ -24,6 +24,10 @@ class NativeGpuLinearTrainingStepResult:
     loss_mean: float
     correct_count: int
     runtime_summary: dict[str, Any]
+    updated_weight_m: np.ndarray | None = None
+    updated_weight_v: np.ndarray | None = None
+    updated_bias_m: np.ndarray | None = None
+    updated_bias_v: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -148,8 +152,18 @@ def native_gpu_linear_training_step(
     lr: float,
     momentum: float = 0.0,
     loss_type: str = 'cross_entropy',
+    optimizer_type: str = 'sgd',
+    weight_decay: float = 0.0,
+    beta1: float = 0.9,
+    beta2: float = 0.999,
+    eps: float = 1e-8,
+    step_index: int = 1,
     weight_velocity: np.ndarray | None = None,
     bias_velocity: np.ndarray | None = None,
+    weight_m: np.ndarray | None = None,
+    weight_v: np.ndarray | None = None,
+    bias_m: np.ndarray | None = None,
+    bias_v: np.ndarray | None = None,
     bound_lib: Any | None = None,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
@@ -175,6 +189,10 @@ def native_gpu_linear_training_step(
         if bias_velocity is None
         else np.ascontiguousarray(bias_velocity, dtype=np.float32)
     )
+    weight_m_f32 = np.zeros_like(weight_f32) if weight_m is None else np.ascontiguousarray(weight_m, dtype=np.float32)
+    weight_v_f32 = np.zeros_like(weight_f32) if weight_v is None else np.ascontiguousarray(weight_v, dtype=np.float32)
+    bias_m_f32 = np.zeros_like(bias_f32) if bias_m is None else np.ascontiguousarray(bias_m, dtype=np.float32)
+    bias_v_f32 = np.zeros_like(bias_f32) if bias_v is None else np.ascontiguousarray(bias_v, dtype=np.float32)
     if x_f32.ndim != 2:
         raise ValueError(f'native_gpu_linear_training_step expects x with shape (N, in_f), got {x_f32.shape}')
     if labels_i32.ndim != 1 or labels_i32.shape[0] != x_f32.shape[0]:
@@ -202,6 +220,18 @@ def native_gpu_linear_training_step(
             'native_gpu_linear_training_step expects bias_velocity with same shape as bias, '
             f'got bias_velocity={bias_velocity_f32.shape} and bias={bias_f32.shape}'
         )
+    normalized_optimizer_type = str(optimizer_type).lower()
+    if normalized_optimizer_type not in {'sgd', 'adam', 'adamw'}:
+        raise ValueError(
+            'native_gpu_linear_training_step optimizer_type must be one of sgd, adam, adamw; '
+            f'got {optimizer_type!r}'
+        )
+    if normalized_optimizer_type == 'adam' and float(weight_decay) != 0.0:
+        raise ValueError('native_gpu_linear_training_step Adam currently requires weight_decay=0.0; use AdamW for decoupled weight decay.')
+    if weight_m_f32.shape != weight_f32.shape or weight_v_f32.shape != weight_f32.shape:
+        raise ValueError('native_gpu_linear_training_step expects weight Adam moments with same shape as weight.')
+    if bias_m_f32.shape != bias_f32.shape or bias_v_f32.shape != bias_f32.shape:
+        raise ValueError('native_gpu_linear_training_step expects bias Adam moments with same shape as bias.')
     normalized_loss_type = str(loss_type)
     if normalized_loss_type not in {'cross_entropy', 'mse', 'bce_with_logits'}:
         raise ValueError(
@@ -233,6 +263,10 @@ def native_gpu_linear_training_step(
     bias_t = runtime.stage_to_device(bias_f32, name='bias')
     weight_velocity_t = runtime.stage_to_device(weight_velocity_f32, name='weight_velocity')
     bias_velocity_t = runtime.stage_to_device(bias_velocity_f32, name='bias_velocity')
+    weight_m_t = runtime.stage_to_device(weight_m_f32, name='weight_m')
+    weight_v_t = runtime.stage_to_device(weight_v_f32, name='weight_v')
+    bias_m_t = runtime.stage_to_device(bias_m_f32, name='bias_m')
+    bias_v_t = runtime.stage_to_device(bias_v_f32, name='bias_v')
     logits_t = runtime.allocate((n, out_f), dtype='float32', name='logits')
     probs_t = runtime.allocate((n, out_f), dtype='float32', name='probs')
     grad_logits_t = runtime.allocate((n, out_f), dtype='float32', name='grad_logits')
@@ -311,7 +345,44 @@ def native_gpu_linear_training_step(
             output_name='grad_weight',
             node_count=1,
         )
-        if float(momentum) != 0.0:
+        if normalized_optimizer_type in {'adam', 'adamw'}:
+            bias_corr1 = 1.0 - float(beta1) ** int(step_index)
+            bias_corr2 = 1.0 - float(beta2) ** int(step_index)
+            adam_weight_decay = float(weight_decay) if normalized_optimizer_type == 'adamw' else 0.0
+            lib.adam_update_fused(
+                weight_t.device_ptr,
+                grad_weight_t.device_ptr,
+                weight_m_t.device_ptr,
+                weight_v_t.device_ptr,
+                float(lr),
+                float(beta1),
+                float(beta2),
+                float(eps),
+                adam_weight_decay,
+                0.0,
+                1.0,
+                float(bias_corr1),
+                float(bias_corr2),
+                int(weight_f32.size),
+            )
+            lib.adam_update_fused(
+                bias_t.device_ptr,
+                grad_bias_t.device_ptr,
+                bias_m_t.device_ptr,
+                bias_v_t.device_ptr,
+                float(lr),
+                float(beta1),
+                float(beta2),
+                float(eps),
+                0.0,
+                0.0,
+                1.0,
+                float(bias_corr1),
+                float(bias_corr2),
+                int(bias_f32.size),
+            )
+            update_kind = 'gpu_native_train:adam_update_fused'
+        elif float(momentum) != 0.0:
             lib.apply_momentum_update(
                 weight_t.device_ptr,
                 grad_weight_t.device_ptr,
@@ -350,6 +421,10 @@ def native_gpu_linear_training_step(
         updated_bias = runtime.stage_to_host(bias_t)
         updated_weight_velocity = runtime.stage_to_host(weight_velocity_t)
         updated_bias_velocity = runtime.stage_to_host(bias_velocity_t)
+        updated_weight_m = runtime.stage_to_host(weight_m_t)
+        updated_weight_v = runtime.stage_to_host(weight_v_t)
+        updated_bias_m = runtime.stage_to_host(bias_m_t)
+        updated_bias_v = runtime.stage_to_host(bias_v_t)
         loss_sum = float(runtime.stage_to_host(loss_sum_t)[0])
         correct_count = int(runtime.stage_to_host(correct_t)[0])
         runtime.synchronize('gpu-native-linear-training-step')
@@ -368,6 +443,10 @@ def native_gpu_linear_training_step(
             loss_mean=loss_sum / float(n),
             correct_count=correct_count,
             runtime_summary=runtime.summary(),
+            updated_weight_m=updated_weight_m if normalized_optimizer_type in {'adam', 'adamw'} else None,
+            updated_weight_v=updated_weight_v if normalized_optimizer_type in {'adam', 'adamw'} else None,
+            updated_bias_m=updated_bias_m if normalized_optimizer_type in {'adam', 'adamw'} else None,
+            updated_bias_v=updated_bias_v if normalized_optimizer_type in {'adam', 'adamw'} else None,
         )
     finally:
         for tensor in (
@@ -377,6 +456,10 @@ def native_gpu_linear_training_step(
             bias_t,
             weight_velocity_t,
             bias_velocity_t,
+            weight_m_t,
+            weight_v_t,
+            bias_m_t,
+            bias_v_t,
             logits_t,
             probs_t,
             grad_logits_t,

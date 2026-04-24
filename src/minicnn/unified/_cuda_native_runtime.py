@@ -498,10 +498,16 @@ def _validate_gpu_native_training_context(ctx: NativeTrainingContext) -> None:
     plan = _gpu_native_training_plan(ctx.graph)
     if ctx.loss_type != 'cross_entropy' and plan['kind'] != 'linear':
         raise ValueError('cuda_native gpu_native train-native currently supports MSELoss/BCEWithLogitsLoss only for the Linear subset.')
-    if ctx.optimizer_type != 'sgd':
-        raise ValueError('cuda_native gpu_native train-native currently supports only optimizer.type=SGD.')
-    if ctx.weight_decay != 0.0:
-        raise ValueError('cuda_native gpu_native train-native currently requires optimizer.weight_decay=0.0.')
+    if plan['kind'] == 'linear':
+        if ctx.optimizer_type not in {'sgd', 'adam', 'adamw'}:
+            raise ValueError('cuda_native gpu_native Linear train-native currently supports optimizer.type in {SGD, Adam, AdamW}.')
+        if ctx.optimizer_type == 'adam' and ctx.weight_decay != 0.0:
+            raise ValueError('cuda_native gpu_native Linear train-native currently requires Adam weight_decay=0.0; use AdamW for decoupled weight decay.')
+    else:
+        if ctx.optimizer_type != 'sgd':
+            raise ValueError('cuda_native gpu_native non-Linear train-native currently supports only optimizer.type=SGD.')
+        if ctx.weight_decay != 0.0:
+            raise ValueError('cuda_native gpu_native non-Linear train-native currently requires optimizer.weight_decay=0.0.')
     if ctx.grad_accum_steps != 1:
         raise ValueError('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
     if ctx.amp:
@@ -546,10 +552,14 @@ def run_training_loop(
         _validate_gpu_native_training_context(ctx)
         gpu_training_plan = _gpu_native_training_plan(ctx.graph)
         optimizer_state['optimizer_runtime'] = {
-            'optimizer_type': 'sgd',
+            'optimizer_type': ctx.optimizer_type,
             'steps': 0,
         }
         optimizer_state['velocity'] = {}
+        optimizer_state['adam_m'] = {}
+        optimizer_state['adam_v'] = {}
+        optimizer_state['adamw_m'] = {}
+        optimizer_state['adamw_v'] = {}
     best_val_acc = float('-inf')
     best_params = dict(ctx.params)
     params = ctx.params
@@ -622,8 +632,18 @@ def run_training_loop(
                             lr=float(optimizer_view.lr),
                             momentum=float(ctx.momentum),
                             loss_type=ctx.loss_type,
+                            optimizer_type=ctx.optimizer_type,
+                            weight_decay=float(ctx.weight_decay),
+                            beta1=float(ctx.optimizer_cfg.get('beta1', 0.9)),
+                            beta2=float(ctx.optimizer_cfg.get('beta2', 0.999)),
+                            eps=float(ctx.optimizer_cfg.get('eps', 1e-8)),
+                            step_index=int(optimizer_state.get('optimizer_runtime', {}).get('steps', 0)) + 1,
                             weight_velocity=velocity_state.get(weight_key),
                             bias_velocity=velocity_state.get(bias_key),
+                            weight_m=optimizer_state.setdefault('adamw_m' if ctx.optimizer_type == 'adamw' else 'adam_m', {}).get(weight_key),
+                            weight_v=optimizer_state.setdefault('adamw_v' if ctx.optimizer_type == 'adamw' else 'adam_v', {}).get(weight_key),
+                            bias_m=optimizer_state.setdefault('adamw_m' if ctx.optimizer_type == 'adamw' else 'adam_m', {}).get(bias_key),
+                            bias_v=optimizer_state.setdefault('adamw_v' if ctx.optimizer_type == 'adamw' else 'adam_v', {}).get(bias_key),
                             bound_lib=ctx.device_runtime.bound_lib,
                         )
                         params = dict(params)
@@ -631,6 +651,13 @@ def run_training_loop(
                         params[bias_key] = step.updated_bias
                         velocity_state[weight_key] = step.updated_weight_velocity
                         velocity_state[bias_key] = step.updated_bias_velocity
+                        if ctx.optimizer_type in {'adam', 'adamw'}:
+                            m_bucket = optimizer_state.setdefault('adamw_m' if ctx.optimizer_type == 'adamw' else 'adam_m', {})
+                            v_bucket = optimizer_state.setdefault('adamw_v' if ctx.optimizer_type == 'adamw' else 'adam_v', {})
+                            m_bucket[weight_key] = step.updated_weight_m
+                            v_bucket[weight_key] = step.updated_weight_v
+                            m_bucket[bias_key] = step.updated_bias_m
+                            v_bucket[bias_key] = step.updated_bias_v
                     elif gpu_training_plan['kind'] == 'two_linear_relu':
                         first_linear, second_linear = gpu_training_plan['linear_nodes']
                         w1_key = f'_w_{first_linear.name}'
@@ -743,7 +770,7 @@ def run_training_loop(
                     loss_val = float(step.loss_mean)
                     _merge_gpu_native_step_runtime(ctx, step.runtime_summary)
                     optimizer_runtime = optimizer_state.setdefault('optimizer_runtime', {})
-                    optimizer_runtime['optimizer_type'] = 'sgd'
+                    optimizer_runtime['optimizer_type'] = ctx.optimizer_type
                     optimizer_runtime['steps'] = int(optimizer_runtime.get('steps', 0)) + 1
                     ctx.device_runtime.record_execution(
                         'gpu_native_train_batch',

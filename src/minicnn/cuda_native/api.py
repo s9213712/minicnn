@@ -233,10 +233,17 @@ def _validate_gpu_native_training_subset(
     loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
     if loss_type != 'CrossEntropyLoss' and ops not in (['Linear'], ['Flatten', 'Linear']):
         errors.append('cuda_native gpu_native train-native currently supports MSELoss/BCEWithLogitsLoss only for the Linear subset.')
-    if str(optim_cfg.get('type', 'SGD')).lower() != 'sgd':
-        errors.append('cuda_native gpu_native train-native currently supports only optimizer.type=SGD.')
-    if float(optim_cfg.get('weight_decay', 0.0)) != 0.0:
-        errors.append('cuda_native gpu_native train-native currently requires optimizer.weight_decay=0.0.')
+    optimizer_type = str(optim_cfg.get('type', 'SGD')).lower()
+    if ops in (['Linear'], ['Flatten', 'Linear']):
+        if optimizer_type not in {'sgd', 'adam', 'adamw'}:
+            errors.append('cuda_native gpu_native Linear train-native currently supports optimizer.type in {SGD, Adam, AdamW}.')
+        if optimizer_type == 'adam' and float(optim_cfg.get('weight_decay', 0.0)) != 0.0:
+            errors.append('cuda_native gpu_native Linear train-native currently requires Adam weight_decay=0.0; use AdamW for decoupled weight decay.')
+    else:
+        if optimizer_type != 'sgd':
+            errors.append('cuda_native gpu_native non-Linear train-native currently supports only optimizer.type=SGD.')
+        if float(optim_cfg.get('weight_decay', 0.0)) != 0.0:
+            errors.append('cuda_native gpu_native non-Linear train-native currently requires optimizer.weight_decay=0.0.')
     if int(train_cfg.get('grad_accum_steps', 1)) != 1:
         errors.append('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
     if bool(train_cfg.get('amp', False)):

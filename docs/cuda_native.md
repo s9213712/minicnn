@@ -260,6 +260,11 @@ backward lowering is still pending.
 - Linear subsets: `CrossEntropyLoss`, `MSELoss`, `BCEWithLogitsLoss`
 - Conv-family subsets: `CrossEntropyLoss`
 
+`gpu_native` optimizer support is currently:
+
+- Linear subsets: `SGD`, `Adam`, `AdamW`
+- Conv-family subsets: `SGD`
+
 If `gpu_native` fails with `CUDA runtime preflight failed`, the Python runtime
 reached the real CUDA library but the installed NVIDIA driver/runtime pair is
 not compatible. Update the driver, rebuild against a compatible CUDA toolkit, or

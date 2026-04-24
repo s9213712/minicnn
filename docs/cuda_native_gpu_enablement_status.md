@@ -21,6 +21,8 @@ Completed:
 - docs and capability payloads aligned with the implemented surface
 - native `MSELoss` and `BCEWithLogitsLoss` loss-gradient helpers for Linear
   `gpu_native` training subsets
+- native `Adam` and `AdamW` update helpers for Linear `gpu_native` training
+  subsets
 
 ## Current `gpu_native` training subsets
 
@@ -44,6 +46,11 @@ Loss support:
 
 - Linear subsets: `CrossEntropyLoss`, `MSELoss`, `BCEWithLogitsLoss`
 - Conv-family subsets: `CrossEntropyLoss`
+
+Optimizer support:
+
+- Linear subsets: `SGD`, `Adam`, `AdamW`
+- Conv-family subsets: `SGD`
 
 ## Explicitly out of scope for this tier
 

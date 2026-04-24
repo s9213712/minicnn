@@ -212,6 +212,35 @@ class _RawFakeCudaLib:
         velocity[:int(size)] = float(momentum) * velocity[:int(size)] - float(lr) * grads[:int(size)]
         values[:int(size)] += velocity[:int(size)]
 
+    def adam_update_fused(
+        self,
+        d_weight,
+        d_grad,
+        d_m,
+        d_v,
+        lr,
+        beta1,
+        beta2,
+        eps,
+        weight_decay,
+        clip_val,
+        normalizer,
+        bias_corr1,
+        bias_corr2,
+        size,
+    ):
+        values = self._float(d_weight)
+        grads = self._float(d_grad)
+        m = self._float(d_m)
+        v = self._float(d_v)
+        g = grads[:int(size)] / float(normalizer)
+        if float(clip_val) > 0.0:
+            g = np.clip(g, -float(clip_val), float(clip_val))
+        m[:int(size)] = float(beta1) * m[:int(size)] + (1.0 - float(beta1)) * g
+        v[:int(size)] = float(beta2) * v[:int(size)] + (1.0 - float(beta2)) * g * g
+        update = float(lr) * (m[:int(size)] / float(bias_corr1)) / (np.sqrt(v[:int(size)] / float(bias_corr2)) + float(eps))
+        values[:int(size)] -= update + float(lr) * float(weight_decay) * values[:int(size)]
+
 
 def test_native_gpu_linear_training_step_matches_reference_math():
     x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)
@@ -314,6 +343,64 @@ def test_native_gpu_linear_training_step_bce_matches_reference_math():
     np.testing.assert_allclose(result.updated_weight, weight - lr * grad_weight, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.updated_bias, bias - lr * grad_bias, rtol=1e-6, atol=1e-6)
     assert result.runtime_summary['execution_kinds']['gpu_native_train:bce_fwd_grad_loss_acc'] == 1
+
+
+def test_native_gpu_linear_training_step_adamw_matches_reference_math():
+    x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)
+    labels = np.asarray([2, 0], dtype=np.int32)
+    weight = np.asarray(
+        [
+            [0.2, -0.1, 0.05],
+            [-0.3, 0.4, 0.1],
+            [0.15, -0.2, 0.3],
+        ],
+        dtype=np.float32,
+    )
+    bias = np.asarray([0.01, -0.02, 0.03], dtype=np.float32)
+    lr = 0.01
+    beta1 = 0.9
+    beta2 = 0.99
+    eps = 1e-8
+    weight_decay = 0.1
+
+    result = native_gpu_linear_training_step(
+        x,
+        labels,
+        weight,
+        bias,
+        lr=lr,
+        optimizer_type='adamw',
+        weight_decay=weight_decay,
+        beta1=beta1,
+        beta2=beta2,
+        eps=eps,
+        step_index=1,
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    logits = x @ weight.T + bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_weight = grad_logits.T @ x
+    grad_bias = grad_logits.sum(axis=0)
+    weight_m = (1.0 - beta1) * grad_weight
+    weight_v = (1.0 - beta2) * grad_weight * grad_weight
+    bias_m = (1.0 - beta1) * grad_bias
+    bias_v = (1.0 - beta2) * grad_bias * grad_bias
+    weight_update = lr * (weight_m / (1.0 - beta1)) / (np.sqrt(weight_v / (1.0 - beta2)) + eps)
+    bias_update = lr * (bias_m / (1.0 - beta1)) / (np.sqrt(bias_v / (1.0 - beta2)) + eps)
+
+    np.testing.assert_allclose(result.updated_weight_m, weight_m, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight_v, weight_v, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias_m, bias_m, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias_v, bias_v, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight, weight - weight_update - lr * weight_decay * weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias, bias - bias_update, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:adam_update_fused'] == 1
 
 
 def test_native_gpu_two_linear_relu_training_step_matches_reference_math():
@@ -740,6 +827,8 @@ def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
     assert set(matrix) == expected_ops
     assert matrix[('Linear',)]['losses'] == ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss']
     assert matrix[('Flatten', 'Linear')]['losses'] == ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss']
+    assert matrix[('Linear',)]['optimizers'] == ['SGD', 'Adam', 'AdamW']
+    assert matrix[('Flatten', 'Linear')]['optimizers'] == ['SGD', 'Adam', 'AdamW']
     for item in matrix.values():
         assert item['parity'] == 'hermetic_reference_math'
         assert item['helper'].startswith('native_gpu_')
