@@ -93,8 +93,31 @@ def _input_tensor(node: Node, ctx: GpuLoweringContext, index: int = 0) -> Device
 
 
 def _lower_flatten(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
-    x = np.asarray(_input_tensor(node, ctx).data, dtype=np.float32)
-    output = x.reshape(x.shape[0], -1).astype(np.float32)
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
+    output = x.reshape(x.shape[0], -1).astype(np.float32, copy=False)
+    if (
+        ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and x.ctypes.data == input_tensor.data.ctypes.data
+    ):
+        owns_device_ptr = input_tensor.owns_device_ptr
+        input_tensor.owns_device_ptr = False
+        ctx.runtime.record_execution(
+            'gpu_native_alias:flatten',
+            input_name=node.inputs[0],
+            output_name=node.outputs[0],
+            node_count=1,
+        )
+        return DeviceTensor(
+            data=output,
+            device=input_tensor.device,
+            execution_mode=input_tensor.execution_mode,
+            name=node.outputs[0],
+            reservation_id=input_tensor.reservation_id,
+            device_ptr=input_tensor.device_ptr,
+            owns_device_ptr=owns_device_ptr,
+        )
     return _allocate_output(node, ctx, output)
 
 

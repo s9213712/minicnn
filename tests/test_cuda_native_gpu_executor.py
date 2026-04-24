@@ -300,6 +300,35 @@ def test_gpu_stub_executor_uses_native_dense_forward_when_device_pointers_availa
     assert summary['device_sync_to_host_events'] >= 1
 
 
+def test_gpu_stub_executor_uses_native_flatten_alias_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+            ],
+        },
+        (1, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.asarray([[[1.0, 2.0], [3.0, 4.0]]], dtype=np.float32)
+    result = executor.run(graph, x, params={})
+
+    np.testing.assert_allclose(result.output, x.reshape(1, -1))
+
+    summary = runtime.summary()
+    assert summary['native_device_pointers_enabled'] is True
+    assert summary['execution_kinds']['gpu_native_alias:flatten'] == 1
+    assert summary['device_pointer_allocation_events'] == 1
+
+
 def test_gpu_stub_executor_uses_native_relu_when_device_pointers_available():
     graph = build_cuda_native_graph(
         {
