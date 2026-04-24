@@ -221,12 +221,12 @@ is visible without manually reading the roadmap.
 For GPU enablement work, the same capability payload now also exposes
 `execution_mode_readiness`, which answers:
 
-- which execution modes are active vs planned
+- which execution modes are active vs partial-forward vs planned
 - which ops make up the first `gpu_native` bootstrap subset
-- which blockers still prevent `gpu_native` from being a runnable mode
+- which blockers still prevent `gpu_native` from being a train-native execution mode
 
 The same payload also exposes `gpu_kernel_registry_surface`, which is the
-planned bootstrap kernel table for `gpu_native` with per-op forward/backward
+bootstrap kernel table for `gpu_native` with per-op forward/backward
 status markers.
 
 Validation payloads and the `train-native` preamble now also include
@@ -234,7 +234,7 @@ Validation payloads and the `train-native` preamble now also include
 
 - which execution mode was requested
 - whether that mode is actually ready
-- which requested ops are already inside the planned GPU bootstrap subset
+- which requested ops are already inside the GPU bootstrap subset
 - which requested ops still fall outside that subset
 
 Validate a config:
@@ -396,6 +396,7 @@ Public executor contract:
 | Phase 4 | MVP stabilization, CLI, doctor, docs | ✓ Done |
 | Phase 4b | Debug observability, layouts, memory layer | ✓ Done |
 | Phase 5 | BatchNorm/Residual/Concat/Memory reuse RFCs | ✓ RFC written |
+| Phase G1 | Partial cuda_native native-forward GPU execution | In progress |
 | Phase 6 | Autograd, optimizer stack, broader op coverage | Future |
 
 AMP graduation checklist: [docs/cuda_native_amp_graduation_checklist.md](cuda_native_amp_graduation_checklist.md)

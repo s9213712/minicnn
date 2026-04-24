@@ -116,7 +116,7 @@ Current status:
 
 - initial execution-mode contract slice landed
 - successful `cuda_native` runs now explicitly report `execution_mode=reference_numpy` and `tensor_execution_device=cpu` in CLI, `summary.json`, and `metrics.jsonl`
-- `gpu_native` is now a planned execution mode, not a silently implied one
+- `gpu_native` is now an explicit partial-forward execution track, not a silently implied full-training mode
 - initial device-runtime substrate landed:
   - `DeviceTensor`
   - `DeviceRuntime`
@@ -136,6 +136,10 @@ Current status:
   - explicit unsupported-op reporting for graphs outside the bootstrap subset
   - partial plans no longer silently drop unsupported nodes; unsupported steps stay visible in the plan
   - per-step parameter-binding manifests for future kernel lowering ABI
+- native device-pointer forward execution now exists for the bootstrap subset:
+  - `Flatten` uses device-pointer aliasing
+  - `Linear`, `ReLU`, `LeakyReLU`, `Add`, `Concat`, `MaxPool2d`, and a constrained `Conv2d` path lower to native CUDA symbols when a bound library is attached
+  - remaining blockers are backward lowering, training-loop integration, and a full GPU parity matrix
 
 Goal:
 

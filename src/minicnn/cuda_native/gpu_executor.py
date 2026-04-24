@@ -72,10 +72,12 @@ class GpuStubExecutionResult:
 
 
 class GpuStubExecutor:
-    """Planned GPU execution seam backed by reference forward execution.
+    """GPU bootstrap executor with partial native forward execution.
 
-    This does not claim real GPU kernel execution. It exists to freeze the
-    future lowering/dispatch boundary for bootstrap-subset graphs.
+    When a bound native CUDA library is attached to the device runtime, supported
+    bootstrap ops lower to native device-pointer kernels. Unsupported variants
+    still fall back to the reference NumPy lowering while preserving the same
+    dispatch/bridge telemetry contract.
     """
 
     def __init__(

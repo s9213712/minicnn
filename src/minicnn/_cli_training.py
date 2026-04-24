@@ -341,7 +341,11 @@ def handle_train_native(args) -> int:
         'support_tier_assessment': assess_cuda_native_support_tier(cfg),
         'execution_readiness_assessment': assess_cuda_native_execution_readiness(cfg),
         **execution_mode,
-        'note': 'beta-grade backend; current execution mode is reference_numpy on CPU, while gpu_native remains planned and not yet active',
+        'note': (
+            'beta-grade backend; train-native currently executes reference_numpy on CPU, '
+            'while gpu_native has partial native forward execution but is not yet integrated '
+            'with the training loop'
+        ),
     })
     try:
         with _training_output_scope(args):
