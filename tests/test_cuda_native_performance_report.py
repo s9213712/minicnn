@@ -129,3 +129,6 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert row['planner']['strategy'] == 'reuse'
     assert 'peak_live_bytes' in row['planner']
     assert 'reuse_events' in row['planner']
+    assert 'efficiency' in row
+    assert 'grad_buffer_reuse_ratio' in row['efficiency']
+    assert 'amp_cache_hit_ratio' in row['efficiency']

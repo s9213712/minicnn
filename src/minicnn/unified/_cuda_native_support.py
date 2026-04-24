@@ -349,6 +349,12 @@ def build_epoch_row(
         row['optimizer_runtime'] = _sanitize_optimizer_runtime(optimizer_state)
     if planner_state:
         row['planner'] = dict(planner_state)
+    if amp_state or optimizer_state or planner_state:
+        row['efficiency'] = _build_efficiency_summary(
+            planner_summary=dict(planner_state or {}),
+            amp_runtime=dict(amp_state or {}),
+            optimizer_runtime=_sanitize_optimizer_runtime(optimizer_state),
+        )
     return row
 
 
