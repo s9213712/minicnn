@@ -8,7 +8,11 @@ import numpy as np
 
 from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.gpu_dispatch import GpuDispatchPlan, build_gpu_dispatch_plan
-from minicnn.cuda_native.gpu_lowering import GpuLoweringRegistry, make_default_gpu_lowering_registry
+from minicnn.cuda_native.gpu_lowering import (
+    GpuLoweringContext,
+    GpuLoweringRegistry,
+    make_default_gpu_lowering_registry,
+)
 from minicnn.cuda_native.graph import NativeGraph
 
 
@@ -75,26 +79,18 @@ class GpuStubExecutor:
             prefer_reserved=True,
         )
         tensors = {graph.input_spec.name: staged_input}
-        ctx: dict[str, Any] = {
-            graph.input_spec.name: staged_input.data,
-            '__mode__': mode,
-        }
-        if params:
-            ctx.update(params)
+        lowering_ctx = GpuLoweringContext(
+            tensors=tensors,
+            params=dict(params or {}),
+            runtime=self.device_runtime,
+            mode=mode,
+        )
         for step in dispatch_plan.steps:
             node = graph_nodes[step.node_name]
             lowering = self.lowering_registry.get(step.op_name)
-            lowering(node, ctx)
-            output_name = node.outputs[0]
-            output = np.asarray(ctx[output_name])
-            staged_output = self.device_runtime.allocate_staging_buffer(
-                output.shape,
-                dtype=output.dtype,
-                name=output_name,
-            )
-            np.copyto(staged_output.data, output)
+            staged_output = lowering(node, lowering_ctx)
+            output_name = staged_output.name or node.outputs[0]
             tensors[output_name] = staged_output
-            ctx[output_name] = staged_output.data
             self.device_runtime.record_execution(
                 f'gpu_stub_kernel:{step.op_name}',
                 input_name=step.input_names[0] if step.input_names else None,

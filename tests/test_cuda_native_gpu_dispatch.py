@@ -27,11 +27,11 @@ def test_gpu_dispatch_plan_supports_bootstrap_subset_graph():
     assert summary['steps'][0]['forward_status'] == 'planned'
     assert summary['steps'][0]['backward_status'] == 'not_needed'
     assert summary['steps'][0]['param_keys'] == []
-    assert summary['steps'][0]['lowering_kind'] == 'reference_kernel_shim'
+    assert summary['steps'][0]['lowering_kind'] == 'shape_flatten_shim'
     assert summary['steps'][0]['supported'] is True
     assert summary['steps'][1]['category'] == 'linear'
     assert summary['steps'][1]['param_keys'] == ['_w_linear_1', '_b_linear_1']
-    assert summary['steps'][1]['lowering_kind'] == 'reference_kernel_shim'
+    assert summary['steps'][1]['lowering_kind'] == 'linear_affine_shim'
 
 
 def test_gpu_dispatch_plan_marks_ops_outside_bootstrap_subset():
