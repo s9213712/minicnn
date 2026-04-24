@@ -123,5 +123,6 @@ The next phase is narrower and more technical:
   - `BatchNorm2d` train-mode running-stat semantics are now aligned with PyTorch (`running_var` uses unbiased batch variance)
   - composite forward parity now covers `ResidualBlock` and `ConvNeXtBlock`
   - fixed-seed smoke reproducibility is now locked for a minimal `cuda_native` training path
+  - canonical `fp32`, `AMP`, and `grad_accum` native runs now have an explicit tolerance-matrix regression gate
 
 For the formal productionization path, see [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md).
