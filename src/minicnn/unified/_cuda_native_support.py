@@ -90,6 +90,70 @@ def _build_efficiency_summary(
     }
 
 
+def _build_bottleneck_summary(
+    *,
+    efficiency_summary: dict[str, Any],
+    runtime_profile: dict[str, Any],
+) -> dict[str, Any]:
+    hotspot_diff = dict(runtime_profile.get('hotspot_diff', {}) or {})
+    bottleneck_hints: list[dict[str, Any]] = []
+    planner_peak_live_fraction = float(efficiency_summary.get('planner_peak_live_fraction', 0.0) or 0.0)
+    amp_cache_hit_ratio = float(efficiency_summary.get('amp_cache_hit_ratio', 0.0) or 0.0)
+    grad_buffer_active_byte_fraction = float(
+        efficiency_summary.get('grad_buffer_active_byte_fraction', 0.0) or 0.0
+    )
+    state_allocations_per_step = float(efficiency_summary.get('state_allocations_per_step', 0.0) or 0.0)
+    train_eval_delta_ms = float(hotspot_diff.get('delta_ms', 0.0) or 0.0)
+
+    if planner_peak_live_fraction >= 0.85:
+        bottleneck_hints.append(
+            {
+                'type': 'planner_memory_pressure',
+                'severity': 'high',
+                'value': round(planner_peak_live_fraction, 6),
+            }
+        )
+    if amp_cache_hit_ratio < 0.75:
+        bottleneck_hints.append(
+            {
+                'type': 'amp_cache_churn',
+                'severity': 'medium',
+                'value': round(amp_cache_hit_ratio, 6),
+            }
+        )
+    if grad_buffer_active_byte_fraction < 0.5:
+        bottleneck_hints.append(
+            {
+                'type': 'grad_buffer_over_retained',
+                'severity': 'medium',
+                'value': round(grad_buffer_active_byte_fraction, 6),
+            }
+        )
+    if state_allocations_per_step > 0.25:
+        bottleneck_hints.append(
+            {
+                'type': 'optimizer_state_churn',
+                'severity': 'medium',
+                'value': round(state_allocations_per_step, 6),
+            }
+        )
+    if abs(train_eval_delta_ms) > 0.1:
+        bottleneck_hints.append(
+            {
+                'type': 'train_eval_hotspot_skew',
+                'severity': 'info',
+                'value': round(train_eval_delta_ms, 3),
+            }
+        )
+
+    dominant_hint = bottleneck_hints[0] if bottleneck_hints else None
+    return {
+        'dominant': dominant_hint,
+        'hints': bottleneck_hints,
+        'hotspot_bottleneck': hotspot_diff.get('bottleneck_summary', {}),
+    }
+
+
 def load_numpy_data(cfg: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     dataset_cfg = cfg.get('dataset', {})
     train_cfg = cfg.get('train', {})
@@ -384,6 +448,10 @@ def build_training_summary(
         'amp': sanitized_amp_runtime,
         'optimizer': sanitized_optimizer_runtime,
         'efficiency': efficiency_summary,
+        'bottlenecks': _build_bottleneck_summary(
+            efficiency_summary=efficiency_summary,
+            runtime_profile=dict(runtime_profile or {}),
+        ),
         'runtime': dict(runtime_profile or {}),
         'training': {
             'batch_size': int(train_cfg.get('batch_size', 64)),

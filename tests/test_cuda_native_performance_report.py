@@ -63,6 +63,7 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert 'performance_report' in summary
     assert summary['performance_report']['planner']['strategy'] == 'reuse'
     assert 'efficiency' in summary['performance_report']
+    assert 'bottlenecks' in summary['performance_report']
     assert 'runtime' in summary['performance_report']
     assert summary['performance_report']['training']['grad_accum_steps'] == 2
     assert summary['performance_report']['training']['amp_enabled'] is True
@@ -102,6 +103,9 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert 'grad_buffer_active_byte_fraction' in summary['performance_report']['efficiency']
     assert 'amp_cache_hit_ratio' in summary['performance_report']['efficiency']
     assert 'planner_peak_live_fraction' in summary['performance_report']['efficiency']
+    assert 'hints' in summary['performance_report']['bottlenecks']
+    assert 'hotspot_bottleneck' in summary['performance_report']['bottlenecks']
+    assert 'dominant_train_eval_delta_op' in summary['performance_report']['bottlenecks']['hotspot_bottleneck']
     assert summary['optimizer_runtime']['optimizer_type'] == 'adamw'
     assert summary['optimizer_runtime']['state_tensor_count'] > 0
     assert summary['optimizer_runtime']['state_total_bytes'] > 0
