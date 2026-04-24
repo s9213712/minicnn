@@ -84,6 +84,7 @@ def _allocate_output(node: Node, ctx: GpuLoweringContext, output: np.ndarray) ->
         name=node.outputs[0],
     )
     np.copyto(staged.data, np.asarray(output, dtype=np.float32))
+    ctx.runtime.sync_tensor_to_device(staged)
     return staged
 
 
