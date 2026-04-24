@@ -189,7 +189,7 @@ Current status:
   - `Add`
   - `Concat`
   - `Linear`
-  - `Conv2d`
+  - `Conv2d` (including grouped/depthwise)
   - `BatchNorm2d`
   - `LayerNorm`
   - `LayerNorm2d`

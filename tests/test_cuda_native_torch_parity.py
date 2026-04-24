@@ -231,6 +231,71 @@ def test_conv2d_backward_matches_torch():
     assert np.allclose(native_param_grads['_b_conv2d_0'], tb.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
 
 
+def test_grouped_conv2d_forward_matches_torch():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'Conv2d', 'out_channels': 4, 'kernel_size': 3, 'padding': 1, 'groups': 4}],
+        (2, 4, 5, 5),
+    )
+    x = np.random.default_rng(85).standard_normal((2, 4, 5, 5)).astype(np.float32)
+    weight = np.random.default_rng(86).standard_normal((4, 1, 3, 3)).astype(np.float32)
+    bias = np.random.default_rng(87).standard_normal((4,)).astype(np.float32)
+    params = {
+        '_w_conv2d_0': weight,
+        '_b_conv2d_0': bias,
+    }
+
+    native = ForwardExecutor().run_inference(graph, x, params=params)
+    expected = F.conv2d(
+        torch.from_numpy(x),
+        weight=torch.from_numpy(weight),
+        bias=torch.from_numpy(bias),
+        stride=1,
+        padding=1,
+        groups=4,
+    ).detach().cpu().numpy()
+
+    assert np.allclose(native, expected, atol=1e-5, rtol=1e-5)
+
+
+def test_grouped_conv2d_backward_matches_torch():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.backward import BackwardExecutor
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'Conv2d', 'out_channels': 4, 'kernel_size': 3, 'padding': 1, 'groups': 4}],
+        (2, 4, 5, 5),
+    )
+    x = np.random.default_rng(88).standard_normal((2, 4, 5, 5)).astype(np.float32)
+    grad_out = np.random.default_rng(89).standard_normal((2, 4, 5, 5)).astype(np.float32)
+    weight = np.random.default_rng(90).standard_normal((4, 1, 3, 3)).astype(np.float32)
+    bias = np.random.default_rng(91).standard_normal((4,)).astype(np.float32)
+    params = {
+        '_w_conv2d_0': weight,
+        '_b_conv2d_0': bias,
+    }
+
+    _ctx, cache = ForwardExecutor().run_with_cache(graph, {'input': x}, params=params, mode='train')
+    native_grad_input, native_param_grads = BackwardExecutor().run(graph, grad_out, cache)
+
+    tx = torch.tensor(x, dtype=torch.float32, requires_grad=True)
+    tw = torch.tensor(weight, dtype=torch.float32, requires_grad=True)
+    tb = torch.tensor(bias, dtype=torch.float32, requires_grad=True)
+    tout = F.conv2d(tx, weight=tw, bias=tb, stride=1, padding=1, groups=4)
+    tout.backward(torch.tensor(grad_out, dtype=torch.float32))
+
+    assert np.allclose(native_grad_input, tx.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads['_w_conv2d_0'], tw.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads['_b_conv2d_0'], tb.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+
+
 def test_residualblock_eval_forward_matches_torch_reference():
     import torch.nn.functional as F
 
