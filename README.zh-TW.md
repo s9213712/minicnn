@@ -2,7 +2,7 @@
 
 [English README](README.md)
 
-![status](https://img.shields.io/badge/status-experimental-orange)
+![status](https://img.shields.io/badge/status-beta-yellow)
 ![frontend](https://img.shields.io/badge/frontend-YAML%20%2B%20CLI-blue)
 ![native](https://img.shields.io/badge/native-CUDA-green)
 
@@ -63,7 +63,7 @@ MiniCNN 不是要取代 PyTorch。
 | Backend | 角色 | 目前狀態 |
 |---|---|---|
 | `torch` | reference implementation | 穩定，功能最廣，新模型功能優先落這裡 |
-| `cuda_native` | 主要 native backend | 實驗中、graph-based、已具備 ordered DAG 能力，是目前主成長方向 |
+| `cuda_native` | 主要 native backend | beta、graph-based、具備 ordered DAG 能力、目前仍是 NumPy reference execution 的主成長方向 |
 | `autograd` | correctness oracle | 穩定、CPU-only，適合 deterministic 檢查與框架學習 |
 | `cuda_legacy` | 歷史 native backend | 在窄邊界內穩定，但屬 maintenance-only，不是新功能擴充主戰場 |
 
@@ -81,7 +81,7 @@ MiniCNN 不是要取代 PyTorch。
 ```text
 shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
                                \
-                                -> cuda_native [PRIMARY NATIVE] (experimental graph IR, planner, numpy executor)
+                                -> cuda_native [PRIMARY NATIVE] (beta graph IR, planner, numpy executor)
                                \
                                 -> cuda_legacy [MAINTENANCE ONLY] (historical handwritten CUDA path)
 ```
@@ -99,7 +99,7 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 - `healthcheck`、`doctor`、`smoke`、`validate-*` 與 inspection 指令都有 JSON-friendly 的診斷/驗證介面
 - `show-model` 與 `show-graph` 已是實際可用的 introspection 指令，不再是 placeholder
 - `cuda_native` graph semantics 已從單純 sequential graph 擴成具名 tensor wiring 的 ordered DAG，並支援 `Add` / `Concat`
-- `cuda_native` training surface 已擴到 `SGD`、`Adam`、`AdamW`、`RMSprop`、`CrossEntropyLoss`、`BCEWithLogitsLoss`、`MSELoss`、`label_smoothing`、`grad_accum_steps` 與實驗性 AMP
+- `cuda_native` training surface 已擴到 `SGD`、`Adam`、`AdamW`、`RMSprop`、`CrossEntropyLoss`、`BCEWithLogitsLoss`、`MSELoss`、`label_smoothing`、`grad_accum_steps` 與 beta AMP
 - `summary.json` / `metrics.jsonl` 現在也會穩定輸出 planner、AMP 與 optimizer-state telemetry
 
 結果是：對使用者來說，主要命令集合仍維持精簡；對維護者來說，模組邊界更清楚、
@@ -129,7 +129,7 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 - 精簡但夠用的 optimizer / layer stack
 - 不依賴 torch 的教學、測試與 CPU inference 實驗
 
-### `cuda_native`（主要 native 方向，仍屬實驗性）
+### `cuda_native`（主要 native 方向，現為 beta）
 
 目前 repo 裡主要的 native backend 成長方向，採 graph-based 架構，包含：
 
@@ -151,11 +151,11 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 - optimizer：支援 `SGD`、`Adam`、`AdamW`、`RMSprop`，可選 global gradient clipping
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
 - `train.grad_accum_steps >= 1`
-- `train.amp=true|false`，帶實驗性的 loss scaling / overflow backoff
+- `train.amp=true|false`，帶 beta 級的 loss scaling / overflow backoff
 - `summary.json` 會輸出 `amp_runtime`、`optimizer_runtime`、`planner` 與 `performance_report`
 - `metrics.jsonl` 每個 epoch row 會輸出 AMP、optimizer 與 planner telemetry
 
-雖然已經有 backward 與 training prototype，但這條 backend 仍屬實驗性，也還不適合正式使用。它現在已支援具名 tensor wiring 與 `Add` merge 的 ordered DAG 執行；後續 native 功能仍應優先往這條線發展，`cuda_legacy` 則維持窄邊界維護。
+這條 backend 現在已經是 beta 級，`training_stable=true`、`backward_stable=true`，但仍不適合宣稱 production-ready，而且目前仍是 NumPy reference execution，不是真正的 CUDA kernel backend。它已支援具名 tensor wiring 與 `Add` merge 的 ordered DAG 執行；後續 native 功能仍應優先往這條線發展，`cuda_legacy` 則維持窄邊界維護。
 
 目前也已有 hermetic native smoke 範本可直接用於：
 
@@ -182,6 +182,16 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 完整說明請見 [docs/cuda_native.md](docs/cuda_native.md)。
 後續擴充方向請見 [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md)。
 從實驗走向可承諾實裝邊界的規劃請見 [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md)。
+AMP 從 experimental 畢業到 beta 的檢查項目請見 [docs/cuda_native_amp_graduation_checklist.md](docs/cuda_native_amp_graduation_checklist.md)。
+從 NumPy reference execution 走向真正 GPU execution 的未來路徑請見 [docs/cuda_native_gpu_enablement_plan.md](docs/cuda_native_gpu_enablement_plan.md)。
+
+真實資料集示範：
+
+```bash
+PYTHONPATH=src python3 examples/cuda_native_amp_cifar10_beta_demo.py \
+  --data-root data/cifar-10-batches-py \
+  --artifacts-root /tmp/minicnn_cuda_native_beta_demo
+```
 
 ## 快速開始
 

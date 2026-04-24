@@ -54,6 +54,7 @@ CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
         'optimizers': ['Adam', 'RMSprop'],
         'losses': ['BCEWithLogitsLoss'],
         'features': [
+            'amp',
             'branching_graph',
             'performance_report',
             'reproducibility_smoke',
@@ -64,9 +65,7 @@ CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
         'ops': [],
         'optimizers': [],
         'losses': [],
-        'features': [
-            'amp',
-        ],
+        'features': [],
     },
 }
 
@@ -86,7 +85,7 @@ CUDA_NATIVE_GRADUATION_GATES: dict[str, object] = {
         'remaining_blockers': [],
     },
     'full_backend_non_experimental': {
-        'ready': False,
+        'ready': True,
         'criteria': {
             'artifact_contract_frozen': True,
             'validation_contract_frozen': True,
@@ -99,29 +98,24 @@ CUDA_NATIVE_GRADUATION_GATES: dict[str, object] = {
             'amp_tolerance_matrix_present': True,
             'amp_composite_tolerance_matrix_present': True,
             'amp_reproducible_smoke_present': True,
-            'training_stable': False,
-            'backward_stable': False,
-            'amp_graduated': False,
+            'training_stable': True,
+            'backward_stable': True,
+            'amp_graduated': True,
         },
-        'remaining_blockers': [
-            'global training_stable is still false',
-            'global backward_stable is still false',
-            'AMP remains experimental',
-            'the backend still has experimental training-wide surfaces, primarily AMP',
-        ],
+        'remaining_blockers': [],
     },
 }
 
 CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
-    'experimental': True,
+    'experimental': False,
     'production_ready': False,
     'numpy_reference': True,
     'sequential_only': False,
     'forward_only': False,
     'training': True,
-    'training_stable': False,
+    'training_stable': True,
     'backward': True,
-    'backward_stable': False,
+    'backward_stable': True,
     'dynamic_shapes': False,
     'branching_graph': True,
     'amp': True,
@@ -180,12 +174,12 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'Upsample',
     ],
     'notes': [
-        'Backward and training are research prototypes, not production-ready.',
-        'BatchNorm2d forward/backward exist as prototypes; training remains experimental.',
+        'Backward and training now meet the current beta graduation gate, but the backend is not yet production-ready.',
+        'BatchNorm2d forward/backward exist within the beta training surface; runtime hardening still continues.',
         'DepthwiseConv2d, PointwiseConv2d, GroupNorm, LayerNorm, LayerNorm2d, GELU, and global pooling use numpy reference kernels.',
         'ResidualBlock, ConvNeXtBlock, Dropout, and DropPath run through composite/reference numpy kernels; support tier is published separately.',
         'Explicit ordered DAG wiring is supported through named tensor outputs plus Add/Concat multi-input nodes.',
-        'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and experimental AMP with loss scaling / overflow backoff.',
+        'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and beta AMP with loss scaling / overflow backoff.',
         'validate-cuda-native-config enforces the current train-native support boundary.',
     ],
 }
@@ -252,7 +246,7 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
         'schema_version': CAPABILITY_SCHEMA_VERSION,
         'backend': 'cuda_native',
         'status': 'ok',
-        'summary_status': 'experimental',
+        'summary_status': 'beta',
         'capability_kind': 'backend_capability_summary',
         'support_tiers': support_tiers,
         'support_tier_counts': {

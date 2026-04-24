@@ -197,9 +197,9 @@ def test_cuda_native_convnextblock_amp_tolerance_stays_within_bounds(tmp_path: P
     )
 
     assert fp32_summary["support_tier_assessment"]["highest_tier"] == "beta"
-    assert amp_summary["support_tier_assessment"]["highest_tier"] == "experimental"
+    assert amp_summary["support_tier_assessment"]["highest_tier"] == "beta"
     assert "ConvNeXtBlock" in amp_summary["support_tier_assessment"]["ops_by_tier"]["beta"]
-    assert amp_summary["support_tier_assessment"]["features_by_tier"]["experimental"] == ["amp"]
+    assert amp_summary["support_tier_assessment"]["features_by_tier"]["beta"] == ["amp"]
     assert amp_summary["amp_runtime"]["loss_scale"] >= 1.0
     assert amp_last["amp"]["loss_scale"] >= 1.0
 
@@ -228,9 +228,9 @@ def test_cuda_native_residualblock_amp_tolerance_stays_within_bounds(tmp_path: P
     )
 
     assert fp32_summary["support_tier_assessment"]["highest_tier"] == "beta"
-    assert amp_summary["support_tier_assessment"]["highest_tier"] == "experimental"
+    assert amp_summary["support_tier_assessment"]["highest_tier"] == "beta"
     assert "ResidualBlock" in amp_summary["support_tier_assessment"]["ops_by_tier"]["beta"]
-    assert amp_summary["support_tier_assessment"]["features_by_tier"]["experimental"] == ["amp"]
+    assert amp_summary["support_tier_assessment"]["features_by_tier"]["beta"] == ["amp"]
     assert amp_summary["amp_runtime"]["loss_scale"] >= 1.0
     assert amp_last["amp"]["loss_scale"] >= 1.0
 

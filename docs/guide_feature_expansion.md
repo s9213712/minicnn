@@ -183,7 +183,7 @@ Autograd currently supports:
 - `GroupNorm`
 - `ResidualBlock`
 
-`cuda_native` work exists on this branch, but it is still experimental and is
+`cuda_native` work exists on this branch and is now beta-grade, but it is still
 not part of the stable training backend surface.
 
 ## Useful Configs

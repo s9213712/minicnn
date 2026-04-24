@@ -326,7 +326,7 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['schema_version'] == 1
     assert payload['backend'] == 'cuda_native'
     assert payload['status'] == 'ok'
-    assert payload['summary_status'] == 'experimental'
+    assert payload['summary_status'] == 'beta'
     assert 'support_tiers' in payload
     assert 'support_tier_counts' in payload
     assert 'graduation_gates' in payload
@@ -361,15 +361,18 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert 'ConvNeXtBlock' in payload['support_tiers']['beta']['ops']
     assert 'DropPath' in payload['support_tiers']['beta']['ops']
     assert payload['support_tiers']['experimental']['ops'] == []
-    assert 'amp' in payload['support_tiers']['experimental']['features']
+    assert payload['support_tiers']['experimental']['features'] == []
+    assert 'amp' in payload['support_tiers']['beta']['features']
     assert payload['support_tier_counts']['stable']['ops'] >= 1
     assert payload['graduation_gates']['core_beta_subset']['ready'] is True
-    assert payload['graduation_gates']['full_backend_non_experimental']['ready'] is False
+    assert payload['graduation_gates']['full_backend_non_experimental']['ready'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['amp_tolerance_matrix_present'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['amp_composite_tolerance_matrix_present'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['amp_reproducible_smoke_present'] is True
-    assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['training_stable'] is False
-    assert payload['graduation_gates']['full_backend_non_experimental']['remaining_blockers']
+    assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['training_stable'] is True
+    assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['backward_stable'] is True
+    assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['amp_graduated'] is True
+    assert payload['graduation_gates']['full_backend_non_experimental']['remaining_blockers'] == []
     assert 'supported_op_categories' in payload
     assert 'kernel_registry_surface' in payload
 
@@ -760,9 +763,9 @@ def test_cli_validate_cuda_native_config_reports_experimental_amp_tier(capsys, t
 
     assert rc == 0
     assert payload['ok'] is True
-    assert payload['support_tier_assessment']['highest_tier'] == 'experimental'
+    assert payload['support_tier_assessment']['highest_tier'] == 'beta'
     assert payload['support_tier_assessment']['optimizers_by_tier']['stable'] == ['AdamW']
-    assert payload['support_tier_assessment']['features_by_tier']['experimental'] == ['amp']
+    assert payload['support_tier_assessment']['features_by_tier']['beta'] == ['amp']
 
 
 def test_train_native_rejects_unsupported_config_with_failure_category(capsys, tmp_path):

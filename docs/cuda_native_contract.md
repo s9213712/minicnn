@@ -1,9 +1,9 @@
 # cuda_native Contract
 
 `cuda_native` is the primary native-backend direction for `minicnn`, but it is
-not yet globally production-ready. This document defines the current support
-boundary, the meaning of support tiers, and the graduation checklist for moving
-surfaces out of `experimental`.
+not yet globally production-ready. This document defines the current beta
+support boundary, the meaning of support tiers, and the graduation checklist
+that moved the backend-wide status out of `experimental`.
 
 ## Support Tiers
 
@@ -15,8 +15,8 @@ The machine-readable source of truth lives in:
 - `summary.json`
 - `metrics.jsonl`
 
-The top-level backend still reports `summary_status = "experimental"`, but
-individual surfaces are split into `stable`, `beta`, and `experimental`.
+The top-level backend now reports `summary_status = "beta"`. Individual
+surfaces are still split into `stable`, `beta`, and `experimental`.
 
 ## Stable Surface
 
@@ -73,6 +73,12 @@ Current `beta` surfaces include:
   - `RMSprop`
 - losses:
   - `BCEWithLogitsLoss`
+- training-wide features:
+  - `AMP`
+- composite/block surfaces:
+  - `ResidualBlock`
+  - `ConvNeXtBlock`
+  - `DropPath`
 - runtime/reporting:
   - performance report
   - reproducibility smoke
@@ -80,18 +86,13 @@ Current `beta` surfaces include:
 
 ## Experimental Surface
 
-`experimental` means the feature works, but we do not yet claim a stable
-behavioral boundary.
+There is currently no public op / optimizer / loss / feature bucket left in
+`support_tiers.experimental`.
 
-Current `experimental` surfaces include:
-
-- training-wide features:
-  - `AMP`
-- composite block paths:
-  - `ResidualBlock`
-  - `ConvNeXtBlock`
-- stochastic regularization:
-  - `DropPath`
+The next major risk surface is not a published experimental feature bucket, but
+the future transition from NumPy reference execution to a true GPU execution
+backend. That future path is tracked separately in
+[cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_plan.md).
 
 ## Graduation Checklist
 
@@ -126,16 +127,20 @@ Before a surface moves from `experimental` to `beta`, or from `beta` to
 - artifact schema / validation / failure contracts are frozen
 - runtime bottleneck reporting and memory telemetry remain present and tested
 
+## AMP Graduation Checklist
+
+See [cuda_native_amp_graduation_checklist.md](cuda_native_amp_graduation_checklist.md).
+
 ## Meaning of the Current Flags
 
 In [capabilities.py](/home/s92137/NN/minicnn/src/minicnn/cuda_native/capabilities.py):
 
-- `experimental = True`
-  - the backend as a whole is still under active graduation
-- `training_stable = False`
-  - end-to-end training is not yet globally committed as stable
-- `backward_stable = False`
-  - backward coverage exists, but not yet for the full committed surface
+- `experimental = False`
+  - the backend as a whole is no longer blocked at the top-level experimental label
+- `training_stable = True`
+  - end-to-end training now meets the current beta graduation gate
+- `backward_stable = True`
+  - backward coverage now meets the current beta graduation gate
 
-These flags should only flip after the checklist above is satisfied for the
-claimed surface, not because a feature merely exists.
+These flags only flipped after the AMP checklist, parity/tolerance evidence,
+and smoke gates were satisfied for the claimed surface.

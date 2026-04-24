@@ -6,7 +6,7 @@ The stable shared toggles are:
 
 - `engine.backend: torch`
 - `engine.backend: cuda_legacy` *(historical maintenance path)*
-- `engine.backend: cuda_native` *(primary native direction, still experimental)*
+- `engine.backend: cuda_native` *(primary native direction, now beta-grade)* 
 
 ## Same Frontend, Different Backend Boundary
 
@@ -75,7 +75,7 @@ Accepts:
 - optimizer: `SGD`, `Adam`, `AdamW`, or `RMSprop`, with optional global gradient clipping
 - scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
 - `train.grad_accum_steps >= 1`
-- `train.amp=true|false` (experimental mixed-precision prototype with loss scaling / overflow backoff)
+- `train.amp=true|false` (beta mixed-precision path with loss scaling / overflow backoff)
 - reporting: `summary.json` exposes `amp_runtime`, `optimizer_runtime`, `planner`, and `performance_report`; `metrics.jsonl` exposes per-epoch AMP/optimizer/planner telemetry
 - still rejects at validation or train-native gating: unsupported optimizers outside `SGD` / `Adam` / `AdamW` / `RMSprop`
 
@@ -128,7 +128,7 @@ For training-surface expansion, also update `training.py`, runtime/support repor
 
 - `engine.backend: torch`
 - `engine.backend: cuda_legacy` *(歷史維護路徑)*
-- `engine.backend: cuda_native` *(主要 native 方向，但仍屬實驗中)*
+- `engine.backend: cuda_native` *(主要 native 方向，現為 beta)* 
 
 ## 相同前端，不同 Backend 邊界
 
@@ -194,7 +194,7 @@ minicnn show-cuda-mapping --config configs/dual_backend_cnn.yaml
 - loss：`CrossEntropyLoss`（可搭配 `label_smoothing`）、`BCEWithLogitsLoss`（僅 binary output）、或 `MSELoss`
 - optimizer：支援 `SGD`、`Adam`、`AdamW`、`RMSprop`，可選 global gradient clipping
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
-- 可用 `train.amp=true|false`（帶 loss scaling / overflow backoff 的實驗性 mixed-precision prototype）
+- 可用 `train.amp=true|false`（帶 loss scaling / overflow backoff 的 beta 級 mixed-precision 路徑）
 - 目前驗證或 `train-native` gate 仍拒絕：不在 `SGD` / `Adam` / `AdamW` / `RMSprop` 內的 optimizer
 
 ## Variant 選擇（cuda_legacy）

@@ -9,7 +9,7 @@ The frontend surface is broader than the narrowest backend. That is expected.
 | Backend | Role | Practical meaning |
 |---|---|---|
 | `torch/flex` | reference implementation | first destination for new frontend features, broadest stable surface |
-| `cuda_native` | primary native backend | the native path that should grow next, still experimental |
+| `cuda_native` | primary native backend | the native path that should grow next, now beta-grade but still not production-ready |
 | `autograd` | correctness oracle | CPU-side reference path for deterministic checks and framework learning |
 | `cuda_legacy` | maintenance-only historical backend | narrow stable path, kept for compatibility and maintenance, not the default feature-expansion target |
 
@@ -45,13 +45,13 @@ These features were **not** supported in `cuda_legacy` and are now supported in 
 | Memory footprint estimate (`memory_footprint`) | ✗ | ✓ |
 | Buffer pool pre-allocation (`BufferPool`) | ✗ | ✓ |
 
-Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimental and not production-ready.
+Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is now beta-grade, not experimental, but it is still not production-ready.
 
 ---
 
 ## Full Capability Matrix
 
-| Capability | Torch/flex | CPU/NumPy autograd | CUDA legacy | cuda_native (experimental) |
+| Capability | Torch/flex | CPU/NumPy autograd | CUDA legacy | cuda_native (beta) |
 |---|:---:|:---:|:---:|:---:|
 | **Datasets** | | | | |
 | CIFAR-10 | ✓ | ✓ slow | ✓ | ✓ |
@@ -100,7 +100,7 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is experimen
 | **Regularization** | | | | |
 | weight_decay | ✓ | ✓ | ✓ | ✓ |
 | gradient clipping | ✓ | ✓ | ✓ | ✓ global norm |
-| AMP | ✓ CUDA only | ✗ | ✗ | ⚠ experimental |
+| AMP | ✓ CUDA only | ✗ | ✗ | ✓ beta |
 | **Frontend** | | | | |
 | `model.layers[]` YAML | ✓ | ✓ | ✓ fixed pattern | ✓ ordered DAG with named tensor wiring |
 | dotted-path components | ✓ | ✗ | ✗ | ✗ |
@@ -151,9 +151,9 @@ Stable support boundary:
 Use `minicnn validate-dual-config` before running.
 Validation failures now return short CLI messages or JSON payloads instead of raw tracebacks.
 
-## cuda_native (Primary Native Direction, Experimental)
+## cuda_native (Primary Native Direction, Beta)
 
-Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work, but it is still experimental and not production-ready.
+Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work. It is now beta-grade, but still not production-ready and still runs through NumPy reference execution rather than real CUDA kernels.
 
 Supported ops: `BatchNorm2d` (forward/backward prototype), `Concat`, `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `DropPath`, `Add`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`.
 
@@ -169,14 +169,14 @@ Validated train-native support boundary:
 - loss: `CrossEntropyLoss` (with optional `label_smoothing`), `BCEWithLogitsLoss` (binary output only), `MSELoss`
 - optimizer: `SGD`, `Adam`, `AdamW`, or `RMSprop`, with global gradient clipping
 - scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
-- `train.amp=true|false` (experimental mixed-precision prototype with loss scaling / overflow backoff)
+- `train.amp=true|false` (beta mixed-precision path with loss scaling / overflow backoff)
 - `train.grad_accum_steps >= 1`
 - `summary.json` exposes `amp_runtime`, `optimizer_runtime`, `planner`, and `performance_report`
 - `metrics.jsonl` exposes per-epoch AMP, optimizer, and planner telemetry
 
 Still rejected at validation or train-native gating: unsupported optimizers outside `SGD` / `Adam` / `AdamW` / `RMSprop`.
 
-Note: backward and training prototypes exist, and `BatchNorm2d` now has a prototype backward path too. The overall backend remains experimental and not production-ready. New native capability work should usually land here, not in `cuda_legacy`.
+Note: backward and training now meet the current beta graduation gate, and `BatchNorm2d` now has a prototype backward path too. The overall backend is beta, not production-ready. New native capability work should usually land here, not in `cuda_legacy`.
 
 Developer tooling (unique to cuda_native):
 
@@ -246,11 +246,8 @@ listed item is production-ready.
 
 ### Experimental
 
-- `ResidualBlock`
-- `ConvNeXtBlock`
-- `DropPath`
-- composite lowering policies
-- aggressive planner heuristics
+- no public op/optimizer/loss surface currently remains in `experimental`
+- future GPU execution enablement still lives outside the current beta contract
 
 ## Reading Validation Errors
 

@@ -9,10 +9,10 @@ Can MiniCNN support ConvNeXt, and if so, on which backend path first?
 The short answer is:
 
 - `torch/flex`: one minimal built-in ConvNeXt-like block path now exists as an
-  experimental frontend slice
+  beta frontend slice
 - `autograd`: not a realistic near-term target
 - `cuda_legacy`: not a target
-- `cuda_native`: explicit primitives and `ConvNeXtBlock` now have experimental
+- `cuda_native`: explicit primitives and `ConvNeXtBlock` now have beta
   smoke paths, but the backend is still prototype quality
 
 See also:
@@ -80,12 +80,12 @@ Why this is still not "full ConvNeXt support":
 - there is still no staged architecture family beyond one minimal example
 - there is still no autograd support
 - there is still no `cuda_legacy` support
-- `cuda_native` support is still experimental and smoke-oriented
+- `cuda_native` support is now beta-grade and still smoke-oriented rather than production-ready
 
 Conclusion:
 
 - the first safe ConvNeXt work should land in `torch/flex`
-- but it should be framed as **ConvNeXt-like experimental frontend work**, not
+- but it should be framed as **ConvNeXt-like beta frontend work**, not
   repo-wide ConvNeXt support
 
 ### `autograd`
@@ -120,13 +120,13 @@ Conclusion:
 
 ### `cuda_native`
 
-This is now an experimental ConvNeXt target.
+This is now a beta-grade ConvNeXt target on the NumPy-reference native path.
 
 What exists:
 
 - explicit primitive execution support
 - `ConvNeXtBlock` composite support
-- experimental `DropPath` support in the broader backend surface
+- beta `DropPath` support in the broader backend surface
 - hermetic smoke templates for explicit and block-based paths
 - validator and capability coverage in the same patch line
 
@@ -137,14 +137,14 @@ What still does not exist:
 
 Conclusion:
 
-- acceptable as an experimental native path
+- acceptable as a beta-grade native path
 - not acceptable to position as production-ready ConvNeXt support
 
 ## First Safe ConvNeXt Slice
 
 The first safe slice is now implemented as:
 
-1. define ConvNeXt as a `torch/flex`-only experimental frontend target
+1. define ConvNeXt as a `torch/flex`-first beta frontend target
 2. add one explicit capability note saying other backends do not support it
 3. choose one minimal ConvNeXt-like block shape
 4. add one example or template, not a whole architecture family
@@ -158,7 +158,7 @@ What this slice should **not** do:
 
 ## Recommended Follow-Up Order
 
-1. keep native ConvNeXt claims explicitly scoped to the current experimental smoke slice
+1. keep native ConvNeXt claims explicitly scoped to the current beta smoke slice
 2. avoid broad YAML / IR expansion until more than one minimal example is justified
 3. only then evaluate whether any generic pieces should be promoted more broadly
 
@@ -168,7 +168,7 @@ MiniCNN should currently talk about ConvNeXt this way:
 
 - valid as a frontend-expansion exploration on `torch/flex`
 - includes one built-in minimal `ConvNeXtBlock` path on `torch/flex`
-- includes experimental `cuda_native` smoke paths for explicit and block-based execution
+- includes beta `cuda_native` smoke paths for explicit and block-based execution
 - not yet a built-in repo-wide supported architecture family
 - not a `cuda_legacy` target
-- `cuda_native` support is still experimental, not production-ready
+- `cuda_native` support is now beta-grade, still not production-ready

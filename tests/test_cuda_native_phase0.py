@@ -46,7 +46,7 @@ def test_capability_surface_is_versioned_and_sorted():
     assert caps['schema_version'] == 1
     assert caps['backend'] == 'cuda_native'
     assert caps['status'] == 'ok'
-    assert caps['summary_status'] == 'experimental'
+    assert caps['summary_status'] == 'beta'
     assert caps['sequential_only'] is False
     assert caps['branching_graph'] is True
     assert caps['supported_datasets'] == sorted(caps['supported_datasets'])
@@ -77,23 +77,23 @@ def test_capability_surface_exposes_kernel_categories():
     assert {'op_name': 'AvgPool2d', 'category': 'pool'} in caps['kernel_registry_surface']
 
 
-def test_capability_experimental_is_true():
+def test_capability_experimental_is_false():
     from minicnn.cuda_native.capabilities import get_cuda_native_capabilities
-    assert get_cuda_native_capabilities()['experimental'] is True
+    assert get_cuda_native_capabilities()['experimental'] is False
 
 
-def test_capability_training_is_prototype():
+def test_capability_training_is_beta_ready():
     from minicnn.cuda_native.capabilities import get_cuda_native_capabilities
     caps = get_cuda_native_capabilities()
     assert caps['training'] is True
-    assert caps['training_stable'] is False
+    assert caps['training_stable'] is True
 
 
-def test_capability_backward_is_prototype():
+def test_capability_backward_is_beta_ready():
     from minicnn.cuda_native.capabilities import get_cuda_native_capabilities
     caps = get_cuda_native_capabilities()
     assert caps['backward'] is True
-    assert caps['backward_stable'] is False
+    assert caps['backward_stable'] is True
 
 
 def test_capability_supported_ops_not_empty():
@@ -262,4 +262,4 @@ def test_unified_bridge_get_summary():
     from minicnn.unified.cuda_native import get_summary
     s = get_summary()
     assert 'experimental' in s
-    assert s['experimental'] is True
+    assert s['experimental'] is False

@@ -9,7 +9,7 @@ MiniCNN has one broad frontend surface and multiple backend-oriented execution p
 | flex | `train-flex` | PyTorch | reference implementation and first stop for new features |
 | dual | `train-dual` | `torch` or `cuda_legacy` | compare shared configs against the historical native path |
 | autograd | `train-autograd` | NumPy | correctness oracle and framework-level experiments |
-| native | `train-native` | `cuda_native` | primary native backend direction, still experimental |
+| native | `train-native` | `cuda_native` | primary native backend direction, now beta-grade |
 
 ## Backend Roles
 
@@ -38,7 +38,7 @@ shared YAML / CLI frontend
         |
         +--> train-autograd ---> NumPy autograd [ORACLE]
         |
-        +--> train-native -----> cuda_native [PRIMARY NATIVE, EXPERIMENTAL]
+        +--> train-native -----> cuda_native [PRIMARY NATIVE, BETA]
 ```
 
 ## Training Flow
@@ -51,7 +51,7 @@ YAML config
     +--> unified/config.py --> engine.backend? --> unified/trainer.py
     |                                              |-> torch path
     |                                              |-> cuda_legacy path
-    |                                              `-> cuda_native path [experimental]
+    |                                              `-> cuda_native path [beta]
     |
     `--> train_autograd.py (NumPy)
 ```
@@ -71,7 +71,7 @@ model config
 
 ## cuda_native Backend
 
-A staged, modular experimental backend under `src/minicnn/cuda_native/`. This is the main native growth path in the repo:
+A staged, modular beta-grade backend under `src/minicnn/cuda_native/`. This is the main native growth path in the repo:
 
 - `graph.py`, `nodes.py` — graph IR (NativeGraph, Node, TensorSpec)
 - `validators.py`, `shapes.py` — shape inference and legality checks
@@ -84,7 +84,7 @@ A staged, modular experimental backend under `src/minicnn/cuda_native/`. This is
 - `memory.py` — `BufferAllocator`, `BufferPool`, `memory_footprint()`
 - `debug.py` — `dump_graph()`, `dump_plan()`, `TracingForwardExecutor`, `ExecutionTrace`
 
-Capability descriptor marks it as: experimental, sequential-only, numpy-only, not production-ready.
+Capability descriptor marks it as: beta, NumPy-reference execution, not production-ready.
 
 See [backend_capabilities.md](backend_capabilities.md) for the full support matrix.
 
@@ -158,7 +158,7 @@ MiniCNN 有一個廣泛的前端介面，對應多條以 backend 為導向的執
 | flex | `train-flex` | PyTorch | reference implementation，也是新功能第一站 |
 | dual | `train-dual` | `torch` 或 `cuda_legacy` | 用 shared config 對照歷史 native 路徑 |
 | autograd | `train-autograd` | NumPy | correctness oracle 與框架實驗 |
-| native | `train-native` | `cuda_native` | 主要 native backend 方向，但仍屬實驗性 |
+| native | `train-native` | `cuda_native` | 主要 native backend 方向，現為 beta |
 
 ## Backend 角色
 
@@ -187,7 +187,7 @@ shared YAML / CLI frontend
         |
         +--> train-autograd ---> NumPy autograd [ORACLE]
         |
-        +--> train-native -----> cuda_native [PRIMARY NATIVE, 實驗]
+        +--> train-native -----> cuda_native [PRIMARY NATIVE, BETA]
 ```
 
 ## 訓練流程
@@ -200,7 +200,7 @@ YAML config
     +--> unified/config.py --> engine.backend? --> unified/trainer.py
     |                                              |-> torch 路徑
     |                                              |-> cuda_legacy 路徑
-    |                                              `-> cuda_native 路徑 [實驗]
+    |                                              `-> cuda_native 路徑 [beta]
     |
     `--> train_autograd.py (NumPy)
 ```

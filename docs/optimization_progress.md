@@ -11,6 +11,7 @@ See also:
 - [master_roadmap.md](master_roadmap.md)
 - [backend_capabilities.md](backend_capabilities.md)
 - [dual_backend_guide.md](dual_backend_guide.md)
+- [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_plan.md)
 
 `master_roadmap.md` is the canonical planning document. This file stays focused
 on the current technical direction and progress framing.
@@ -22,15 +23,14 @@ MiniCNN currently has four relevant paths:
 - `train-flex`: broad torch-backed experimentation
 - `train-dual`: shared-config routing to `torch` or `cuda_legacy`
 - `train-autograd`: CPU/NumPy educational training path
-- `train-native` / experimental `engine.backend=cuda_native`
+- `train-native` / beta `engine.backend=cuda_native`
 
 The stable default backend toggle is still:
 
 - `engine.backend=torch`
 - `engine.backend=cuda_legacy`
 
-`cuda_native` is already public and CLI-visible, but it remains experimental and
-prototype-level rather than a stable training backend.
+`cuda_native` is already public and CLI-visible, and it has now graduated to a beta-grade backend. It remains a NumPy-reference execution path rather than a stable production backend.
 
 ## What Is In Good Shape
 
@@ -41,7 +41,7 @@ prototype-level rather than a stable training backend.
 - documentation for backend boundaries and capability differences
 - `cuda_native` ordered DAG graph path with named tensor wiring plus generic `Add` / `Concat`
 - `cuda_native` normalization/regularization slice: `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `Dropout`, `DropPath`
-- `cuda_native` modern training slice: `Adam`, `AdamW`, `RMSprop`, `BCEWithLogitsLoss`, `label_smoothing`, `grad_accum_steps`, experimental AMP
+- `cuda_native` modern training slice: `Adam`, `AdamW`, `RMSprop`, `BCEWithLogitsLoss`, `label_smoothing`, `grad_accum_steps`, beta AMP
 - planner / AMP / optimizer-state telemetry now wired into `summary.json` and `metrics.jsonl`
 
 ## What Is Still Constrained
@@ -78,6 +78,8 @@ These are not project-wide limitations. They are backend-specific limits.
 ### Long-term
 
 - generalize native execution through a backend designed for that purpose
+- move `cuda_native` from NumPy reference execution toward a real GPU execution path
+  through the staged plan in [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_plan.md)
 - avoid endlessly stretching `cuda_legacy` beyond its original design
 
 ## Practical Rule
@@ -103,7 +105,7 @@ The last major expansion phase is functionally complete:
 
 - graph semantics: ordered DAG + `Add` / `Concat`
 - normalization / regularization: `GroupNorm`, `LayerNorm`, `DropPath`
-- training surface: modern optimizers, richer losses, grad accumulation, experimental AMP
+- training surface: modern optimizers, richer losses, grad accumulation, beta AMP
 - reporting: planner / AMP / optimizer telemetry in artifacts
 - runtime hardening slice now includes:
   - persistent grad-buffer reuse with active/capacity telemetry
@@ -119,16 +121,16 @@ The next phase is narrower and more technical:
 - memory / state reuse quality
 - stronger performance-oriented reporting without overstating production readiness
 - initial torch parity coverage for selected sensitive ops
-- machine-readable `support_tiers` / `support_tier_assessment` now expose which configs stay on `stable` surfaces and which touch `beta` / `experimental` areas
+- machine-readable `support_tiers` / `support_tier_assessment` now expose which configs stay on `stable` surfaces and which touch `beta` areas
   - the same `support_tier_assessment` is now persisted into `summary.json` and `metrics.jsonl`
   - trivial `Flatten -> Linear` native training paths now stay on the `stable` tier instead of being artificially forced into `beta`
   - `ResidualBlock` is now published as `beta` instead of `experimental`, backed by train/eval parity and hermetic smoke coverage
   - `ConvNeXtBlock` is now published as `beta`, backed by forward/backward parity, `layer_scale` parity, and hermetic train-path tolerance coverage
   - named-model resolution now ignores loader placeholder `model.layers`, so `model.name=convnext_tiny` consistently expands to the intended `ConvNeXtBlock` graph
   - `DropPath` is now published as `beta`, backed by deterministic train/eval correctness checks and a dedicated train smoke path
-  - `AMP` is now the only remaining explicitly-published `experimental` surface in `support_tiers`
-  - `train-native` preamble JSON now includes `support_tier_assessment`, so the entrypoint tells you whether the requested config is on `stable`, `beta`, or `experimental` surfaces before training starts
-  - fixed-seed AMP smoke is now reproducibility-tested, so the remaining AMP blockers are graduation/stability, not lack of basic determinism evidence
+  - `AMP` has now graduated into the published `beta` surface, and `support_tiers.experimental` no longer carries public ops/features
+  - `train-native` preamble JSON now includes `support_tier_assessment`, so the entrypoint tells you whether the requested config is on `stable` or `beta` surfaces before training starts
+  - fixed-seed AMP smoke, parity, overflow/backoff, and convergence evidence are now locked as graduation gates instead of open blockers
   - current parity baseline: `Add`, `Concat`, `Linear`, `Conv2d` (including grouped/depthwise), `BatchNorm2d`, `LayerNorm`, `LayerNorm2d`, `GroupNorm` forward/backward
   - `BatchNorm2d` train-mode running-stat semantics are now aligned with PyTorch (`running_var` uses unbiased batch variance)
   - composite parity now covers:
@@ -145,3 +147,15 @@ The next phase is narrower and more technical:
   - `ResidualBlock` now also has an `fp32` vs `AMP` tolerance gate, so AMP evidence covers both current beta composite block paths
 
 For the formal productionization path, see [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md).
+For the separate path from reference execution to real GPU execution, see
+[cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_plan.md).
+
+## Latest Graduation Result
+
+- `cuda_native` now reports `summary_status = "beta"`
+- `experimental = false`
+- `training_stable = true`
+- `backward_stable = true`
+- `support_tiers.experimental.ops == []`
+- `support_tiers.experimental.features == []`
+- final real-dataset demo now exists at `examples/cuda_native_amp_cifar10_beta_demo.py` and evaluates against the official CIFAR-10 test split

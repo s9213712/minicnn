@@ -114,7 +114,7 @@ The primary Python/CLI training path uses the flat C ABI and `ctypes`. `network.
 | `src/minicnn/config/parsing.py` | CLI/config scalar parser, strict boolean parser, and dotted-override list-index write helper. |
 | `src/minicnn/core/build.py` | Native CUDA shared library build/check wrapper supporting default, cublas, handmade, and both variants. |
 | `src/minicnn/core/cuda_backend.py` | Lazy `ctypes` loader for the native CUDA library; does not load `.so`/`.dll` on non-CUDA command imports. `reset_library_cache()` clears the cached handle when switching native variants in the same process. |
-| `src/minicnn/cuda_native/` | Primary native backend direction; public CLI surface exists, but the implementation remains experimental. |
+| `src/minicnn/cuda_native/` | Primary native backend direction; public CLI surface exists and is now beta-grade, but the implementation still uses NumPy reference execution and is not production-ready. |
 | `src/minicnn/data/` | CIFAR-10 and MNIST preparation and data loading. |
 | `src/minicnn/flex/` | PyTorch reference implementation: flexible config-driven model builder, registry, and trainer. |
 | `src/minicnn/training/train_cuda.py` | Historical `cuda_legacy` CIFAR-10 orchestration: data, epoch, validation, checkpoint, LR reduction, early stop, final test evaluation. |

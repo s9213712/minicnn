@@ -2,9 +2,15 @@
 
 `cuda_native` is MiniCNN's primary native backend direction.
 
-It is still experimental and not production-ready. The purpose of this backend
+It is now beta-grade and still not production-ready. The purpose of this backend
 is to grow the native graph/planner/executor stack in public, while
 `cuda_legacy` remains the narrow maintenance-only historical path.
+
+Related planning docs:
+
+- [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md)
+- [cuda_native_amp_graduation_checklist.md](cuda_native_amp_graduation_checklist.md)
+- [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_plan.md)
 
 ## What cuda_native Is
 
@@ -27,6 +33,9 @@ A staged, modular backend structured in layers:
 - Not backed by real CUDA kernels (uses numpy reference implementations)
 - Not a full general-purpose graph backend yet (`Add`-based ordered DAG support exists, but richer merge ops are still missing)
 
+For the staged plan to move from NumPy reference execution to real GPU
+execution, see [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_plan.md).
+
 ## Current Status
 
 | Feature | Status |
@@ -34,7 +43,7 @@ A staged, modular backend structured in layers:
 | Graph IR | ✓ Implemented |
 | Shape inference | ✓ Basic |
 | Forward execution | ✓ Basic (numpy) |
-| Planner | ✓ Conservative / experimental |
+| Planner | ✓ Conservative / beta-grade |
 | Reuse-aware planning | ✓ Experimental (`make_reuse_plan`, `make_plan(..., strategy="reuse")`) |
 | Liveness analysis | ✓ Experimental (`analyze_live_ranges`, `analyze_live_tensor_sets`, `estimate_peak_live_bytes`) |
 | Reuse cost metrics | ✓ Experimental (`reuse_events`, `release_events`, `allocation_events`, `reuse_slack_bytes`) |
@@ -48,7 +57,7 @@ A staged, modular backend structured in layers:
 | Training loop | ⚠ Research prototype |
 | Training in production | ✗ Not enabled |
 | Dynamic graph | ✗ Not supported |
-| Mixed precision | ⚠ Experimental AMP |
+| Mixed precision | ✓ Beta AMP |
 
 ## Supported Ops
 
@@ -82,7 +91,7 @@ A staged, modular backend structured in layers:
 | DropPath | ✓ prototype | ✓ prototype |
 
 `BatchNorm2d` now has forward/backward prototype support. It is part of the
-experimental training path, but remains prototype-level rather than stable.
+beta-grade training path, with explicit graduation evidence and current training/backward stability gates flipped on.
 
 `ResidualBlock`, `ConvNeXtBlock`, and `Dropout` also run through experimental
 composite / reference-kernel paths. They are validation-backed and runnable,
@@ -99,7 +108,7 @@ Validated `train-native` support boundary today:
 - loss: `CrossEntropyLoss` (optional `label_smoothing`), `BCEWithLogitsLoss` (binary output only), `MSELoss`
 - optimizer: `SGD`, `Adam`, `AdamW`, or `RMSprop`, with optional global gradient clipping
 - scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
-- `train.amp=true|false` (experimental mixed-precision prototype with loss scaling / overflow backoff)
+- `train.amp=true|false` (beta mixed-precision path with loss scaling / overflow backoff and graduation evidence)
 - `summary.json` now records `amp_config` and `amp_runtime` telemetry for AMP runs
 - `metrics.jsonl` rows now include per-epoch AMP telemetry (`loss_scale`, skipped/overflow steps, cache hits/updates/allocations)
 - `summary.json` now also records `optimizer_runtime` telemetry for optimizer state tensors
@@ -128,7 +137,7 @@ Hermetic smoke configs:
 
 ## Support Tiers
 
-`cuda_native` is still experimental as a whole backend, but its public surface
+`cuda_native` is now beta as a whole backend, while still remaining a NumPy-reference execution path rather than a production-ready GPU runtime. Its public surface
 is no longer one undifferentiated bucket.
 
 Current tiering:
@@ -156,7 +165,7 @@ Current tiering:
 - `LayerNorm2d`
 - `BCEWithLogitsLoss`
 - `RMSprop`
-- AMP
+- AMP (beta)
 - planner reuse heuristics
 
 ### Experimental
@@ -218,17 +227,17 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml \
 ```
 
 Validation payloads now also include `support_tier_assessment`, so a config can
-be accepted while still being marked as touching `beta` or `experimental`
+be accepted while still being marked as touching `beta`
 surfaces such as `amp` or composite blocks.
 
 The same `support_tier_assessment` is now persisted into `summary.json` and
 `metrics.jsonl`, so artifact consumers can tell whether a successful run stayed
-on `stable` surfaces or crossed into `beta` / `experimental` ones.
+on `stable` surfaces or crossed into `beta` ones.
 
 `train-native` now also emits the same `support_tier_assessment` in its initial
 JSON preamble, so the requested config's tier is visible before training starts.
 
-Run (experimental, research only):
+Run (beta-grade NumPy-reference backend, still research-oriented):
 
 ```bash
 minicnn train-native --config configs/dual_backend_cnn.yaml \
@@ -273,7 +282,7 @@ print(dump_plan(plan))
 #   step  0  conv2d_0    Conv2d    [buf_0] -> [buf_1]
 #   ...
 
-# Or build an experimental topology-aware reuse plan
+# Or build a beta-grade topology-aware reuse plan
 reuse_plan = make_reuse_plan(graph)
 print(dump_plan(reuse_plan))
 
@@ -370,17 +379,21 @@ Public executor contract:
 | Phase 5 | BatchNorm/Residual/Concat/Memory reuse RFCs | ✓ RFC written |
 | Phase 6 | Autograd, optimizer stack, broader op coverage | Future |
 
+AMP graduation checklist: [docs/cuda_native_amp_graduation_checklist.md](cuda_native_amp_graduation_checklist.md)
+
 Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 
 ---
 
 # cuda_native Backend（中文）
 
-`cuda_native` 是 MiniCNN 目前主要的 native backend 方向。
+`cuda_native` 是 MiniCNN 目前主要的 native backend 方向，現況已提升到 beta。
 
 它目前仍屬實驗性，也**不適合**正式環境使用。這條 backend 的目的是把
 native graph/planner/executor 能力公開地逐步長出來；`cuda_legacy`
 則維持為窄邊界的歷史維護路徑。
+
+目前它已是 beta-grade，但仍不是 production-ready，也還不是實際 GPU kernel runtime。
 
 ## cuda_native 是什麼
 

@@ -84,3 +84,15 @@ python -u examples/inference/predict_image.py --config <yaml> --checkpoint <file
 - `train.init_seed` controls torch/flex model initialization.
 - CLI overrides may address layer-list entries, for example `model.layers.1.out_features=7`.
 - String booleans such as `"false"` are parsed strictly for data, augmentation, AMP, and optimizer helper flags.
+
+## cuda_native Beta Demo
+
+Run the real-dataset beta demo against CIFAR-10:
+
+```bash
+PYTHONPATH=src python3 examples/cuda_native_amp_cifar10_beta_demo.py \
+  --data-root data/cifar-10-batches-py \
+  --artifacts-root /tmp/minicnn_cuda_native_beta_demo
+```
+
+This demo trains a small `cuda_native` model with `AdamW + AMP + grad_accum_steps=2`, then evaluates on the official CIFAR-10 `test_batch` split and prints a JSON summary.

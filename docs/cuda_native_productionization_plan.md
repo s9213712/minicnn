@@ -16,6 +16,7 @@ See also:
 - [cuda_native.md](cuda_native.md)
 - [cuda_native_contract.md](cuda_native_contract.md)
 - [cuda_native_expansion_plan.md](cuda_native_expansion_plan.md)
+- [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_plan.md)
 - [backend_capabilities.md](backend_capabilities.md)
 - [dual_backend_guide.md](dual_backend_guide.md)
 - [optimization_progress.md](optimization_progress.md)
@@ -24,7 +25,7 @@ See also:
 
 Move `cuda_native` from:
 
-- broad experimental capability growth
+- broad capability growth before beta graduation
 
 to:
 
@@ -59,7 +60,7 @@ these hold at the same time:
 5. Support tiers are explicit
 - `stable`
 - `beta`
-- `experimental`
+- `experimental` (historical starting state)
 
 Without these five, `cuda_native` remains a prototype, even if it supports many
 ops.
@@ -170,7 +171,7 @@ Required work:
   - optimizer step
 - numeric tolerance matrices for:
   - fp32
-  - AMP
+  - AMP (beta, no longer the remaining experimental blocker)
   - grad accumulation
   - different batch sizes
 - focused gradient checks for sensitive ops:
@@ -208,9 +209,10 @@ Current status:
 - `ConvNeXtBlock` hermetic smoke variants are now covered by an additional `fp32` vs `grad_accum` tolerance gate
 - named-model resolution now prefers the registered model spec over loader placeholder `model.layers`, so `convnext_tiny` support-tier assessment and train-path artifacts reflect the real expanded graph
 - `DropPath` now has deterministic train/eval correctness coverage and a dedicated train smoke path, and is published in the `beta` tier rather than `experimental`
-- `ConvNeXtBlock` now also has an explicit `fp32` vs `AMP` tolerance gate, leaving `AMP` itself as the primary remaining experimental surface rather than block support
-- `graduation_gates.full_backend_non_experimental.criteria.amp_tolerance_matrix_present` is now true; remaining AMP blockers are graduation/stability, not missing evidence collection
+- `ConvNeXtBlock` now also has an explicit `fp32` vs `AMP` tolerance gate, and AMP itself has now cleared graduation into the beta surface
+- `graduation_gates.full_backend_non_experimental.criteria.amp_tolerance_matrix_present` is now true and remains part of the locked beta evidence set
 - `graduation_gates.full_backend_non_experimental.criteria.amp_composite_tolerance_matrix_present` is now also true, since AMP evidence covers both `ResidualBlock` and `ConvNeXtBlock` beta-composite paths
+- `graduation_gates.full_backend_non_experimental.ready` is now true, with `training_stable`, `backward_stable`, and `amp_graduated` all flipped on
 - `cuda-native-capabilities` and `validate-cuda-native-config` now expose machine-readable support-tier metadata instead of leaving `Stable` / `Beta` / `Experimental` only in prose
 - `summary.json` and `metrics.jsonl` now persist the same support-tier assessment, so successful runs keep their tier boundary in artifact form
 - `cuda-native-capabilities` now also exposes machine-readable `graduation_gates`, separating the ready `core_beta_subset` from the still-blocked full-backend graduation path
@@ -270,6 +272,9 @@ The next serious milestone should be:
 
 ## `cuda_native beta-0`
 
+Status: achieved. `cuda_native` now reports `summary_status = "beta"`, `experimental = false`, `training_stable = true`, and `backward_stable = true`.
+
+
 Exit criteria:
 
 - public artifact schema frozen
@@ -322,3 +327,9 @@ For every future `cuda_native` feature, answer these questions before merging:
 4. Which support tier does this belong to?
 
 If those answers are unclear, the change is not ready.
+
+## Current State After Beta Graduation
+
+- `cuda_native` has already cleared the public beta gate
+- remaining work is no longer "remove the experimental label"
+- remaining work is: tighten runtime quality, broaden correctness matrices, and eventually replace NumPy reference execution with a true GPU execution layer via [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_plan.md)

@@ -2,7 +2,7 @@
 
 [繁體中文 README](README.zh-TW.md)
 
-![status](https://img.shields.io/badge/status-experimental-orange)
+![status](https://img.shields.io/badge/status-beta-yellow)
 ![frontend](https://img.shields.io/badge/frontend-YAML%20%2B%20CLI-blue)
 ![native](https://img.shields.io/badge/native-CUDA-green)
 
@@ -74,7 +74,7 @@ It is useful when you want one of these:
 | Backend | Role | Current status |
 |---|---|---|
 | `torch` | reference implementation | stable, broadest feature surface, first destination for new model work |
-| `cuda_native` | primary native backend | experimental, graph-based, ordered-DAG capable, active growth path |
+| `cuda_native` | primary native backend | beta, graph-based, ordered-DAG capable, NumPy-reference execution, active growth path |
 | `autograd` | correctness oracle | stable, CPU-only, useful for deterministic checks and framework learning |
 | `cuda_legacy` | historical native backend | stable inside a narrow boundary, maintenance-only, not the target for new feature growth |
 
@@ -92,7 +92,7 @@ At a high level:
 ```text
 shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
                                \
-                                -> cuda_native [PRIMARY NATIVE] (experimental graph IR, planner, numpy executor)
+                                -> cuda_native [PRIMARY NATIVE] (beta graph IR, planner, numpy executor)
                                \
                                 -> cuda_legacy [MAINTENANCE ONLY] (historical handwritten CUDA path)
 ```
@@ -110,7 +110,7 @@ The current repo state includes:
 - JSON-friendly diagnostics and validation surfaces across `healthcheck`, `doctor`, `smoke`, `validate-*`, and inspection commands
 - real `show-model` and `show-graph` introspection commands instead of placeholders
 - `cuda_native` graph semantics broadened from strict sequential graphs to ordered DAG execution with named tensor wiring plus `Add` / `Concat`
-- `cuda_native` training surface broadened to `SGD`, `Adam`, `AdamW`, `RMSprop`, `CrossEntropyLoss`, `BCEWithLogitsLoss`, `MSELoss`, `label_smoothing`, `grad_accum_steps`, and experimental AMP
+- `cuda_native` training surface broadened to `SGD`, `Adam`, `AdamW`, `RMSprop`, `CrossEntropyLoss`, `BCEWithLogitsLoss`, `MSELoss`, `label_smoothing`, `grad_accum_steps`, and beta AMP
 - `summary.json` / `metrics.jsonl` now expose planner, AMP, and optimizer-state telemetry through stable reporting keys
 
 The user-facing command surface is intentionally still small, but the internal
@@ -141,7 +141,7 @@ the backend role docs are aligned with the actual code.
 - small optimizer/layer stack for learning and tests
 - architecture tracing and CPU inference experiments without torch
 
-### `cuda_native` (Primary Native Direction, Experimental)
+### `cuda_native` (Primary Native Direction, Beta)
 
 The active native growth path in the repo, built as a graph-based backend with:
 
@@ -163,11 +163,11 @@ Current validated support boundary:
 - optimizer: `SGD`, `Adam`, `AdamW`, `RMSprop`, with optional global gradient clipping
 - scheduler: `StepLR`, `CosineAnnealingLR`, `ReduceLROnPlateau`, or disabled
 - `train.grad_accum_steps >= 1`
-- `train.amp=true|false` with experimental loss scaling / overflow backoff
+- `train.amp=true|false` with beta loss scaling / overflow backoff
 - `summary.json` reports `amp_runtime`, `optimizer_runtime`, `planner`, and `performance_report`
 - `metrics.jsonl` rows report per-epoch AMP, optimizer, and planner telemetry
 
-Backward and training prototypes exist, but the backend is still experimental and not production-ready yet. It now supports ordered DAG execution with explicit tensor wiring plus `Add` merge semantics; `cuda_legacy` remains a narrow maintenance path.
+`cuda_native` is now a beta-grade backend with stable artifact/validation contracts, `training_stable=true`, and `backward_stable=true`, but it is still not production-ready and still uses NumPy reference execution rather than real CUDA kernels. It supports ordered DAG execution with explicit tensor wiring plus `Add` merge semantics; `cuda_legacy` remains a narrow maintenance path.
 
 Hermetic native smoke examples now exist for:
 
@@ -194,6 +194,16 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 See [docs/cuda_native.md](docs/cuda_native.md) for the full guide.
 See [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md) for the staged expansion direction.
 See [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md) for the path from experimental backend to implementation-grade public contract.
+See [docs/cuda_native_amp_graduation_checklist.md](docs/cuda_native_amp_graduation_checklist.md) for the AMP graduation gate that moved the backend to beta.
+See [docs/cuda_native_gpu_enablement_plan.md](docs/cuda_native_gpu_enablement_plan.md) for the separate path from NumPy reference execution to real GPU execution.
+
+Real-dataset demo:
+
+```bash
+PYTHONPATH=src python3 examples/cuda_native_amp_cifar10_beta_demo.py \
+  --data-root data/cifar-10-batches-py \
+  --artifacts-root /tmp/minicnn_cuda_native_beta_demo
+```
 
 ## Quick Start
 

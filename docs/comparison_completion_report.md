@@ -22,7 +22,7 @@ Its main gap is not "framework shape." The main gap is that its native training
 path is still split between:
 
 - a stable but narrow `cuda_legacy` backend
-- an experimental `cuda_native` backend whose public CLI surface exists, but
+- a beta-grade `cuda_native` backend whose public CLI surface exists, but
   whose validated support boundary is still narrow and prototype-level
 
 That means the next useful improvements are backend-focused, not marketing or
@@ -37,7 +37,7 @@ MiniCNN currently has four relevant layers:
 | Torch/flex | Broadest practical user path; supports richer layers, losses, schedulers, augmentation, and custom dotted-path components. |
 | CPU/NumPy autograd | Stable educational path; supports multiple losses, optimizers, schedulers, and a compact layer stack. |
 | `cuda_legacy` | Stable handwritten CUDA path; intentionally narrow, CIFAR-10-centered, validator-driven. |
-| `cuda_native` | Experimental public backend surface; CLI-visible, but still narrow, prototype-level, and not production-ready. |
+| `cuda_native` | Beta-grade public backend surface; CLI-visible, NumPy-reference, and still not production-ready. |
 
 Any comparison that ignores this split will overstate or understate MiniCNN's
 real status.
@@ -91,7 +91,7 @@ The useful lessons are:
 
 - benchmark honestly
 - keep capability tables explicit
-- separate experimental backend work from stable public APIs
+- separate beta-grade backend work from stable public APIs
 
 MiniCNN should borrow the discipline, not the scope.
 
@@ -102,7 +102,7 @@ MiniCNN should borrow the discipline, not the scope.
 - broader `cuda_legacy` training coverage
 - stronger PyTorch parity tests for native kernels
 - benchmark reports that explain backend tradeoffs clearly
-- a cleaner promotion path from experimental `cuda_native` capabilities to a
+- a cleaner promotion path from beta `cuda_native` capabilities to a
   broader stable backend surface
 
 ### Lower-value or out-of-scope work
@@ -118,7 +118,7 @@ The practical sequence is:
 
 1. keep the frontend broad and honest
 2. keep `cuda_legacy` narrow and validator-driven
-3. document `cuda_native` as public experimental surface without pretending it is stable
+3. document `cuda_native` as public beta surface without pretending it is production-ready
 4. only promote native functionality when its CLI, capability table, and tests
    all line up
 
