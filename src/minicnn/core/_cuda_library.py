@@ -33,6 +33,8 @@ REQUIRED_SYMBOLS = (
     'im2col_forward',
     'gemm_forward',
     'dense_forward',
+    'add_forward',
+    'concat_forward',
     'softmax_xent_grad_loss_acc',
 )
 
@@ -103,6 +105,10 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
         bound_lib.gpu_synchronize.restype = None
     bound_lib.im2col_forward.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int]
     bound_lib.gemm_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
+    if hasattr(bound_lib, 'add_forward'):
+        bound_lib.add_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int]
+    if hasattr(bound_lib, 'concat_forward'):
+        bound_lib.concat_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
     bound_lib.leaky_relu_forward.argtypes = [c_void_p, c_float, c_int]
     bound_lib.leaky_relu_backward.argtypes = [c_void_p, c_void_p, c_float, c_int]
     bound_lib.dense_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]

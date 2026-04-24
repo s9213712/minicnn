@@ -191,6 +191,10 @@ class GpuNativeLibraryBridgeAdapter:
     def _symbols_for(request: GpuCAbiKernelCall) -> tuple[str, ...]:
         if request.op_name == 'Flatten':
             return tuple()
+        if request.op_name == 'Add':
+            return ('add_forward',)
+        if request.op_name == 'Concat':
+            return ('concat_forward',)
         if request.op_name == 'Linear':
             return ('dense_forward',)
         if request.op_name == 'Conv2d':

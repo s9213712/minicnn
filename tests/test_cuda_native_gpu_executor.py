@@ -50,6 +50,14 @@ class _FakeCudaLib:
         data = self.memory[d_data][:int(size)]
         self.memory[d_data][:int(size)] = np.where(data >= 0.0, data, float(alpha) * data)
 
+    def add_forward(self, d_a, d_b, d_output, size):
+        self.memory[d_output][:int(size)] = self.memory[d_a][:int(size)] + self.memory[d_b][:int(size)]
+
+    def concat_forward(self, d_a, d_b, d_output, outer, a_axis, b_axis, inner):
+        a = self.memory[d_a].reshape(int(outer), int(a_axis), int(inner))
+        b = self.memory[d_b].reshape(int(outer), int(b_axis), int(inner))
+        self.memory[d_output][...] = np.concatenate([a, b], axis=1).reshape(-1)
+
     def apply_maxpool(self, d_input, d_output, n, c, h, w):
         x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
         out_h = int(h) // 2
@@ -409,6 +417,76 @@ def test_gpu_stub_executor_uses_native_leaky_relu_when_device_pointers_available
     assert leaky_bridge_result['kernel_symbol'] == 'leaky_relu_forward'
     assert leaky_bridge_result['required_symbols'] == ['leaky_relu_forward']
     assert leaky_bridge_result['symbol_available'] is True
+
+
+def test_gpu_stub_executor_uses_native_add_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten', 'output': 'flat'},
+                {'type': 'Add', 'inputs': ['flat', 'flat'], 'output': 'sum'},
+            ],
+        },
+        (1, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
+
+    x = np.asarray([[1.0, -2.0, 3.0, -4.0]], dtype=np.float32)
+    result = executor.run(graph, x, params={})
+
+    np.testing.assert_allclose(result.output, (x.reshape(1, -1) * 2.0).astype(np.float32))
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:add_forward'] == 1
+
+    exec_summary = result.summary()
+    add_bridge_result = exec_summary['c_abi_bridge_results'][1]
+    assert add_bridge_result['kernel_symbol'] == 'add_forward'
+    assert add_bridge_result['required_symbols'] == ['add_forward']
+    assert add_bridge_result['symbol_available'] is True
+
+
+def test_gpu_stub_executor_uses_native_concat_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten', 'output': 'flat'},
+                {'type': 'Concat', 'inputs': ['flat', 'flat'], 'axis': 1, 'output': 'cat'},
+            ],
+        },
+        (1, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
+
+    x = np.asarray([[1.0, -2.0, 3.0, -4.0]], dtype=np.float32)
+    result = executor.run(graph, x, params={})
+
+    np.testing.assert_allclose(result.output, np.concatenate([x, x], axis=1).astype(np.float32))
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:concat_forward'] == 1
+
+    exec_summary = result.summary()
+    concat_bridge_result = exec_summary['c_abi_bridge_results'][1]
+    assert concat_bridge_result['kernel_symbol'] == 'concat_forward'
+    assert concat_bridge_result['required_symbols'] == ['concat_forward']
+    assert concat_bridge_result['symbol_available'] is True
 
 
 def test_gpu_stub_executor_uses_native_maxpool_when_device_pointers_available():

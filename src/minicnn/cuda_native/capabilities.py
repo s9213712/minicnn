@@ -13,7 +13,6 @@ from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
 CAPABILITY_SCHEMA_VERSION = 1
 GPU_NATIVE_BOOTSTRAP_OPS = [spec.op_name for spec in list_gpu_kernel_specs()]
 GPU_NATIVE_BOOTSTRAP_BLOCKERS = [
-    'gpu_merge_kernel_lowering_pending',
     'gpu_backward_kernel_lowering_unimplemented',
     'gpu_training_loop_not_integrated',
     'gpu_parity_matrix_missing',

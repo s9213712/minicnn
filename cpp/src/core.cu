@@ -22,6 +22,38 @@ __global__ void relu_forward_kernel(float* data, int size) {
     if (idx < size) data[idx] = fmaxf(0.0f, data[idx]);
 }
 
+__global__ void add_forward_kernel(const float* a, const float* b, float* output, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) output[idx] = a[idx] + b[idx];
+}
+
+__global__ void concat_forward_kernel(
+    const float* a,
+    const float* b,
+    float* output,
+    int outer,
+    int a_axis,
+    int b_axis,
+    int inner
+) {
+    int out_axis = a_axis + b_axis;
+    int total = outer * out_axis * inner;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= total) return;
+
+    int inner_idx = idx % inner;
+    int axis_idx = (idx / inner) % out_axis;
+    int outer_idx = idx / (inner * out_axis);
+    if (axis_idx < a_axis) {
+        int a_idx = (outer_idx * a_axis + axis_idx) * inner + inner_idx;
+        output[idx] = a[a_idx];
+    } else {
+        int b_axis_idx = axis_idx - a_axis;
+        int b_idx = (outer_idx * b_axis + b_axis_idx) * inner + inner_idx;
+        output[idx] = b[b_idx];
+    }
+}
+
 __global__ void maxpool_forward_kernel(const float* input, float* output, int n, int c, int h, int w) {
     int out_h = h / 2; int out_w = w / 2;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -127,6 +159,19 @@ extern "C" {
     void apply_relu(float* d_data, int size) {
         int tpb = 256;
         relu_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_data, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void add_forward(float* d_a, float* d_b, float* d_output, int size) {
+        int tpb = 256;
+        add_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_a, d_b, d_output, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void concat_forward(float* d_a, float* d_b, float* d_output, int outer, int a_axis, int b_axis, int inner) {
+        int total = outer * (a_axis + b_axis) * inner;
+        int tpb = 256;
+        concat_forward_kernel<<<(total + tpb - 1) / tpb, tpb>>>(d_a, d_b, d_output, outer, a_axis, b_axis, inner);
         CUDA_KERNEL_CHECK();
     }
 
