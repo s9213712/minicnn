@@ -165,6 +165,37 @@ def test_groupnorm_forward_matches_torch():
     assert np.allclose(native, expected, atol=1e-5, rtol=1e-5)
 
 
+def test_layernorm2d_forward_matches_torch():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'LayerNorm2d', 'eps': 1e-6}],
+        (2, 4, 3, 3),
+    )
+    x = np.random.default_rng(22).standard_normal((2, 4, 3, 3)).astype(np.float32)
+    gamma = np.random.default_rng(23).standard_normal((4,)).astype(np.float32)
+    beta = np.random.default_rng(24).standard_normal((4,)).astype(np.float32)
+    params = {
+        '_w_layernorm2d_0': gamma,
+        '_b_layernorm2d_0': beta,
+    }
+
+    native = ForwardExecutor().run_inference(graph, x, params=params)
+    tx = torch.from_numpy(x).permute(0, 2, 3, 1)
+    expected = F.layer_norm(
+        tx,
+        normalized_shape=(4,),
+        weight=torch.from_numpy(gamma),
+        bias=torch.from_numpy(beta),
+        eps=1e-6,
+    ).permute(0, 3, 1, 2).contiguous().detach().cpu().numpy()
+
+    assert np.allclose(native, expected, atol=1e-5, rtol=1e-5)
+
+
 def test_layernorm_backward_matches_torch():
     import torch.nn.functional as F
 
@@ -231,3 +262,43 @@ def test_groupnorm_backward_matches_torch():
     assert np.allclose(native_grad_input, tx.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
     assert np.allclose(native_param_grads['_w_groupnorm_0'], tw.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
     assert np.allclose(native_param_grads['_b_groupnorm_0'], tb.grad.detach().cpu().numpy(), atol=1e-5, rtol=1e-5)
+
+
+def test_layernorm2d_backward_matches_torch():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.backward import BackwardExecutor
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'LayerNorm2d', 'eps': 1e-6}],
+        (2, 4, 3, 3),
+    )
+    x = np.random.default_rng(25).standard_normal((2, 4, 3, 3)).astype(np.float32)
+    grad_out = np.random.default_rng(26).standard_normal((2, 4, 3, 3)).astype(np.float32)
+    gamma = np.random.default_rng(27).standard_normal((4,)).astype(np.float32)
+    beta = np.random.default_rng(28).standard_normal((4,)).astype(np.float32)
+    params = {
+        '_w_layernorm2d_0': gamma,
+        '_b_layernorm2d_0': beta,
+    }
+
+    _ctx, cache = ForwardExecutor().run_with_cache(graph, {'input': x}, params=params, mode='train')
+    native_grad_input, native_param_grads = BackwardExecutor().run(graph, grad_out, cache)
+
+    tx = torch.tensor(x, dtype=torch.float32, requires_grad=True)
+    tw = torch.tensor(gamma, dtype=torch.float32, requires_grad=True)
+    tb = torch.tensor(beta, dtype=torch.float32, requires_grad=True)
+    tout = F.layer_norm(
+        tx.permute(0, 2, 3, 1),
+        normalized_shape=(4,),
+        weight=tw,
+        bias=tb,
+        eps=1e-6,
+    ).permute(0, 3, 1, 2).contiguous()
+    tout.backward(torch.tensor(grad_out, dtype=torch.float32))
+
+    assert np.allclose(native_grad_input, tx.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads['_w_layernorm2d_0'], tw.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads['_b_layernorm2d_0'], tb.grad.detach().cpu().numpy(), atol=1e-5, rtol=1e-5)

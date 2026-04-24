@@ -189,6 +189,7 @@ Current status:
   - `Add`
   - `Concat`
   - `LayerNorm`
+  - `LayerNorm2d`
   - `GroupNorm`
 - this creates a first reference-backed slice before widening to larger composite blocks
 
