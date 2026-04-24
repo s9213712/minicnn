@@ -9,6 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SMOKE_TEMPLATE = "templates/cifar10/convnext_explicit_cuda_native_smoke.yaml"
 RESIDUAL_SMOKE_TEMPLATE = "templates/cifar10/resnet_like_cuda_native_smoke.yaml"
+CONVNEXT_TINY_SMOKE_TEMPLATE = "templates/cifar10/convnext_tiny_cuda_native_smoke.yaml"
 
 
 def _run_native_variant(
@@ -142,4 +143,35 @@ def test_cuda_native_residualblock_tolerance_matrix_stays_within_bounds(tmp_path
 
     assert abs(fp32_last["train_loss"] - accum_last["train_loss"]) <= 0.75
     assert abs(fp32_last["val_loss"] - accum_last["val_loss"]) <= 0.75
+    assert abs(fp32_last["val_acc"] - accum_last["val_acc"]) <= 25.0
+
+
+def test_cuda_native_convnextblock_tolerance_matrix_stays_within_bounds(tmp_path: Path) -> None:
+    fp32_summary, fp32_last = _run_native_variant(
+        tmp_path,
+        "convnext-fp32",
+        "train.batch_size=16",
+        "train.grad_accum_steps=1",
+        "train.amp=false",
+        template=CONVNEXT_TINY_SMOKE_TEMPLATE,
+    )
+    accum_summary, accum_last = _run_native_variant(
+        tmp_path,
+        "convnext-grad-accum",
+        "train.batch_size=8",
+        "train.grad_accum_steps=2",
+        "train.amp=false",
+        template=CONVNEXT_TINY_SMOKE_TEMPLATE,
+    )
+
+    assert fp32_summary["support_tier_assessment"]["highest_tier"] == "beta"
+    assert accum_summary["support_tier_assessment"]["highest_tier"] == "beta"
+    assert "ConvNeXtBlock" in fp32_summary["support_tier_assessment"]["ops_by_tier"]["beta"]
+    assert "ConvNeXtBlock" in accum_summary["support_tier_assessment"]["ops_by_tier"]["beta"]
+    assert accum_summary["grad_accum_steps"] == 2
+    assert accum_summary["optimizer_runtime"]["grad_buffer_tensor_count"] >= 1
+    assert accum_last["optimizer_runtime"]["grad_buffer_tensor_count"] >= 1
+
+    assert abs(fp32_last["train_loss"] - accum_last["train_loss"]) <= 1.0
+    assert abs(fp32_last["val_loss"] - accum_last["val_loss"]) <= 1.0
     assert abs(fp32_last["val_acc"] - accum_last["val_acc"]) <= 25.0

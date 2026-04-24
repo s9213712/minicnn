@@ -358,6 +358,7 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert 'AdamW' in payload['support_tiers']['stable']['optimizers']
     assert 'BCEWithLogitsLoss' in payload['support_tiers']['beta']['losses']
     assert 'ResidualBlock' in payload['support_tiers']['beta']['ops']
+    assert 'ConvNeXtBlock' in payload['support_tiers']['beta']['ops']
     assert 'DropPath' in payload['support_tiers']['experimental']['ops']
     assert 'amp' in payload['support_tiers']['experimental']['features']
     assert payload['support_tier_counts']['stable']['ops'] >= 1

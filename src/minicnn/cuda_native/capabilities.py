@@ -38,6 +38,7 @@ CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
         'ops': [
         'AdaptiveAvgPool2d',
         'AvgPool2d',
+        'ConvNeXtBlock',
         'Dropout',
         'ResidualBlock',
         'GELU',
@@ -60,7 +61,6 @@ CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
     },
     'experimental': {
         'ops': [
-            'ConvNeXtBlock',
             'DropPath',
         ],
         'optimizers': [],

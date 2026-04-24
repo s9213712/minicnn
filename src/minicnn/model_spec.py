@@ -71,7 +71,7 @@ def resolve_model_config(model_cfg: dict[str, Any]) -> dict[str, Any]:
 
     merged = deepcopy(resolved)
     for key, value in data.items():
-        if key == 'name':
+        if key in {'name', 'layers'}:
             continue
         merged[key] = deepcopy(value)
     merged.setdefault('type', normalized_name)
