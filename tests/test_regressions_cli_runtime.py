@@ -373,11 +373,11 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['support_tier_counts']['stable']['ops'] >= 1
     assert payload['execution_mode_readiness']['reference_numpy']['ready'] is True
     assert payload['execution_mode_readiness']['gpu_native']['ready'] is False
-    assert payload['execution_mode_readiness']['gpu_native']['status'] == 'planned'
+    assert payload['execution_mode_readiness']['gpu_native']['status'] == 'bootstrap_forward_partial'
     assert 'Conv2d' in payload['execution_mode_readiness']['gpu_native']['bootstrap_subset_ops']
-    assert payload['execution_mode_readiness']['gpu_native']['kernel_readiness']['Conv2d'] == 'planned'
-    assert 'gpu_kernel_registry_unimplemented' in payload['execution_mode_readiness']['gpu_native']['remaining_blockers']
-    assert any(entry['op_name'] == 'Conv2d' and entry['forward_status'] == 'planned' for entry in payload['gpu_kernel_registry_surface'])
+    assert payload['execution_mode_readiness']['gpu_native']['kernel_readiness']['Conv2d'] == 'partial_native'
+    assert 'gpu_training_loop_not_integrated' in payload['execution_mode_readiness']['gpu_native']['remaining_blockers']
+    assert any(entry['op_name'] == 'Conv2d' and entry['forward_status'] == 'partial_native' for entry in payload['gpu_kernel_registry_surface'])
     assert any(entry['op_name'] == 'Flatten' and entry['backward_status'] == 'not_needed' for entry in payload['gpu_kernel_registry_surface'])
     assert payload['graduation_gates']['core_beta_subset']['ready'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['ready'] is True

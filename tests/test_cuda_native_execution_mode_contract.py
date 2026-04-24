@@ -101,17 +101,17 @@ def test_validate_cuda_native_config_rejects_planned_gpu_native_mode(tmp_path, c
     assert payload['tensor_execution_device'] == 'gpu'
     assert payload['gpu_execution'] is False
     assert payload['execution_readiness_assessment']['selected_execution_mode'] == 'gpu_native'
-    assert payload['execution_readiness_assessment']['status'] == 'planned'
+    assert payload['execution_readiness_assessment']['status'] == 'bootstrap_forward_partial'
     assert payload['execution_readiness_assessment']['ready'] is False
     assert payload['execution_readiness_assessment']['bootstrap_subset_complete'] is True
     assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Flatten', 'Linear']
     assert payload['execution_readiness_assessment']['bootstrap_missing_ops'] == []
-    assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['Flatten']['forward_status'] == 'planned'
+    assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['Flatten']['forward_status'] == 'native_alias'
     assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['Linear']['backward_status'] == 'planned'
     assert payload['execution_readiness_assessment']['dispatch_plan']['ready'] is True
     assert payload['execution_readiness_assessment']['dispatch_plan']['num_steps'] == 2
-    assert 'gpu_native_execution_not_implemented' in payload['execution_readiness_assessment']['remaining_blockers']
-    assert any('planned but not yet implemented' in err for err in payload['errors'])
+    assert 'gpu_training_loop_not_integrated' in payload['execution_readiness_assessment']['remaining_blockers']
+    assert any('partial native forward execution' in err for err in payload['errors'])
     assert any('bootstrap subset coverage' in err for err in payload['errors'])
     assert any('all requested ops are within bootstrap subset' in err for err in payload['errors'])
 

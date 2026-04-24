@@ -31,7 +31,7 @@ def test_gpu_dispatch_plan_supports_bootstrap_subset_graph():
     assert summary['unsupported_ops'] == []
     assert [step['op_name'] for step in summary['steps']] == ['Flatten', 'Linear', 'ReLU', 'Linear']
     assert summary['steps'][0]['launch_family'] == 'reshape_view'
-    assert summary['steps'][0]['forward_status'] == 'planned'
+    assert summary['steps'][0]['forward_status'] == 'native_alias'
     assert summary['steps'][0]['backward_status'] == 'not_needed'
     assert summary['steps'][0]['input_arity'] == 1
     assert summary['steps'][0]['output_arity'] == 1

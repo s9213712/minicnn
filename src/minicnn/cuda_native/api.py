@@ -158,8 +158,9 @@ def _validate_engine_cfg(engine_cfg: dict[str, Any]) -> list[str]:
         return errors
     if execution_mode in _PLANNED_EXECUTION_MODES:
         errors.append(
-            "cuda_native engine.execution_mode='gpu_native' is planned but not yet implemented; "
-            "currently supported execution modes: {reference_numpy}."
+            "cuda_native engine.execution_mode='gpu_native' has partial native forward execution, "
+            "but train-native GPU execution is not yet supported; currently supported execution modes: "
+            "{reference_numpy}."
         )
         return errors
     supported = ', '.join(sorted(_SUPPORTED_EXECUTION_MODES | _PLANNED_EXECUTION_MODES))
