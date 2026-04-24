@@ -110,6 +110,7 @@ Validated `train-native` support boundary today:
 - `summary.json` now includes `performance_report`, which bundles planner, AMP, optimizer, and training knobs in one place
 - `performance_report.efficiency` now adds directly readable derived metrics such as cache-hit ratio, grad-buffer reuse ratio, grad-buffer active/capacity fractions, and planner peak-live fraction
 - `performance_report.runtime` now summarizes epoch-level timing and estimated training throughput
+- `performance_report.runtime.hotspots` now records a representative traced forward-pass hotspot summary (`top_nodes`, `top_ops`)
 - `summary.json` and `metrics.jsonl` now both expose explicit `schema_name` / `schema_version`
 - `summary.json` now includes `checkpoint_contract` metadata instead of silently implying the checkpoint format
 - `validate-cuda-native-config` now has an explicit validation-result schema contract (`schema_name`, `schema_version`, `artifact_kind`)
@@ -436,6 +437,7 @@ reference-kernel 路徑接通，可驗證、可執行，但仍不是正式穩定
 - `summary.json` 也包含 `performance_report`，把 planner / AMP / optimizer / training knobs 集中整理
 - `performance_report.efficiency` 也會提供較直接可讀的衍生效率指標，例如 cache-hit ratio、grad-buffer reuse ratio、grad-buffer 的 active/capacity fraction、planner peak-live fraction
 - `performance_report.runtime` 也會整理 epoch-level timing 與估算的 training throughput
+- `performance_report.runtime.hotspots` 也會記錄代表性 traced forward pass 的 hotspot 摘要（`top_nodes`、`top_ops`）
 - `summary.json` 與 `metrics.jsonl` 現在都會帶明確的 `schema_name` / `schema_version`
 - `summary.json` 也會帶 `checkpoint_contract` metadata，而不是把 checkpoint 格式隱含在實作裡
 - `validate-cuda-native-config` 也已有明確的 validation-result schema contract（`schema_name`、`schema_version`、`artifact_kind`）

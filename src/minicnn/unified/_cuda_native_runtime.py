@@ -78,6 +78,64 @@ def _optimizer_runtime_snapshot(optimizer_state: dict[str, Any]) -> dict[str, An
     return runtime
 
 
+def _profile_hotspots(
+    graph: NativeGraph,
+    x_sample: np.ndarray,
+    params: dict[str, np.ndarray],
+    *,
+    amp_enabled: bool,
+    top_k: int = 5,
+) -> dict[str, Any]:
+    from minicnn.cuda_native.debug import TracingForwardExecutor
+
+    if graph.input_spec is None:
+        return {}
+    tracing_executor = TracingForwardExecutor()
+    feeds = {
+        graph.input_spec.name: (x_sample.astype(np.float16) if amp_enabled else x_sample),
+    }
+    profile_params = params
+    if amp_enabled:
+        profile_params = {
+            key: (
+                value.astype(np.float16)
+                if isinstance(value, np.ndarray) and np.issubdtype(value.dtype, np.floating)
+                else value
+            )
+            for key, value in params.items()
+        }
+    _ctx, trace = tracing_executor.run(graph, feeds, profile_params, mode='eval')
+    trace_summary = trace.summary()
+    steps = trace_summary.get('steps', [])
+    sorted_steps = sorted(
+        (step for step in steps if isinstance(step, dict)),
+        key=lambda step: float(step.get('elapsed_ms', 0.0)),
+        reverse=True,
+    )
+    top_nodes = [
+        {
+            'node': step.get('node'),
+            'op': step.get('op'),
+            'elapsed_ms': step.get('elapsed_ms'),
+        }
+        for step in sorted_steps[:top_k]
+    ]
+    op_totals: dict[str, float] = {}
+    for step in sorted_steps:
+        op = str(step.get('op', 'unknown'))
+        op_totals[op] = op_totals.get(op, 0.0) + float(step.get('elapsed_ms', 0.0))
+    top_ops = [
+        {'op': op, 'elapsed_ms': round(elapsed, 3)}
+        for op, elapsed in sorted(op_totals.items(), key=lambda item: item[1], reverse=True)[:top_k]
+    ]
+    return {
+        'trace_total_ms': round(float(trace_summary.get('total_ms', 0.0)), 3),
+        'trace_steps': len(steps),
+        'top_nodes': top_nodes,
+        'top_ops': top_ops,
+    }
+
+
 @dataclass
 class NativeTrainingContext:
     cfg: dict[str, Any]
@@ -383,6 +441,15 @@ def run_training_loop(
     total_epoch_time = float(sum(epoch_times))
     epochs_completed = len(epoch_times)
     train_samples_per_epoch = int(ctx.x_train.shape[0])
+    hotspot_profile = {}
+    if ctx.x_val.shape[0] > 0:
+        sample_batch = ctx.x_val[: min(ctx.batch_size, ctx.x_val.shape[0])]
+        hotspot_profile = _profile_hotspots(
+            ctx.graph,
+            sample_batch,
+            best_params,
+            amp_enabled=ctx.amp,
+        )
     runtime_profile = {
         'epochs_completed': epochs_completed,
         'train_samples_per_epoch': train_samples_per_epoch,
@@ -396,6 +463,7 @@ def run_training_loop(
             if total_epoch_time > 0.0 and epochs_completed > 0
             else 0.0
         ),
+        'hotspots': hotspot_profile,
     }
     return best_params, best_val_acc, amp_runtime, optimizer_runtime, runtime_profile
 
