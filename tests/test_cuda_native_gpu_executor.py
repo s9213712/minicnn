@@ -32,6 +32,10 @@ def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     assert summary['output_name'] == graph.output_spec.name
     assert summary['dispatch_plan']['ready'] is True
     assert summary['dispatch_plan']['num_steps'] == 4
+    assert len(summary['launch_trace']) == 4
+    assert summary['launch_trace'][0]['launch_family'] == 'reshape_view'
+    assert summary['launch_trace'][1]['launch_family'] == 'gemm_affine'
+    assert summary['launch_trace'][1]['tensor_args'][2]['binding'] == '_w_linear_1'
     assert tuple(summary['output_shape']) == (1, 2)
     assert runtime_summary['tensor_execution_device'] == 'gpu'
     assert runtime_summary['execution_kinds']['gpu_stub_forward'] == 1
@@ -41,6 +45,9 @@ def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     assert runtime_summary['execution_kinds']['gpu_stub_launch:reshape_view'] == 1
     assert runtime_summary['execution_kinds']['gpu_stub_launch:gemm_affine'] == 2
     assert runtime_summary['execution_kinds']['gpu_stub_launch:elementwise_unary'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_packet:reshape_view'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_packet:gemm_affine'] == 2
+    assert runtime_summary['execution_kinds']['gpu_stub_packet:elementwise_unary'] == 1
     assert runtime_summary['reserved_buffer_reuse_events'] >= 2
     assert runtime_summary['reserved_buffer_release_events'] >= 2
 

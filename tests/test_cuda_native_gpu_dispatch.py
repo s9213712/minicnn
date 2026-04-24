@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from minicnn.cuda_native.api import build_cuda_native_graph
-from minicnn.cuda_native.gpu_dispatch import build_gpu_dispatch_plan
+from minicnn.cuda_native.gpu_dispatch import build_gpu_dispatch_plan, build_gpu_launch_trace
 
 
 def test_gpu_dispatch_plan_supports_bootstrap_subset_graph():
@@ -130,3 +130,28 @@ def test_gpu_dispatch_plan_marks_ops_outside_bootstrap_subset():
     assert summary['steps'][0]['launch_descriptor']['normalized_tensor_args'][0]['binding'] == 'input'
     assert summary['steps'][0]['forward_status'] == 'unsupported'
     assert summary['steps'][2]['param_keys'] == ['_w_linear_2', '_b_linear_2']
+
+
+def test_gpu_launch_trace_builds_normalized_packets():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 8},
+                {'type': 'ReLU'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 8, 8),
+    )
+
+    plan = build_gpu_dispatch_plan(graph)
+    packets = build_gpu_launch_trace(plan)
+
+    assert len(packets) == 4
+    assert packets[0].launch_family == 'reshape_view'
+    assert packets[1].launch_family == 'gemm_affine'
+    assert packets[1].tensor_args[0]['binding'] == 't_1'
+    assert packets[1].tensor_args[2]['binding'] == '_w_linear_1'
+    assert packets[1].tensor_args[2]['layout'] == 'OI'
+    assert packets[1].scalar_args == ()

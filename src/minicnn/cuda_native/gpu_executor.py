@@ -7,7 +7,12 @@ from typing import Any
 import numpy as np
 
 from minicnn.cuda_native.device_runtime import DeviceRuntime
-from minicnn.cuda_native.gpu_dispatch import GpuDispatchPlan, build_gpu_dispatch_plan
+from minicnn.cuda_native.gpu_dispatch import (
+    GpuDispatchPlan,
+    GpuLaunchPacket,
+    build_gpu_dispatch_plan,
+    build_gpu_launch_packet,
+)
 from minicnn.cuda_native.gpu_lowering import (
     GpuLoweringContext,
     GpuLoweringRegistry,
@@ -21,12 +26,14 @@ class GpuStubExecutionResult:
     output_name: str
     output: np.ndarray
     dispatch_plan: GpuDispatchPlan
+    launch_trace: tuple[GpuLaunchPacket, ...]
 
     def summary(self) -> dict[str, Any]:
         return {
             'output_name': self.output_name,
             'output_shape': list(self.output.shape),
             'dispatch_plan': self.dispatch_plan.summary(),
+            'launch_trace': [packet.summary() for packet in self.launch_trace],
         }
 
 
@@ -73,6 +80,7 @@ class GpuStubExecutor:
             for node in graph.topological_order()
             for input_name in node.inputs
         )
+        launch_trace: list[GpuLaunchPacket] = []
         staged_input = self.device_runtime.stage_to_device(
             x,
             name=graph.input_spec.name,
@@ -88,6 +96,8 @@ class GpuStubExecutor:
         for step in dispatch_plan.steps:
             node = graph_nodes[step.node_name]
             lowering = self.lowering_registry.get(step.op_name)
+            launch_packet = build_gpu_launch_packet(step)
+            launch_trace.append(launch_packet)
             staged_output = lowering(node, lowering_ctx)
             output_name = staged_output.name or node.outputs[0]
             tensors[output_name] = staged_output
@@ -99,6 +109,12 @@ class GpuStubExecutor:
             )
             self.device_runtime.record_execution(
                 f'gpu_stub_launch:{step.launch_family}',
+                input_name=step.input_names[0] if step.input_names else None,
+                output_name=output_name,
+                node_count=0,
+            )
+            self.device_runtime.record_execution(
+                f'gpu_stub_packet:{step.launch_family}',
                 input_name=step.input_names[0] if step.input_names else None,
                 output_name=output_name,
                 node_count=0,
@@ -129,4 +145,5 @@ class GpuStubExecutor:
             output_name=graph.output_spec.name,
             output=host_output,
             dispatch_plan=dispatch_plan,
+            launch_trace=tuple(launch_trace),
         )

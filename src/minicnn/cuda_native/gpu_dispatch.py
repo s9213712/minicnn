@@ -24,6 +24,28 @@ class GpuLaunchDescriptor:
 
 
 @dataclass(frozen=True)
+class GpuLaunchPacket:
+    node_name: str
+    op_name: str
+    launch_family: str
+    lowering_kind: str
+    preferred_layout: str
+    tensor_args: tuple[dict[str, Any], ...]
+    scalar_args: tuple[dict[str, Any], ...]
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            'node_name': self.node_name,
+            'op_name': self.op_name,
+            'launch_family': self.launch_family,
+            'lowering_kind': self.lowering_kind,
+            'preferred_layout': self.preferred_layout,
+            'tensor_args': [dict(arg) for arg in self.tensor_args],
+            'scalar_args': [dict(arg) for arg in self.scalar_args],
+        }
+
+
+@dataclass(frozen=True)
 class GpuDispatchStep:
     node_name: str
     op_name: str
@@ -282,3 +304,19 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
         steps=tuple(steps),
         unsupported_ops=tuple(sorted(set(unsupported_ops))),
     )
+
+
+def build_gpu_launch_packet(step: GpuDispatchStep) -> GpuLaunchPacket:
+    return GpuLaunchPacket(
+        node_name=step.node_name,
+        op_name=step.op_name,
+        launch_family=step.launch_family,
+        lowering_kind=step.lowering_kind,
+        preferred_layout=step.preferred_layout,
+        tensor_args=tuple(dict(arg) for arg in step.launch_descriptor.normalized_tensor_args),
+        scalar_args=tuple(dict(arg) for arg in step.launch_descriptor.normalized_scalar_args),
+    )
+
+
+def build_gpu_launch_trace(plan: GpuDispatchPlan) -> tuple[GpuLaunchPacket, ...]:
+    return tuple(build_gpu_launch_packet(step) for step in plan.steps)
