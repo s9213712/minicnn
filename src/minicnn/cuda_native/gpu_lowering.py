@@ -203,12 +203,72 @@ def _lower_concat(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
 
 
 def _lower_conv2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
-    x = np.asarray(_input_tensor(node, ctx).data, dtype=np.float32)
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
     w = np.asarray(ctx.params[f'_w_{node.name}'], dtype=np.float32)
     b = ctx.params.get(f'_b_{node.name}')
     groups = int(node.attrs.get('groups', x.shape[1] if node.op_type in {'DepthwiseConv2d', 'depthwise_conv2d'} else 1))
     stride = _attr_pair(node.attrs.get('stride', 1), label='stride', node=node)
     padding = _attr_pair(node.attrs.get('padding', 0), label='padding', node=node)
+    if (
+        ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and b is None
+        and groups == 1
+        and stride == (1, 1)
+        and padding == (0, 0)
+        and hasattr(ctx.runtime.bound_lib, 'im2col_forward')
+        and hasattr(ctx.runtime.bound_lib, 'gemm_forward')
+        and hasattr(ctx.runtime.bound_lib, 'cnhw_to_nchw')
+    ):
+        n, c_in, h_in, w_in = [int(v) for v in x.shape]
+        c_out, _w_c, kh, kw = [int(v) for v in w.shape]
+        out_h = h_in - kh + 1
+        out_w = w_in - kw + 1
+        output = ctx.runtime.allocate_staging_buffer(
+            tuple(node.output_specs[0].shape),
+            dtype='float32',
+            name=node.outputs[0],
+        )
+        weight_tensor = ctx.runtime.stage_to_device(w.reshape(c_out, -1), name=f'_w_{node.name}')
+        col_elems = c_in * kh * kw * n * out_h * out_w
+        raw_elems = c_out * n * out_h * out_w
+        col_ptr = ctx.runtime.bound_lib.gpu_malloc(int(col_elems * 4))
+        raw_ptr = ctx.runtime.bound_lib.gpu_malloc(int(raw_elems * 4))
+        try:
+            ctx.runtime.bound_lib.im2col_forward(
+                input_tensor.device_ptr,
+                col_ptr,
+                n,
+                c_in,
+                h_in,
+                w_in,
+                kh,
+                kw,
+                out_h,
+                out_w,
+            )
+            ctx.runtime.bound_lib.gemm_forward(
+                weight_tensor.device_ptr,
+                col_ptr,
+                raw_ptr,
+                c_out,
+                n * out_h * out_w,
+                c_in * kh * kw,
+            )
+            ctx.runtime.bound_lib.cnhw_to_nchw(raw_ptr, output.device_ptr, n, c_out, out_h, out_w)
+            ctx.runtime.record_execution(
+                'gpu_native_kernel:conv2d_im2col_gemm',
+                input_name=node.inputs[0],
+                output_name=node.outputs[0],
+                node_count=1,
+            )
+            ctx.runtime.sync_tensor_to_host(output)
+        finally:
+            ctx.runtime.bound_lib.gpu_free(col_ptr)
+            ctx.runtime.bound_lib.gpu_free(raw_ptr)
+            ctx.runtime.release_buffer(weight_tensor)
+        return output
     output = _conv2d_forward_array(
         x,
         w,

@@ -59,6 +59,29 @@ class _FakeCudaLib:
                         out[ni, ci, oh, ow] = np.max(window)
         self.memory[d_output][...] = out.reshape(-1)
 
+    def im2col_forward(self, d_input, d_output, n, c, h, w, kh, kw, out_h, out_w):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        col = np.zeros((int(c) * int(kh) * int(kw), int(n) * int(out_h) * int(out_w)), dtype=np.float32)
+        for row_c in range(int(c)):
+            for row_kh in range(int(kh)):
+                for row_kw in range(int(kw)):
+                    row = row_c * int(kh) * int(kw) + row_kh * int(kw) + row_kw
+                    for ni in range(int(n)):
+                        for oh in range(int(out_h)):
+                            for ow in range(int(out_w)):
+                                col_idx = ni * int(out_h) * int(out_w) + oh * int(out_w) + ow
+                                col[row, col_idx] = x[ni, row_c, oh + row_kh, ow + row_kw]
+        self.memory[d_output][...] = col.reshape(-1)
+
+    def gemm_forward(self, d_a, d_b, d_c, m, n, k):
+        a = self.memory[d_a].reshape(int(m), int(k))
+        b = self.memory[d_b].reshape(int(k), int(n))
+        self.memory[d_c][...] = (a @ b).reshape(-1)
+
+    def cnhw_to_nchw(self, d_input, d_output, n, c, h, w):
+        x = self.memory[d_input].reshape(int(c), int(n), int(h), int(w))
+        self.memory[d_output][...] = np.transpose(x, (1, 0, 2, 3)).reshape(-1)
+
 
 def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     graph = build_cuda_native_graph(
@@ -334,3 +357,48 @@ def test_gpu_stub_executor_uses_native_maxpool_when_device_pointers_available():
 
     summary = runtime.summary()
     assert summary['execution_kinds']['gpu_native_kernel:apply_maxpool'] == 1
+
+
+def test_gpu_stub_executor_uses_native_conv2d_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Conv2d', 'out_channels': 2, 'kernel_size': 2, 'padding': 0, 'bias': False},
+            ],
+        },
+        (1, 1, 3, 3),
+    )
+    params = {
+        '_w_conv2d_0': np.asarray(
+            [
+                [[[1.0, 0.0], [0.0, 1.0]]],
+                [[[0.5, 0.5], [0.5, 0.5]]],
+            ],
+            dtype=np.float32,
+        ),
+    }
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=8192, num_buffers=8)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.arange(9, dtype=np.float32).reshape(1, 1, 3, 3)
+    result = executor.run(graph, x, params=params)
+
+    expected = np.asarray(
+        [
+            [
+                [[4.0, 6.0], [10.0, 12.0]],
+                [[4.0, 6.0], [10.0, 12.0]],
+            ]
+        ],
+        dtype=np.float32,
+    )
+    np.testing.assert_allclose(result.output, expected)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:conv2d_im2col_gemm'] == 1
