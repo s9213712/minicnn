@@ -14,8 +14,64 @@ CAPABILITY_SCHEMA_VERSION = 1
 GPU_NATIVE_BOOTSTRAP_OPS = [spec.op_name for spec in list_gpu_kernel_specs()]
 GPU_NATIVE_BOOTSTRAP_BLOCKERS = [
     'gpu_graph_backward_generalization_pending',
-    'gpu_conv_activation_pool_composition_pending',
-    'gpu_parity_matrix_missing',
+    'gpu_repeated_conv_composite_training_pending',
+    'gpu_real_hardware_parity_pending',
+]
+GPU_NATIVE_TRAINING_SUBSETS = [
+    {
+        'name': 'linear',
+        'ops': ['Linear'],
+        'helper': 'native_gpu_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
+        'name': 'flatten_linear',
+        'ops': ['Flatten', 'Linear'],
+        'helper': 'native_gpu_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
+        'name': 'linear_relu_linear',
+        'ops': ['Linear', 'ReLU', 'Linear'],
+        'helper': 'native_gpu_two_linear_relu_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
+        'name': 'flatten_linear_relu_linear',
+        'ops': ['Flatten', 'Linear', 'ReLU', 'Linear'],
+        'helper': 'native_gpu_two_linear_relu_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
+        'name': 'maxpool_linear',
+        'ops': ['MaxPool2d', 'Flatten', 'Linear'],
+        'helper': 'native_gpu_pool_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
+        'name': 'conv_linear',
+        'ops': ['Conv2d', 'Flatten', 'Linear'],
+        'helper': 'native_gpu_conv_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
+        'name': 'conv_relu_linear',
+        'ops': ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
+        'helper': 'native_gpu_conv_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
+        'name': 'conv_pool_linear',
+        'ops': ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
+        'helper': 'native_gpu_conv_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
+        'name': 'conv_relu_pool_linear',
+        'ops': ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        'helper': 'native_gpu_conv_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
 ]
 
 CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
@@ -207,6 +263,7 @@ CUDA_NATIVE_EXECUTION_MODE_READINESS: dict[str, dict[str, object]] = {
         'ready': True,
         'tensor_execution_device': 'gpu',
         'bootstrap_subset_ops': GPU_NATIVE_BOOTSTRAP_OPS,
+        'training_subsets': GPU_NATIVE_TRAINING_SUBSETS,
         'kernel_readiness': {
             spec.op_name: spec.forward_status
             for spec in list_gpu_kernel_specs()

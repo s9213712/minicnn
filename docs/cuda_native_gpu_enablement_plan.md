@@ -21,6 +21,7 @@ See also:
 - [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md)
 - [cuda_native_expansion_plan.md](cuda_native_expansion_plan.md)
 - [backend_capabilities.md](backend_capabilities.md)
+- [cuda_native_gpu_parity_matrix.md](cuda_native_gpu_parity_matrix.md)
 
 ## Current State
 
@@ -142,7 +143,8 @@ Current status:
   - `Linear + SoftmaxCE + SGD` now has a narrow native GPU training-step helper that exercises forward, loss gradient, dense backward, and optimizer update through the C ABI
   - `train-native engine.execution_mode=gpu_native` now accepts the narrow `Flatten -> Linear`, `Flatten -> Linear -> ReLU -> Linear`, `MaxPool2d -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`, and `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` / `CrossEntropyLoss` / `SGD` subset
   - CUDA runtime preflight now fails before allocation when the installed driver/runtime pair is incompatible, instead of aborting inside `cudaMalloc`
-  - remaining blockers are wider repeated-Conv/composite GPU training composition and a full GPU parity matrix
+  - hermetic GPU training parity matrix now exists in `cuda_native_gpu_parity_matrix.md`
+  - remaining blockers are wider repeated-Conv/composite GPU training composition and real-hardware parity after CUDA driver/runtime compatibility is restored
 
 Goal:
 

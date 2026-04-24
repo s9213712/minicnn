@@ -636,3 +636,25 @@ def test_native_gpu_conv_relu_pool_linear_training_step_matches_reference_math()
     assert result.runtime_summary['execution_kinds']['gpu_native_train:maxpool_backward_nchw'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_relu_backward'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:conv_backward'] == 1
+
+
+def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
+    from minicnn.cuda_native.capabilities import GPU_NATIVE_TRAINING_SUBSETS
+
+    matrix = {tuple(item['ops']): item for item in GPU_NATIVE_TRAINING_SUBSETS}
+    expected_ops = {
+        ('Linear',),
+        ('Flatten', 'Linear'),
+        ('Linear', 'ReLU', 'Linear'),
+        ('Flatten', 'Linear', 'ReLU', 'Linear'),
+        ('MaxPool2d', 'Flatten', 'Linear'),
+        ('Conv2d', 'Flatten', 'Linear'),
+        ('Conv2d', 'ReLU', 'Flatten', 'Linear'),
+        ('Conv2d', 'MaxPool2d', 'Flatten', 'Linear'),
+        ('Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'),
+    }
+
+    assert set(matrix) == expected_ops
+    for item in matrix.values():
+        assert item['parity'] == 'hermetic_reference_math'
+        assert item['helper'].startswith('native_gpu_')
