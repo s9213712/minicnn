@@ -99,9 +99,45 @@ def _lower_flatten(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
 
 
 def _lower_linear(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
-    x = np.asarray(_input_tensor(node, ctx).data, dtype=np.float32)
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
     w = np.asarray(ctx.params[f'_w_{node.name}'], dtype=np.float32)
     b = ctx.params.get(f'_b_{node.name}')
+    if (
+        ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and hasattr(ctx.runtime.bound_lib, 'dense_forward')
+    ):
+        output = ctx.runtime.allocate_staging_buffer(
+            tuple(node.output_specs[0].shape),
+            dtype='float32',
+            name=node.outputs[0],
+        )
+        bias = np.asarray(
+            np.zeros(w.shape[0], dtype=np.float32) if b is None else b,
+            dtype=np.float32,
+        )
+        weight_tensor = ctx.runtime.stage_to_device(w, name=f'_w_{node.name}')
+        bias_tensor = ctx.runtime.stage_to_device(bias, name=f'_b_{node.name}')
+        ctx.runtime.bound_lib.dense_forward(
+            input_tensor.device_ptr,
+            weight_tensor.device_ptr,
+            bias_tensor.device_ptr,
+            output.device_ptr,
+            int(x.shape[0]),
+            int(w.shape[1]),
+            int(w.shape[0]),
+        )
+        ctx.runtime.record_execution(
+            'gpu_native_kernel:dense_forward',
+            input_name=node.inputs[0],
+            output_name=node.outputs[0],
+            node_count=1,
+        )
+        ctx.runtime.sync_tensor_to_host(output)
+        ctx.runtime.release_buffer(weight_tensor)
+        ctx.runtime.release_buffer(bias_tensor)
+        return output
     output = x @ w.T
     if b is not None:
         output = output + np.asarray(b, dtype=np.float32)

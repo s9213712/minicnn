@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ctypes
+
 import numpy as np
 
 from minicnn.cuda_native.api import build_cuda_native_graph
@@ -7,6 +9,39 @@ from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.gpu_bridge_adapter import GpuNativeLibraryBridgeAdapter
 from minicnn.cuda_native.gpu_executor import GpuStubExecutor
 from minicnn.unified._cuda_native_bridge import _init_params
+
+
+class _FakeCudaLib:
+    def __init__(self):
+        self.next_ptr = 1000
+        self.memory = {}
+        self.dense_forward_calls = []
+
+    def gpu_malloc(self, nbytes):
+        ptr = self.next_ptr
+        self.next_ptr += int(nbytes) + 8
+        self.memory[ptr] = np.zeros(int(nbytes) // 4, dtype=np.float32)
+        return ptr
+
+    def gpu_free(self, ptr):
+        self.memory.pop(ptr, None)
+
+    def gpu_memcpy_h2d(self, ptr, host_ptr, nbytes):
+        count = int(nbytes) // 4
+        src = np.ctypeslib.as_array((ctypes.c_float * count).from_address(int(host_ptr)))
+        self.memory[ptr][...] = src
+
+    def gpu_memcpy_d2h(self, host_ptr, ptr, nbytes):
+        count = int(nbytes) // 4
+        dst = np.ctypeslib.as_array((ctypes.c_float * count).from_address(int(host_ptr)))
+        dst[...] = self.memory[ptr]
+
+    def dense_forward(self, d_input, d_weight, d_bias, d_output, n, in_f, out_f):
+        self.dense_forward_calls.append((d_input, d_weight, d_bias, d_output, n, in_f, out_f))
+        x = self.memory[d_input].reshape(int(n), int(in_f))
+        w = self.memory[d_weight].reshape(int(out_f), int(in_f))
+        b = self.memory[d_bias].reshape(int(out_f))
+        self.memory[d_output][...] = (x @ w.T + b).reshape(-1)
 
 
 def test_gpu_stub_executor_runs_bootstrap_subset_graph():
@@ -182,3 +217,41 @@ def test_gpu_stub_executor_can_use_native_library_bridge_adapter():
     assert linear_result['symbol_available'] is True
     assert linear_result['requires_device_pointers'] is True
     assert linear_result['executed'] is False
+
+
+def test_gpu_stub_executor_uses_native_dense_forward_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 4),
+    )
+    params = {
+        '_w_linear_1': np.asarray([[1.0, 2.0, 3.0, 4.0], [0.5, -1.0, 0.0, 2.0]], dtype=np.float32),
+        '_b_linear_1': np.asarray([0.25, -0.5], dtype=np.float32),
+    }
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.asarray([[1.0, 2.0, 3.0, 4.0]], dtype=np.float32)
+    result = executor.run(graph, x, params=params)
+
+    expected = x @ params['_w_linear_1'].T + params['_b_linear_1']
+    np.testing.assert_allclose(result.output, expected.astype(np.float32))
+    assert len(fake_lib.dense_forward_calls) == 1
+
+    summary = runtime.summary()
+    assert summary['native_device_pointers_enabled'] is True
+    assert summary['execution_kinds']['gpu_native_kernel:dense_forward'] == 1
+    assert summary['device_pointer_allocation_events'] >= 4
+    assert summary['device_sync_to_device_events'] >= 3
+    assert summary['device_sync_to_host_events'] >= 1
