@@ -7,8 +7,13 @@ from typing import Any
 import numpy as np
 
 from minicnn.cuda_native.device_runtime import DeviceRuntime
-from minicnn.cuda_native.gpu_bridge import GpuKernelBridgeRequest, build_gpu_bridge_trace
-from minicnn.cuda_native.gpu_bridge_adapter import GpuKernelBridgeAdapter, GpuStubBridgeAdapter
+from minicnn.cuda_native.gpu_bridge import (
+    GpuFlatKernelRequest,
+    GpuKernelBridgeRequest,
+    build_flat_gpu_bridge_trace,
+    build_gpu_bridge_trace,
+)
+from minicnn.cuda_native.gpu_bridge_adapter import GpuFlatBridgeAdapter, GpuKernelBridgeAdapter, GpuStubBridgeAdapter
 from minicnn.cuda_native.gpu_dispatch import (
     GpuDispatchPlan,
     GpuLaunchPacket,
@@ -30,7 +35,9 @@ class GpuStubExecutionResult:
     dispatch_plan: GpuDispatchPlan
     launch_trace: tuple[GpuLaunchPacket, ...]
     bridge_trace: tuple[GpuKernelBridgeRequest, ...]
+    flat_bridge_trace: tuple[GpuFlatKernelRequest, ...]
     bridge_results: tuple[dict[str, Any], ...]
+    flat_bridge_results: tuple[dict[str, Any], ...]
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -39,7 +46,9 @@ class GpuStubExecutionResult:
             'dispatch_plan': self.dispatch_plan.summary(),
             'launch_trace': [packet.summary() for packet in self.launch_trace],
             'bridge_trace': [request.summary() for request in self.bridge_trace],
+            'flat_bridge_trace': [request.summary() for request in self.flat_bridge_trace],
             'bridge_results': [dict(result) for result in self.bridge_results],
+            'flat_bridge_results': [dict(result) for result in self.flat_bridge_results],
         }
 
 
@@ -56,11 +65,13 @@ class GpuStubExecutor:
         lowering_registry: GpuLoweringRegistry | None = None,
         device_runtime: DeviceRuntime | None = None,
         bridge_adapter: GpuKernelBridgeAdapter | None = None,
+        flat_bridge_adapter: GpuFlatBridgeAdapter | None = None,
     ) -> None:
         self.lowering_registry = (
             lowering_registry if lowering_registry is not None else make_default_gpu_lowering_registry()
         )
         self.bridge_adapter = bridge_adapter if bridge_adapter is not None else GpuStubBridgeAdapter()
+        self.flat_bridge_adapter = flat_bridge_adapter if flat_bridge_adapter is not None else GpuFlatBridgeAdapter()
         self.device_runtime = device_runtime if device_runtime is not None else DeviceRuntime(
             execution_mode='gpu_native',
             tensor_execution_device='gpu',
@@ -150,12 +161,22 @@ class GpuStubExecutor:
                 tensors.pop(tensor_name)
         self.device_runtime.release_buffer(output_tensor)
         bridge_trace = build_gpu_bridge_trace(tuple(launch_trace))
+        flat_bridge_trace = build_flat_gpu_bridge_trace(bridge_trace)
         bridge_results: list[dict[str, Any]] = []
+        flat_bridge_results: list[dict[str, Any]] = []
         for request in bridge_trace:
             bridge_results.append(dict(self.bridge_adapter.submit(request)))
             self.device_runtime.record_execution(
                 f'gpu_stub_bridge:{request.launch_family}',
                 input_name=request.tensor_args[0]['binding'] if request.tensor_args else None,
+                output_name=request.node_name,
+                node_count=0,
+            )
+        for request in flat_bridge_trace:
+            flat_bridge_results.append(dict(self.flat_bridge_adapter.submit_flat(request)))
+            self.device_runtime.record_execution(
+                f'gpu_stub_flat_bridge:{request.launch_family}',
+                input_name=request.tensor_bindings[0] if request.tensor_bindings else None,
                 output_name=request.node_name,
                 node_count=0,
             )
@@ -165,5 +186,7 @@ class GpuStubExecutor:
             dispatch_plan=dispatch_plan,
             launch_trace=tuple(launch_trace),
             bridge_trace=bridge_trace,
+            flat_bridge_trace=flat_bridge_trace,
             bridge_results=tuple(bridge_results),
+            flat_bridge_results=tuple(flat_bridge_results),
         )

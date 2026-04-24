@@ -107,6 +107,44 @@ class GpuKernelBridgeRequest:
         }
 
 
+@dataclass(frozen=True)
+class GpuFlatKernelRequest:
+    request_id: str
+    node_name: str
+    op_name: str
+    launch_family: str
+    dispatch_mode: str
+    preferred_layout: str
+    tensor_bindings: tuple[str, ...]
+    tensor_roles: tuple[str, ...]
+    tensor_shapes: tuple[tuple[int, ...], ...]
+    tensor_dtypes: tuple[str, ...]
+    tensor_layouts: tuple[str, ...]
+    scalar_names: tuple[str, ...]
+    scalar_values: tuple[Any, ...]
+    param_bindings: tuple[str, ...]
+    bridge_payload: dict[str, Any]
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            'request_id': self.request_id,
+            'node_name': self.node_name,
+            'op_name': self.op_name,
+            'launch_family': self.launch_family,
+            'dispatch_mode': self.dispatch_mode,
+            'preferred_layout': self.preferred_layout,
+            'tensor_bindings': list(self.tensor_bindings),
+            'tensor_roles': list(self.tensor_roles),
+            'tensor_shapes': [list(shape) for shape in self.tensor_shapes],
+            'tensor_dtypes': list(self.tensor_dtypes),
+            'tensor_layouts': list(self.tensor_layouts),
+            'scalar_names': list(self.scalar_names),
+            'scalar_values': list(self.scalar_values),
+            'param_bindings': list(self.param_bindings),
+            'bridge_payload': dict(self.bridge_payload),
+        }
+
+
 def build_gpu_bridge_request(packet: GpuLaunchPacket, *, index: int) -> GpuKernelBridgeRequest:
     return GpuKernelBridgeRequest(
         request_id=f'{packet.node_name}:{index}',
@@ -126,3 +164,47 @@ def build_gpu_bridge_trace(packets: tuple[GpuLaunchPacket, ...]) -> tuple[GpuKer
         build_gpu_bridge_request(packet, index=index)
         for index, packet in enumerate(packets)
     )
+
+
+def flatten_gpu_bridge_request(request: GpuKernelBridgeRequest) -> GpuFlatKernelRequest:
+    tensor_bindings: list[str] = []
+    tensor_roles: list[str] = []
+    tensor_shapes: list[tuple[int, ...]] = []
+    tensor_dtypes: list[str] = []
+    tensor_layouts: list[str] = []
+    param_bindings: list[str] = []
+    for arg in request.tensor_args:
+        role = str(arg.get('kind', 'tensor'))
+        binding = str(arg.get('binding'))
+        tensor_bindings.append(binding)
+        tensor_roles.append(role)
+        tensor_shapes.append(tuple(int(v) for v in arg.get('shape', ())))
+        tensor_dtypes.append(str(arg.get('dtype', request.bridge_payload.get('tensor_dtype', 'float32'))))
+        tensor_layouts.append(str(arg.get('layout', request.preferred_layout)))
+        if role == 'param':
+            param_bindings.append(binding)
+    scalar_names = tuple(str(arg.get('name')) for arg in request.scalar_args)
+    scalar_values = tuple(arg.get('value') for arg in request.scalar_args)
+    return GpuFlatKernelRequest(
+        request_id=request.request_id,
+        node_name=request.node_name,
+        op_name=request.op_name,
+        launch_family=request.launch_family,
+        dispatch_mode=request.dispatch_mode,
+        preferred_layout=request.preferred_layout,
+        tensor_bindings=tuple(tensor_bindings),
+        tensor_roles=tuple(tensor_roles),
+        tensor_shapes=tuple(tensor_shapes),
+        tensor_dtypes=tuple(tensor_dtypes),
+        tensor_layouts=tuple(tensor_layouts),
+        scalar_names=scalar_names,
+        scalar_values=scalar_values,
+        param_bindings=tuple(param_bindings),
+        bridge_payload=dict(request.bridge_payload),
+    )
+
+
+def build_flat_gpu_bridge_trace(
+    requests: tuple[GpuKernelBridgeRequest, ...],
+) -> tuple[GpuFlatKernelRequest, ...]:
+    return tuple(flatten_gpu_bridge_request(request) for request in requests)
