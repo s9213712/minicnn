@@ -84,6 +84,7 @@ def _profile_hotspots(
     params: dict[str, np.ndarray],
     *,
     amp_enabled: bool,
+    mode: str,
     top_k: int = 5,
 ) -> dict[str, Any]:
     from minicnn.cuda_native.debug import TracingForwardExecutor
@@ -104,7 +105,7 @@ def _profile_hotspots(
             )
             for key, value in params.items()
         }
-    _ctx, trace = tracing_executor.run(graph, feeds, profile_params, mode='eval')
+    _ctx, trace = tracing_executor.run(graph, feeds, profile_params, mode=mode)
     trace_summary = trace.summary()
     steps = trace_summary.get('steps', [])
     sorted_steps = sorted(
@@ -144,7 +145,7 @@ def _profile_hotspots(
         for category, elapsed in sorted(category_totals.items(), key=lambda item: item[1], reverse=True)[:top_k]
     ]
     return {
-        'profile_mode': 'eval',
+        'profile_mode': mode,
         'sample_batch_size': int(x_sample.shape[0]),
         'trace_total_ms': round(float(trace_summary.get('total_ms', 0.0)), 3),
         'trace_steps': len(steps),
@@ -459,14 +460,25 @@ def run_training_loop(
     total_epoch_time = float(sum(epoch_times))
     epochs_completed = len(epoch_times)
     train_samples_per_epoch = int(ctx.x_train.shape[0])
-    hotspot_profile = {}
+    train_hotspot_profile = {}
+    eval_hotspot_profile = {}
     if ctx.x_val.shape[0] > 0:
-        sample_batch = ctx.x_val[: min(ctx.batch_size, ctx.x_val.shape[0])]
-        hotspot_profile = _profile_hotspots(
+        eval_sample_batch = ctx.x_val[: min(ctx.batch_size, ctx.x_val.shape[0])]
+        eval_hotspot_profile = _profile_hotspots(
             ctx.graph,
-            sample_batch,
+            eval_sample_batch,
             best_params,
             amp_enabled=ctx.amp,
+            mode='eval',
+        )
+    if ctx.x_train.shape[0] > 0:
+        train_sample_batch = ctx.x_train[: min(ctx.batch_size, ctx.x_train.shape[0])]
+        train_hotspot_profile = _profile_hotspots(
+            ctx.graph,
+            train_sample_batch,
+            best_params,
+            amp_enabled=ctx.amp,
+            mode='train',
         )
     runtime_profile = {
         'epochs_completed': epochs_completed,
@@ -481,7 +493,9 @@ def run_training_loop(
             if total_epoch_time > 0.0 and epochs_completed > 0
             else 0.0
         ),
-        'hotspots': hotspot_profile,
+        'train_hotspots': train_hotspot_profile,
+        'eval_hotspots': eval_hotspot_profile,
+        'hotspots': eval_hotspot_profile,
     }
     return best_params, best_val_acc, amp_runtime, optimizer_runtime, runtime_profile
 
