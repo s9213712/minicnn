@@ -46,6 +46,19 @@ class _FakeCudaLib:
     def apply_relu(self, d_data, size):
         self.memory[d_data][:int(size)] = np.maximum(self.memory[d_data][:int(size)], 0.0)
 
+    def apply_maxpool(self, d_input, d_output, n, c, h, w):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        out_h = int(h) // 2
+        out_w = int(w) // 2
+        out = np.zeros((int(n), int(c), out_h, out_w), dtype=np.float32)
+        for ni in range(int(n)):
+            for ci in range(int(c)):
+                for oh in range(out_h):
+                    for ow in range(out_w):
+                        window = x[ni, ci, oh * 2:oh * 2 + 2, ow * 2:ow * 2 + 2]
+                        out[ni, ci, oh, ow] = np.max(window)
+        self.memory[d_output][...] = out.reshape(-1)
+
 
 def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     graph = build_cuda_native_graph(
@@ -293,3 +306,31 @@ def test_gpu_stub_executor_uses_native_relu_when_device_pointers_available():
     summary = runtime.summary()
     assert summary['execution_kinds']['gpu_native_kernel:dense_forward'] == 1
     assert summary['execution_kinds']['gpu_native_kernel:apply_relu'] == 1
+
+
+def test_gpu_stub_executor_uses_native_maxpool_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'MaxPool2d', 'kernel_size': 2, 'stride': 2},
+            ],
+        },
+        (1, 1, 4, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.arange(16, dtype=np.float32).reshape(1, 1, 4, 4)
+    result = executor.run(graph, x)
+
+    expected = np.asarray([[[[5.0, 7.0], [13.0, 15.0]]]], dtype=np.float32)
+    np.testing.assert_allclose(result.output, expected)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:apply_maxpool'] == 1

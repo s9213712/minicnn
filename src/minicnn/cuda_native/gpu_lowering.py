@@ -222,7 +222,41 @@ def _lower_conv2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
 
 
 def _lower_maxpool2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
-    x = np.asarray(_input_tensor(node, ctx).data, dtype=np.float32)
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
+    kh, kw = _attr_pair(node.attrs.get('kernel_size', 2), label='kernel_size', node=node)
+    sh, sw = _attr_pair(node.attrs.get('stride', 2), label='stride', node=node)
+    ph, pw = _attr_pair(node.attrs.get('padding', 0), label='padding', node=node)
+    if (
+        ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and hasattr(ctx.runtime.bound_lib, 'apply_maxpool')
+        and x.ndim == 4
+        and (kh, kw) == (2, 2)
+        and (sh, sw) == (2, 2)
+        and (ph, pw) == (0, 0)
+    ):
+        output = ctx.runtime.allocate_staging_buffer(
+            tuple(node.output_specs[0].shape),
+            dtype='float32',
+            name=node.outputs[0],
+        )
+        ctx.runtime.bound_lib.apply_maxpool(
+            input_tensor.device_ptr,
+            output.device_ptr,
+            int(x.shape[0]),
+            int(x.shape[1]),
+            int(x.shape[2]),
+            int(x.shape[3]),
+        )
+        ctx.runtime.record_execution(
+            'gpu_native_kernel:apply_maxpool',
+            input_name=node.inputs[0],
+            output_name=node.outputs[0],
+            node_count=1,
+        )
+        ctx.runtime.sync_tensor_to_host(output)
+        return output
     windows, _kernel, _stride = _pool2d_windows(node, x)
     output = windows.max(axis=(-2, -1)).astype(np.float32)
     return _allocate_output(node, ctx, output)
