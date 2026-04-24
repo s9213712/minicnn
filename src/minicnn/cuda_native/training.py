@@ -25,19 +25,28 @@ OptimizerType = Literal['sgd', 'adam', 'adamw', 'rmsprop']
 def _clip_gradients(
     param_grads: dict[str, np.ndarray],
     max_norm: float,
+    *,
+    param_keys: set[str] | tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, np.ndarray]:
-    if max_norm <= 0.0 or not param_grads:
-        return dict(param_grads)
+    if param_keys is None:
+        selected_keys = tuple(param_grads.keys())
+    else:
+        selected_keys = tuple(key for key in param_keys if key in param_grads)
+    if not selected_keys:
+        return {}
+    if max_norm <= 0.0:
+        return {key: param_grads[key] for key in selected_keys}
     total_sq_norm = 0.0
-    for grad in param_grads.values():
+    for key in selected_keys:
+        grad = param_grads[key]
         total_sq_norm += float(np.sum(np.square(grad, dtype=np.float32)))
     total_norm = float(np.sqrt(total_sq_norm))
     if total_norm <= max_norm or total_norm == 0.0:
-        return dict(param_grads)
+        return {key: param_grads[key] for key in selected_keys}
     scale = max_norm / (total_norm + 1e-12)
     return {
-        key: (grad * scale).astype(np.float32)
-        for key, grad in param_grads.items()
+        key: (param_grads[key] * scale).astype(np.float32)
+        for key in selected_keys
     }
 
 
@@ -49,12 +58,13 @@ def sgd_update(
     momentum: float = 0.0,
     optimizer_state: dict[str, Any] | None = None,
     grad_clip_global: float = 0.0,
+    param_keys: set[str] | tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, np.ndarray]:
     """Return a new param dict after one SGD step.
 
     Does not mutate the input dicts.
     """
-    clipped_grads = _clip_gradients(param_grads, grad_clip_global)
+    clipped_grads = _clip_gradients(param_grads, grad_clip_global, param_keys=param_keys)
     velocity: dict[str, np.ndarray] = {}
     runtime = _optimizer_runtime_state(optimizer_state, optimizer_type='sgd')
     if optimizer_state is not None:
@@ -88,8 +98,9 @@ def adamw_update(
     beta1: float = 0.9,
     beta2: float = 0.999,
     eps: float = 1e-8,
+    param_keys: set[str] | tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, np.ndarray]:
-    clipped_grads = _clip_gradients(param_grads, grad_clip_global)
+    clipped_grads = _clip_gradients(param_grads, grad_clip_global, param_keys=param_keys)
     state = optimizer_state if optimizer_state is not None else {}
     runtime = _optimizer_runtime_state(optimizer_state, optimizer_type='adamw')
     m_state: dict[str, np.ndarray] = state.setdefault('adamw_m', {})
@@ -104,9 +115,10 @@ def adamw_update(
         if key not in clipped_grads:
             updated[key] = val
             continue
-        grad = clipped_grads[key].astype(np.float32)
-        m_prev = _get_or_init_state_tensor(m_state, key, val.astype(np.float32), runtime)
-        v_prev = _get_or_init_state_tensor(v_state, key, val.astype(np.float32), runtime)
+        grad = np.asarray(clipped_grads[key], dtype=np.float32)
+        val_f32 = np.asarray(val, dtype=np.float32)
+        m_prev = _get_or_init_state_tensor(m_state, key, val_f32, runtime)
+        v_prev = _get_or_init_state_tensor(v_state, key, val_f32, runtime)
         grad_sq = np.square(grad, dtype=np.float32)
         m_prev *= beta1
         m_prev += (1.0 - beta1) * grad
@@ -114,11 +126,11 @@ def adamw_update(
         v_prev += (1.0 - beta2) * grad_sq
         m_hat = m_prev / bias_correction1
         v_hat = v_prev / bias_correction2
-        next_val = val.astype(np.float32)
+        next_val = val_f32.copy()
         if weight_decay > 0.0:
             next_val = next_val - lr * weight_decay * next_val
         next_val = next_val - lr * (m_hat / (np.sqrt(v_hat) + eps))
-        updated[key] = next_val.astype(np.float32)
+        updated[key] = next_val
     return updated
 
 
@@ -132,8 +144,9 @@ def adam_update(
     beta1: float = 0.9,
     beta2: float = 0.999,
     eps: float = 1e-8,
+    param_keys: set[str] | tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, np.ndarray]:
-    clipped_grads = _clip_gradients(param_grads, grad_clip_global)
+    clipped_grads = _clip_gradients(param_grads, grad_clip_global, param_keys=param_keys)
     state = optimizer_state if optimizer_state is not None else {}
     m_state: dict[str, np.ndarray] = state.setdefault('adam_m', {})
     v_state: dict[str, np.ndarray] = state.setdefault('adam_v', {})
@@ -174,8 +187,9 @@ def rmsprop_update(
     alpha: float = 0.99,
     eps: float = 1e-8,
     momentum: float = 0.0,
+    param_keys: set[str] | tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, np.ndarray]:
-    clipped_grads = _clip_gradients(param_grads, grad_clip_global)
+    clipped_grads = _clip_gradients(param_grads, grad_clip_global, param_keys=param_keys)
     state = optimizer_state if optimizer_state is not None else {}
     v_state: dict[str, np.ndarray] = state.setdefault('rmsprop_v', {})
     buf_state: dict[str, np.ndarray] = state.setdefault('rmsprop_buf', {})
@@ -466,50 +480,54 @@ def train_step(
     if amp_enabled:
         amp_state['finite_steps'] = int(amp_state.get('finite_steps', 0)) + 1
 
-    active_grad_buffer = {key: grad_buffer[key] for key in grad_buffer_active_keys}
+    active_grad_keys = tuple(grad_buffer_active_keys)
 
     if not apply_optimizer_step:
         updated_params = dict(params)
     elif optimizer_type == 'sgd':
         updated_params = sgd_update(
             params,
-            active_grad_buffer,
+            grad_buffer,
             lr,
             weight_decay,
             momentum=momentum,
             optimizer_state=optimizer_state,
             grad_clip_global=grad_clip_global,
+            param_keys=active_grad_keys,
         )
         _reset_grad_buffer(grad_buffer, runtime, active_keys=grad_buffer_active_keys)
     elif optimizer_type == 'adamw':
         updated_params = adamw_update(
             params,
-            active_grad_buffer,
+            grad_buffer,
             lr,
             weight_decay=weight_decay,
             optimizer_state=optimizer_state,
             grad_clip_global=grad_clip_global,
+            param_keys=active_grad_keys,
         )
         _reset_grad_buffer(grad_buffer, runtime, active_keys=grad_buffer_active_keys)
     elif optimizer_type == 'adam':
         updated_params = adam_update(
             params,
-            active_grad_buffer,
+            grad_buffer,
             lr,
             weight_decay=weight_decay,
             optimizer_state=optimizer_state,
             grad_clip_global=grad_clip_global,
+            param_keys=active_grad_keys,
         )
         _reset_grad_buffer(grad_buffer, runtime, active_keys=grad_buffer_active_keys)
     elif optimizer_type == 'rmsprop':
         updated_params = rmsprop_update(
             params,
-            active_grad_buffer,
+            grad_buffer,
             lr,
             weight_decay=weight_decay,
             optimizer_state=optimizer_state,
             grad_clip_global=grad_clip_global,
             momentum=momentum,
+            param_keys=active_grad_keys,
         )
         _reset_grad_buffer(grad_buffer, runtime, active_keys=grad_buffer_active_keys)
     else:
