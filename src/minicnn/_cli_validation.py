@@ -67,7 +67,9 @@ def handle_validate_cuda_native_config(args) -> int:
         payload['note'] = (
             'beta-grade backend; reference_numpy is broadly supported, while gpu_native is '
             'supported for the narrow Linear, Linear+ReLU, MaxPool+Linear, '
-            'and Conv2d(valid, bias=false)+Linear / CrossEntropyLoss / SGD training subsets'
+            'Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, '
+            'Conv2d(valid, bias=false)+MaxPool+Linear, and Conv2d(valid, bias=false)+ReLU+MaxPool+Linear '
+            '/ CrossEntropyLoss / SGD training subsets'
         )
     _print_validation_result(payload, command='validate-cuda-native-config', output_format=args.format)
     return 0 if not errors else 2

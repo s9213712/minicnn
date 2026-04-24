@@ -92,6 +92,8 @@ class NativeGpuConvLinearTrainingStepResult:
     loss_mean: float
     correct_count: int
     runtime_summary: dict[str, Any]
+    pooled_output: np.ndarray | None = None
+    grad_pooled: np.ndarray | None = None
 
 
 def _load_bound_lib(bound_lib: Any | None) -> Any:
@@ -759,11 +761,13 @@ def native_gpu_conv_linear_training_step(
     conv_weight_velocity: np.ndarray | None = None,
     linear_weight_velocity: np.ndarray | None = None,
     linear_bias_velocity: np.ndarray | None = None,
+    apply_relu_activation: bool = False,
+    apply_maxpool: bool = False,
     bound_lib: Any | None = None,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuConvLinearTrainingStepResult:
-    """Run one native GPU Conv2d(valid, no bias) + Linear + SoftmaxCE + SGD step."""
+    """Run one native GPU Conv2d(valid, no bias) + optional ReLU/MaxPool + Linear + SoftmaxCE + SGD step."""
 
     x_f32 = np.ascontiguousarray(x, dtype=np.float32)
     labels_i32 = np.ascontiguousarray(labels, dtype=np.int32)
@@ -800,11 +804,21 @@ def native_gpu_conv_linear_training_step(
     out_w = width - kw + 1
     if out_h <= 0 or out_w <= 0:
         raise ValueError('native_gpu_conv_linear_training_step requires valid Conv2d output dimensions.')
-    flat_features = out_c * out_h * out_w
-    if linear_w_f32.ndim != 2 or linear_w_f32.shape[1] != flat_features:
+    conv_features = out_c * out_h * out_w
+    if bool(apply_maxpool):
+        if out_h % 2 != 0 or out_w % 2 != 0:
+            raise ValueError('native_gpu_conv_linear_training_step requires even Conv2d H/W before 2x2 MaxPool2d.')
+        pool_h = out_h // 2
+        pool_w = out_w // 2
+        dense_features = out_c * pool_h * pool_w
+    else:
+        pool_h = out_h
+        pool_w = out_w
+        dense_features = conv_features
+    if linear_w_f32.ndim != 2 or linear_w_f32.shape[1] != dense_features:
         raise ValueError(
-            'native_gpu_conv_linear_training_step expects linear_weight with shape (classes, out_c*out_h*out_w), '
-            f'got linear_weight={linear_w_f32.shape} for conv_features={flat_features}'
+            'native_gpu_conv_linear_training_step expects linear_weight with shape (classes, flattened_features), '
+            f'got linear_weight={linear_w_f32.shape} for flattened_features={dense_features}'
         )
     if linear_b_f32.shape != (linear_w_f32.shape[0],):
         raise ValueError(
@@ -854,14 +868,16 @@ def native_gpu_conv_linear_training_step(
     col_t = alloc((patch_size, spatial_size), 'conv_col')
     conv_raw_t = alloc((out_c, n, out_h, out_w), 'conv_raw_cnhw')
     conv_t = alloc((n, out_c, out_h, out_w), 'conv_output')
+    pooled_t = alloc((n, out_c, pool_h, pool_w), 'pooled') if bool(apply_maxpool) else None
     logits_t = alloc((n, classes), 'logits')
     probs_t = alloc((n, classes), 'probs')
     grad_logits_t = alloc((n, classes), 'grad_logits')
     grad_conv_t = alloc((n, out_c, out_h, out_w), 'grad_conv_output')
+    grad_pooled_t = alloc((n, out_c, pool_h, pool_w), 'grad_pooled') if bool(apply_maxpool) else None
     grad_conv_cnhw_t = alloc((out_c, n, out_h, out_w), 'grad_conv_cnhw')
     grad_input_t = alloc((n, in_c, height, width), 'grad_input')
     grad_conv_w_t = alloc((out_c, in_c, kh, kw), 'grad_conv_weight')
-    grad_linear_w_t = alloc((classes, flat_features), 'grad_linear_weight')
+    grad_linear_w_t = alloc((classes, dense_features), 'grad_linear_weight')
     grad_linear_b_t = alloc((classes,), 'grad_linear_bias')
     loss_sum_t = alloc((1,), 'loss_sum')
     correct_t = alloc((1,), 'correct_count', dtype='int32')
@@ -873,8 +889,19 @@ def native_gpu_conv_linear_training_step(
         lib.gemm_forward(conv_w_t.device_ptr, col_t.device_ptr, conv_raw_t.device_ptr, out_c, spatial_size, patch_size)
         lib.cnhw_to_nchw(conv_raw_t.device_ptr, conv_t.device_ptr, n, out_c, out_h, out_w)
         runtime.record_execution('gpu_native_train:conv2d_im2col_gemm', input_name='input', output_name='conv_output', node_count=1)
-        lib.dense_forward(conv_t.device_ptr, linear_w_t.device_ptr, linear_b_t.device_ptr, logits_t.device_ptr, n, flat_features, classes)
-        runtime.record_execution('gpu_native_train:dense_forward', input_name='conv_output', output_name='logits', node_count=1)
+        if bool(apply_relu_activation):
+            lib.apply_relu(conv_t.device_ptr, int(n * conv_features))
+            runtime.record_execution('gpu_native_train:apply_relu', input_name='conv_output', output_name='conv_output', node_count=1)
+        dense_input_t = conv_t
+        dense_input_name = 'conv_output'
+        if bool(apply_maxpool):
+            assert pooled_t is not None
+            lib.apply_maxpool(conv_t.device_ptr, pooled_t.device_ptr, n, out_c, out_h, out_w)
+            runtime.record_execution('gpu_native_train:apply_maxpool', input_name='conv_output', output_name='pooled', node_count=1)
+            dense_input_t = pooled_t
+            dense_input_name = 'pooled'
+        lib.dense_forward(dense_input_t.device_ptr, linear_w_t.device_ptr, linear_b_t.device_ptr, logits_t.device_ptr, n, dense_features, classes)
+        runtime.record_execution('gpu_native_train:dense_forward', input_name=dense_input_name, output_name='logits', node_count=1)
         lib.softmax_xent_grad_loss_acc(
             logits_t.device_ptr,
             labels_t.device_ptr,
@@ -886,18 +913,37 @@ def native_gpu_conv_linear_training_step(
             classes,
         )
         runtime.record_execution('gpu_native_train:softmax_xent_grad_loss_acc', input_name='logits', output_name='grad_logits', node_count=1)
+        dense_grad_t = grad_pooled_t if bool(apply_maxpool) else grad_conv_t
+        assert dense_grad_t is not None
         lib.dense_backward_full(
             grad_logits_t.device_ptr,
-            conv_t.device_ptr,
+            dense_input_t.device_ptr,
             linear_w_t.device_ptr,
-            grad_conv_t.device_ptr,
+            dense_grad_t.device_ptr,
             grad_linear_w_t.device_ptr,
             grad_linear_b_t.device_ptr,
             n,
-            flat_features,
+            dense_features,
             classes,
         )
         runtime.record_execution('gpu_native_train:dense_backward_full', input_name='grad_logits', output_name='grad_linear_weight', node_count=1)
+        if bool(apply_maxpool):
+            assert grad_pooled_t is not None
+            lib.maxpool_backward_nchw(
+                grad_pooled_t.device_ptr,
+                conv_t.device_ptr,
+                grad_conv_t.device_ptr,
+                n,
+                out_c,
+                out_h,
+                out_w,
+                pool_h,
+                pool_w,
+            )
+            runtime.record_execution('gpu_native_train:maxpool_backward_nchw', input_name='grad_pooled', output_name='grad_conv_output', node_count=1)
+        if bool(apply_relu_activation):
+            lib.apply_relu_backward(conv_t.device_ptr, grad_conv_t.device_ptr, int(n * conv_features))
+            runtime.record_execution('gpu_native_train:apply_relu_backward', input_name='conv_output', output_name='grad_conv_output', node_count=1)
         lib.nchw_to_cnhw(grad_conv_t.device_ptr, grad_conv_cnhw_t.device_ptr, n, out_c, out_h, out_w)
         lib.conv_backward(
             grad_conv_cnhw_t.device_ptr,
@@ -931,8 +977,10 @@ def native_gpu_conv_linear_training_step(
         logits = runtime.stage_to_host(logits_t)
         probabilities = runtime.stage_to_host(probs_t)
         conv_output = runtime.stage_to_host(conv_t)
+        pooled_output = runtime.stage_to_host(pooled_t) if pooled_t is not None else None
         grad_logits = runtime.stage_to_host(grad_logits_t)
         grad_conv_output = runtime.stage_to_host(grad_conv_t)
+        grad_pooled = runtime.stage_to_host(grad_pooled_t) if grad_pooled_t is not None else None
         grad_input = runtime.stage_to_host(grad_input_t)
         grad_conv_weight = runtime.stage_to_host(grad_conv_w_t)
         grad_linear_weight = runtime.stage_to_host(grad_linear_w_t)
@@ -966,6 +1014,8 @@ def native_gpu_conv_linear_training_step(
             loss_mean=loss_sum / float(n),
             correct_count=correct_count,
             runtime_summary=runtime.summary(),
+            pooled_output=pooled_output,
+            grad_pooled=grad_pooled,
         )
     finally:
         for tensor in tensors:

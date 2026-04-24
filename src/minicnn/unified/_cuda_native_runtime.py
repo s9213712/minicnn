@@ -426,7 +426,12 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         return {'kind': 'two_linear_relu', 'linear_nodes': [nodes[1], nodes[3]], 'relu_node': nodes[2]}
     if ops == ['MaxPool2d', 'Flatten', 'Linear']:
         return {'kind': 'pool_linear', 'pool_node': nodes[0], 'linear_nodes': [nodes[2]]}
-    if ops == ['Conv2d', 'Flatten', 'Linear']:
+    if ops in (
+        ['Conv2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+    ):
         conv_attrs = dict(getattr(nodes[0], 'attrs', {}) or {})
 
         def _pair(value: Any, default: int) -> tuple[int, int]:
@@ -448,12 +453,23 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
             raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires padding=0.')
         if _pair(conv_attrs.get('dilation', 1), 1) != (1, 1):
             raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires dilation=1.')
-        return {'kind': 'conv_linear', 'conv_node': nodes[0], 'linear_nodes': [nodes[2]]}
+        has_relu = 'ReLU' in ops
+        has_pool = 'MaxPool2d' in ops
+        linear_node = nodes[-1]
+        return {
+            'kind': 'conv_linear',
+            'conv_node': nodes[0],
+            'linear_nodes': [linear_node],
+            'apply_relu_activation': has_relu,
+            'apply_maxpool': has_pool,
+        }
     raise ValueError(
         'cuda_native gpu_native train-native currently supports only '
         'ops=[Linear], ops=[Flatten, Linear], ops=[Linear, ReLU, Linear], '
         'ops=[Flatten, Linear, ReLU, Linear], ops=[MaxPool2d, Flatten, Linear], '
-        'or ops=[Conv2d, Flatten, Linear], '
+        'ops=[Conv2d, Flatten, Linear], ops=[Conv2d, ReLU, Flatten, Linear], '
+        'ops=[Conv2d, MaxPool2d, Flatten, Linear], or '
+        'ops=[Conv2d, ReLU, MaxPool2d, Flatten, Linear], '
         f'got {ops}.'
     )
 
@@ -661,6 +677,8 @@ def run_training_loop(
                             conv_weight_velocity=velocity_state.get(conv_weight_key),
                             linear_weight_velocity=velocity_state.get(linear_weight_key),
                             linear_bias_velocity=velocity_state.get(linear_bias_key),
+                            apply_relu_activation=bool(gpu_training_plan.get('apply_relu_activation', False)),
+                            apply_maxpool=bool(gpu_training_plan.get('apply_maxpool', False)),
                             bound_lib=ctx.device_runtime.bound_lib,
                         )
                         params = dict(params)

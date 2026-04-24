@@ -447,3 +447,192 @@ def test_native_gpu_conv_linear_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:conv2d_im2col_gemm'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:conv_backward'] == 1
+
+
+def test_native_gpu_conv_relu_linear_training_step_matches_reference_math():
+    x = np.asarray(
+        [
+            [[[1.0, 2.0, -1.0], [0.0, 1.5, 2.5], [3.0, -0.5, 1.0]]],
+            [[[-1.0, 0.5, 2.0], [1.0, -1.5, 0.0], [2.5, 1.5, -0.5]]],
+        ],
+        dtype=np.float32,
+    )
+    labels = np.asarray([1, 0], dtype=np.int32)
+    conv_weight = np.asarray(
+        [
+            [[[0.2, -0.1], [0.05, 0.3]]],
+            [[[-0.2, 0.1], [0.25, -0.05]]],
+        ],
+        dtype=np.float32,
+    )
+    linear_weight = np.asarray(
+        [
+            [0.1, -0.2, 0.3, 0.05, -0.1, 0.2, -0.05, 0.15],
+            [-0.05, 0.25, -0.15, 0.2, 0.05, -0.1, 0.3, -0.2],
+        ],
+        dtype=np.float32,
+    )
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.04
+
+    result = native_gpu_conv_linear_training_step(
+        x,
+        labels,
+        conv_weight,
+        linear_weight,
+        linear_bias,
+        lr=lr,
+        apply_relu_activation=True,
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    conv_pre = np.zeros((2, 2, 2, 2), dtype=np.float32)
+    for ni in range(x.shape[0]):
+        for oc in range(conv_weight.shape[0]):
+            for oh in range(2):
+                for ow in range(2):
+                    conv_pre[ni, oc, oh, ow] = np.sum(x[ni, :, oh:oh + 2, ow:ow + 2] * conv_weight[oc])
+    conv = np.maximum(conv_pre, 0.0)
+    flat = conv.reshape(2, -1)
+    logits = flat @ linear_weight.T + linear_bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_linear_weight = grad_logits.T @ flat
+    grad_linear_bias = grad_logits.sum(axis=0)
+    grad_conv_output = (grad_logits @ linear_weight).reshape(conv.shape)
+    grad_conv_output = np.where(conv > 0.0, grad_conv_output, 0.0)
+    grad_conv_weight = np.zeros_like(conv_weight)
+    grad_input = np.zeros_like(x)
+    for ni in range(x.shape[0]):
+        for oc in range(conv_weight.shape[0]):
+            for oh in range(2):
+                for ow in range(2):
+                    grad_val = grad_conv_output[ni, oc, oh, ow]
+                    for ci in range(x.shape[1]):
+                        for r in range(2):
+                            for s in range(2):
+                                grad_conv_weight[oc, ci, r, s] += x[ni, ci, oh + r, ow + s] * grad_val
+                                grad_input[ni, ci, oh + r, ow + s] += conv_weight[oc, ci, r, s] * grad_val
+
+    np.testing.assert_allclose(result.conv_output, conv, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.logits, logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.probabilities, probs, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_conv_output, grad_conv_output, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_input, grad_input, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_conv_weight, grad_conv_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_linear_weight, grad_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_linear_bias, grad_linear_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_conv_weight, conv_weight - lr * grad_conv_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_linear_weight, linear_weight - lr * grad_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_linear_bias, linear_bias - lr * grad_linear_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:conv2d_im2col_gemm'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_relu'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_relu_backward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:conv_backward'] == 1
+
+
+def test_native_gpu_conv_relu_pool_linear_training_step_matches_reference_math():
+    x = (np.arange(50, dtype=np.float32).reshape(2, 1, 5, 5) - 20.0) / 10.0
+    labels = np.asarray([1, 0], dtype=np.int32)
+    conv_weight = np.asarray(
+        [
+            [[[0.2, -0.1], [0.05, 0.3]]],
+            [[[-0.2, 0.1], [0.25, -0.05]]],
+        ],
+        dtype=np.float32,
+    )
+    linear_weight = np.asarray(
+        [
+            [0.1, -0.2, 0.3, 0.05, -0.1, 0.2, -0.05, 0.15],
+            [-0.05, 0.25, -0.15, 0.2, 0.05, -0.1, 0.3, -0.2],
+        ],
+        dtype=np.float32,
+    )
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.03
+
+    result = native_gpu_conv_linear_training_step(
+        x,
+        labels,
+        conv_weight,
+        linear_weight,
+        linear_bias,
+        lr=lr,
+        apply_relu_activation=True,
+        apply_maxpool=True,
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    conv_pre = np.zeros((2, 2, 4, 4), dtype=np.float32)
+    for ni in range(x.shape[0]):
+        for oc in range(conv_weight.shape[0]):
+            for oh in range(4):
+                for ow in range(4):
+                    conv_pre[ni, oc, oh, ow] = np.sum(x[ni, :, oh:oh + 2, ow:ow + 2] * conv_weight[oc])
+    conv = np.maximum(conv_pre, 0.0)
+    pooled = np.zeros((2, 2, 2, 2), dtype=np.float32)
+    for ni in range(x.shape[0]):
+        for oc in range(conv.shape[1]):
+            for oh in range(2):
+                for ow in range(2):
+                    pooled[ni, oc, oh, ow] = np.max(conv[ni, oc, oh * 2:oh * 2 + 2, ow * 2:ow * 2 + 2])
+    flat = pooled.reshape(2, -1)
+    logits = flat @ linear_weight.T + linear_bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_linear_weight = grad_logits.T @ flat
+    grad_linear_bias = grad_logits.sum(axis=0)
+    grad_pooled = (grad_logits @ linear_weight).reshape(pooled.shape)
+    grad_conv_output = np.zeros_like(conv)
+    for ni in range(x.shape[0]):
+        for oc in range(conv.shape[1]):
+            for oh in range(2):
+                for ow in range(2):
+                    window = conv[ni, oc, oh * 2:oh * 2 + 2, ow * 2:ow * 2 + 2]
+                    flat_idx = int(np.argmax(window))
+                    ih = oh * 2 + flat_idx // 2
+                    iw = ow * 2 + flat_idx % 2
+                    grad_conv_output[ni, oc, ih, iw] += grad_pooled[ni, oc, oh, ow]
+    grad_conv_output = np.where(conv > 0.0, grad_conv_output, 0.0)
+    grad_conv_weight = np.zeros_like(conv_weight)
+    grad_input = np.zeros_like(x)
+    for ni in range(x.shape[0]):
+        for oc in range(conv_weight.shape[0]):
+            for oh in range(4):
+                for ow in range(4):
+                    grad_val = grad_conv_output[ni, oc, oh, ow]
+                    for ci in range(x.shape[1]):
+                        for r in range(2):
+                            for s in range(2):
+                                grad_conv_weight[oc, ci, r, s] += x[ni, ci, oh + r, ow + s] * grad_val
+                                grad_input[ni, ci, oh + r, ow + s] += conv_weight[oc, ci, r, s] * grad_val
+
+    np.testing.assert_allclose(result.conv_output, conv, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.pooled_output, pooled, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.logits, logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.probabilities, probs, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_pooled, grad_pooled, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_conv_output, grad_conv_output, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_input, grad_input, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_conv_weight, grad_conv_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_linear_weight, grad_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_linear_bias, grad_linear_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_conv_weight, conv_weight - lr * grad_conv_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_linear_weight, linear_weight - lr * grad_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_linear_bias, linear_bias - lr * grad_linear_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:conv2d_im2col_gemm'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_relu'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_maxpool'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:maxpool_backward_nchw'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_relu_backward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:conv_backward'] == 1

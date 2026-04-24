@@ -188,7 +188,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'ResidualBlock, ConvNeXtBlock, Dropout, and DropPath run through composite/reference numpy kernels; support tier is published separately.',
         'Explicit ordered DAG wiring is supported through named tensor outputs plus Add/Concat multi-input nodes.',
         'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and beta AMP with loss scaling / overflow backoff.',
-        'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, and Conv2d(valid, bias=false)+Linear subsets through native device-pointer helpers.',
+        'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, and Conv2d(valid, bias=false)+ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
         'validate-cuda-native-config enforces the current train-native support boundary.',
     ],
 }

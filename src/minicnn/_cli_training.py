@@ -344,7 +344,9 @@ def handle_train_native(args) -> int:
         'note': (
             'beta-grade backend; train-native supports reference_numpy broadly and gpu_native '
             'for the narrow Linear, Linear+ReLU, MaxPool+Linear, '
-            'and Conv2d(valid, bias=false)+Linear / CrossEntropyLoss / SGD training subsets'
+            'Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, '
+            'Conv2d(valid, bias=false)+MaxPool+Linear, and Conv2d(valid, bias=false)+ReLU+MaxPool+Linear '
+            '/ CrossEntropyLoss / SGD training subsets'
         ),
     })
     try:

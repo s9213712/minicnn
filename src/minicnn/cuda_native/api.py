@@ -183,15 +183,25 @@ def _validate_gpu_native_training_subset(
         ['Flatten', 'Linear', 'ReLU', 'Linear'],
         ['MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
     ):
         errors.append(
             'cuda_native gpu_native train-native currently supports only the narrow '
             'Linear training subset ops=[Linear], [Flatten, Linear], '
             '[Linear, ReLU, Linear], [Flatten, Linear, ReLU, Linear], '
-            '[MaxPool2d, Flatten, Linear], or [Conv2d, Flatten, Linear], '
+            '[MaxPool2d, Flatten, Linear], [Conv2d, Flatten, Linear], '
+            '[Conv2d, ReLU, Flatten, Linear], [Conv2d, MaxPool2d, Flatten, Linear], '
+            'or [Conv2d, ReLU, MaxPool2d, Flatten, Linear], '
             f'got {ops}.'
         )
-    if ops == ['Conv2d', 'Flatten', 'Linear']:
+    if ops in (
+        ['Conv2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+    ):
         conv_attrs = dict(getattr(nodes[0], 'attrs', {}) or {})
 
         def _pair(value: Any, default: int) -> tuple[int, int]:

@@ -58,7 +58,7 @@ execution, see [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_p
 | Training in production | ✗ Not enabled |
 | Dynamic graph | ✗ Not supported |
 | Mixed precision | ✓ Beta AMP |
-| `gpu_native` training | ⚠ Partial Linear / Linear+ReLU / MaxPool+Linear / Conv2d(valid, bias=false)+Linear subset |
+| `gpu_native` training | ⚠ Partial Linear / Linear+ReLU / MaxPool+Linear / Conv2d(valid, bias=false)+Linear / Conv2d(valid, bias=false)+ReLU+Linear / Conv2d(valid, bias=false)+MaxPool+Linear / Conv2d(valid, bias=false)+ReLU+MaxPool+Linear subset |
 
 ## Supported Ops
 
@@ -244,6 +244,9 @@ Current `train-native engine.execution_mode=gpu_native` training subsets:
 - `Flatten -> Linear -> ReLU -> Linear`
 - `MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
 
 These subsets execute through native GPU helper paths for forward, loss-gradient,
 covered backward kernels, and SGD/momentum updates. General graph-level GPU
