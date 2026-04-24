@@ -6,6 +6,46 @@ from typing import Any
 from minicnn.cuda_native.gpu_dispatch import GpuLaunchPacket
 
 
+GPU_OP_CODES = {
+    'Flatten': 1,
+    'Linear': 2,
+    'ReLU': 3,
+    'LeakyReLU': 4,
+    'Add': 5,
+    'Concat': 6,
+    'Conv2d': 7,
+    'MaxPool2d': 8,
+}
+
+GPU_LAUNCH_FAMILY_CODES = {
+    'reshape_view': 1,
+    'gemm_affine': 2,
+    'elementwise_unary': 3,
+    'elementwise_merge': 4,
+    'concat_merge': 5,
+    'conv2d_nchw': 6,
+    'pool2d_nchw': 7,
+}
+
+GPU_LAYOUT_CODES = {
+    'unknown': 0,
+    'row_major': 1,
+    'NCHW': 2,
+    'OI': 3,
+    'O': 4,
+    'OIHW': 5,
+    'match_input': 6,
+    'match_inputs': 7,
+}
+
+GPU_DTYPE_CODES = {
+    'float32': 1,
+    'float16': 2,
+    'int32': 3,
+    'int64': 4,
+}
+
+
 def _scalar_arg_map(packet: GpuLaunchPacket) -> dict[str, Any]:
     return {
         str(arg['name']): arg['value']
@@ -195,6 +235,50 @@ class GpuFixedKernelCall:
         }
 
 
+@dataclass(frozen=True)
+class GpuCAbiKernelCall:
+    request_id: str
+    node_name: str
+    op_name: str
+    op_code: int
+    launch_family: str
+    launch_family_code: int
+    dtype_code: int
+    preferred_layout_code: int
+    input_binding: str
+    output_binding: str
+    weight_binding: str
+    bias_binding: str
+    input_rank: int
+    output_rank: int
+    input_shape4: tuple[int, int, int, int]
+    output_shape4: tuple[int, int, int, int]
+    int_args8: tuple[int, int, int, int, int, int, int, int]
+    flags: tuple[int, int, int, int]
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            'request_id': self.request_id,
+            'node_name': self.node_name,
+            'op_name': self.op_name,
+            'op_code': self.op_code,
+            'launch_family': self.launch_family,
+            'launch_family_code': self.launch_family_code,
+            'dtype_code': self.dtype_code,
+            'preferred_layout_code': self.preferred_layout_code,
+            'input_binding': self.input_binding,
+            'output_binding': self.output_binding,
+            'weight_binding': self.weight_binding,
+            'bias_binding': self.bias_binding,
+            'input_rank': self.input_rank,
+            'output_rank': self.output_rank,
+            'input_shape4': list(self.input_shape4),
+            'output_shape4': list(self.output_shape4),
+            'int_args8': list(self.int_args8),
+            'flags': list(self.flags),
+        }
+
+
 def build_gpu_bridge_request(packet: GpuLaunchPacket, *, index: int) -> GpuKernelBridgeRequest:
     return GpuKernelBridgeRequest(
         request_id=f'{packet.node_name}:{index}',
@@ -310,3 +394,50 @@ def build_fixed_kernel_trace(
     requests: tuple[GpuFlatKernelRequest, ...],
 ) -> tuple[GpuFixedKernelCall, ...]:
     return tuple(build_fixed_kernel_call(request) for request in requests)
+
+
+def _shape4(shape: tuple[int, ...]) -> tuple[int, int, int, int]:
+    padded = list(shape[:4])
+    while len(padded) < 4:
+        padded.append(1)
+    return tuple(int(v) for v in padded[:4])
+
+
+def build_c_abi_kernel_call(request: GpuFixedKernelCall) -> GpuCAbiKernelCall:
+    has_weight = 1 if request.weight_binding else 0
+    has_bias = 1 if request.bias_binding else 0
+    return GpuCAbiKernelCall(
+        request_id=request.request_id,
+        node_name=request.node_name,
+        op_name=request.op_name,
+        op_code=int(GPU_OP_CODES.get(request.op_name, 0)),
+        launch_family=request.launch_family,
+        launch_family_code=int(GPU_LAUNCH_FAMILY_CODES.get(request.launch_family, 0)),
+        dtype_code=int(GPU_DTYPE_CODES.get(request.tensor_dtype, 0)),
+        preferred_layout_code=int(GPU_LAYOUT_CODES.get(request.preferred_layout, 0)),
+        input_binding=request.input_binding,
+        output_binding=request.output_binding,
+        weight_binding=request.weight_binding,
+        bias_binding=request.bias_binding,
+        input_rank=len(request.input_shape),
+        output_rank=len(request.output_shape),
+        input_shape4=_shape4(request.input_shape),
+        output_shape4=_shape4(request.output_shape),
+        int_args8=(
+            int(request.stride_h),
+            int(request.stride_w),
+            int(request.padding_h),
+            int(request.padding_w),
+            int(request.groups),
+            int(request.matmul_m),
+            int(request.matmul_k),
+            int(request.matmul_n),
+        ),
+        flags=(has_weight, has_bias, 0, 0),
+    )
+
+
+def build_c_abi_kernel_trace(
+    requests: tuple[GpuFixedKernelCall, ...],
+) -> tuple[GpuCAbiKernelCall, ...]:
+    return tuple(build_c_abi_kernel_call(request) for request in requests)

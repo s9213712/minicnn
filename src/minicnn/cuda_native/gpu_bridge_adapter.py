@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol, Any
 
-from minicnn.cuda_native.gpu_bridge import GpuFixedKernelCall, GpuFlatKernelRequest, GpuKernelBridgeRequest
+from minicnn.cuda_native.gpu_bridge import GpuCAbiKernelCall, GpuFixedKernelCall, GpuFlatKernelRequest, GpuKernelBridgeRequest
 
 
 class GpuKernelBridgeAdapter(Protocol):
@@ -111,3 +111,22 @@ class GpuBackendStubAdapter:
             request,
             kernel_symbol=f"minicnn_gpu_{request.launch_family}_f32",
         )
+
+
+@dataclass
+class GpuCAbiBridgeAdapter:
+    submitted_requests: list[GpuCAbiKernelCall] = field(default_factory=list)
+    abi_version: int = 1
+
+    def submit_c_abi(self, request: GpuCAbiKernelCall) -> dict[str, Any]:
+        self.submitted_requests.append(request)
+        return {
+            'request_id': request.request_id,
+            'dispatch_mode': 'gpu_c_abi_stub',
+            'abi_version': self.abi_version,
+            'op_code': request.op_code,
+            'launch_family_code': request.launch_family_code,
+            'dtype_code': request.dtype_code,
+            'int_args8': list(request.int_args8),
+            'accepted': True,
+        }

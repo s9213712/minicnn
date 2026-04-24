@@ -8,15 +8,18 @@ import numpy as np
 
 from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.gpu_bridge import (
+    GpuCAbiKernelCall,
     GpuFixedKernelCall,
     GpuFlatKernelRequest,
     GpuKernelBridgeRequest,
+    build_c_abi_kernel_trace,
     build_fixed_kernel_trace,
     build_flat_gpu_bridge_trace,
     build_gpu_bridge_trace,
 )
 from minicnn.cuda_native.gpu_bridge_adapter import (
     GpuBackendStubAdapter,
+    GpuCAbiBridgeAdapter,
     GpuFixedBridgeAdapter,
     GpuFlatBridgeAdapter,
     GpuKernelBridgeAdapter,
@@ -45,9 +48,11 @@ class GpuStubExecutionResult:
     bridge_trace: tuple[GpuKernelBridgeRequest, ...]
     flat_bridge_trace: tuple[GpuFlatKernelRequest, ...]
     fixed_bridge_trace: tuple[GpuFixedKernelCall, ...]
+    c_abi_bridge_trace: tuple[GpuCAbiKernelCall, ...]
     bridge_results: tuple[dict[str, Any], ...]
     flat_bridge_results: tuple[dict[str, Any], ...]
     fixed_bridge_results: tuple[dict[str, Any], ...]
+    c_abi_bridge_results: tuple[dict[str, Any], ...]
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -58,9 +63,11 @@ class GpuStubExecutionResult:
             'bridge_trace': [request.summary() for request in self.bridge_trace],
             'flat_bridge_trace': [request.summary() for request in self.flat_bridge_trace],
             'fixed_bridge_trace': [request.summary() for request in self.fixed_bridge_trace],
+            'c_abi_bridge_trace': [request.summary() for request in self.c_abi_bridge_trace],
             'bridge_results': [dict(result) for result in self.bridge_results],
             'flat_bridge_results': [dict(result) for result in self.flat_bridge_results],
             'fixed_bridge_results': [dict(result) for result in self.fixed_bridge_results],
+            'c_abi_bridge_results': [dict(result) for result in self.c_abi_bridge_results],
         }
 
 
@@ -79,6 +86,7 @@ class GpuStubExecutor:
         bridge_adapter: GpuKernelBridgeAdapter | None = None,
         flat_bridge_adapter: GpuFlatBridgeAdapter | None = None,
         fixed_bridge_adapter: GpuFixedBridgeAdapter | None = None,
+        c_abi_bridge_adapter: GpuCAbiBridgeAdapter | None = None,
     ) -> None:
         self.lowering_registry = (
             lowering_registry if lowering_registry is not None else make_default_gpu_lowering_registry()
@@ -86,6 +94,9 @@ class GpuStubExecutor:
         self.bridge_adapter = bridge_adapter if bridge_adapter is not None else GpuStubBridgeAdapter()
         self.flat_bridge_adapter = flat_bridge_adapter if flat_bridge_adapter is not None else GpuFlatBridgeAdapter()
         self.fixed_bridge_adapter = fixed_bridge_adapter if fixed_bridge_adapter is not None else GpuBackendStubAdapter()
+        self.c_abi_bridge_adapter = (
+            c_abi_bridge_adapter if c_abi_bridge_adapter is not None else GpuCAbiBridgeAdapter()
+        )
         self.device_runtime = device_runtime if device_runtime is not None else DeviceRuntime(
             execution_mode='gpu_native',
             tensor_execution_device='gpu',
@@ -177,9 +188,11 @@ class GpuStubExecutor:
         bridge_trace = build_gpu_bridge_trace(tuple(launch_trace))
         flat_bridge_trace = build_flat_gpu_bridge_trace(bridge_trace)
         fixed_bridge_trace = build_fixed_kernel_trace(flat_bridge_trace)
+        c_abi_bridge_trace = build_c_abi_kernel_trace(fixed_bridge_trace)
         bridge_results: list[dict[str, Any]] = []
         flat_bridge_results: list[dict[str, Any]] = []
         fixed_bridge_results: list[dict[str, Any]] = []
+        c_abi_bridge_results: list[dict[str, Any]] = []
         for request in bridge_trace:
             bridge_results.append(dict(self.bridge_adapter.submit(request)))
             self.device_runtime.record_execution(
@@ -204,6 +217,14 @@ class GpuStubExecutor:
                 output_name=request.node_name,
                 node_count=0,
             )
+        for request in c_abi_bridge_trace:
+            c_abi_bridge_results.append(dict(self.c_abi_bridge_adapter.submit_c_abi(request)))
+            self.device_runtime.record_execution(
+                f'gpu_stub_c_abi_bridge:{request.launch_family}',
+                input_name=request.input_binding,
+                output_name=request.node_name,
+                node_count=0,
+            )
         return GpuStubExecutionResult(
             output_name=graph.output_spec.name,
             output=host_output,
@@ -212,7 +233,9 @@ class GpuStubExecutor:
             bridge_trace=bridge_trace,
             flat_bridge_trace=flat_bridge_trace,
             fixed_bridge_trace=fixed_bridge_trace,
+            c_abi_bridge_trace=c_abi_bridge_trace,
             bridge_results=tuple(bridge_results),
             flat_bridge_results=tuple(flat_bridge_results),
             fixed_bridge_results=tuple(fixed_bridge_results),
+            c_abi_bridge_results=tuple(c_abi_bridge_results),
         )

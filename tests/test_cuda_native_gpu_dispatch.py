@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from minicnn.cuda_native.api import build_cuda_native_graph
-from minicnn.cuda_native.gpu_bridge import build_fixed_kernel_trace, build_flat_gpu_bridge_trace, build_gpu_bridge_trace
+from minicnn.cuda_native.gpu_bridge import (
+    build_c_abi_kernel_trace,
+    build_fixed_kernel_trace,
+    build_flat_gpu_bridge_trace,
+    build_gpu_bridge_trace,
+)
 from minicnn.cuda_native.gpu_dispatch import build_gpu_dispatch_plan, build_gpu_launch_trace
 
 
@@ -248,3 +253,34 @@ def test_fixed_gpu_bridge_trace_builds_fixed_calls():
     assert fixed_calls[1].matmul_m == 1
     assert fixed_calls[1].matmul_k == 64
     assert fixed_calls[1].matmul_n == 8
+
+
+def test_c_abi_gpu_bridge_trace_builds_stable_records():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 8},
+                {'type': 'ReLU'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 8, 8),
+    )
+
+    packets = build_gpu_launch_trace(build_gpu_dispatch_plan(graph))
+    requests = build_gpu_bridge_trace(packets)
+    flat_requests = build_flat_gpu_bridge_trace(requests)
+    fixed_calls = build_fixed_kernel_trace(flat_requests)
+    c_abi_calls = build_c_abi_kernel_trace(fixed_calls)
+
+    assert len(c_abi_calls) == 4
+    assert c_abi_calls[1].op_name == 'Linear'
+    assert c_abi_calls[1].op_code == 2
+    assert c_abi_calls[1].launch_family_code == 2
+    assert c_abi_calls[1].dtype_code == 1
+    assert c_abi_calls[1].preferred_layout_code == 1
+    assert c_abi_calls[1].input_shape4 == (1, 64, 1, 1)
+    assert c_abi_calls[1].output_shape4 == (1, 8, 1, 1)
+    assert c_abi_calls[1].int_args8 == (0, 0, 0, 0, 1, 1, 64, 8)
+    assert c_abi_calls[1].flags[:2] == (1, 1)
