@@ -19,6 +19,8 @@ class GpuLaunchDescriptor:
     output_shapes: tuple[tuple[int, ...], ...]
     tensor_dtype: str
     param_layouts: dict[str, str]
+    normalized_tensor_args: tuple[dict[str, Any], ...]
+    normalized_scalar_args: tuple[dict[str, Any], ...]
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,8 @@ class GpuDispatchPlan:
                         'output_shapes': [list(shape) for shape in step.launch_descriptor.output_shapes],
                         'tensor_dtype': step.launch_descriptor.tensor_dtype,
                         'param_layouts': dict(step.launch_descriptor.param_layouts),
+                        'normalized_tensor_args': [dict(arg) for arg in step.launch_descriptor.normalized_tensor_args],
+                        'normalized_scalar_args': [dict(arg) for arg in step.launch_descriptor.normalized_scalar_args],
                     },
                     'forward_status': step.forward_status,
                     'backward_status': step.backward_status,
@@ -126,6 +130,53 @@ def _node_param_layouts(node, param_keys: tuple[str, ...]) -> dict[str, str]:
     return layouts
 
 
+def _normalized_tensor_args(
+    node,
+    input_bindings: tuple[str, ...],
+    output_bindings: tuple[str, ...],
+    param_bindings: tuple[str, ...],
+    param_layouts: dict[str, str],
+) -> tuple[dict[str, Any], ...]:
+    args: list[dict[str, Any]] = []
+    for idx, (binding, spec) in enumerate(zip(input_bindings, node.input_specs)):
+        args.append({
+            'kind': 'input',
+            'index': idx,
+            'binding': binding,
+            'shape': list(spec.shape),
+            'dtype': spec.dtype,
+            'layout': spec.layout,
+        })
+    for idx, (binding, spec) in enumerate(zip(output_bindings, node.output_specs)):
+        args.append({
+            'kind': 'output',
+            'index': idx,
+            'binding': binding,
+            'shape': list(spec.shape),
+            'dtype': spec.dtype,
+            'layout': spec.layout,
+        })
+    for idx, binding in enumerate(param_bindings):
+        args.append({
+            'kind': 'param',
+            'index': idx,
+            'binding': binding,
+            'layout': param_layouts.get(binding, 'match_op_default'),
+        })
+    return tuple(args)
+
+
+def _normalized_scalar_args(attr_bindings: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    normalized: list[dict[str, Any]] = []
+    for key in sorted(attr_bindings):
+        value = attr_bindings[key]
+        normalized.append({
+            'name': key,
+            'value': value,
+        })
+    return tuple(normalized)
+
+
 def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
     registry = {
         spec.op_name: spec
@@ -164,6 +215,14 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                         output_shapes=tuple(tuple(spec.shape) for spec in node.output_specs),
                         tensor_dtype=str(node.output_specs[0].dtype if node.output_specs else 'float32'),
                         param_layouts={},
+                        normalized_tensor_args=_normalized_tensor_args(
+                            node,
+                            tuple(str(name) for name in node.inputs),
+                            tuple(str(name) for name in node.outputs),
+                            tuple(),
+                            {},
+                        ),
+                        normalized_scalar_args=tuple(),
                     ),
                     forward_status='unsupported',
                     backward_status='unsupported',
@@ -176,14 +235,18 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
         if lowering_spec is not None:
             lowering_kind = str(lowering_spec.lowering_kind)
         param_keys = _node_param_keys(node)
+        input_bindings = tuple(str(name) for name in node.inputs)
+        output_bindings = tuple(str(name) for name in node.outputs)
+        attr_bindings = _node_attr_bindings(node)
+        param_layouts = _node_param_layouts(node, param_keys)
         steps.append(
             GpuDispatchStep(
                 node_name=str(node.name),
                 op_name=str(node.op_type),
                 category=str(spec.category),
                 launch_family=str(spec.launch_family),
-                input_names=tuple(str(name) for name in node.inputs),
-                output_names=tuple(str(name) for name in node.outputs),
+                input_names=input_bindings,
+                output_names=output_bindings,
                 param_keys=param_keys,
                 input_arity=int(spec.input_arity),
                 output_arity=int(spec.output_arity),
@@ -191,14 +254,22 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                 lowering_kind=lowering_kind,
                 launch_descriptor=GpuLaunchDescriptor(
                     launch_family=str(spec.launch_family),
-                    input_bindings=tuple(str(name) for name in node.inputs),
-                    output_bindings=tuple(str(name) for name in node.outputs),
+                    input_bindings=input_bindings,
+                    output_bindings=output_bindings,
                     param_bindings=param_keys,
-                    attr_bindings=_node_attr_bindings(node),
+                    attr_bindings=attr_bindings,
                     input_shapes=tuple(tuple(spec.shape) for spec in node.input_specs),
                     output_shapes=tuple(tuple(spec.shape) for spec in node.output_specs),
                     tensor_dtype=str(node.output_specs[0].dtype if node.output_specs else 'float32'),
-                    param_layouts=_node_param_layouts(node, param_keys),
+                    param_layouts=param_layouts,
+                    normalized_tensor_args=_normalized_tensor_args(
+                        node,
+                        input_bindings,
+                        output_bindings,
+                        param_keys,
+                        param_layouts,
+                    ),
+                    normalized_scalar_args=_normalized_scalar_args(attr_bindings),
                 ),
                 forward_status=str(spec.forward_status),
                 backward_status=str(spec.backward_status),
