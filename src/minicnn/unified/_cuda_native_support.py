@@ -49,6 +49,47 @@ def _sanitize_optimizer_runtime(optimizer_runtime: dict[str, Any] | None) -> dic
     return sanitized
 
 
+def _build_efficiency_summary(
+    *,
+    planner_summary: dict[str, Any],
+    amp_runtime: dict[str, Any],
+    optimizer_runtime: dict[str, Any],
+) -> dict[str, Any]:
+    steps = max(1, int(optimizer_runtime.get('steps', 0) or 0))
+    state_allocations = int(optimizer_runtime.get('state_tensor_allocations', 0) or 0)
+    state_updates = int(optimizer_runtime.get('state_tensor_updates', 0) or 0)
+    grad_allocations = int(optimizer_runtime.get('grad_buffer_allocations', 0) or 0)
+    grad_reuses = int(optimizer_runtime.get('grad_buffer_reuses', 0) or 0)
+    grad_resets = int(optimizer_runtime.get('grad_buffer_reset_events', 0) or 0)
+    grad_capacity_tensors = int(optimizer_runtime.get('grad_buffer_tensor_count', 0) or 0)
+    grad_capacity_bytes = int(optimizer_runtime.get('grad_buffer_total_bytes', 0) or 0)
+    grad_active_tensors = int(optimizer_runtime.get('grad_buffer_active_tensor_count', 0) or 0)
+    grad_active_bytes = int(optimizer_runtime.get('grad_buffer_active_total_bytes', 0) or 0)
+    cache_allocations = int(amp_runtime.get('cache_allocations', 0) or 0)
+    cache_hits = int(amp_runtime.get('cache_hits', 0) or 0)
+    cache_updates = int(amp_runtime.get('cache_updates', 0) or 0)
+    cache_total = cache_allocations + cache_hits
+    grad_total = grad_allocations + grad_reuses
+    peak_live = int(planner_summary.get('peak_live_bytes', 0) or 0)
+    total_bytes = int(planner_summary.get('total_bytes', 0) or 0)
+    return {
+        'state_allocations_per_step': round(state_allocations / float(steps), 6),
+        'state_updates_per_step': round(state_updates / float(steps), 6),
+        'grad_buffer_allocations_per_step': round(grad_allocations / float(steps), 6),
+        'grad_buffer_resets_per_step': round(grad_resets / float(steps), 6),
+        'grad_buffer_reuse_ratio': round(grad_reuses / float(grad_total), 6) if grad_total > 0 else 0.0,
+        'grad_buffer_active_tensor_fraction': (
+            round(grad_active_tensors / float(grad_capacity_tensors), 6) if grad_capacity_tensors > 0 else 0.0
+        ),
+        'grad_buffer_active_byte_fraction': (
+            round(grad_active_bytes / float(grad_capacity_bytes), 6) if grad_capacity_bytes > 0 else 0.0
+        ),
+        'amp_cache_hit_ratio': round(cache_hits / float(cache_total), 6) if cache_total > 0 else 0.0,
+        'amp_cache_updates_per_hit': round(cache_updates / float(max(cache_hits, 1)), 6) if cache_hits > 0 else 0.0,
+        'planner_peak_live_fraction': round(peak_live / float(total_bytes), 6) if total_bytes > 0 else 0.0,
+    }
+
+
 def load_numpy_data(cfg: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     dataset_cfg = cfg.get('dataset', {})
     train_cfg = cfg.get('train', {})
@@ -331,10 +372,17 @@ def build_training_summary(
         optimizer_summary['alpha'] = float(optimizer_cfg.get('alpha', 0.99))
     sanitized_amp_runtime = _sanitize_amp_runtime(amp_runtime)
     sanitized_optimizer_runtime = _sanitize_optimizer_runtime(optimizer_runtime)
+    planner_payload = dict(planner_summary or {})
+    efficiency_summary = _build_efficiency_summary(
+        planner_summary=planner_payload,
+        amp_runtime=sanitized_amp_runtime,
+        optimizer_runtime=sanitized_optimizer_runtime,
+    )
     performance_report = {
-        'planner': dict(planner_summary or {}),
+        'planner': planner_payload,
         'amp': sanitized_amp_runtime,
         'optimizer': sanitized_optimizer_runtime,
+        'efficiency': efficiency_summary,
         'training': {
             'batch_size': int(train_cfg.get('batch_size', 64)),
             'grad_accum_steps': int(train_cfg.get('grad_accum_steps', 1)),
@@ -377,7 +425,7 @@ def build_training_summary(
             'version': CHECKPOINT_CONTRACT_VERSION,
             'best_model_path_key': 'best_model_path',
         },
-        'planner': dict(planner_summary or {}),
+        'planner': planner_payload,
         'performance_report': performance_report,
         'epochs': epochs,
         'periodic_checkpoints': [],

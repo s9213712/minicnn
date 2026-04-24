@@ -207,13 +207,48 @@ def rmsprop_update(
 def _accumulate_param_grads(
     grad_buffer: dict[str, np.ndarray],
     param_grads: dict[str, np.ndarray],
+    runtime: dict[str, Any] | None = None,
+    active_keys: set[str] | None = None,
 ) -> dict[str, np.ndarray]:
     for key, grad in param_grads.items():
+        grad_f32 = np.asarray(grad, dtype=np.float32)
+        if active_keys is not None:
+            active_keys.add(key)
         if key in grad_buffer:
-            grad_buffer[key] = (grad_buffer[key] + grad).astype(np.float32)
+            np.add(grad_buffer[key], grad_f32, out=grad_buffer[key], casting='unsafe')
+            if runtime is not None:
+                runtime['grad_buffer_reuses'] = int(runtime.get('grad_buffer_reuses', 0)) + 1
         else:
-            grad_buffer[key] = np.asarray(grad, dtype=np.float32).copy()
+            grad_buffer[key] = grad_f32.copy()
+            if runtime is not None:
+                runtime['grad_buffer_allocations'] = int(runtime.get('grad_buffer_allocations', 0)) + 1
     return grad_buffer
+
+
+def _reset_grad_buffer(
+    grad_buffer: dict[str, np.ndarray],
+    runtime: dict[str, Any] | None = None,
+    active_keys: set[str] | None = None,
+) -> None:
+    if active_keys is not None:
+        keys = list(active_keys)
+    else:
+        keys = list(grad_buffer.keys())
+    if not keys:
+        return
+    zeroed_tensors = 0
+    for key in keys:
+        value = grad_buffer.get(key)
+        if isinstance(value, np.ndarray):
+            value.fill(0.0)
+            zeroed_tensors += 1
+    if active_keys is not None:
+        active_keys.clear()
+    else:
+        grad_buffer.clear()
+    if runtime is not None:
+        runtime['grad_buffer_reset_events'] = int(runtime.get('grad_buffer_reset_events', 0)) + 1
+        runtime['grad_buffer_zeroed_tensors'] = int(runtime.get('grad_buffer_zeroed_tensors', 0)) + zeroed_tensors
 
 
 def _all_finite_tensors(tensors: dict[str, np.ndarray]) -> bool:
@@ -257,7 +292,7 @@ def _prepare_amp_params(
                 and cached_params[key].shape == value.shape
                 and cached_params[key].dtype == np.float16
             ):
-                np.copyto(cached_params[key], value.astype(np.float16), casting='unsafe')
+                np.copyto(cached_params[key], value, casting='unsafe')
         amp_state['cache_updates'] = int(amp_state.get('cache_updates', 0)) + 1
         return cached_params
     fp16_params: dict[str, Any] = {}
@@ -283,6 +318,10 @@ def _optimizer_runtime_state(
     runtime['steps'] = int(runtime.get('steps', 0)) + 1
     runtime.setdefault('state_tensor_allocations', 0)
     runtime.setdefault('state_tensor_updates', 0)
+    runtime.setdefault('grad_buffer_allocations', 0)
+    runtime.setdefault('grad_buffer_reuses', 0)
+    runtime.setdefault('grad_buffer_reset_events', 0)
+    runtime.setdefault('grad_buffer_zeroed_tensors', 0)
     return runtime
 
 
@@ -349,6 +388,7 @@ def train_step(
     fwd = fwd_executor or ForwardExecutor()
     bwd = bwd_executor or BackwardExecutor()
     state = optimizer_state if optimizer_state is not None else {}
+    runtime = _optimizer_runtime_state(optimizer_state, optimizer_type=optimizer_type)
     amp_state = state.setdefault('amp', {})
     active_loss_scale = float(
         amp_state.get('loss_scale', amp_loss_scale if amp_loss_scale > 0.0 else 128.0)
@@ -361,6 +401,7 @@ def train_step(
     amp_state.setdefault('cache_updates', 0)
     amp_state.setdefault('cache_allocations', 0)
     grad_buffer = state.setdefault('grad_buffer', {})
+    grad_buffer_active_keys = state.setdefault('grad_buffer_active_keys', set())
 
     # Forward pass — cache activations for backward
     fwd_input = x.astype(np.float16) if amp_enabled else x
@@ -406,7 +447,7 @@ def train_step(
         scaled_param_grads = param_grads
 
     if amp_enabled and not _all_finite_tensors(scaled_param_grads):
-        state['grad_buffer'] = {}
+        _reset_grad_buffer(grad_buffer, runtime, active_keys=grad_buffer_active_keys)
         amp_state['skipped_steps'] = int(amp_state.get('skipped_steps', 0)) + 1
         amp_state['overflow_steps'] = int(amp_state.get('overflow_steps', 0)) + 1
         amp_state['good_steps'] = 0
@@ -416,54 +457,61 @@ def train_step(
             amp_state['loss_scale'] = active_loss_scale
         return loss_val, dict(params)
 
-    _accumulate_param_grads(grad_buffer, scaled_param_grads)
+    _accumulate_param_grads(
+        grad_buffer,
+        scaled_param_grads,
+        runtime,
+        active_keys=grad_buffer_active_keys,
+    )
     if amp_enabled:
         amp_state['finite_steps'] = int(amp_state.get('finite_steps', 0)) + 1
+
+    active_grad_buffer = {key: grad_buffer[key] for key in grad_buffer_active_keys}
 
     if not apply_optimizer_step:
         updated_params = dict(params)
     elif optimizer_type == 'sgd':
         updated_params = sgd_update(
             params,
-            grad_buffer,
+            active_grad_buffer,
             lr,
             weight_decay,
             momentum=momentum,
             optimizer_state=optimizer_state,
             grad_clip_global=grad_clip_global,
         )
-        state['grad_buffer'] = {}
+        _reset_grad_buffer(grad_buffer, runtime, active_keys=grad_buffer_active_keys)
     elif optimizer_type == 'adamw':
         updated_params = adamw_update(
             params,
-            grad_buffer,
+            active_grad_buffer,
             lr,
             weight_decay=weight_decay,
             optimizer_state=optimizer_state,
             grad_clip_global=grad_clip_global,
         )
-        state['grad_buffer'] = {}
+        _reset_grad_buffer(grad_buffer, runtime, active_keys=grad_buffer_active_keys)
     elif optimizer_type == 'adam':
         updated_params = adam_update(
             params,
-            grad_buffer,
+            active_grad_buffer,
             lr,
             weight_decay=weight_decay,
             optimizer_state=optimizer_state,
             grad_clip_global=grad_clip_global,
         )
-        state['grad_buffer'] = {}
+        _reset_grad_buffer(grad_buffer, runtime, active_keys=grad_buffer_active_keys)
     elif optimizer_type == 'rmsprop':
         updated_params = rmsprop_update(
             params,
-            grad_buffer,
+            active_grad_buffer,
             lr,
             weight_decay=weight_decay,
             optimizer_state=optimizer_state,
             grad_clip_global=grad_clip_global,
             momentum=momentum,
         )
-        state['grad_buffer'] = {}
+        _reset_grad_buffer(grad_buffer, runtime, active_keys=grad_buffer_active_keys)
     else:
         raise ValueError(
             f'Unknown optimizer_type: {optimizer_type!r}. Choose "sgd", "adam", "adamw", or "rmsprop".'

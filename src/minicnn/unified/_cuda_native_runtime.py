@@ -52,6 +52,29 @@ def _optimizer_runtime_snapshot(optimizer_state: dict[str, Any]) -> dict[str, An
     runtime['state_tensor_count'] = tensor_count
     runtime['state_total_bytes'] = total_bytes
     runtime['state_total_kb'] = round(total_bytes / 1024.0, 3)
+    grad_buffer = optimizer_state.get('grad_buffer', {})
+    if isinstance(grad_buffer, dict):
+        grad_buffer_tensors = 0
+        grad_buffer_bytes = 0
+        for value in grad_buffer.values():
+            if isinstance(value, np.ndarray):
+                grad_buffer_tensors += 1
+                grad_buffer_bytes += int(value.nbytes)
+        runtime['grad_buffer_tensor_count'] = grad_buffer_tensors
+        runtime['grad_buffer_total_bytes'] = grad_buffer_bytes
+        runtime['grad_buffer_total_kb'] = round(grad_buffer_bytes / 1024.0, 3)
+        active_keys = optimizer_state.get('grad_buffer_active_keys', set())
+        if isinstance(active_keys, set):
+            active_tensors = 0
+            active_bytes = 0
+            for key in active_keys:
+                value = grad_buffer.get(key)
+                if isinstance(value, np.ndarray):
+                    active_tensors += 1
+                    active_bytes += int(value.nbytes)
+            runtime['grad_buffer_active_tensor_count'] = active_tensors
+            runtime['grad_buffer_active_total_bytes'] = active_bytes
+            runtime['grad_buffer_active_total_kb'] = round(active_bytes / 1024.0, 3)
     return runtime
 
 
@@ -178,6 +201,10 @@ def run_training_loop(
         'steps': 0,
         'state_tensor_allocations': 0,
         'state_tensor_updates': 0,
+        'grad_buffer_allocations': 0,
+        'grad_buffer_reuses': 0,
+        'grad_buffer_reset_events': 0,
+        'grad_buffer_zeroed_tensors': 0,
     }
     planner_epoch_state = {
         'strategy': str(ctx.planner_summary.get('strategy', 'unknown')),
@@ -280,6 +307,12 @@ def run_training_loop(
                 'state_tensor_count': int(optimizer_runtime.get('state_tensor_count', 0)),
                 'state_total_bytes': int(optimizer_runtime.get('state_total_bytes', 0)),
                 'state_total_kb': float(optimizer_runtime.get('state_total_kb', 0.0)),
+                'grad_buffer_tensor_count': int(optimizer_runtime.get('grad_buffer_tensor_count', 0)),
+                'grad_buffer_total_bytes': int(optimizer_runtime.get('grad_buffer_total_bytes', 0)),
+                'grad_buffer_total_kb': float(optimizer_runtime.get('grad_buffer_total_kb', 0.0)),
+                'grad_buffer_active_tensor_count': int(optimizer_runtime.get('grad_buffer_active_tensor_count', 0)),
+                'grad_buffer_active_total_bytes': int(optimizer_runtime.get('grad_buffer_active_total_bytes', 0)),
+                'grad_buffer_active_total_kb': float(optimizer_runtime.get('grad_buffer_active_total_kb', 0.0)),
                 'state_tensor_allocations_epoch': (
                     int(optimizer_runtime.get('state_tensor_allocations', 0))
                     - int(prev_optimizer_snapshot['state_tensor_allocations'])
@@ -288,12 +321,32 @@ def run_training_loop(
                     int(optimizer_runtime.get('state_tensor_updates', 0))
                     - int(prev_optimizer_snapshot['state_tensor_updates'])
                 ),
+                'grad_buffer_allocations_epoch': (
+                    int(optimizer_runtime.get('grad_buffer_allocations', 0))
+                    - int(prev_optimizer_snapshot['grad_buffer_allocations'])
+                ),
+                'grad_buffer_reuses_epoch': (
+                    int(optimizer_runtime.get('grad_buffer_reuses', 0))
+                    - int(prev_optimizer_snapshot['grad_buffer_reuses'])
+                ),
+                'grad_buffer_reset_events_epoch': (
+                    int(optimizer_runtime.get('grad_buffer_reset_events', 0))
+                    - int(prev_optimizer_snapshot['grad_buffer_reset_events'])
+                ),
+                'grad_buffer_zeroed_tensors_epoch': (
+                    int(optimizer_runtime.get('grad_buffer_zeroed_tensors', 0))
+                    - int(prev_optimizer_snapshot['grad_buffer_zeroed_tensors'])
+                ),
                 'steps_epoch': int(optimizer_runtime.get('steps', 0)) - int(prev_optimizer_snapshot['steps']),
             }
             prev_optimizer_snapshot = {
                 'steps': int(optimizer_runtime.get('steps', 0)),
                 'state_tensor_allocations': int(optimizer_runtime.get('state_tensor_allocations', 0)),
                 'state_tensor_updates': int(optimizer_runtime.get('state_tensor_updates', 0)),
+                'grad_buffer_allocations': int(optimizer_runtime.get('grad_buffer_allocations', 0)),
+                'grad_buffer_reuses': int(optimizer_runtime.get('grad_buffer_reuses', 0)),
+                'grad_buffer_reset_events': int(optimizer_runtime.get('grad_buffer_reset_events', 0)),
+                'grad_buffer_zeroed_tensors': int(optimizer_runtime.get('grad_buffer_zeroed_tensors', 0)),
             }
             row = _build_epoch_row(
                 epoch=epoch,

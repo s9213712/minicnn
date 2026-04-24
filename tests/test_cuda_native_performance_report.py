@@ -62,11 +62,20 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert 'optimizer_runtime' in summary
     assert 'performance_report' in summary
     assert summary['performance_report']['planner']['strategy'] == 'reuse'
+    assert 'efficiency' in summary['performance_report']
     assert summary['performance_report']['training']['grad_accum_steps'] == 2
     assert summary['performance_report']['training']['amp_enabled'] is True
+    assert 'state_allocations_per_step' in summary['performance_report']['efficiency']
+    assert 'grad_buffer_reuse_ratio' in summary['performance_report']['efficiency']
+    assert 'grad_buffer_active_tensor_fraction' in summary['performance_report']['efficiency']
+    assert 'grad_buffer_active_byte_fraction' in summary['performance_report']['efficiency']
+    assert 'amp_cache_hit_ratio' in summary['performance_report']['efficiency']
+    assert 'planner_peak_live_fraction' in summary['performance_report']['efficiency']
     assert summary['optimizer_runtime']['optimizer_type'] == 'adamw'
     assert summary['optimizer_runtime']['state_tensor_count'] > 0
     assert summary['optimizer_runtime']['state_total_bytes'] > 0
+    assert 'grad_buffer_allocations' in summary['optimizer_runtime']
+    assert 'grad_buffer_reset_events' in summary['optimizer_runtime']
     assert 'cache_allocations' in summary['amp_runtime']
 
     assert row['schema_name'] == 'minicnn.cuda_native.training.metrics.epoch'
@@ -80,6 +89,8 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert row['optimizer_runtime']['state_tensor_count'] > 0
     assert 'state_tensor_allocations_epoch' in row['optimizer_runtime']
     assert 'state_tensor_updates_epoch' in row['optimizer_runtime']
+    assert 'grad_buffer_allocations_epoch' in row['optimizer_runtime']
+    assert 'grad_buffer_reset_events_epoch' in row['optimizer_runtime']
     assert row['planner']['strategy'] == 'reuse'
     assert 'peak_live_bytes' in row['planner']
     assert 'reuse_events' in row['planner']
