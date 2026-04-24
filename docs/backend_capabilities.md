@@ -176,6 +176,8 @@ Validated train-native support boundary:
 
 Supported `gpu_native` training subsets use native `optimizer.grad_clip_global`
 through `grad_l2_sumsq` plus `scale_inplace`.
+Supported SGD `gpu_native` helper subsets use native `optimizer.weight_decay`
+through `sgd_update_fused`.
 
 Still rejected at validation or train-native gating: unsupported optimizers outside `SGD` / `Adam` / `AdamW` / `RMSprop`.
 
@@ -429,6 +431,8 @@ Debugging order:
 
 支援的 `gpu_native` training subsets 已透過 `grad_l2_sumsq` 加
 `scale_inplace` 支援 native `optimizer.grad_clip_global`。
+支援的 SGD `gpu_native` helper subsets 已透過 `sgd_update_fused`
+支援 native `optimizer.weight_decay`。
 
 支援 op：`BatchNorm2d`（forward/backward prototype）、`Concat`、`Conv2d`、`DepthwiseConv2d`、`PointwiseConv2d`、`GroupNorm`、`LayerNorm`、`LayerNorm2d`、`ResidualBlock`、`ConvNeXtBlock`、`Dropout`、`DropPath`、`Add`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`GELU`、`Identity`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`、`AdaptiveAvgPool2d`（僅 `output_size=(1,1)`）、`GlobalAvgPool2d`。
 

@@ -209,14 +209,11 @@ def _optimizer_step(
     if subset_name not in {'linear', 'flatten_linear'} and optimizer_key != 'sgd':
         reasons.append(f'unsupported gpu_native optimizer for non-Linear subset: {optimizer_type}')
         return tuple(), reasons
-    if subset_name not in {'linear', 'flatten_linear'} and weight_decay != 0.0:
-        reasons.append('gpu_native non-Linear optimizer lowering currently requires weight_decay=0.0')
-        return tuple(), reasons
     if optimizer_key == 'adam' and weight_decay != 0.0:
         reasons.append('gpu_native Linear Adam requires weight_decay=0.0; use AdamW for decoupled weight decay')
         return tuple(), reasons
     if optimizer_key == 'sgd':
-        if subset_name in {'linear', 'flatten_linear'} and weight_decay != 0.0:
+        if weight_decay != 0.0 or (subset_name not in {'linear', 'flatten_linear'} and momentum != 0.0):
             lowering_kind = 'sgd_update_fused'
             launch_family = 'optimizer_sgd_fused'
         elif momentum != 0.0:

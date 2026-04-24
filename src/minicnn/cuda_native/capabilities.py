@@ -257,6 +257,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'gpu_native readiness diagnostics expose a training_lowering_plan that decomposes helper subsets into forward, loss, backward, and optimizer lowering steps.',
         'gpu_native Linear subsets support native CrossEntropyLoss, MSELoss, and BCEWithLogitsLoss loss-gradient helpers; Conv-family subsets currently support CrossEntropyLoss.',
         'gpu_native Linear subsets support native SGD, Adam, AdamW, and RMSprop update helpers; Conv-family subsets currently support SGD.',
+        'gpu_native SGD helper subsets support native weight_decay through sgd_update_fused.',
         'gpu_native training subsets support native global-norm gradient clipping through grad_l2_sumsq plus scale_inplace.',
         'validate-cuda-native-config enforces the current train-native support boundary.',
     ],

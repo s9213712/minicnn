@@ -269,6 +269,8 @@ only report the coarse helper-pattern name.
 
 - Linear subsets: `SGD`, `Adam`, `AdamW`, `RMSprop`
 - Conv-family subsets: `SGD`
+- Supported SGD helper subsets support native `optimizer.weight_decay` through
+  `sgd_update_fused`.
 - Supported `gpu_native` training subsets use native `optimizer.grad_clip_global`
   through `grad_l2_sumsq` plus `scale_inplace`.
 

@@ -86,6 +86,8 @@ Current real CUDA evidence:
   `gpu_native_train:grad_clip_global` plus `gpu_native_train:sgd_update_fused`
 - minimal Conv+Linear global grad-clip smoke passed and clipped the combined
   Conv/Linear gradient norm to the requested threshold
+- minimal Conv+Linear `weight_decay` smoke passed and emitted
+  `gpu_native_train:sgd_update_fused`
 - CIFAR-10 repeated-Conv smoke used `official:cifar10:test_batch`; updated
   Conv/Linear weights matched NumPy reference with max absolute diffs around
   `1e-9`

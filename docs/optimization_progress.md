@@ -185,5 +185,6 @@ For the separate path from reference execution to real GPU execution, see
 - `gpu_native` Linear subsets now use native CUDA loss-gradient helpers for `CrossEntropyLoss`, `MSELoss`, and `BCEWithLogitsLoss`; Conv-family subsets remain on `CrossEntropyLoss`
 - `gpu_native` Linear subsets now use native CUDA update helpers for `SGD`, `Adam`, `AdamW`, and `RMSprop`; Conv-family subsets remain on `SGD`
 - supported `gpu_native` training subsets now use native global-norm gradient clipping through `grad_l2_sumsq` plus `scale_inplace`
+- supported SGD `gpu_native` helper subsets now use native `optimizer.weight_decay` through `sgd_update_fused`
 - `validate-cuda-native-config` now exposes `training_lowering_plan`, a per-phase manifest for forward/loss/backward/optimizer lowerings behind each accepted `gpu_native` helper subset
 - representative real CUDA smoke now passes for minimal Linear SGD, minimal Linear RMSprop, and CIFAR-10 repeated-Conv helper parity

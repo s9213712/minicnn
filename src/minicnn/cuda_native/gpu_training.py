@@ -634,6 +634,7 @@ def native_gpu_two_linear_relu_training_step(
     lr: float,
     momentum: float = 0.0,
     grad_clip_value: float = 0.0,
+    weight_decay: float = 0.0,
     weight1_velocity: np.ndarray | None = None,
     bias1_velocity: np.ndarray | None = None,
     weight2_velocity: np.ndarray | None = None,
@@ -793,7 +794,7 @@ def native_gpu_two_linear_relu_training_step(
             ),
             float(grad_clip_value),
         )
-        if float(momentum) != 0.0:
+        if float(momentum) != 0.0 or float(weight_decay) != 0.0:
             updates = (
                 (w1_t, grad_w1_t, w1v_t, int(w1_f32.size)),
                 (b1_t, grad_b1_t, b1v_t, int(b1_f32.size)),
@@ -801,15 +802,18 @@ def native_gpu_two_linear_relu_training_step(
                 (b2_t, grad_b2_t, b2v_t, int(b2_f32.size)),
             )
             for value_t, grad_t, velocity_t, size in updates:
-                lib.apply_momentum_update(
+                lib.sgd_update_fused(
                     value_t.device_ptr,
                     grad_t.device_ptr,
                     velocity_t.device_ptr,
                     float(lr),
                     float(momentum),
+                    float(weight_decay),
+                    0.0,
+                    1.0,
                     size,
                 )
-            update_kind = 'gpu_native_train:apply_momentum_update'
+            update_kind = 'gpu_native_train:sgd_update_fused'
         else:
             updates = (
                 (w1_t, grad_w1_t, int(w1_f32.size)),
@@ -879,6 +883,7 @@ def native_gpu_pool_linear_training_step(
     lr: float,
     momentum: float = 0.0,
     grad_clip_value: float = 0.0,
+    weight_decay: float = 0.0,
     weight_velocity: np.ndarray | None = None,
     bias_velocity: np.ndarray | None = None,
     bound_lib: Any | None = None,
@@ -1022,10 +1027,10 @@ def native_gpu_pool_linear_training_step(
             ),
             float(grad_clip_value),
         )
-        if float(momentum) != 0.0:
-            lib.apply_momentum_update(weight_t.device_ptr, grad_weight_t.device_ptr, weight_velocity_t.device_ptr, float(lr), float(momentum), int(weight_f32.size))
-            lib.apply_momentum_update(bias_t.device_ptr, grad_bias_t.device_ptr, bias_velocity_t.device_ptr, float(lr), float(momentum), int(bias_f32.size))
-            update_kind = 'gpu_native_train:apply_momentum_update'
+        if float(momentum) != 0.0 or float(weight_decay) != 0.0:
+            lib.sgd_update_fused(weight_t.device_ptr, grad_weight_t.device_ptr, weight_velocity_t.device_ptr, float(lr), float(momentum), float(weight_decay), 0.0, 1.0, int(weight_f32.size))
+            lib.sgd_update_fused(bias_t.device_ptr, grad_bias_t.device_ptr, bias_velocity_t.device_ptr, float(lr), float(momentum), float(weight_decay), 0.0, 1.0, int(bias_f32.size))
+            update_kind = 'gpu_native_train:sgd_update_fused'
         else:
             lib.apply_sgd_update(weight_t.device_ptr, grad_weight_t.device_ptr, float(lr), int(weight_f32.size))
             lib.apply_sgd_update(bias_t.device_ptr, grad_bias_t.device_ptr, float(lr), int(bias_f32.size))
@@ -1080,6 +1085,7 @@ def native_gpu_conv_linear_training_step(
     lr: float,
     momentum: float = 0.0,
     grad_clip_value: float = 0.0,
+    weight_decay: float = 0.0,
     conv_weight_velocity: np.ndarray | None = None,
     linear_weight_velocity: np.ndarray | None = None,
     linear_bias_velocity: np.ndarray | None = None,
@@ -1294,11 +1300,11 @@ def native_gpu_conv_linear_training_step(
             ),
             float(grad_clip_value),
         )
-        if float(momentum) != 0.0:
-            lib.apply_momentum_update(conv_w_t.device_ptr, grad_conv_w_t.device_ptr, conv_wv_t.device_ptr, float(lr), float(momentum), int(conv_w_f32.size))
-            lib.apply_momentum_update(linear_w_t.device_ptr, grad_linear_w_t.device_ptr, linear_wv_t.device_ptr, float(lr), float(momentum), int(linear_w_f32.size))
-            lib.apply_momentum_update(linear_b_t.device_ptr, grad_linear_b_t.device_ptr, linear_bv_t.device_ptr, float(lr), float(momentum), int(linear_b_f32.size))
-            update_kind = 'gpu_native_train:apply_momentum_update'
+        if float(momentum) != 0.0 or float(weight_decay) != 0.0:
+            lib.sgd_update_fused(conv_w_t.device_ptr, grad_conv_w_t.device_ptr, conv_wv_t.device_ptr, float(lr), float(momentum), float(weight_decay), 0.0, 1.0, int(conv_w_f32.size))
+            lib.sgd_update_fused(linear_w_t.device_ptr, grad_linear_w_t.device_ptr, linear_wv_t.device_ptr, float(lr), float(momentum), float(weight_decay), 0.0, 1.0, int(linear_w_f32.size))
+            lib.sgd_update_fused(linear_b_t.device_ptr, grad_linear_b_t.device_ptr, linear_bv_t.device_ptr, float(lr), float(momentum), float(weight_decay), 0.0, 1.0, int(linear_b_f32.size))
+            update_kind = 'gpu_native_train:sgd_update_fused'
         else:
             lib.apply_sgd_update(conv_w_t.device_ptr, grad_conv_w_t.device_ptr, float(lr), int(conv_w_f32.size))
             lib.apply_sgd_update(linear_w_t.device_ptr, grad_linear_w_t.device_ptr, float(lr), int(linear_w_f32.size))
@@ -1365,6 +1371,7 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
     lr: float,
     momentum: float = 0.0,
     grad_clip_value: float = 0.0,
+    weight_decay: float = 0.0,
     conv1_weight_velocity: np.ndarray | None = None,
     conv2_weight_velocity: np.ndarray | None = None,
     linear_weight_velocity: np.ndarray | None = None,
@@ -1586,7 +1593,7 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
             ),
             float(grad_clip_value),
         )
-        if float(momentum) != 0.0:
+        if float(momentum) != 0.0 or float(weight_decay) != 0.0:
             updates = (
                 (conv1_w_t, grad_conv1_w_t, conv1_wv_t, int(conv1_w_f32.size)),
                 (conv2_w_t, grad_conv2_w_t, conv2_wv_t, int(conv2_w_f32.size)),
@@ -1594,8 +1601,8 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
                 (linear_b_t, grad_linear_b_t, linear_bv_t, int(linear_b_f32.size)),
             )
             for value_t, grad_t, velocity_t, size in updates:
-                lib.apply_momentum_update(value_t.device_ptr, grad_t.device_ptr, velocity_t.device_ptr, float(lr), float(momentum), size)
-            update_kind = 'gpu_native_train:apply_momentum_update'
+                lib.sgd_update_fused(value_t.device_ptr, grad_t.device_ptr, velocity_t.device_ptr, float(lr), float(momentum), float(weight_decay), 0.0, 1.0, size)
+            update_kind = 'gpu_native_train:sgd_update_fused'
         else:
             updates = (
                 (conv1_w_t, grad_conv1_w_t, int(conv1_w_f32.size)),
