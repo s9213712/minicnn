@@ -335,6 +335,7 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert 'support_tiers' in payload
     assert 'support_tier_counts' in payload
     assert 'graduation_gates' in payload
+    assert 'execution_mode_readiness' in payload
     assert payload['supports_depthwise_conv'] is True
     assert payload['supports_pointwise_conv'] is True
     assert payload['supports_groupnorm'] is True
@@ -369,6 +370,12 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['support_tiers']['experimental']['features'] == []
     assert 'amp' in payload['support_tiers']['beta']['features']
     assert payload['support_tier_counts']['stable']['ops'] >= 1
+    assert payload['execution_mode_readiness']['reference_numpy']['ready'] is True
+    assert payload['execution_mode_readiness']['gpu_native']['ready'] is False
+    assert payload['execution_mode_readiness']['gpu_native']['status'] == 'planned'
+    assert 'Conv2d' in payload['execution_mode_readiness']['gpu_native']['bootstrap_subset_ops']
+    assert payload['execution_mode_readiness']['gpu_native']['kernel_readiness']['Conv2d'] == 'planned'
+    assert 'gpu_kernel_registry_unimplemented' in payload['execution_mode_readiness']['gpu_native']['remaining_blockers']
     assert payload['graduation_gates']['core_beta_subset']['ready'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['ready'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['amp_tolerance_matrix_present'] is True
@@ -774,6 +781,8 @@ def test_cli_validate_cuda_native_config_reports_experimental_amp_tier(capsys, t
     assert payload['support_tier_assessment']['highest_tier'] == 'beta'
     assert payload['support_tier_assessment']['optimizers_by_tier']['stable'] == ['AdamW']
     assert payload['support_tier_assessment']['features_by_tier']['beta'] == ['amp']
+    assert payload['execution_readiness_assessment']['selected_execution_mode'] == 'reference_numpy'
+    assert payload['execution_readiness_assessment']['ready'] is True
 
 
 def test_train_native_rejects_unsupported_config_with_failure_category(capsys, tmp_path):
@@ -863,6 +872,8 @@ def test_train_native_preamble_exposes_support_tier_assessment(capsys, tmp_path,
     assert payload['tensors_ran_on'] == 'cpu'
     assert payload['support_tier_assessment']['highest_tier'] == 'stable'
     assert payload['support_tier_assessment']['ops_by_tier']['stable'] == ['Flatten', 'Linear']
+    assert payload['execution_readiness_assessment']['selected_execution_mode'] == 'reference_numpy'
+    assert payload['execution_readiness_assessment']['bootstrap_subset_complete'] is False
 
 
 def test_cli_show_cuda_mapping_returns_structured_json(capsys):

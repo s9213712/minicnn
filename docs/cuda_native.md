@@ -218,6 +218,21 @@ current state of:
 
 is visible without manually reading the roadmap.
 
+For GPU enablement work, the same capability payload now also exposes
+`execution_mode_readiness`, which answers:
+
+- which execution modes are active vs planned
+- which ops make up the first `gpu_native` bootstrap subset
+- which blockers still prevent `gpu_native` from being a runnable mode
+
+Validation payloads and the `train-native` preamble now also include
+`execution_readiness_assessment`, so a concrete config can report:
+
+- which execution mode was requested
+- whether that mode is actually ready
+- which requested ops are already inside the planned GPU bootstrap subset
+- which requested ops still fall outside that subset
+
 Validate a config:
 
 ```bash

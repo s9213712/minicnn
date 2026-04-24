@@ -42,6 +42,38 @@ _SCHEDULER_ALIASES = {
 _SUPPORT_TIER_ORDER = ('stable', 'beta', 'experimental')
 
 
+def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, object]:
+    caps = get_cuda_native_capabilities()
+    readiness_table = dict(caps.get('execution_mode_readiness', {}))
+    execution_mode = resolve_cuda_native_execution_mode(cfg)
+    selected_mode = str(execution_mode.get('selected_execution_mode', 'reference_numpy'))
+    mode_readiness = dict(readiness_table.get(selected_mode, {}))
+    model_cfg, _ = _as_mapping('model', cfg.get('model'))
+    resolved_model_cfg = resolve_model_config(model_cfg)
+    layer_types = sorted({
+        str(layer.get('type'))
+        for layer in resolved_model_cfg.get('layers', [])
+        if isinstance(layer, dict) and layer.get('type')
+    })
+    bootstrap_subset = set(str(item) for item in mode_readiness.get('bootstrap_subset_ops', []))
+    supported_ops = sorted(op for op in layer_types if op in bootstrap_subset)
+    missing_ops = sorted(op for op in layer_types if op not in bootstrap_subset)
+    remaining_blockers = [str(item) for item in mode_readiness.get('remaining_blockers', [])]
+    if selected_mode == 'gpu_native' and 'gpu_native_execution_not_implemented' not in remaining_blockers:
+        remaining_blockers = ['gpu_native_execution_not_implemented', *remaining_blockers]
+    return {
+        'selected_execution_mode': selected_mode,
+        'status': str(mode_readiness.get('status', 'unknown')),
+        'ready': bool(mode_readiness.get('ready', False)),
+        'tensor_execution_device': str(mode_readiness.get('tensor_execution_device', 'unknown')),
+        'requested_ops': layer_types,
+        'bootstrap_subset_complete': len(missing_ops) == 0,
+        'bootstrap_supported_ops': supported_ops,
+        'bootstrap_missing_ops': missing_ops,
+        'remaining_blockers': remaining_blockers,
+    }
+
+
 def resolve_cuda_native_execution_mode(cfg: dict[str, Any]) -> dict[str, object]:
     engine_cfg, _ = _as_mapping('engine', cfg.get('engine'))
     selected_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')

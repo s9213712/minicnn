@@ -9,6 +9,23 @@ from __future__ import annotations
 from typing import Any
 
 CAPABILITY_SCHEMA_VERSION = 1
+GPU_NATIVE_BOOTSTRAP_OPS = [
+    'Add',
+    'Concat',
+    'Conv2d',
+    'Flatten',
+    'LeakyReLU',
+    'Linear',
+    'MaxPool2d',
+    'ReLU',
+]
+GPU_NATIVE_BOOTSTRAP_BLOCKERS = [
+    'device_allocator_runtime_incomplete',
+    'gpu_kernel_registry_unimplemented',
+    'gpu_forward_kernel_lowering_unimplemented',
+    'gpu_backward_kernel_lowering_unimplemented',
+    'gpu_parity_matrix_missing',
+]
 
 CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
     'stable': {
@@ -184,6 +201,28 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     ],
 }
 
+CUDA_NATIVE_EXECUTION_MODE_READINESS: dict[str, dict[str, object]] = {
+    'reference_numpy': {
+        'status': 'active',
+        'ready': True,
+        'tensor_execution_device': 'cpu',
+        'bootstrap_subset_ops': [],
+        'kernel_readiness': {},
+        'remaining_blockers': [],
+    },
+    'gpu_native': {
+        'status': 'planned',
+        'ready': False,
+        'tensor_execution_device': 'gpu',
+        'bootstrap_subset_ops': GPU_NATIVE_BOOTSTRAP_OPS,
+        'kernel_readiness': {
+            op_name: 'planned'
+            for op_name in GPU_NATIVE_BOOTSTRAP_OPS
+        },
+        'remaining_blockers': GPU_NATIVE_BOOTSTRAP_BLOCKERS,
+    },
+}
+
 
 def _sorted_unique_strings(items: object) -> list[str]:
     return sorted({str(item) for item in items if str(item)})
@@ -228,6 +267,28 @@ def _kernel_registry_surface() -> list[dict[str, str]]:
     ]
 
 
+def _normalized_execution_mode_readiness() -> dict[str, dict[str, object]]:
+    normalized: dict[str, dict[str, object]] = {}
+    for mode, readiness in CUDA_NATIVE_EXECUTION_MODE_READINESS.items():
+        readiness_dict = dict(readiness)
+        readiness_dict['status'] = str(readiness_dict.get('status', 'unknown'))
+        readiness_dict['ready'] = bool(readiness_dict.get('ready', False))
+        readiness_dict['tensor_execution_device'] = str(readiness_dict.get('tensor_execution_device', 'unknown'))
+        readiness_dict['bootstrap_subset_ops'] = _sorted_unique_strings(
+            readiness_dict.get('bootstrap_subset_ops', [])
+        )
+        readiness_dict['kernel_readiness'] = {
+            str(key): str(value)
+            for key, value in dict(readiness_dict.get('kernel_readiness', {})).items()
+        }
+        readiness_dict['remaining_blockers'] = [
+            str(item)
+            for item in readiness_dict.get('remaining_blockers', [])
+        ]
+        normalized[str(mode)] = readiness_dict
+    return normalized
+
+
 def get_cuda_native_capabilities() -> dict[str, Any]:
     """Return a versioned, machine-readable cuda_native capability descriptor."""
     caps = dict(CUDA_NATIVE_CAPABILITIES)
@@ -242,6 +303,7 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
     support_tiers = _normalized_support_tiers()
     graduation_gates = _normalized_graduation_gates()
     kernel_surface = _kernel_registry_surface()
+    execution_mode_readiness = _normalized_execution_mode_readiness()
     caps.update({
         'schema_version': CAPABILITY_SCHEMA_VERSION,
         'backend': 'cuda_native',
@@ -262,6 +324,7 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
             for tier, buckets in support_tiers.items()
         },
         'graduation_gates': graduation_gates,
+        'execution_mode_readiness': execution_mode_readiness,
         'supported_op_categories': sorted({entry['category'] for entry in kernel_surface}),
         'kernel_registry_surface': kernel_surface,
     })

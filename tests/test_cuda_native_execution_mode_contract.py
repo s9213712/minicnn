@@ -52,6 +52,8 @@ def test_validate_cuda_native_config_reports_reference_numpy_mode(tmp_path, caps
     assert payload['effective_execution_mode'] == 'reference_numpy'
     assert payload['tensor_execution_device'] == 'cpu'
     assert payload['tensors_ran_on'] == 'cpu'
+    assert payload['execution_readiness_assessment']['selected_execution_mode'] == 'reference_numpy'
+    assert payload['execution_readiness_assessment']['ready'] is True
 
 
 def test_train_native_preamble_reports_reference_numpy_mode(tmp_path, capsys):
@@ -98,6 +100,13 @@ def test_validate_cuda_native_config_rejects_planned_gpu_native_mode(tmp_path, c
     assert payload['effective_execution_mode'] == 'unsupported'
     assert payload['tensor_execution_device'] == 'gpu'
     assert payload['gpu_execution'] is False
+    assert payload['execution_readiness_assessment']['selected_execution_mode'] == 'gpu_native'
+    assert payload['execution_readiness_assessment']['status'] == 'planned'
+    assert payload['execution_readiness_assessment']['ready'] is False
+    assert payload['execution_readiness_assessment']['bootstrap_subset_complete'] is True
+    assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Flatten', 'Linear']
+    assert payload['execution_readiness_assessment']['bootstrap_missing_ops'] == []
+    assert 'gpu_native_execution_not_implemented' in payload['execution_readiness_assessment']['remaining_blockers']
     assert any('planned but not yet implemented' in err for err in payload['errors'])
 
 
@@ -119,3 +128,4 @@ def test_train_native_preamble_reports_requested_gpu_native_mode_before_failure(
     assert payload['effective_execution_mode'] == 'unsupported'
     assert payload['tensor_execution_device'] == 'gpu'
     assert payload['gpu_execution'] is False
+    assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Flatten', 'Linear']

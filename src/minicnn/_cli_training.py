@@ -298,6 +298,7 @@ def handle_compare(args, parser) -> int:
 
 def handle_train_native(args) -> int:
     from minicnn.cuda_native.api import (
+        assess_cuda_native_execution_readiness,
         assess_cuda_native_support_tier,
         get_capability_summary as get_cuda_native_summary,
         resolve_cuda_native_execution_mode,
@@ -318,6 +319,7 @@ def handle_train_native(args) -> int:
             'ops': summary.get('supported_ops', []),
         },
         'support_tier_assessment': assess_cuda_native_support_tier(cfg),
+        'execution_readiness_assessment': assess_cuda_native_execution_readiness(cfg),
         **execution_mode,
         'note': 'beta-grade backend; current execution mode is reference_numpy on CPU, while gpu_native remains planned and not yet active',
     })

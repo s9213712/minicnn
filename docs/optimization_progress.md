@@ -50,6 +50,7 @@ The stable default backend toggle is still:
   - explicit staged eval-forward execution telemetry
   - reserved-buffer reuse/release telemetry for staged outputs
   - reserved-buffer-backed input/output staging for train/eval batch paths
+  - machine-readable `gpu_native` readiness and per-config bootstrap assessment
 
 ## What Is Still Constrained
 
