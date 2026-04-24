@@ -161,3 +161,37 @@ def test_cuda_native_amp_grad_accum_smoke_and_checkpoint_compatibility(tmp_path)
     assert Path(resolved_best) == Path(summary['best_model_path'])
     with np.load(Path(resolved_best)) as checkpoint:
         assert len(checkpoint.files) > 0
+
+
+def test_cuda_native_fixed_seed_smoke_is_reproducible(tmp_path):
+    cfg = {
+        'engine': {'backend': 'cuda_native', 'planner_strategy': 'reuse'},
+        'dataset': {
+            'type': 'random',
+            'input_shape': [1, 8, 8],
+            'num_classes': 2,
+            'num_samples': 8,
+            'val_samples': 4,
+            'seed': 31,
+        },
+        'model': {'layers': [{'type': 'Flatten'}, {'type': 'Linear', 'out_features': 2}]},
+        'train': {'batch_size': 2, 'epochs': 1, 'init_seed': 31},
+        'optimizer': {'type': 'SGD', 'lr': 0.01},
+        'loss': {'type': 'CrossEntropyLoss'},
+    }
+
+    run_dir_a = _train(tmp_path / 'run_a', {**cfg, 'project': {'artifacts_root': str(tmp_path / 'run_a')}})
+    run_dir_b = _train(tmp_path / 'run_b', {**cfg, 'project': {'artifacts_root': str(tmp_path / 'run_b')}})
+
+    summary_a, row_a = _assert_minimum_artifact_contract(run_dir_a)
+    summary_b, row_b = _assert_minimum_artifact_contract(run_dir_b)
+
+    assert summary_a['best_val_acc'] == summary_b['best_val_acc']
+    assert row_a['train_loss'] == row_b['train_loss']
+    assert row_a['val_loss'] == row_b['val_loss']
+    assert row_a['val_acc'] == row_b['val_acc']
+
+    with np.load(Path(summary_a['best_model_path'])) as ckpt_a, np.load(Path(summary_b['best_model_path'])) as ckpt_b:
+        assert ckpt_a.files == ckpt_b.files
+        for key in ckpt_a.files:
+            np.testing.assert_array_equal(ckpt_a[key], ckpt_b[key])

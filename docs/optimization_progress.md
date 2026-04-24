@@ -122,5 +122,6 @@ The next phase is narrower and more technical:
   - current parity baseline: `Add`, `Concat`, `Linear`, `Conv2d` (including grouped/depthwise), `BatchNorm2d`, `LayerNorm`, `LayerNorm2d`, `GroupNorm` forward/backward
   - `BatchNorm2d` train-mode running-stat semantics are now aligned with PyTorch (`running_var` uses unbiased batch variance)
   - composite forward parity now covers `ResidualBlock` and `ConvNeXtBlock`
+  - fixed-seed smoke reproducibility is now locked for a minimal `cuda_native` training path
 
 For the formal productionization path, see [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md).

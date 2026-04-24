@@ -362,6 +362,88 @@ def test_residualblock_eval_forward_matches_torch_reference():
     assert np.allclose(native, expected, atol=1e-4, rtol=1e-4)
 
 
+def test_residualblock_eval_backward_matches_torch_reference():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.backward import BackwardExecutor
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'ResidualBlock', 'channels': 4, 'stride': 1, 'bias': False}],
+        (2, 4, 5, 5),
+    )
+    node_name = graph.nodes[0].name
+    x = np.random.default_rng(92).standard_normal((2, 4, 5, 5)).astype(np.float32)
+    grad_out = np.random.default_rng(93).standard_normal((2, 4, 5, 5)).astype(np.float32)
+    w1 = np.random.default_rng(94).standard_normal((4, 4, 3, 3)).astype(np.float32)
+    w2 = np.random.default_rng(95).standard_normal((4, 4, 3, 3)).astype(np.float32)
+    bn1_w = np.random.default_rng(96).standard_normal((4,)).astype(np.float32)
+    bn1_b = np.random.default_rng(97).standard_normal((4,)).astype(np.float32)
+    bn2_w = np.random.default_rng(98).standard_normal((4,)).astype(np.float32)
+    bn2_b = np.random.default_rng(99).standard_normal((4,)).astype(np.float32)
+    rm1 = np.random.default_rng(100).standard_normal((4,)).astype(np.float32)
+    rv1 = np.abs(np.random.default_rng(101).standard_normal((4,)).astype(np.float32)) + 0.5
+    rm2 = np.random.default_rng(102).standard_normal((4,)).astype(np.float32)
+    rv2 = np.abs(np.random.default_rng(103).standard_normal((4,)).astype(np.float32)) + 0.5
+    params = {
+        f'_w_conv1_{node_name}': w1,
+        f'_w_conv2_{node_name}': w2,
+        f'_w_bn1_{node_name}': bn1_w,
+        f'_b_bn1_{node_name}': bn1_b,
+        f'_running_mean_bn1_{node_name}': rm1.copy(),
+        f'_running_var_bn1_{node_name}': rv1.copy(),
+        f'_w_bn2_{node_name}': bn2_w,
+        f'_b_bn2_{node_name}': bn2_b,
+        f'_running_mean_bn2_{node_name}': rm2.copy(),
+        f'_running_var_bn2_{node_name}': rv2.copy(),
+    }
+
+    _ctx, cache = ForwardExecutor().run_with_cache(graph, {'input': x}, params=params, mode='eval')
+    native_grad_input, native_param_grads = BackwardExecutor().run(graph, grad_out, cache)
+
+    tx = torch.tensor(x, dtype=torch.float32, requires_grad=True)
+    tw1 = torch.tensor(w1, dtype=torch.float32, requires_grad=True)
+    tw2 = torch.tensor(w2, dtype=torch.float32, requires_grad=True)
+    tbn1_w = torch.tensor(bn1_w, dtype=torch.float32, requires_grad=True)
+    tbn1_b = torch.tensor(bn1_b, dtype=torch.float32, requires_grad=True)
+    tbn2_w = torch.tensor(bn2_w, dtype=torch.float32, requires_grad=True)
+    tbn2_b = torch.tensor(bn2_b, dtype=torch.float32, requires_grad=True)
+    t = F.conv2d(tx, weight=tw1, bias=None, stride=1, padding=1)
+    t = F.batch_norm(
+        t,
+        running_mean=torch.tensor(rm1, dtype=torch.float32),
+        running_var=torch.tensor(rv1, dtype=torch.float32),
+        weight=tbn1_w,
+        bias=tbn1_b,
+        training=False,
+        momentum=0.1,
+        eps=1e-5,
+    )
+    t = F.relu(t)
+    t = F.conv2d(t, weight=tw2, bias=None, stride=1, padding=1)
+    t = F.batch_norm(
+        t,
+        running_mean=torch.tensor(rm2, dtype=torch.float32),
+        running_var=torch.tensor(rv2, dtype=torch.float32),
+        weight=tbn2_w,
+        bias=tbn2_b,
+        training=False,
+        momentum=0.1,
+        eps=1e-5,
+    )
+    tout = F.relu(t + tx)
+    tout.backward(torch.tensor(grad_out, dtype=torch.float32))
+
+    assert np.allclose(native_grad_input, tx.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads[f'_w_conv1_{node_name}'], tw1.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads[f'_w_conv2_{node_name}'], tw2.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads[f'_w_bn1_{node_name}'], tbn1_w.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads[f'_b_bn1_{node_name}'], tbn1_b.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads[f'_w_bn2_{node_name}'], tbn2_w.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads[f'_b_bn2_{node_name}'], tbn2_b.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+
+
 def test_layernorm_forward_matches_torch():
     import torch.nn.functional as F
 
@@ -681,6 +763,76 @@ def test_convnextblock_forward_matches_torch_reference():
     expected = (tx + t).detach().cpu().numpy()
 
     assert np.allclose(native, expected, atol=1e-4, rtol=1e-4)
+
+
+def test_convnextblock_backward_matches_torch_reference():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.backward import BackwardExecutor
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'ConvNeXtBlock', 'kernel_size': 7, 'bias': True}],
+        (2, 4, 5, 5),
+    )
+    node_name = graph.nodes[0].name
+    x = np.random.default_rng(104).standard_normal((2, 4, 5, 5)).astype(np.float32)
+    grad_out = np.random.default_rng(105).standard_normal((2, 4, 5, 5)).astype(np.float32)
+    w_dw = np.random.default_rng(106).standard_normal((4, 1, 7, 7)).astype(np.float32)
+    b_dw = np.random.default_rng(107).standard_normal((4,)).astype(np.float32)
+    ln_w = np.random.default_rng(108).standard_normal((4,)).astype(np.float32)
+    ln_b = np.random.default_rng(109).standard_normal((4,)).astype(np.float32)
+    w_pw1 = np.random.default_rng(110).standard_normal((16, 4, 1, 1)).astype(np.float32)
+    b_pw1 = np.random.default_rng(111).standard_normal((16,)).astype(np.float32)
+    w_pw2 = np.random.default_rng(112).standard_normal((4, 16, 1, 1)).astype(np.float32)
+    b_pw2 = np.random.default_rng(113).standard_normal((4,)).astype(np.float32)
+    params = {
+        f'_w_depthwise_{node_name}': w_dw,
+        f'_b_depthwise_{node_name}': b_dw,
+        f'_w_ln_{node_name}': ln_w,
+        f'_b_ln_{node_name}': ln_b,
+        f'_w_pw1_{node_name}': w_pw1,
+        f'_b_pw1_{node_name}': b_pw1,
+        f'_w_pw2_{node_name}': w_pw2,
+        f'_b_pw2_{node_name}': b_pw2,
+    }
+
+    _ctx, cache = ForwardExecutor().run_with_cache(graph, {'input': x}, params=params, mode='eval')
+    native_grad_input, native_param_grads = BackwardExecutor().run(graph, grad_out, cache)
+
+    tx = torch.tensor(x, dtype=torch.float32, requires_grad=True)
+    tw_dw = torch.tensor(w_dw, dtype=torch.float32, requires_grad=True)
+    tb_dw = torch.tensor(b_dw, dtype=torch.float32, requires_grad=True)
+    tln_w = torch.tensor(ln_w, dtype=torch.float32, requires_grad=True)
+    tln_b = torch.tensor(ln_b, dtype=torch.float32, requires_grad=True)
+    tw_pw1 = torch.tensor(w_pw1, dtype=torch.float32, requires_grad=True)
+    tb_pw1 = torch.tensor(b_pw1, dtype=torch.float32, requires_grad=True)
+    tw_pw2 = torch.tensor(w_pw2, dtype=torch.float32, requires_grad=True)
+    tb_pw2 = torch.tensor(b_pw2, dtype=torch.float32, requires_grad=True)
+    t = F.conv2d(tx, weight=tw_dw, bias=tb_dw, stride=1, padding=3, groups=4)
+    t = F.layer_norm(
+        t.permute(0, 2, 3, 1),
+        normalized_shape=(4,),
+        weight=tln_w,
+        bias=tln_b,
+        eps=1e-6,
+    ).permute(0, 3, 1, 2).contiguous()
+    t = F.conv2d(t, weight=tw_pw1, bias=tb_pw1, stride=1, padding=0)
+    t = F.gelu(t, approximate='tanh')
+    t = F.conv2d(t, weight=tw_pw2, bias=tb_pw2, stride=1, padding=0)
+    tout = tx + t
+    tout.backward(torch.tensor(grad_out, dtype=torch.float32))
+
+    assert np.allclose(native_grad_input, tx.grad.detach().cpu().numpy(), atol=2e-4, rtol=2e-4)
+    assert np.allclose(native_param_grads[f'_w_depthwise_{node_name}'], tw_dw.grad.detach().cpu().numpy(), atol=2e-4, rtol=2e-4)
+    assert np.allclose(native_param_grads[f'_b_depthwise_{node_name}'], tb_dw.grad.detach().cpu().numpy(), atol=2e-4, rtol=2e-4)
+    assert np.allclose(native_param_grads[f'_w_ln_{node_name}'], tln_w.grad.detach().cpu().numpy(), atol=2e-4, rtol=2e-4)
+    assert np.allclose(native_param_grads[f'_b_ln_{node_name}'], tln_b.grad.detach().cpu().numpy(), atol=2e-4, rtol=2e-4)
+    assert np.allclose(native_param_grads[f'_w_pw1_{node_name}'], tw_pw1.grad.detach().cpu().numpy(), atol=2e-4, rtol=2e-4)
+    assert np.allclose(native_param_grads[f'_b_pw1_{node_name}'], tb_pw1.grad.detach().cpu().numpy(), atol=2e-4, rtol=2e-4)
+    assert np.allclose(native_param_grads[f'_w_pw2_{node_name}'], tw_pw2.grad.detach().cpu().numpy(), atol=2e-4, rtol=2e-4)
+    assert np.allclose(native_param_grads[f'_b_pw2_{node_name}'], tb_pw2.grad.detach().cpu().numpy(), atol=2e-4, rtol=2e-4)
 
 
 def test_layernorm_backward_matches_torch():
