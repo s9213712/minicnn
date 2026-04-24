@@ -198,6 +198,33 @@ def _build_hotspot_diff_summary(
             }
         )
     op_deltas.sort(key=lambda item: abs(float(item.get('delta_ms', 0.0))), reverse=True)
+    train_categories = {
+        str(item.get('category')): float(item.get('elapsed_ms', 0.0))
+        for item in train_hotspots.get('top_categories', [])
+        if isinstance(item, dict) and item.get('category') is not None
+    }
+    eval_categories = {
+        str(item.get('category')): float(item.get('elapsed_ms', 0.0))
+        for item in eval_hotspots.get('top_categories', [])
+        if isinstance(item, dict) and item.get('category') is not None
+    }
+    all_categories = sorted(set(train_categories) | set(eval_categories))
+    category_deltas = []
+    for category in all_categories:
+        train_elapsed = train_categories.get(category, 0.0)
+        eval_elapsed = eval_categories.get(category, 0.0)
+        category_deltas.append(
+            {
+                'category': category,
+                'train_elapsed_ms': round(train_elapsed, 3),
+                'eval_elapsed_ms': round(eval_elapsed, 3),
+                'delta_ms': round(train_elapsed - eval_elapsed, 3),
+                'train_eval_ratio': (
+                    round(train_elapsed / eval_elapsed, 3) if eval_elapsed > 0.0 else None
+                ),
+            }
+        )
+    category_deltas.sort(key=lambda item: abs(float(item.get('delta_ms', 0.0))), reverse=True)
     all_nodes = sorted(set(train_nodes) | set(eval_nodes))
     node_deltas = []
     for node_key in all_nodes:
@@ -219,11 +246,19 @@ def _build_hotspot_diff_summary(
     node_deltas.sort(key=lambda item: abs(float(item.get('delta_ms', 0.0))), reverse=True)
     train_total = float(train_hotspots.get('trace_total_ms', 0.0))
     eval_total = float(eval_hotspots.get('trace_total_ms', 0.0))
+    bottleneck_summary = {
+        'dominant_train_op': op_deltas[0]['op'] if op_deltas else None,
+        'dominant_train_eval_delta_op': op_deltas[0]['op'] if op_deltas else None,
+        'dominant_train_eval_delta_node': node_deltas[0]['node'] if node_deltas else None,
+        'dominant_train_eval_delta_category': category_deltas[0]['category'] if category_deltas else None,
+    }
     return {
         'train_total_ms': round(train_total, 3),
         'eval_total_ms': round(eval_total, 3),
         'delta_ms': round(train_total - eval_total, 3),
         'train_eval_ratio': round(train_total / eval_total, 3) if eval_total > 0.0 else None,
+        'bottleneck_summary': bottleneck_summary,
+        'top_category_deltas': category_deltas[:top_k],
         'top_node_deltas': node_deltas[:top_k],
         'top_op_deltas': op_deltas[:top_k],
     }

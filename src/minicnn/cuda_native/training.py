@@ -73,16 +73,21 @@ def sgd_update(
     updated: dict[str, np.ndarray] = {}
     for key, val in params.items():
         if key in clipped_grads:
-            g = clipped_grads[key]
-            if weight_decay > 0.0:
-                g = g + weight_decay * val
+            g = np.asarray(clipped_grads[key], dtype=np.float32)
+            val_f32 = np.asarray(val, dtype=np.float32)
             if momentum > 0.0:
-                prev_v = _get_or_init_state_tensor(velocity, key, val.astype(np.float32), runtime)
+                prev_v = _get_or_init_state_tensor(velocity, key, val_f32, runtime)
+                if weight_decay > 0.0:
+                    g = g + weight_decay * val_f32
                 prev_v *= momentum
                 prev_v -= lr * g
-                updated[key] = (val + prev_v).astype(np.float32)
+                updated[key] = val_f32 + prev_v
             else:
-                updated[key] = (val - lr * g).astype(np.float32)
+                next_val = val_f32.copy()
+                if weight_decay > 0.0:
+                    next_val *= (1.0 - lr * weight_decay)
+                next_val -= lr * g
+                updated[key] = next_val
         else:
             updated[key] = val
     return updated
@@ -161,10 +166,10 @@ def adam_update(
         if key not in clipped_grads:
             updated[key] = val
             continue
-        grad = clipped_grads[key].astype(np.float32)
+        grad = np.asarray(clipped_grads[key], dtype=np.float32)
+        val_f32 = np.asarray(val, dtype=np.float32)
         if weight_decay > 0.0:
-            grad = grad + weight_decay * val.astype(np.float32)
-        val_f32 = val.astype(np.float32)
+            grad = grad + weight_decay * val_f32
         m_prev = _get_or_init_state_tensor(m_state, key, val_f32, runtime)
         v_prev = _get_or_init_state_tensor(v_state, key, val_f32, runtime)
         m_prev *= beta1
@@ -173,7 +178,9 @@ def adam_update(
         v_prev += (1.0 - beta2) * np.square(grad, dtype=np.float32)
         m_hat = m_prev / bias_correction1
         v_hat = v_prev / bias_correction2
-        updated[key] = (val.astype(np.float32) - lr * (m_hat / (np.sqrt(v_hat) + eps))).astype(np.float32)
+        next_val = val_f32.copy()
+        next_val -= lr * (m_hat / (np.sqrt(v_hat) + eps))
+        updated[key] = next_val
     return updated
 
 
@@ -199,10 +206,10 @@ def rmsprop_update(
         if key not in clipped_grads:
             updated[key] = val
             continue
-        grad = clipped_grads[key].astype(np.float32)
+        grad = np.asarray(clipped_grads[key], dtype=np.float32)
+        val_f32 = np.asarray(val, dtype=np.float32)
         if weight_decay > 0.0:
-            grad = grad + weight_decay * val.astype(np.float32)
-        val_f32 = val.astype(np.float32)
+            grad = grad + weight_decay * val_f32
         v_prev = _get_or_init_state_tensor(v_state, key, val_f32, runtime)
         v_prev *= alpha
         v_prev += (1.0 - alpha) * np.square(grad, dtype=np.float32)
@@ -214,7 +221,9 @@ def rmsprop_update(
             update = buf_prev
         else:
             update = step_grad
-        updated[key] = (val.astype(np.float32) - lr * update).astype(np.float32)
+        next_val = val_f32.copy()
+        next_val -= lr * update
+        updated[key] = next_val
     return updated
 
 
