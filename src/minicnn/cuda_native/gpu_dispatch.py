@@ -13,9 +13,13 @@ class GpuDispatchStep:
     node_name: str
     op_name: str
     category: str
+    launch_family: str
     input_names: tuple[str, ...]
     output_names: tuple[str, ...]
     param_keys: tuple[str, ...]
+    input_arity: int
+    output_arity: int
+    preferred_layout: str
     lowering_kind: str
     forward_status: str
     backward_status: str
@@ -40,9 +44,13 @@ class GpuDispatchPlan:
                     'node_name': step.node_name,
                     'op_name': step.op_name,
                     'category': step.category,
+                    'launch_family': step.launch_family,
                     'input_names': list(step.input_names),
                     'output_names': list(step.output_names),
                     'param_keys': list(step.param_keys),
+                    'input_arity': step.input_arity,
+                    'output_arity': step.output_arity,
+                    'preferred_layout': step.preferred_layout,
                     'lowering_kind': step.lowering_kind,
                     'forward_status': step.forward_status,
                     'backward_status': step.backward_status,
@@ -82,9 +90,13 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                     node_name=str(node.name),
                     op_name=str(node.op_type),
                     category='unsupported',
+                    launch_family='unsupported',
                     input_names=tuple(str(name) for name in node.inputs),
                     output_names=tuple(str(name) for name in node.outputs),
                     param_keys=tuple(),
+                    input_arity=len(node.inputs),
+                    output_arity=len(node.outputs),
+                    preferred_layout='unknown',
                     lowering_kind='unsupported',
                     forward_status='unsupported',
                     backward_status='unsupported',
@@ -101,9 +113,13 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                 node_name=str(node.name),
                 op_name=str(node.op_type),
                 category=str(spec.category),
+                launch_family=str(spec.launch_family),
                 input_names=tuple(str(name) for name in node.inputs),
                 output_names=tuple(str(name) for name in node.outputs),
                 param_keys=_node_param_keys(node),
+                input_arity=int(spec.input_arity),
+                output_arity=int(spec.output_arity),
+                preferred_layout=str(spec.preferred_layout),
                 lowering_kind=lowering_kind,
                 forward_status=str(spec.forward_status),
                 backward_status=str(spec.backward_status),

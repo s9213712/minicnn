@@ -38,6 +38,9 @@ def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     assert runtime_summary['execution_kinds']['gpu_stub_kernel:Flatten'] == 1
     assert runtime_summary['execution_kinds']['gpu_stub_kernel:Linear'] == 2
     assert runtime_summary['execution_kinds']['gpu_stub_kernel:ReLU'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_launch:reshape_view'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_launch:gemm_affine'] == 2
+    assert runtime_summary['execution_kinds']['gpu_stub_launch:elementwise_unary'] == 1
     assert runtime_summary['reserved_buffer_reuse_events'] >= 2
     assert runtime_summary['reserved_buffer_release_events'] >= 2
 

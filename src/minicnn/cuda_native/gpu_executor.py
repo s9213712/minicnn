@@ -97,6 +97,12 @@ class GpuStubExecutor:
                 output_name=output_name,
                 node_count=1,
             )
+            self.device_runtime.record_execution(
+                f'gpu_stub_launch:{step.launch_family}',
+                input_name=step.input_names[0] if step.input_names else None,
+                output_name=output_name,
+                node_count=0,
+            )
             for input_name in step.input_names:
                 remaining_uses[input_name] -= 1
                 if (
