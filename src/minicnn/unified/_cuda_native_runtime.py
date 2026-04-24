@@ -344,7 +344,22 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
     x_train, y_train, x_val, y_val = _load_numpy_data(cfg)
     params = _init_params(graph, seed=init_seed)
     planner_strategy = str(engine_cfg.get('planner_strategy', 'reuse'))
-    planner_summary = make_plan(graph, strategy=planner_strategy).summary()
+    plan = make_plan(graph, strategy=planner_strategy)
+    planner_summary_raw = plan.summary()
+    buffer_plan = planner_summary_raw.get('buffer_plan', {})
+    planner_summary = {
+        **planner_summary_raw,
+        **({} if not isinstance(buffer_plan, dict) else buffer_plan),
+    }
+    device_runtime = DeviceRuntime(
+        execution_mode='reference_numpy',
+        tensor_execution_device='cpu',
+    )
+    device_runtime.reserve_from_planner(
+        total_bytes=int(planner_summary.get('total_bytes', 0)),
+        num_buffers=int(planner_summary.get('num_buffers', 0)),
+        workspace_bytes=0,
+    )
 
     return NativeTrainingContext(
         cfg=cfg,
@@ -378,10 +393,7 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
         support_tier_assessment=assess_cuda_native_support_tier(cfg),
         execution_mode='reference_numpy',
         tensor_execution_device='cpu',
-        device_runtime=DeviceRuntime(
-            execution_mode='reference_numpy',
-            tensor_execution_device='cpu',
-        ),
+        device_runtime=device_runtime,
     )
 
 

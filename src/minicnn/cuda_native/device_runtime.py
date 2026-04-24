@@ -22,6 +22,10 @@ class DeviceTensor:
 class DeviceRuntime:
     execution_mode: str = 'reference_numpy'
     tensor_execution_device: str = 'cpu'
+    reserve_events: int = 0
+    reserved_buffer_count: int = 0
+    reserved_bytes: int = 0
+    workspace_bytes: int = 0
     host_to_device_transfer_events: int = 0
     host_to_device_transfer_bytes: int = 0
     device_to_host_transfer_events: int = 0
@@ -57,6 +61,18 @@ class DeviceRuntime:
         self.allocated_bytes += int(array.nbytes)
         return DeviceTensor(array, self.tensor_execution_device, self.execution_mode, name=name)
 
+    def reserve_from_planner(
+        self,
+        *,
+        total_bytes: int,
+        num_buffers: int,
+        workspace_bytes: int = 0,
+    ) -> None:
+        self.reserve_events += 1
+        self.reserved_buffer_count = int(num_buffers)
+        self.reserved_bytes = int(total_bytes)
+        self.workspace_bytes = int(workspace_bytes)
+
     def synchronize(self, reason: str = 'explicit') -> None:
         self.synchronization_events += 1
         self.synchronization_reasons.append(str(reason))
@@ -68,6 +84,10 @@ class DeviceRuntime:
             'tensor_execution_device': self.tensor_execution_device,
             'tensors_ran_on': self.tensor_execution_device,
             'gpu_execution': self.gpu_execution,
+            'reserve_events': self.reserve_events,
+            'reserved_buffer_count': self.reserved_buffer_count,
+            'reserved_bytes': self.reserved_bytes,
+            'workspace_bytes': self.workspace_bytes,
             'host_to_device_transfer_events': self.host_to_device_transfer_events,
             'host_to_device_transfer_bytes': self.host_to_device_transfer_bytes,
             'device_to_host_transfer_events': self.device_to_host_transfer_events,
