@@ -24,7 +24,7 @@ GPU_KERNEL_BOOTSTRAP_SPECS: tuple[GpuKernelSpec, ...] = (
     GpuKernelSpec('LeakyReLU', 'activation', 'elementwise_unary', 1, 1, tuple(), 'match_input', 'native_forward', 'planned'),
     GpuKernelSpec('Linear', 'linear', 'gemm_affine', 1, 1, ('weight', 'bias'), 'row_major', 'native_forward', 'partial_native'),
     GpuKernelSpec('MaxPool2d', 'pool', 'pool2d_nchw', 1, 1, tuple(), 'NCHW', 'partial_native', 'planned'),
-    GpuKernelSpec('ReLU', 'activation', 'elementwise_unary', 1, 1, tuple(), 'match_input', 'native_forward', 'planned'),
+    GpuKernelSpec('ReLU', 'activation', 'elementwise_unary', 1, 1, tuple(), 'match_input', 'native_forward', 'partial_native'),
 )
 
 

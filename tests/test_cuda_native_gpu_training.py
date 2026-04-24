@@ -4,7 +4,10 @@ import ctypes
 
 import numpy as np
 
-from minicnn.cuda_native.gpu_training import native_gpu_linear_training_step
+from minicnn.cuda_native.gpu_training import (
+    native_gpu_linear_training_step,
+    native_gpu_two_linear_relu_training_step,
+)
 
 
 class _RawFakeCudaLib:
@@ -41,6 +44,15 @@ class _RawFakeCudaLib:
         w = self._float(d_weight).reshape(int(out_f), int(in_f))
         b = self._float(d_bias).reshape(int(out_f))
         self._float(d_output)[:] = (x @ w.T + b).reshape(-1)
+
+    def apply_relu(self, d_data, size):
+        data = self._float(d_data)
+        data[:int(size)] = np.maximum(data[:int(size)], 0.0)
+
+    def apply_relu_backward(self, d_data, d_grad, size):
+        data = self._float(d_data)
+        grad = self._float(d_grad)
+        grad[:int(size)] = np.where(data[:int(size)] > 0.0, grad[:int(size)], 0.0)
 
     def softmax_xent_grad_loss_acc(
         self,
@@ -126,3 +138,74 @@ def test_native_gpu_linear_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:softmax_xent_grad_loss_acc'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_sgd_update'] == 1
+
+
+def test_native_gpu_two_linear_relu_training_step_matches_reference_math():
+    x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)
+    labels = np.asarray([1, 0], dtype=np.int32)
+    w1 = np.asarray(
+        [
+            [0.2, -0.1, 0.05],
+            [-0.3, 0.4, 0.1],
+            [0.15, -0.2, 0.3],
+            [0.05, 0.25, -0.15],
+        ],
+        dtype=np.float32,
+    )
+    b1 = np.asarray([0.01, -0.02, 0.03, 0.04], dtype=np.float32)
+    w2 = np.asarray(
+        [
+            [0.1, -0.2, 0.3, 0.05],
+            [-0.05, 0.25, -0.15, 0.2],
+        ],
+        dtype=np.float32,
+    )
+    b2 = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.1
+
+    result = native_gpu_two_linear_relu_training_step(
+        x,
+        labels,
+        w1,
+        b1,
+        w2,
+        b2,
+        lr=lr,
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    hidden_pre = x @ w1.T + b1
+    hidden = np.maximum(hidden_pre, 0.0)
+    logits = hidden @ w2.T + b2
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_w2 = grad_logits.T @ hidden
+    grad_b2 = grad_logits.sum(axis=0)
+    grad_hidden = grad_logits @ w2
+    grad_hidden = np.where(hidden > 0.0, grad_hidden, 0.0)
+    grad_w1 = grad_hidden.T @ x
+    grad_b1 = grad_hidden.sum(axis=0)
+
+    np.testing.assert_allclose(result.logits, logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.probabilities, probs, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_hidden, grad_hidden, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_input, grad_hidden @ w1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_weight1, grad_w1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_bias1, grad_b1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_weight2, grad_w2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_bias2, grad_b2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight1, w1 - lr * grad_w1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias1, b1 - lr * grad_b1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight2, w2 - lr * grad_w2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias2, b2 - lr * grad_b2, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_forward_1'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_relu'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_forward_2'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_relu_backward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full_1'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full_2'] == 1

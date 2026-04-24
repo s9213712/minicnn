@@ -108,6 +108,8 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
     bound_lib.im2col_forward.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int]
     bound_lib.gemm_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
     bound_lib.apply_relu.argtypes = [c_void_p, c_int]
+    if hasattr(bound_lib, 'apply_relu_backward'):
+        bound_lib.apply_relu_backward.argtypes = [c_void_p, c_void_p, c_int]
     bound_lib.apply_maxpool.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
     if hasattr(bound_lib, 'add_forward'):
         bound_lib.add_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int]

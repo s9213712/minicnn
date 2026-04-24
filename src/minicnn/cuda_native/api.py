@@ -175,10 +175,16 @@ def _validate_gpu_native_training_subset(
 ) -> list[str]:
     errors: list[str] = []
     ops = [node.op_type for node in graph.topological_order()]
-    if ops not in (['Linear'], ['Flatten', 'Linear']):
+    if ops not in (
+        ['Linear'],
+        ['Flatten', 'Linear'],
+        ['Linear', 'ReLU', 'Linear'],
+        ['Flatten', 'Linear', 'ReLU', 'Linear'],
+    ):
         errors.append(
             'cuda_native gpu_native train-native currently supports only the narrow '
-            f'Linear training subset ops=[Linear] or [Flatten, Linear], got {ops}.'
+            'Linear training subset ops=[Linear], [Flatten, Linear], '
+            f'[Linear, ReLU, Linear], or [Flatten, Linear, ReLU, Linear], got {ops}.'
         )
     if str(loss_cfg.get('type', 'CrossEntropyLoss')) != 'CrossEntropyLoss':
         errors.append('cuda_native gpu_native train-native currently supports only CrossEntropyLoss.')

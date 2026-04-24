@@ -223,7 +223,7 @@ For GPU enablement work, the same capability payload now also exposes
 
 - which execution modes are active vs partial-forward vs planned
 - which ops make up the first `gpu_native` bootstrap subset
-- which blockers still prevent `gpu_native` from being a train-native execution mode
+- which blockers still prevent `gpu_native` from covering the full cuda_native training surface
 
 The same payload also exposes `gpu_kernel_registry_surface`, which is the
 bootstrap kernel table for `gpu_native` with per-op forward/backward
@@ -283,6 +283,11 @@ step = native_gpu_linear_training_step(
 )
 print(step.loss_mean, step.runtime_summary["execution_kinds"])
 ```
+
+The same GPU training substrate also supports the narrow
+`Linear -> ReLU -> Linear` path through `native_gpu_two_linear_relu_training_step`
+and through `train-native engine.execution_mode=gpu_native` when the model graph
+is `Flatten -> Linear -> ReLU -> Linear`.
 
 Validation payloads now also include `support_tier_assessment`, so a config can
 be accepted while still being marked as touching `beta`

@@ -26,6 +26,31 @@ class NativeGpuLinearTrainingStepResult:
     runtime_summary: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class NativeGpuTwoLinearReluTrainingStepResult:
+    logits: np.ndarray
+    probabilities: np.ndarray
+    grad_logits: np.ndarray
+    grad_hidden: np.ndarray
+    grad_input: np.ndarray
+    grad_weight1: np.ndarray
+    grad_bias1: np.ndarray
+    grad_weight2: np.ndarray
+    grad_bias2: np.ndarray
+    updated_weight1: np.ndarray
+    updated_bias1: np.ndarray
+    updated_weight2: np.ndarray
+    updated_bias2: np.ndarray
+    updated_weight1_velocity: np.ndarray | None
+    updated_bias1_velocity: np.ndarray | None
+    updated_weight2_velocity: np.ndarray | None
+    updated_bias2_velocity: np.ndarray | None
+    loss_sum: float
+    loss_mean: float
+    correct_count: int
+    runtime_summary: dict[str, Any]
+
+
 def _load_bound_lib(bound_lib: Any | None) -> Any:
     if bound_lib is not None:
         return bound_lib
@@ -246,4 +271,239 @@ def native_gpu_linear_training_step(
             loss_sum_t,
             correct_t,
         ):
+            runtime.release_buffer(tensor)
+
+
+def native_gpu_two_linear_relu_training_step(
+    x: np.ndarray,
+    labels: np.ndarray,
+    weight1: np.ndarray,
+    bias1: np.ndarray,
+    weight2: np.ndarray,
+    bias2: np.ndarray,
+    *,
+    lr: float,
+    momentum: float = 0.0,
+    weight1_velocity: np.ndarray | None = None,
+    bias1_velocity: np.ndarray | None = None,
+    weight2_velocity: np.ndarray | None = None,
+    bias2_velocity: np.ndarray | None = None,
+    bound_lib: Any | None = None,
+    reserve_bytes: int = 0,
+    reserve_buffers: int = 0,
+) -> NativeGpuTwoLinearReluTrainingStepResult:
+    """Run one native GPU Linear + ReLU + Linear + SoftmaxCE + SGD step."""
+
+    x_f32 = np.ascontiguousarray(x, dtype=np.float32)
+    labels_i32 = np.ascontiguousarray(labels, dtype=np.int32)
+    w1_f32 = np.ascontiguousarray(weight1, dtype=np.float32)
+    b1_f32 = np.ascontiguousarray(bias1, dtype=np.float32)
+    w2_f32 = np.ascontiguousarray(weight2, dtype=np.float32)
+    b2_f32 = np.ascontiguousarray(bias2, dtype=np.float32)
+    w1v_f32 = np.zeros_like(w1_f32) if weight1_velocity is None else np.ascontiguousarray(weight1_velocity, dtype=np.float32)
+    b1v_f32 = np.zeros_like(b1_f32) if bias1_velocity is None else np.ascontiguousarray(bias1_velocity, dtype=np.float32)
+    w2v_f32 = np.zeros_like(w2_f32) if weight2_velocity is None else np.ascontiguousarray(weight2_velocity, dtype=np.float32)
+    b2v_f32 = np.zeros_like(b2_f32) if bias2_velocity is None else np.ascontiguousarray(bias2_velocity, dtype=np.float32)
+    if x_f32.ndim != 2:
+        raise ValueError(f'native_gpu_two_linear_relu_training_step expects x with shape (N, in_f), got {x_f32.shape}')
+    if w1_f32.ndim != 2 or w1_f32.shape[1] != x_f32.shape[1]:
+        raise ValueError(
+            'native_gpu_two_linear_relu_training_step expects weight1 with shape (hidden_f, in_f), '
+            f'got weight1={w1_f32.shape} for x={x_f32.shape}'
+        )
+    if b1_f32.shape != (w1_f32.shape[0],):
+        raise ValueError(
+            'native_gpu_two_linear_relu_training_step expects bias1 with shape (hidden_f,), '
+            f'got bias1={b1_f32.shape} for weight1={w1_f32.shape}'
+        )
+    if w2_f32.ndim != 2 or w2_f32.shape[1] != w1_f32.shape[0]:
+        raise ValueError(
+            'native_gpu_two_linear_relu_training_step expects weight2 with shape (out_f, hidden_f), '
+            f'got weight2={w2_f32.shape} for hidden_f={w1_f32.shape[0]}'
+        )
+    if b2_f32.shape != (w2_f32.shape[0],):
+        raise ValueError(
+            'native_gpu_two_linear_relu_training_step expects bias2 with shape (out_f,), '
+            f'got bias2={b2_f32.shape} for weight2={w2_f32.shape}'
+        )
+    if labels_i32.ndim != 1 or labels_i32.shape[0] != x_f32.shape[0]:
+        raise ValueError(
+            'native_gpu_two_linear_relu_training_step expects labels with shape (N,), '
+            f'got labels={labels_i32.shape} for x={x_f32.shape}'
+        )
+    if np.any(labels_i32 < 0) or np.any(labels_i32 >= w2_f32.shape[0]):
+        raise ValueError('native_gpu_two_linear_relu_training_step labels must be in [0, out_f)')
+
+    lib = _load_bound_lib(bound_lib)
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=lib,
+    )
+    if reserve_bytes > 0 or reserve_buffers > 0:
+        runtime.reserve_from_planner(total_bytes=int(reserve_bytes), num_buffers=int(reserve_buffers))
+
+    n, in_f = int(x_f32.shape[0]), int(x_f32.shape[1])
+    hidden_f = int(w1_f32.shape[0])
+    out_f = int(w2_f32.shape[0])
+    tensors = []
+
+    def stage(array: np.ndarray, name: str):
+        tensor = runtime.stage_to_device(array, name=name)
+        tensors.append(tensor)
+        return tensor
+
+    def alloc(shape: tuple[int, ...], name: str, dtype: str = 'float32'):
+        tensor = runtime.allocate(shape, dtype=dtype, name=name)
+        tensors.append(tensor)
+        return tensor
+
+    input_t = stage(x_f32, 'input')
+    labels_t = stage(labels_i32, 'labels')
+    w1_t = stage(w1_f32, 'weight1')
+    b1_t = stage(b1_f32, 'bias1')
+    w2_t = stage(w2_f32, 'weight2')
+    b2_t = stage(b2_f32, 'bias2')
+    w1v_t = stage(w1v_f32, 'weight1_velocity')
+    b1v_t = stage(b1v_f32, 'bias1_velocity')
+    w2v_t = stage(w2v_f32, 'weight2_velocity')
+    b2v_t = stage(b2v_f32, 'bias2_velocity')
+    hidden_t = alloc((n, hidden_f), 'hidden')
+    logits_t = alloc((n, out_f), 'logits')
+    probs_t = alloc((n, out_f), 'probs')
+    grad_logits_t = alloc((n, out_f), 'grad_logits')
+    grad_hidden_t = alloc((n, hidden_f), 'grad_hidden')
+    grad_input_t = alloc((n, in_f), 'grad_input')
+    grad_w1_t = alloc((hidden_f, in_f), 'grad_weight1')
+    grad_b1_t = alloc((hidden_f,), 'grad_bias1')
+    grad_w2_t = alloc((out_f, hidden_f), 'grad_weight2')
+    grad_b2_t = alloc((out_f,), 'grad_bias2')
+    loss_sum_t = alloc((1,), 'loss_sum')
+    correct_t = alloc((1,), 'correct_count', dtype='int32')
+
+    try:
+        lib.gpu_memset(loss_sum_t.device_ptr, 0, loss_sum_t.nbytes)
+        lib.gpu_memset(correct_t.device_ptr, 0, correct_t.nbytes)
+        lib.dense_forward(input_t.device_ptr, w1_t.device_ptr, b1_t.device_ptr, hidden_t.device_ptr, n, in_f, hidden_f)
+        runtime.record_execution('gpu_native_train:dense_forward_1', input_name='input', output_name='hidden', node_count=1)
+        lib.apply_relu(hidden_t.device_ptr, int(n * hidden_f))
+        runtime.record_execution('gpu_native_train:apply_relu', input_name='hidden', output_name='hidden', node_count=1)
+        lib.dense_forward(hidden_t.device_ptr, w2_t.device_ptr, b2_t.device_ptr, logits_t.device_ptr, n, hidden_f, out_f)
+        runtime.record_execution('gpu_native_train:dense_forward_2', input_name='hidden', output_name='logits', node_count=1)
+        lib.softmax_xent_grad_loss_acc(
+            logits_t.device_ptr,
+            labels_t.device_ptr,
+            probs_t.device_ptr,
+            grad_logits_t.device_ptr,
+            loss_sum_t.device_ptr,
+            correct_t.device_ptr,
+            n,
+            out_f,
+        )
+        runtime.record_execution(
+            'gpu_native_train:softmax_xent_grad_loss_acc',
+            input_name='logits',
+            output_name='grad_logits',
+            node_count=1,
+        )
+        lib.dense_backward_full(
+            grad_logits_t.device_ptr,
+            hidden_t.device_ptr,
+            w2_t.device_ptr,
+            grad_hidden_t.device_ptr,
+            grad_w2_t.device_ptr,
+            grad_b2_t.device_ptr,
+            n,
+            hidden_f,
+            out_f,
+        )
+        runtime.record_execution('gpu_native_train:dense_backward_full_2', input_name='grad_logits', output_name='grad_weight2', node_count=1)
+        lib.apply_relu_backward(hidden_t.device_ptr, grad_hidden_t.device_ptr, int(n * hidden_f))
+        runtime.record_execution('gpu_native_train:apply_relu_backward', input_name='hidden', output_name='grad_hidden', node_count=1)
+        lib.dense_backward_full(
+            grad_hidden_t.device_ptr,
+            input_t.device_ptr,
+            w1_t.device_ptr,
+            grad_input_t.device_ptr,
+            grad_w1_t.device_ptr,
+            grad_b1_t.device_ptr,
+            n,
+            in_f,
+            hidden_f,
+        )
+        runtime.record_execution('gpu_native_train:dense_backward_full_1', input_name='grad_hidden', output_name='grad_weight1', node_count=1)
+        if float(momentum) != 0.0:
+            updates = (
+                (w1_t, grad_w1_t, w1v_t, int(w1_f32.size)),
+                (b1_t, grad_b1_t, b1v_t, int(b1_f32.size)),
+                (w2_t, grad_w2_t, w2v_t, int(w2_f32.size)),
+                (b2_t, grad_b2_t, b2v_t, int(b2_f32.size)),
+            )
+            for value_t, grad_t, velocity_t, size in updates:
+                lib.apply_momentum_update(
+                    value_t.device_ptr,
+                    grad_t.device_ptr,
+                    velocity_t.device_ptr,
+                    float(lr),
+                    float(momentum),
+                    size,
+                )
+            update_kind = 'gpu_native_train:apply_momentum_update'
+        else:
+            updates = (
+                (w1_t, grad_w1_t, int(w1_f32.size)),
+                (b1_t, grad_b1_t, int(b1_f32.size)),
+                (w2_t, grad_w2_t, int(w2_f32.size)),
+                (b2_t, grad_b2_t, int(b2_f32.size)),
+            )
+            for value_t, grad_t, size in updates:
+                lib.apply_sgd_update(value_t.device_ptr, grad_t.device_ptr, float(lr), size)
+            update_kind = 'gpu_native_train:apply_sgd_update'
+        runtime.record_execution(update_kind, input_name='grad_weight1', output_name='weight1', node_count=1)
+
+        logits = runtime.stage_to_host(logits_t)
+        probabilities = runtime.stage_to_host(probs_t)
+        grad_logits = runtime.stage_to_host(grad_logits_t)
+        grad_hidden = runtime.stage_to_host(grad_hidden_t)
+        grad_input = runtime.stage_to_host(grad_input_t)
+        grad_weight1 = runtime.stage_to_host(grad_w1_t)
+        grad_bias1 = runtime.stage_to_host(grad_b1_t)
+        grad_weight2 = runtime.stage_to_host(grad_w2_t)
+        grad_bias2 = runtime.stage_to_host(grad_b2_t)
+        updated_weight1 = runtime.stage_to_host(w1_t)
+        updated_bias1 = runtime.stage_to_host(b1_t)
+        updated_weight2 = runtime.stage_to_host(w2_t)
+        updated_bias2 = runtime.stage_to_host(b2_t)
+        updated_weight1_velocity = runtime.stage_to_host(w1v_t)
+        updated_bias1_velocity = runtime.stage_to_host(b1v_t)
+        updated_weight2_velocity = runtime.stage_to_host(w2v_t)
+        updated_bias2_velocity = runtime.stage_to_host(b2v_t)
+        loss_sum = float(runtime.stage_to_host(loss_sum_t)[0])
+        correct_count = int(runtime.stage_to_host(correct_t)[0])
+        runtime.synchronize('gpu-native-two-linear-relu-training-step')
+        return NativeGpuTwoLinearReluTrainingStepResult(
+            logits=logits,
+            probabilities=probabilities,
+            grad_logits=grad_logits,
+            grad_hidden=grad_hidden,
+            grad_input=grad_input,
+            grad_weight1=grad_weight1,
+            grad_bias1=grad_bias1,
+            grad_weight2=grad_weight2,
+            grad_bias2=grad_bias2,
+            updated_weight1=updated_weight1,
+            updated_bias1=updated_bias1,
+            updated_weight2=updated_weight2,
+            updated_bias2=updated_bias2,
+            updated_weight1_velocity=updated_weight1_velocity,
+            updated_bias1_velocity=updated_bias1_velocity,
+            updated_weight2_velocity=updated_weight2_velocity,
+            updated_bias2_velocity=updated_bias2_velocity,
+            loss_sum=loss_sum,
+            loss_mean=loss_sum / float(n),
+            correct_count=correct_count,
+            runtime_summary=runtime.summary(),
+        )
+    finally:
+        for tensor in tensors:
             runtime.release_buffer(tensor)

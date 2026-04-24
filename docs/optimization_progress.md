@@ -179,4 +179,4 @@ For the separate path from reference execution to real GPU execution, see
 - `gpu_native` is now explicitly published as a partial native-forward execution track rather than an implied full-training capability
 - `DeviceRuntime` / `DeviceTensor` now support native device pointers, host/device sync accounting, and real forward calls for the current bootstrap subset when a CUDA library is bound
 - native forward bridge coverage currently includes Flatten aliasing plus Linear, ReLU, LeakyReLU, Add, Concat, MaxPool2d, and constrained Conv2d lowering
-- `train-native engine.execution_mode=gpu_native` now runs the narrow `Flatten -> Linear` / `CrossEntropyLoss` / `SGD` subset through native GPU forward, loss-gradient, dense-backward, and SGD-update calls
+- `train-native engine.execution_mode=gpu_native` now runs the narrow `Flatten -> Linear` and `Flatten -> Linear -> ReLU -> Linear` / `CrossEntropyLoss` / `SGD` subset through native GPU forward, activation backward, loss-gradient, dense-backward, and SGD/momentum-update calls

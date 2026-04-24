@@ -14,7 +14,7 @@ from minicnn.cuda_native.backward import BackwardExecutor
 from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.executor import ForwardExecutor
-from minicnn.cuda_native.gpu_training import native_gpu_linear_training_step
+from minicnn.cuda_native.gpu_training import native_gpu_linear_training_step, native_gpu_two_linear_relu_training_step
 from minicnn.cuda_native.graph import NativeGraph
 from minicnn.cuda_native.planner import make_plan
 from minicnn.cuda_native.training import train_step
@@ -407,21 +407,26 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
     )
 
 
-def _gpu_native_linear_node(graph: NativeGraph):
+def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
     nodes = list(graph.topological_order())
     ops = [node.op_type for node in nodes]
     if ops == ['Linear']:
-        return nodes[0]
+        return {'kind': 'linear', 'linear_nodes': [nodes[0]]}
     if ops == ['Flatten', 'Linear']:
-        return nodes[1]
+        return {'kind': 'linear', 'linear_nodes': [nodes[1]]}
+    if ops == ['Linear', 'ReLU', 'Linear']:
+        return {'kind': 'two_linear_relu', 'linear_nodes': [nodes[0], nodes[2]], 'relu_node': nodes[1]}
+    if ops == ['Flatten', 'Linear', 'ReLU', 'Linear']:
+        return {'kind': 'two_linear_relu', 'linear_nodes': [nodes[1], nodes[3]], 'relu_node': nodes[2]}
     raise ValueError(
         'cuda_native gpu_native train-native currently supports only '
-        f'ops=[Linear] or ops=[Flatten, Linear], got {ops}.'
+        'ops=[Linear], ops=[Flatten, Linear], ops=[Linear, ReLU, Linear], '
+        f'or ops=[Flatten, Linear, ReLU, Linear], got {ops}.'
     )
 
 
 def _validate_gpu_native_training_context(ctx: NativeTrainingContext) -> None:
-    _gpu_native_linear_node(ctx.graph)
+    _gpu_native_training_plan(ctx.graph)
     if ctx.loss_type != 'cross_entropy':
         raise ValueError('cuda_native gpu_native train-native currently supports only CrossEntropyLoss.')
     if ctx.optimizer_type != 'sgd':
@@ -467,10 +472,10 @@ def run_training_loop(
     optimizer_view = SimpleNamespace(lr=ctx.lr)
     scheduler, scheduler_kind = _make_scheduler(ctx.scheduler_cfg, optimizer_view)
     optimizer_state: dict[str, Any] = {}
-    gpu_linear_node = None
+    gpu_training_plan = None
     if ctx.execution_mode == 'gpu_native':
         _validate_gpu_native_training_context(ctx)
-        gpu_linear_node = _gpu_native_linear_node(ctx.graph)
+        gpu_training_plan = _gpu_native_training_plan(ctx.graph)
         optimizer_state['optimizer_runtime'] = {
             'optimizer_type': 'sgd',
             'steps': 0,
@@ -533,29 +538,60 @@ def run_training_loop(
                 if ctx.execution_mode == 'gpu_native':
                     if not apply_optimizer_step:
                         raise ValueError('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
-                    assert gpu_linear_node is not None
-                    weight_key = f'_w_{gpu_linear_node.name}'
-                    bias_key = f'_b_{gpu_linear_node.name}'
+                    assert gpu_training_plan is not None
                     velocity_state = optimizer_state.setdefault('velocity', {})
-                    weight_velocity = velocity_state.get(weight_key)
-                    bias_velocity = velocity_state.get(bias_key)
-                    step = native_gpu_linear_training_step(
-                        xb.reshape(xb.shape[0], -1),
-                        yb,
-                        params[weight_key],
-                        params[bias_key],
-                        lr=float(optimizer_view.lr),
-                        momentum=float(ctx.momentum),
-                        weight_velocity=weight_velocity,
-                        bias_velocity=bias_velocity,
-                        bound_lib=ctx.device_runtime.bound_lib,
-                    )
+                    flat_xb = xb.reshape(xb.shape[0], -1)
+                    if gpu_training_plan['kind'] == 'linear':
+                        gpu_linear_node = gpu_training_plan['linear_nodes'][0]
+                        weight_key = f'_w_{gpu_linear_node.name}'
+                        bias_key = f'_b_{gpu_linear_node.name}'
+                        step = native_gpu_linear_training_step(
+                            flat_xb,
+                            yb,
+                            params[weight_key],
+                            params[bias_key],
+                            lr=float(optimizer_view.lr),
+                            momentum=float(ctx.momentum),
+                            weight_velocity=velocity_state.get(weight_key),
+                            bias_velocity=velocity_state.get(bias_key),
+                            bound_lib=ctx.device_runtime.bound_lib,
+                        )
+                        params = dict(params)
+                        params[weight_key] = step.updated_weight
+                        params[bias_key] = step.updated_bias
+                        velocity_state[weight_key] = step.updated_weight_velocity
+                        velocity_state[bias_key] = step.updated_bias_velocity
+                    else:
+                        first_linear, second_linear = gpu_training_plan['linear_nodes']
+                        w1_key = f'_w_{first_linear.name}'
+                        b1_key = f'_b_{first_linear.name}'
+                        w2_key = f'_w_{second_linear.name}'
+                        b2_key = f'_b_{second_linear.name}'
+                        step = native_gpu_two_linear_relu_training_step(
+                            flat_xb,
+                            yb,
+                            params[w1_key],
+                            params[b1_key],
+                            params[w2_key],
+                            params[b2_key],
+                            lr=float(optimizer_view.lr),
+                            momentum=float(ctx.momentum),
+                            weight1_velocity=velocity_state.get(w1_key),
+                            bias1_velocity=velocity_state.get(b1_key),
+                            weight2_velocity=velocity_state.get(w2_key),
+                            bias2_velocity=velocity_state.get(b2_key),
+                            bound_lib=ctx.device_runtime.bound_lib,
+                        )
+                        params = dict(params)
+                        params[w1_key] = step.updated_weight1
+                        params[b1_key] = step.updated_bias1
+                        params[w2_key] = step.updated_weight2
+                        params[b2_key] = step.updated_bias2
+                        velocity_state[w1_key] = step.updated_weight1_velocity
+                        velocity_state[b1_key] = step.updated_bias1_velocity
+                        velocity_state[w2_key] = step.updated_weight2_velocity
+                        velocity_state[b2_key] = step.updated_bias2_velocity
                     loss_val = float(step.loss_mean)
-                    params = dict(params)
-                    params[weight_key] = step.updated_weight
-                    params[bias_key] = step.updated_bias
-                    velocity_state[weight_key] = step.updated_weight_velocity
-                    velocity_state[bias_key] = step.updated_bias_velocity
                     _merge_gpu_native_step_runtime(ctx, step.runtime_summary)
                     optimizer_runtime = optimizer_state.setdefault('optimizer_runtime', {})
                     optimizer_runtime['optimizer_type'] = 'sgd'
