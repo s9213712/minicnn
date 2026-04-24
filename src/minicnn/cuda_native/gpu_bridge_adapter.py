@@ -130,3 +130,53 @@ class GpuCAbiBridgeAdapter:
             'int_args8': list(request.int_args8),
             'accepted': True,
         }
+
+
+@dataclass
+class GpuNativeLibraryBridgeAdapter:
+    bound_lib: Any | None = None
+    abi_version: int = 1
+    submitted_requests: list[GpuCAbiKernelCall] = field(default_factory=list)
+    load_error: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.bound_lib is not None:
+            return
+        try:
+            from minicnn.core._cuda_library import bind_symbols, load_library
+
+            self.bound_lib = bind_symbols(load_library())
+        except Exception as exc:  # pragma: no cover - environment dependent
+            self.load_error = str(exc)
+            self.bound_lib = None
+
+    def submit_c_abi(self, request: GpuCAbiKernelCall) -> dict[str, Any]:
+        self.submitted_requests.append(request)
+        symbol = self._symbol_for(request)
+        symbol_available = bool(self.bound_lib is not None and hasattr(self.bound_lib, symbol))
+        return {
+            'request_id': request.request_id,
+            'dispatch_mode': 'gpu_native_library_bridge',
+            'abi_version': self.abi_version,
+            'op_code': request.op_code,
+            'launch_family_code': request.launch_family_code,
+            'kernel_symbol': symbol,
+            'native_library_loaded': self.bound_lib is not None,
+            'symbol_available': symbol_available,
+            'requires_device_pointers': True,
+            'executed': False,
+            'load_error': self.load_error,
+            'accepted': symbol_available,
+        }
+
+    @staticmethod
+    def _symbol_for(request: GpuCAbiKernelCall) -> str:
+        if request.op_name == 'Linear':
+            return 'dense_forward'
+        if request.op_name == 'Conv2d':
+            return 'gemm_forward'
+        if request.op_name == 'ReLU':
+            return 'apply_relu'
+        if request.op_name == 'MaxPool2d':
+            return 'apply_maxpool'
+        return f'minicnn_gpu_{request.launch_family}'

@@ -4,6 +4,7 @@ import numpy as np
 
 from minicnn.cuda_native.api import build_cuda_native_graph
 from minicnn.cuda_native.device_runtime import DeviceRuntime
+from minicnn.cuda_native.gpu_bridge_adapter import GpuNativeLibraryBridgeAdapter
 from minicnn.cuda_native.gpu_executor import GpuStubExecutor
 from minicnn.unified._cuda_native_bridge import _init_params
 
@@ -149,3 +150,35 @@ def test_gpu_stub_executor_backend_stub_routes_conv2d():
     assert conv_result['output_shape'] == [1, 4, 8, 8]
     assert conv_result['stride'] == [1, 1]
     assert conv_result['padding'] == [1, 1]
+
+
+def test_gpu_stub_executor_can_use_native_library_bridge_adapter():
+    class _FakeLib:
+        def dense_forward(self):
+            raise AssertionError('symbol availability check must not execute kernel')
+
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 4),
+    )
+    params = _init_params(graph, seed=13)
+    runtime = DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu')
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=_FakeLib())
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
+
+    result = executor.run(graph, np.ones((1, 4), dtype=np.float32), params=params)
+    summary = result.summary()
+
+    linear_result = summary['c_abi_bridge_results'][1]
+    assert linear_result['dispatch_mode'] == 'gpu_native_library_bridge'
+    assert linear_result['kernel_symbol'] == 'dense_forward'
+    assert linear_result['native_library_loaded'] is True
+    assert linear_result['symbol_available'] is True
+    assert linear_result['requires_device_pointers'] is True
+    assert linear_result['executed'] is False
