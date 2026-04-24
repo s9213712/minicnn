@@ -56,6 +56,8 @@ def test_cuda_native_artifact_schema_is_explicit(tmp_path):
     assert summary['execution_mode'] == 'reference_numpy'
     assert summary['effective_execution_mode'] == 'reference_numpy'
     assert summary['tensor_execution_device'] == 'cpu'
+    assert summary['device_runtime']['execution_mode'] == 'reference_numpy'
+    assert summary['device_runtime']['tensor_execution_device'] == 'cpu'
     assert summary['support_tier_assessment']['highest_tier'] == 'stable'
     assert summary['checkpoint_contract']['format'] == 'npz'
     assert summary['checkpoint_contract']['version'] == 1
@@ -67,4 +69,6 @@ def test_cuda_native_artifact_schema_is_explicit(tmp_path):
     assert row['execution_mode'] == 'reference_numpy'
     assert row['effective_execution_mode'] == 'reference_numpy'
     assert row['tensor_execution_device'] == 'cpu'
+    assert row['device_runtime']['execution_mode'] == 'reference_numpy'
+    assert row['device_runtime']['tensor_execution_device'] == 'cpu'
     assert row['support_tier_assessment']['highest_tier'] == 'stable'

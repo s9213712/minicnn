@@ -166,3 +166,4 @@ For the separate path from reference execution to real GPU execution, see
 - Phase G0 execution-boundary freeze has started
 - `cuda_native` now reports `execution_mode=reference_numpy` and `tensor_execution_device=cpu` across CLI, summary, and metrics artifacts
 - `gpu_native` is now explicitly published as a planned execution mode rather than an implied capability
+- a first `DeviceRuntime` / `DeviceTensor` substrate now exists for future GPU enablement work, with staging/allocation/synchronization telemetry wired into artifacts

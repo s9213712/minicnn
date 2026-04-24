@@ -70,7 +70,11 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert summary['performance_report']['training']['grad_accum_steps'] == 2
     assert summary['performance_report']['training']['amp_enabled'] is True
     assert summary['performance_report']['training']['support_tier']['highest_tier'] == 'beta'
+    assert summary['device_runtime']['execution_mode'] == 'reference_numpy'
+    assert summary['device_runtime']['tensor_execution_device'] == 'cpu'
     assert summary['performance_report']['runtime']['epochs_completed'] == 1
+    assert summary['performance_report']['runtime']['device_runtime']['execution_mode'] == 'reference_numpy'
+    assert summary['performance_report']['runtime']['device_runtime']['tensor_execution_device'] == 'cpu'
     assert summary['performance_report']['runtime']['train_samples_per_epoch'] == 8
     assert 'avg_epoch_time_s' in summary['performance_report']['runtime']
     assert 'train_samples_per_sec' in summary['performance_report']['runtime']
@@ -122,6 +126,8 @@ def test_cuda_native_summary_and_metrics_include_performance_telemetry(tmp_path)
     assert row['schema_version'] == 1
     assert row['artifact_kind'] == 'training_metrics_epoch'
     assert row['support_tier_assessment']['highest_tier'] == 'beta'
+    assert row['device_runtime']['execution_mode'] == 'reference_numpy'
+    assert row['device_runtime']['tensor_execution_device'] == 'cpu'
     assert row['amp']['enabled'] is True
     assert 'loss_scale' in row['amp']
     assert 'optimizer_runtime' in row

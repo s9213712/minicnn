@@ -339,6 +339,7 @@ def build_epoch_row(
     amp_state: dict[str, Any] | None = None,
     optimizer_state: dict[str, Any] | None = None,
     planner_state: dict[str, Any] | None = None,
+    device_runtime_state: dict[str, Any] | None = None,
     support_tier_assessment: dict[str, Any] | None = None,
     execution_mode: str = EXECUTION_MODE_REFERENCE_NUMPY,
     tensor_execution_device: str = EXECUTION_DEVICE_CPU,
@@ -364,9 +365,11 @@ def build_epoch_row(
         row['optimizer_runtime'] = _sanitize_optimizer_runtime(optimizer_state)
     if planner_state:
         row['planner'] = dict(planner_state)
+    if device_runtime_state:
+        row['device_runtime'] = dict(device_runtime_state)
     if support_tier_assessment:
         row['support_tier_assessment'] = dict(support_tier_assessment)
-    if amp_state or optimizer_state or planner_state:
+    if amp_state or optimizer_state or planner_state or device_runtime_state:
         row['efficiency'] = _build_efficiency_summary(
             planner_summary=dict(planner_state or {}),
             amp_runtime=dict(amp_state or {}),
@@ -445,6 +448,7 @@ def build_training_summary(
     support_tier_assessment: dict[str, Any] | None = None,
     execution_mode: str = EXECUTION_MODE_REFERENCE_NUMPY,
     tensor_execution_device: str = EXECUTION_DEVICE_CPU,
+    device_runtime_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     optim_type = str(optimizer_cfg.get('type', 'SGD'))
     optimizer_summary = {
@@ -484,6 +488,7 @@ def build_training_summary(
             'effective_execution_mode': execution_mode,
             'tensor_execution_device': tensor_execution_device,
             'tensors_ran_on': tensor_execution_device,
+            'device_runtime': dict(device_runtime_state or {}),
         },
         'training': {
             'batch_size': int(train_cfg.get('batch_size', 64)),
@@ -502,6 +507,7 @@ def build_training_summary(
         'effective_execution_mode': execution_mode,
         'tensor_execution_device': tensor_execution_device,
         'tensors_ran_on': tensor_execution_device,
+        'device_runtime': dict(device_runtime_state or {}),
         'selected_backend': 'cuda_native',
         'effective_backend': 'cuda_native',
         'variant': 'reference',

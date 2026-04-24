@@ -1,9 +1,9 @@
-"""cuda_native — experimental ordered-graph native backend prototype.
+"""cuda_native — beta ordered-graph native backend.
 
-Status: experimental
-Training: prototype only
-Backward: prototype only
-Graph mode: ordered DAG (experimental)
+Status: beta
+Training: beta-grade within the NumPy-reference execution model
+Backward: beta-grade within the NumPy-reference execution model
+Graph mode: ordered DAG
 """
 from minicnn.cuda_native.capabilities import CUDA_NATIVE_CAPABILITIES, get_cuda_native_capabilities
 from minicnn.cuda_native.api import (
@@ -11,6 +11,8 @@ from minicnn.cuda_native.api import (
     build_cuda_native_graph,
     get_capability_summary,
 )
+from minicnn.cuda_native.device_runtime import DeviceRuntime, DeviceTensor
+from minicnn.cuda_native.device_runtime import DeviceRuntime, DeviceTensor
 from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.executor import ForwardExecutor
 from minicnn.cuda_native.planner import (
@@ -81,4 +83,5 @@ __all__ = [
     'validate_op_layout', 'validate_graph_layouts',
     'OP_LAYOUT_RULES',
     'BufferAllocator', 'BufferPool', 'memory_footprint',
+    'DeviceRuntime', 'DeviceTensor',
 ]
