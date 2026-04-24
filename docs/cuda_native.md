@@ -111,7 +111,7 @@ Validated `train-native` support boundary today:
 - `performance_report.efficiency` now adds directly readable derived metrics such as cache-hit ratio, grad-buffer reuse ratio, grad-buffer active/capacity fractions, and planner peak-live fraction
 - `performance_report.runtime` now summarizes epoch-level timing and estimated training throughput
 - `performance_report.runtime` now records both `train_hotspots` and `eval_hotspots`; the legacy `hotspots` field remains as an `eval_hotspots` compatibility alias, and `hotspot_diff` summarizes train/eval timing deltas
-- `performance_report.runtime.*hotspots` records representative traced forward-pass hotspot summaries (`top_nodes`, `top_ops`, `top_categories`) and includes per-op call counts / average time; `hotspot_diff.top_op_deltas` highlights the largest train/eval op-time differences
+- `performance_report.runtime.*hotspots` records representative traced forward-pass hotspot summaries (`top_nodes`, `top_ops`, `top_categories`) and includes per-op call counts / average time; `hotspot_diff.top_op_deltas` and `hotspot_diff.top_node_deltas` highlight the largest train/eval timing differences
 - `summary.json` and `metrics.jsonl` now both expose explicit `schema_name` / `schema_version`
 - `summary.json` now includes `checkpoint_contract` metadata instead of silently implying the checkpoint format
 - `validate-cuda-native-config` now has an explicit validation-result schema contract (`schema_name`, `schema_version`, `artifact_kind`)
@@ -439,7 +439,7 @@ reference-kernel 路徑接通，可驗證、可執行，但仍不是正式穩定
 - `performance_report.efficiency` 也會提供較直接可讀的衍生效率指標，例如 cache-hit ratio、grad-buffer reuse ratio、grad-buffer 的 active/capacity fraction、planner peak-live fraction
 - `performance_report.runtime` 也會整理 epoch-level timing 與估算的 training throughput
 - `performance_report.runtime` 現在會同時記錄 `train_hotspots` 與 `eval_hotspots`；舊的 `hotspots` 欄位暫時保留為 `eval_hotspots` 的相容 alias，另外 `hotspot_diff` 會整理 train/eval 的 timing delta 摘要
-- `performance_report.runtime.*hotspots` 也會記錄代表性 traced forward pass 的 hotspot 摘要（`top_nodes`、`top_ops`、`top_categories`），並提供 per-op call count / average time；`hotspot_diff.top_op_deltas` 會標出 train/eval 差異最大的 op
+- `performance_report.runtime.*hotspots` 也會記錄代表性 traced forward pass 的 hotspot 摘要（`top_nodes`、`top_ops`、`top_categories`），並提供 per-op call count / average time；`hotspot_diff.top_op_deltas` 與 `hotspot_diff.top_node_deltas` 會標出 train/eval 差異最大的 op 與 node
 - `summary.json` 與 `metrics.jsonl` 現在都會帶明確的 `schema_name` / `schema_version`
 - `summary.json` 也會帶 `checkpoint_contract` metadata，而不是把 checkpoint 格式隱含在實作裡
 - `validate-cuda-native-config` 也已有明確的 validation-result schema contract（`schema_name`、`schema_version`、`artifact_kind`）

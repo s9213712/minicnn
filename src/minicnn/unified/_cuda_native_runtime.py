@@ -161,6 +161,16 @@ def _build_hotspot_diff_summary(
     *,
     top_k: int = 5,
 ) -> dict[str, Any]:
+    train_nodes = {
+        (str(item.get('node')), str(item.get('op'))): float(item.get('elapsed_ms', 0.0))
+        for item in train_hotspots.get('top_nodes', [])
+        if isinstance(item, dict) and item.get('node') is not None
+    }
+    eval_nodes = {
+        (str(item.get('node')), str(item.get('op'))): float(item.get('elapsed_ms', 0.0))
+        for item in eval_hotspots.get('top_nodes', [])
+        if isinstance(item, dict) and item.get('node') is not None
+    }
     train_ops = {
         str(item.get('op')): float(item.get('elapsed_ms', 0.0))
         for item in train_hotspots.get('top_ops', [])
@@ -188,6 +198,25 @@ def _build_hotspot_diff_summary(
             }
         )
     op_deltas.sort(key=lambda item: abs(float(item.get('delta_ms', 0.0))), reverse=True)
+    all_nodes = sorted(set(train_nodes) | set(eval_nodes))
+    node_deltas = []
+    for node_key in all_nodes:
+        train_elapsed = train_nodes.get(node_key, 0.0)
+        eval_elapsed = eval_nodes.get(node_key, 0.0)
+        node_name, op_name = node_key
+        node_deltas.append(
+            {
+                'node': node_name,
+                'op': op_name,
+                'train_elapsed_ms': round(train_elapsed, 3),
+                'eval_elapsed_ms': round(eval_elapsed, 3),
+                'delta_ms': round(train_elapsed - eval_elapsed, 3),
+                'train_eval_ratio': (
+                    round(train_elapsed / eval_elapsed, 3) if eval_elapsed > 0.0 else None
+                ),
+            }
+        )
+    node_deltas.sort(key=lambda item: abs(float(item.get('delta_ms', 0.0))), reverse=True)
     train_total = float(train_hotspots.get('trace_total_ms', 0.0))
     eval_total = float(eval_hotspots.get('trace_total_ms', 0.0))
     return {
@@ -195,6 +224,7 @@ def _build_hotspot_diff_summary(
         'eval_total_ms': round(eval_total, 3),
         'delta_ms': round(train_total - eval_total, 3),
         'train_eval_ratio': round(train_total / eval_total, 3) if eval_total > 0.0 else None,
+        'top_node_deltas': node_deltas[:top_k],
         'top_op_deltas': op_deltas[:top_k],
     }
 
