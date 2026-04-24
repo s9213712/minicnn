@@ -97,6 +97,7 @@ CUDA_NATIVE_GRADUATION_GATES: dict[str, object] = {
             'core_parity_baseline_present': True,
             'composite_parity_baseline_present': True,
             'amp_tolerance_matrix_present': True,
+            'amp_composite_tolerance_matrix_present': True,
             'training_stable': False,
             'backward_stable': False,
             'amp_graduated': False,

@@ -140,5 +140,6 @@ The next phase is narrower and more technical:
   - `ConvNeXtBlock` smoke variants now also have a dedicated `fp32` vs `grad_accum` tolerance gate
   - `DropPath` now has deterministic train/eval correctness checks plus a dedicated smoke path
   - `ConvNeXtBlock` now also has an `fp32` vs `AMP` tolerance gate, so `AMP` stability is isolated from block-support maturity
+  - `ResidualBlock` now also has an `fp32` vs `AMP` tolerance gate, so AMP evidence covers both current beta composite block paths
 
 For the formal productionization path, see [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md).

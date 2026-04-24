@@ -210,6 +210,7 @@ Current status:
 - `DropPath` now has deterministic train/eval correctness coverage and a dedicated train smoke path, and is published in the `beta` tier rather than `experimental`
 - `ConvNeXtBlock` now also has an explicit `fp32` vs `AMP` tolerance gate, leaving `AMP` itself as the primary remaining experimental surface rather than block support
 - `graduation_gates.full_backend_non_experimental.criteria.amp_tolerance_matrix_present` is now true; remaining AMP blockers are graduation/stability, not missing evidence collection
+- `graduation_gates.full_backend_non_experimental.criteria.amp_composite_tolerance_matrix_present` is now also true, since AMP evidence covers both `ResidualBlock` and `ConvNeXtBlock` beta-composite paths
 - `cuda-native-capabilities` and `validate-cuda-native-config` now expose machine-readable support-tier metadata instead of leaving `Stable` / `Beta` / `Experimental` only in prose
 - `summary.json` and `metrics.jsonl` now persist the same support-tier assessment, so successful runs keep their tier boundary in artifact form
 - `cuda-native-capabilities` now also exposes machine-readable `graduation_gates`, separating the ready `core_beta_subset` from the still-blocked full-backend graduation path

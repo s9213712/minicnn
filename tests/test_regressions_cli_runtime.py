@@ -366,6 +366,7 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['graduation_gates']['core_beta_subset']['ready'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['ready'] is False
     assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['amp_tolerance_matrix_present'] is True
+    assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['amp_composite_tolerance_matrix_present'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['training_stable'] is False
     assert payload['graduation_gates']['full_backend_non_experimental']['remaining_blockers']
     assert 'supported_op_categories' in payload
