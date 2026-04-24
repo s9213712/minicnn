@@ -152,8 +152,12 @@ class GpuNativeLibraryBridgeAdapter:
 
     def submit_c_abi(self, request: GpuCAbiKernelCall) -> dict[str, Any]:
         self.submitted_requests.append(request)
+        symbols = self._symbols_for(request)
         symbol = self._symbol_for(request)
-        symbol_available = bool(self.bound_lib is not None and hasattr(self.bound_lib, symbol))
+        symbol_available = (
+            len(symbols) == 0
+            or bool(self.bound_lib is not None and all(hasattr(self.bound_lib, item) for item in symbols))
+        )
         return {
             'request_id': request.request_id,
             'dispatch_mode': 'gpu_native_library_bridge',
@@ -161,6 +165,7 @@ class GpuNativeLibraryBridgeAdapter:
             'op_code': request.op_code,
             'launch_family_code': request.launch_family_code,
             'kernel_symbol': symbol,
+            'required_symbols': list(symbols),
             'native_library_loaded': self.bound_lib is not None,
             'symbol_available': symbol_available,
             'requires_device_pointers': True,
@@ -171,12 +176,29 @@ class GpuNativeLibraryBridgeAdapter:
 
     @staticmethod
     def _symbol_for(request: GpuCAbiKernelCall) -> str:
-        if request.op_name == 'Linear':
-            return 'dense_forward'
+        symbols = GpuNativeLibraryBridgeAdapter._symbols_for(request)
+        if request.op_name == 'Flatten':
+            return 'device_pointer_alias'
         if request.op_name == 'Conv2d':
-            return 'gemm_forward'
-        if request.op_name == 'ReLU':
-            return 'apply_relu'
-        if request.op_name == 'MaxPool2d':
-            return 'apply_maxpool'
+            return 'conv2d_im2col_gemm'
+        if len(symbols) == 1:
+            return symbols[0]
+        if symbols:
+            return '+'.join(symbols)
         return f'minicnn_gpu_{request.launch_family}'
+
+    @staticmethod
+    def _symbols_for(request: GpuCAbiKernelCall) -> tuple[str, ...]:
+        if request.op_name == 'Flatten':
+            return tuple()
+        if request.op_name == 'Linear':
+            return ('dense_forward',)
+        if request.op_name == 'Conv2d':
+            return ('im2col_forward', 'gemm_forward', 'cnhw_to_nchw')
+        if request.op_name == 'ReLU':
+            return ('apply_relu',)
+        if request.op_name == 'LeakyReLU':
+            return ('leaky_relu_forward',)
+        if request.op_name == 'MaxPool2d':
+            return ('apply_maxpool',)
+        return tuple()

@@ -256,6 +256,7 @@ def test_gpu_stub_executor_can_use_native_library_bridge_adapter():
     linear_result = summary['c_abi_bridge_results'][1]
     assert linear_result['dispatch_mode'] == 'gpu_native_library_bridge'
     assert linear_result['kernel_symbol'] == 'dense_forward'
+    assert linear_result['required_symbols'] == ['dense_forward']
     assert linear_result['native_library_loaded'] is True
     assert linear_result['symbol_available'] is True
     assert linear_result['requires_device_pointers'] is True
@@ -283,7 +284,8 @@ def test_gpu_stub_executor_uses_native_dense_forward_when_device_pointers_availa
         bound_lib=fake_lib,
     )
     runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
-    executor = GpuStubExecutor(device_runtime=runtime)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
 
     x = np.asarray([[1.0, 2.0, 3.0, 4.0]], dtype=np.float32)
     result = executor.run(graph, x, params=params)
@@ -316,7 +318,8 @@ def test_gpu_stub_executor_uses_native_flatten_alias_when_device_pointers_availa
         bound_lib=fake_lib,
     )
     runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
-    executor = GpuStubExecutor(device_runtime=runtime)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
 
     x = np.asarray([[[1.0, 2.0], [3.0, 4.0]]], dtype=np.float32)
     result = executor.run(graph, x, params={})
@@ -327,6 +330,12 @@ def test_gpu_stub_executor_uses_native_flatten_alias_when_device_pointers_availa
     assert summary['native_device_pointers_enabled'] is True
     assert summary['execution_kinds']['gpu_native_alias:flatten'] == 1
     assert summary['device_pointer_allocation_events'] == 1
+
+    exec_summary = result.summary()
+    flatten_bridge_result = exec_summary['c_abi_bridge_results'][0]
+    assert flatten_bridge_result['kernel_symbol'] == 'device_pointer_alias'
+    assert flatten_bridge_result['required_symbols'] == []
+    assert flatten_bridge_result['symbol_available'] is True
 
 
 def test_gpu_stub_executor_uses_native_relu_when_device_pointers_available():
@@ -380,7 +389,8 @@ def test_gpu_stub_executor_uses_native_leaky_relu_when_device_pointers_available
         bound_lib=fake_lib,
     )
     runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
-    executor = GpuStubExecutor(device_runtime=runtime)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
 
     x = np.asarray([[-2.0, -0.5, 0.0, 3.0]], dtype=np.float32)
     result = executor.run(graph, x, params={})
@@ -393,6 +403,12 @@ def test_gpu_stub_executor_uses_native_leaky_relu_when_device_pointers_available
     assert summary['execution_kinds']['gpu_native_kernel:leaky_relu_forward'] == 1
     assert summary['device_sync_to_device_events'] >= 1
     assert summary['device_sync_to_host_events'] >= 1
+
+    exec_summary = result.summary()
+    leaky_bridge_result = exec_summary['c_abi_bridge_results'][0]
+    assert leaky_bridge_result['kernel_symbol'] == 'leaky_relu_forward'
+    assert leaky_bridge_result['required_symbols'] == ['leaky_relu_forward']
+    assert leaky_bridge_result['symbol_available'] is True
 
 
 def test_gpu_stub_executor_uses_native_maxpool_when_device_pointers_available():
@@ -448,7 +464,8 @@ def test_gpu_stub_executor_uses_native_conv2d_when_device_pointers_available():
         bound_lib=fake_lib,
     )
     runtime.reserve_from_planner(total_bytes=8192, num_buffers=8)
-    executor = GpuStubExecutor(device_runtime=runtime)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
 
     x = np.arange(9, dtype=np.float32).reshape(1, 1, 3, 3)
     result = executor.run(graph, x, params=params)
@@ -466,3 +483,9 @@ def test_gpu_stub_executor_uses_native_conv2d_when_device_pointers_available():
 
     summary = runtime.summary()
     assert summary['execution_kinds']['gpu_native_kernel:conv2d_im2col_gemm'] == 1
+
+    exec_summary = result.summary()
+    conv_bridge_result = exec_summary['c_abi_bridge_results'][0]
+    assert conv_bridge_result['kernel_symbol'] == 'conv2d_im2col_gemm'
+    assert conv_bridge_result['required_symbols'] == ['im2col_forward', 'gemm_forward', 'cnhw_to_nchw']
+    assert conv_bridge_result['symbol_available'] is True
