@@ -126,6 +126,7 @@ The next phase is narrower and more technical:
   - `ConvNeXtBlock` is now published as `beta`, backed by forward/backward parity, `layer_scale` parity, and hermetic train-path tolerance coverage
   - named-model resolution now ignores loader placeholder `model.layers`, so `model.name=convnext_tiny` consistently expands to the intended `ConvNeXtBlock` graph
   - `DropPath` is now published as `beta`, backed by deterministic train/eval correctness checks and a dedicated train smoke path
+  - `AMP` is now the only remaining explicitly-published `experimental` surface in `support_tiers`
   - current parity baseline: `Add`, `Concat`, `Linear`, `Conv2d` (including grouped/depthwise), `BatchNorm2d`, `LayerNorm`, `LayerNorm2d`, `GroupNorm` forward/backward
   - `BatchNorm2d` train-mode running-stat semantics are now aligned with PyTorch (`running_var` uses unbiased batch variance)
   - composite parity now covers:
@@ -138,5 +139,6 @@ The next phase is narrower and more technical:
   - `ResidualBlock` smoke variants now also have a dedicated `fp32` vs `grad_accum` tolerance gate
   - `ConvNeXtBlock` smoke variants now also have a dedicated `fp32` vs `grad_accum` tolerance gate
   - `DropPath` now has deterministic train/eval correctness checks plus a dedicated smoke path
+  - `ConvNeXtBlock` now also has an `fp32` vs `AMP` tolerance gate, so `AMP` stability is isolated from block-support maturity
 
 For the formal productionization path, see [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md).

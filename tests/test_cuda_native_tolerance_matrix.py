@@ -175,3 +175,34 @@ def test_cuda_native_convnextblock_tolerance_matrix_stays_within_bounds(tmp_path
     assert abs(fp32_last["train_loss"] - accum_last["train_loss"]) <= 1.0
     assert abs(fp32_last["val_loss"] - accum_last["val_loss"]) <= 1.0
     assert abs(fp32_last["val_acc"] - accum_last["val_acc"]) <= 25.0
+
+
+def test_cuda_native_convnextblock_amp_tolerance_stays_within_bounds(tmp_path: Path) -> None:
+    fp32_summary, fp32_last = _run_native_variant(
+        tmp_path,
+        "convnext-amp-fp32",
+        "train.batch_size=16",
+        "train.grad_accum_steps=1",
+        "train.amp=false",
+        template=CONVNEXT_TINY_SMOKE_TEMPLATE,
+    )
+    amp_summary, amp_last = _run_native_variant(
+        tmp_path,
+        "convnext-amp",
+        "train.batch_size=16",
+        "train.grad_accum_steps=1",
+        "train.amp=true",
+        "train.amp_loss_scale=128",
+        template=CONVNEXT_TINY_SMOKE_TEMPLATE,
+    )
+
+    assert fp32_summary["support_tier_assessment"]["highest_tier"] == "beta"
+    assert amp_summary["support_tier_assessment"]["highest_tier"] == "experimental"
+    assert "ConvNeXtBlock" in amp_summary["support_tier_assessment"]["ops_by_tier"]["beta"]
+    assert amp_summary["support_tier_assessment"]["features_by_tier"]["experimental"] == ["amp"]
+    assert amp_summary["amp_runtime"]["loss_scale"] >= 1.0
+    assert amp_last["amp"]["loss_scale"] >= 1.0
+
+    assert abs(fp32_last["train_loss"] - amp_last["train_loss"]) <= 1.0
+    assert abs(fp32_last["val_loss"] - amp_last["val_loss"]) <= 1.0
+    assert abs(fp32_last["val_acc"] - amp_last["val_acc"]) <= 25.0

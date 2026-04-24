@@ -360,10 +360,12 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert 'ResidualBlock' in payload['support_tiers']['beta']['ops']
     assert 'ConvNeXtBlock' in payload['support_tiers']['beta']['ops']
     assert 'DropPath' in payload['support_tiers']['beta']['ops']
+    assert payload['support_tiers']['experimental']['ops'] == []
     assert 'amp' in payload['support_tiers']['experimental']['features']
     assert payload['support_tier_counts']['stable']['ops'] >= 1
     assert payload['graduation_gates']['core_beta_subset']['ready'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['ready'] is False
+    assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['amp_tolerance_matrix_present'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['training_stable'] is False
     assert payload['graduation_gates']['full_backend_non_experimental']['remaining_blockers']
     assert 'supported_op_categories' in payload
