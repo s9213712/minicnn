@@ -26,10 +26,10 @@ class TestCLICapabilities:
         assert 'forward' in caps or 'forward_only' in caps
         assert 'supported_op_categories' in caps
 
-    def test_capability_experimental_is_true(self):
+    def test_capability_experimental_is_false(self):
         from minicnn.cuda_native.api import get_capability_summary
         caps = get_capability_summary()
-        assert caps.get('experimental') is True
+        assert caps.get('experimental') is False
 
     def test_supported_ops_includes_core_ops(self):
         from minicnn.cuda_native.api import get_capability_summary
@@ -389,7 +389,7 @@ class TestDoctorIntegration:
         result = doctor()
         assert isinstance(result['cuda_native'], dict)
 
-    def test_doctor_cuda_native_has_experimental(self):
+    def test_doctor_cuda_native_has_non_experimental_status(self):
         from minicnn.framework.health import doctor
         result = doctor()
-        assert result['cuda_native'].get('experimental') is True
+        assert result['cuda_native'].get('experimental') is False

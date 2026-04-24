@@ -22,6 +22,8 @@ cpp/RelWithDebInfo/
 cpp/MinSizeRel/
 cpp/x64/
 cpp/*.lib
+cpp/*.so
+cpp/*.so.*
 cpp/*.exp
 cpp/*.pdb
 cpp/*.ilk
