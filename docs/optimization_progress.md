@@ -52,6 +52,7 @@ The stable default backend toggle is still:
   - reserved-buffer-backed input/output staging for train/eval batch paths
   - machine-readable `gpu_native` readiness and per-config bootstrap assessment
   - initial GPU dispatch-plan seam for bootstrap-subset graphs
+  - per-step GPU param-binding manifests for future lowering
 
 ## What Is Still Constrained
 

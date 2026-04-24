@@ -134,6 +134,7 @@ Current status:
   - `gpu_dispatch.py`
   - per-node bootstrap dispatch plans for supported subset graphs
   - explicit unsupported-op reporting for graphs outside the bootstrap subset
+  - per-step parameter-binding manifests for future kernel lowering ABI
 
 Goal:
 

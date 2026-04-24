@@ -14,6 +14,7 @@ class GpuDispatchStep:
     category: str
     input_names: tuple[str, ...]
     output_names: tuple[str, ...]
+    param_keys: tuple[str, ...]
     forward_status: str
     backward_status: str
 
@@ -38,12 +39,22 @@ class GpuDispatchPlan:
                     'category': step.category,
                     'input_names': list(step.input_names),
                     'output_names': list(step.output_names),
+                    'param_keys': list(step.param_keys),
                     'forward_status': step.forward_status,
                     'backward_status': step.backward_status,
                 }
                 for step in self.steps
             ],
         }
+
+
+def _node_param_keys(node) -> tuple[str, ...]:
+    keys: list[str] = []
+    if node.op_type in {'Conv2d', 'Linear'}:
+        keys.append(f'_w_{node.name}')
+        if bool(node.attrs.get('bias', True)):
+            keys.append(f'_b_{node.name}')
+    return tuple(keys)
 
 
 def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
@@ -65,6 +76,7 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                 category=str(spec.category),
                 input_names=tuple(str(name) for name in node.inputs),
                 output_names=tuple(str(name) for name in node.outputs),
+                param_keys=_node_param_keys(node),
                 forward_status=str(spec.forward_status),
                 backward_status=str(spec.backward_status),
             )
