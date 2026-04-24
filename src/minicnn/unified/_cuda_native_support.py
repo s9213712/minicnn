@@ -254,24 +254,35 @@ def evaluate_native_graph(
             )
             for key, value in params.items()
         }
+
+    def _run_forward_with_device_runtime(x_batch: np.ndarray) -> np.ndarray:
+        assert device_runtime is not None
+        input_name = graph.input_spec.name
+        staged_input = device_runtime.stage_to_device(x_batch, name=input_name)
+        ctx = fwd.run(graph, {input_name: staged_input.data}, params=eval_params)
+        logits = ctx[out_name]
+        host_logits = device_runtime.stage_to_host(
+            device_runtime.stage_to_device(logits, name=out_name, copy=False),
+            copy=True,
+        )
+        device_runtime.record_execution(
+            'eval_forward',
+            input_name=input_name,
+            output_name=out_name,
+            node_count=len(graph.nodes),
+        )
+        device_runtime.synchronize('eval-forward')
+        return host_logits
+
     for i in range(0, n, batch_size):
         xb = x[i:i + batch_size]
         yb = y[i:i + batch_size]
         fwd_input = xb.astype(np.float16) if amp_enabled else xb
-        staged_input = (
-            device_runtime.stage_to_device(fwd_input, name=graph.input_spec.name)
-            if device_runtime is not None
-            else None
-        )
-        run_input = staged_input.data if staged_input is not None else fwd_input
-        ctx = fwd.run(graph, {graph.input_spec.name: run_input}, params=eval_params)
-        logits = ctx[out_name]
         if device_runtime is not None:
-            logits = device_runtime.stage_to_host(
-                device_runtime.stage_to_device(logits, name=out_name, copy=False),
-                copy=True,
-            )
-            device_runtime.synchronize('eval-batch')
+            logits = _run_forward_with_device_runtime(fwd_input)
+        else:
+            ctx = fwd.run(graph, {graph.input_spec.name: fwd_input}, params=eval_params)
+            logits = ctx[out_name]
         if loss_type == 'cross_entropy':
             loss_val, _ = cross_entropy_loss(logits, yb)
             preds = logits.argmax(axis=1)

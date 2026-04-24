@@ -43,6 +43,11 @@ The stable default backend toggle is still:
 - `cuda_native` normalization/regularization slice: `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `Dropout`, `DropPath`
 - `cuda_native` modern training slice: `Adam`, `AdamW`, `RMSprop`, `BCEWithLogitsLoss`, `label_smoothing`, `grad_accum_steps`, beta AMP
 - planner / AMP / optimizer-state telemetry now wired into `summary.json` and `metrics.jsonl`
+- initial GPU-enablement seam now has:
+  - execution-mode contract freeze
+  - `DeviceRuntime` staging/allocation/synchronization accounting
+  - planner reservation accounting in `device_runtime`
+  - explicit staged eval-forward execution telemetry
 
 ## What Is Still Constrained
 

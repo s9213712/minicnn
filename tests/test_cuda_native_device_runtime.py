@@ -12,6 +12,7 @@ def test_device_runtime_tracks_staging_allocation_and_sync():
     tensor = runtime.stage_to_device(np.ones((2, 3), dtype=np.float32), name='x')
     host = runtime.stage_to_host(tensor)
     allocated = runtime.allocate((2, 3), dtype='float32', name='buf')
+    runtime.record_execution('eval_forward', input_name='x', output_name='y', node_count=4)
     runtime.synchronize('test-barrier')
 
     assert tensor.execution_mode == 'reference_numpy'
@@ -31,5 +32,10 @@ def test_device_runtime_tracks_staging_allocation_and_sync():
     assert summary['device_to_host_transfer_events'] == 1
     assert summary['allocation_events'] == 1
     assert summary['allocated_bytes'] == 24
+    assert summary['execution_events'] == 1
+    assert summary['executed_node_count'] == 4
+    assert summary['execution_kinds'] == {'eval_forward': 1}
+    assert summary['last_input_name'] == 'x'
+    assert summary['last_output_name'] == 'y'
     assert summary['synchronization_events'] == 1
     assert summary['synchronization_reasons'] == ['test-barrier']

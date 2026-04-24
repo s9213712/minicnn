@@ -487,6 +487,12 @@ def run_training_loop(
                     fwd_executor=fwd,
                     bwd_executor=bwd,
                 )
+                ctx.device_runtime.record_execution(
+                    'train_batch',
+                    input_name=ctx.graph.input_spec.name if ctx.graph.input_spec is not None else 'input',
+                    output_name=ctx.graph.output_spec.name if ctx.graph.output_spec is not None else 'output',
+                    node_count=len(ctx.graph.nodes),
+                )
                 ctx.device_runtime.synchronize('train-batch')
                 running_loss += loss_val * xb.shape[0]
                 seen += xb.shape[0]

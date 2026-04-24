@@ -34,6 +34,11 @@ class DeviceRuntime:
     allocated_bytes: int = 0
     synchronization_events: int = 0
     synchronization_reasons: list[str] = field(default_factory=list)
+    execution_events: int = 0
+    executed_node_count: int = 0
+    execution_kinds: dict[str, int] = field(default_factory=dict)
+    last_input_name: str | None = None
+    last_output_name: str | None = None
 
     @property
     def gpu_execution(self) -> bool:
@@ -77,6 +82,21 @@ class DeviceRuntime:
         self.synchronization_events += 1
         self.synchronization_reasons.append(str(reason))
 
+    def record_execution(
+        self,
+        kind: str,
+        *,
+        input_name: str | None = None,
+        output_name: str | None = None,
+        node_count: int = 0,
+    ) -> None:
+        execution_kind = str(kind)
+        self.execution_events += 1
+        self.executed_node_count += int(node_count)
+        self.execution_kinds[execution_kind] = int(self.execution_kinds.get(execution_kind, 0)) + 1
+        self.last_input_name = input_name
+        self.last_output_name = output_name
+
     def summary(self) -> dict[str, Any]:
         return {
             'execution_mode': self.execution_mode,
@@ -96,4 +116,9 @@ class DeviceRuntime:
             'allocated_bytes': self.allocated_bytes,
             'synchronization_events': self.synchronization_events,
             'synchronization_reasons': list(self.synchronization_reasons),
+            'execution_events': self.execution_events,
+            'executed_node_count': self.executed_node_count,
+            'execution_kinds': dict(self.execution_kinds),
+            'last_input_name': self.last_input_name,
+            'last_output_name': self.last_output_name,
         }
