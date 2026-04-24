@@ -236,6 +236,7 @@ def evaluate_native_graph(
     loss_type: str,
     *,
     amp_enabled: bool = False,
+    device_runtime: Any | None = None,
 ) -> dict[str, float]:
     fwd = ForwardExecutor()
     out_name = graph.output_spec.name
@@ -257,8 +258,20 @@ def evaluate_native_graph(
         xb = x[i:i + batch_size]
         yb = y[i:i + batch_size]
         fwd_input = xb.astype(np.float16) if amp_enabled else xb
-        ctx = fwd.run(graph, {graph.input_spec.name: fwd_input}, params=eval_params)
+        staged_input = (
+            device_runtime.stage_to_device(fwd_input, name=graph.input_spec.name)
+            if device_runtime is not None
+            else None
+        )
+        run_input = staged_input.data if staged_input is not None else fwd_input
+        ctx = fwd.run(graph, {graph.input_spec.name: run_input}, params=eval_params)
         logits = ctx[out_name]
+        if device_runtime is not None:
+            logits = device_runtime.stage_to_host(
+                device_runtime.stage_to_device(logits, name=out_name, copy=False),
+                copy=True,
+            )
+            device_runtime.synchronize('eval-batch')
         if loss_type == 'cross_entropy':
             loss_val, _ = cross_entropy_loss(logits, yb)
             preds = logits.argmax(axis=1)

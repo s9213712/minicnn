@@ -300,19 +300,16 @@ def handle_train_native(args) -> int:
     from minicnn.cuda_native.api import (
         assess_cuda_native_support_tier,
         get_capability_summary as get_cuda_native_summary,
+        resolve_cuda_native_execution_mode,
     )
     from minicnn.unified.trainer import train_unified_from_config
 
     cfg = _load_unified_config_or_exit(args.config, ['engine.backend=cuda_native', *common_train_overrides(args), *args.overrides])
     summary = get_cuda_native_summary()
+    execution_mode = resolve_cuda_native_execution_mode(cfg)
     _print_json({
         'backend': 'cuda_native',
         'status': 'beta',
-        'execution_mode': 'reference_numpy',
-        'effective_execution_mode': 'reference_numpy',
-        'tensor_execution_device': 'cpu',
-        'tensors_ran_on': 'cpu',
-        'gpu_execution': False,
         'validated_support_boundary': {
             'datasets': summary.get('supported_datasets', []),
             'losses': summary.get('supported_losses', []),
@@ -321,6 +318,7 @@ def handle_train_native(args) -> int:
             'ops': summary.get('supported_ops', []),
         },
         'support_tier_assessment': assess_cuda_native_support_tier(cfg),
+        **execution_mode,
         'note': 'beta-grade backend; current execution mode is reference_numpy on CPU, while gpu_native remains planned and not yet active',
     })
     try:

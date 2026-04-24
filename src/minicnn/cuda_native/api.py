@@ -22,6 +22,12 @@ _SUPPORTED_LOSS_TYPES = frozenset(
 _SUPPORTED_OPTIMIZERS = frozenset(
     str(item) for item in CUDA_NATIVE_CAPABILITIES['supported_optimizers']
 )
+_SUPPORTED_EXECUTION_MODES = frozenset(
+    str(item) for item in get_cuda_native_capabilities().get('execution_modes_supported', ['reference_numpy'])
+)
+_PLANNED_EXECUTION_MODES = frozenset(
+    str(item) for item in get_cuda_native_capabilities().get('execution_modes_planned', ['gpu_native'])
+)
 _SUPPORTED_SCHEDULERS = frozenset(
     str(item) for item in CUDA_NATIVE_CAPABILITIES['supported_schedulers']
 )
@@ -34,6 +40,63 @@ _SCHEDULER_ALIASES = {
     'reducelronplateau': 'ReduceLROnPlateau',
 }
 _SUPPORT_TIER_ORDER = ('stable', 'beta', 'experimental')
+
+
+def resolve_cuda_native_execution_mode(cfg: dict[str, Any]) -> dict[str, object]:
+    engine_cfg, _ = _as_mapping('engine', cfg.get('engine'))
+    selected_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')
+    if selected_mode in _SUPPORTED_EXECUTION_MODES:
+        effective_mode = selected_mode
+        tensor_execution_device = 'cpu' if selected_mode == 'reference_numpy' else 'gpu'
+        return {
+            'execution_mode': effective_mode,
+            'selected_execution_mode': selected_mode,
+            'effective_execution_mode': effective_mode,
+            'tensor_execution_device': tensor_execution_device,
+            'tensors_ran_on': tensor_execution_device,
+            'gpu_execution': tensor_execution_device == 'gpu',
+            'planned': False,
+            'supported': True,
+        }
+    if selected_mode in _PLANNED_EXECUTION_MODES:
+        return {
+            'execution_mode': 'unsupported',
+            'selected_execution_mode': selected_mode,
+            'effective_execution_mode': 'unsupported',
+            'tensor_execution_device': 'gpu',
+            'tensors_ran_on': 'gpu',
+            'gpu_execution': False,
+            'planned': True,
+            'supported': False,
+        }
+    return {
+        'execution_mode': 'unsupported',
+        'selected_execution_mode': selected_mode,
+        'effective_execution_mode': 'unsupported',
+        'tensor_execution_device': 'unknown',
+        'tensors_ran_on': 'unknown',
+        'gpu_execution': False,
+        'planned': False,
+        'supported': False,
+    }
+
+
+def _validate_engine_cfg(engine_cfg: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    execution_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')
+    if execution_mode in _SUPPORTED_EXECUTION_MODES:
+        return errors
+    if execution_mode in _PLANNED_EXECUTION_MODES:
+        errors.append(
+            "cuda_native engine.execution_mode='gpu_native' is planned but not yet implemented; "
+            "currently supported execution modes: {reference_numpy}."
+        )
+        return errors
+    supported = ', '.join(sorted(_SUPPORTED_EXECUTION_MODES | _PLANNED_EXECUTION_MODES))
+    errors.append(
+        f'cuda_native does not recognize engine.execution_mode={execution_mode!r}. Supported/planned: {supported}.'
+    )
+    return errors
 
 
 def _matched_support_tiers(items: set[str], bucket: str) -> dict[str, list[str]]:
@@ -381,6 +444,7 @@ def validate_cuda_native_config(cfg: dict[str, Any]) -> list[str]:
     optim_cfg, optim_cfg_errors = _as_mapping('optimizer', cfg.get('optimizer'))
     scheduler_cfg, scheduler_cfg_errors = _as_mapping('scheduler', cfg.get('scheduler'))
     train_cfg, train_cfg_errors = _as_mapping('train', cfg.get('train'))
+    engine_cfg, engine_cfg_errors = _as_mapping('engine', cfg.get('engine'))
 
     errors.extend(model_cfg_errors)
     errors.extend(dataset_cfg_errors)
@@ -388,9 +452,11 @@ def validate_cuda_native_config(cfg: dict[str, Any]) -> list[str]:
     errors.extend(optim_cfg_errors)
     errors.extend(scheduler_cfg_errors)
     errors.extend(train_cfg_errors)
+    errors.extend(engine_cfg_errors)
 
     model_errors = validate_cuda_native_model_config(model_cfg)
     errors.extend(model_errors)
+    errors.extend(_validate_engine_cfg(engine_cfg))
     errors.extend(_validate_dataset_cfg(dataset_cfg))
     errors.extend(_validate_loss_cfg(loss_cfg))
     errors.extend(_validate_optimizer_cfg(optim_cfg))
