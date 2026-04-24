@@ -17,6 +17,7 @@ class GpuDispatchStep:
     param_keys: tuple[str, ...]
     forward_status: str
     backward_status: str
+    supported: bool = True
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class GpuDispatchPlan:
                     'param_keys': list(step.param_keys),
                     'forward_status': step.forward_status,
                     'backward_status': step.backward_status,
+                    'supported': step.supported,
                 }
                 for step in self.steps
             ],
@@ -68,6 +70,19 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
         spec = registry.get(node.op_type)
         if spec is None:
             unsupported_ops.append(str(node.op_type))
+            steps.append(
+                GpuDispatchStep(
+                    node_name=str(node.name),
+                    op_name=str(node.op_type),
+                    category='unsupported',
+                    input_names=tuple(str(name) for name in node.inputs),
+                    output_names=tuple(str(name) for name in node.outputs),
+                    param_keys=tuple(),
+                    forward_status='unsupported',
+                    backward_status='unsupported',
+                    supported=False,
+                )
+            )
             continue
         steps.append(
             GpuDispatchStep(
@@ -79,6 +94,7 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
                 param_keys=_node_param_keys(node),
                 forward_status=str(spec.forward_status),
                 backward_status=str(spec.backward_status),
+                supported=True,
             )
         )
     return GpuDispatchPlan(

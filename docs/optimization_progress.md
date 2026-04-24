@@ -53,6 +53,7 @@ The stable default backend toggle is still:
   - machine-readable `gpu_native` readiness and per-config bootstrap assessment
   - initial GPU dispatch-plan seam for bootstrap-subset graphs
   - per-step GPU param-binding manifests for future lowering
+  - execution-mode invariants and GPU dispatch unsupported-step visibility are now regression-locked
 
 ## What Is Still Constrained
 

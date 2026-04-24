@@ -18,6 +18,7 @@ GPU_NATIVE_BOOTSTRAP_BLOCKERS = [
     'gpu_forward_kernel_lowering_unimplemented',
     'gpu_backward_kernel_lowering_unimplemented',
     'gpu_parity_matrix_missing',
+    'gpu_native_execution_not_implemented',
 ]
 
 CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {

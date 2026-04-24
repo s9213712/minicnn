@@ -166,4 +166,13 @@ def test_validate_cuda_native_config_reports_ops_outside_gpu_bootstrap_subset(tm
     assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['BatchNorm2d']['forward_status'] == 'outside_bootstrap'
     assert payload['execution_readiness_assessment']['dispatch_plan']['ready'] is False
     assert payload['execution_readiness_assessment']['dispatch_plan']['unsupported_ops'] == ['BatchNorm2d']
+    assert payload['execution_readiness_assessment']['dispatch_plan']['steps'][0]['op_name'] == 'BatchNorm2d'
+    assert payload['execution_readiness_assessment']['dispatch_plan']['steps'][0]['supported'] is False
     assert any("outside_bootstrap=['BatchNorm2d']" in err for err in payload['errors'])
+
+
+def test_execution_mode_sets_are_disjoint():
+    from minicnn.cuda_native.api import _PLANNED_EXECUTION_MODES, _SUPPORTED_EXECUTION_MODES
+
+    overlap = _SUPPORTED_EXECUTION_MODES & _PLANNED_EXECUTION_MODES
+    assert overlap == set(), f'Modes in both sets: {sorted(overlap)}'

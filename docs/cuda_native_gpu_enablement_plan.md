@@ -134,6 +134,7 @@ Current status:
   - `gpu_dispatch.py`
   - per-node bootstrap dispatch plans for supported subset graphs
   - explicit unsupported-op reporting for graphs outside the bootstrap subset
+  - partial plans no longer silently drop unsupported nodes; unsupported steps stay visible in the plan
   - per-step parameter-binding manifests for future kernel lowering ABI
 
 Goal:

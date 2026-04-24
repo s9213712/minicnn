@@ -44,7 +44,13 @@ _SCHEDULER_ALIASES = {
 _SUPPORT_TIER_ORDER = ('stable', 'beta', 'experimental')
 
 
+def _assert_execution_mode_invariants() -> None:
+    overlap = _SUPPORTED_EXECUTION_MODES & _PLANNED_EXECUTION_MODES
+    assert not overlap, f'cuda_native execution mode sets overlap: {sorted(overlap)}'
+
+
 def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, object]:
+    _assert_execution_mode_invariants()
     caps = get_cuda_native_capabilities()
     readiness_table = dict(caps.get('execution_mode_readiness', {}))
     execution_mode = resolve_cuda_native_execution_mode(cfg)
@@ -70,8 +76,6 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
     supported_ops = sorted(op for op in layer_types if op in bootstrap_subset)
     missing_ops = sorted(op for op in layer_types if op not in bootstrap_subset)
     remaining_blockers = [str(item) for item in mode_readiness.get('remaining_blockers', [])]
-    if selected_mode == 'gpu_native' and 'gpu_native_execution_not_implemented' not in remaining_blockers:
-        remaining_blockers = ['gpu_native_execution_not_implemented', *remaining_blockers]
     dispatch_plan_summary: dict[str, object] | None = None
     validation_input_shape = _validation_input_shape(dataset_cfg)
     if validation_input_shape is not None:
@@ -107,6 +111,7 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
 
 
 def resolve_cuda_native_execution_mode(cfg: dict[str, Any]) -> dict[str, object]:
+    _assert_execution_mode_invariants()
     engine_cfg, _ = _as_mapping('engine', cfg.get('engine'))
     selected_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')
     if selected_mode in _SUPPORTED_EXECUTION_MODES:
@@ -146,6 +151,7 @@ def resolve_cuda_native_execution_mode(cfg: dict[str, Any]) -> dict[str, object]
 
 
 def _validate_engine_cfg(engine_cfg: dict[str, Any]) -> list[str]:
+    _assert_execution_mode_invariants()
     errors: list[str] = []
     execution_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')
     if execution_mode in _SUPPORTED_EXECUTION_MODES:
