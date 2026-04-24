@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from minicnn.cuda_native.api import build_cuda_native_graph
-from minicnn.cuda_native.gpu_bridge import build_flat_gpu_bridge_trace, build_gpu_bridge_trace
+from minicnn.cuda_native.gpu_bridge import build_fixed_kernel_trace, build_flat_gpu_bridge_trace, build_gpu_bridge_trace
 from minicnn.cuda_native.gpu_dispatch import build_gpu_dispatch_plan, build_gpu_launch_trace
 
 
@@ -218,3 +218,33 @@ def test_flat_gpu_bridge_trace_builds_flat_requests():
     assert flat_requests[1].tensor_roles == ('input', 'output', 'param', 'param')
     assert flat_requests[1].param_bindings == ('_w_linear_1', '_b_linear_1')
     assert flat_requests[1].bridge_payload['matmul_k'] == 64
+
+
+def test_fixed_gpu_bridge_trace_builds_fixed_calls():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 8},
+                {'type': 'ReLU'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 8, 8),
+    )
+
+    packets = build_gpu_launch_trace(build_gpu_dispatch_plan(graph))
+    requests = build_gpu_bridge_trace(packets)
+    flat_requests = build_flat_gpu_bridge_trace(requests)
+    fixed_calls = build_fixed_kernel_trace(flat_requests)
+
+    assert len(fixed_calls) == 4
+    assert fixed_calls[1].launch_family == 'gemm_affine'
+    assert fixed_calls[1].dispatch_mode == 'gpu_fixed_bridge_stub'
+    assert fixed_calls[1].input_binding == 't_1'
+    assert fixed_calls[1].output_binding == 't_2'
+    assert fixed_calls[1].weight_binding == '_w_linear_1'
+    assert fixed_calls[1].bias_binding == '_b_linear_1'
+    assert fixed_calls[1].matmul_m == 1
+    assert fixed_calls[1].matmul_k == 64
+    assert fixed_calls[1].matmul_n == 8

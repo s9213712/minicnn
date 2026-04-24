@@ -8,12 +8,19 @@ import numpy as np
 
 from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.gpu_bridge import (
+    GpuFixedKernelCall,
     GpuFlatKernelRequest,
     GpuKernelBridgeRequest,
+    build_fixed_kernel_trace,
     build_flat_gpu_bridge_trace,
     build_gpu_bridge_trace,
 )
-from minicnn.cuda_native.gpu_bridge_adapter import GpuFlatBridgeAdapter, GpuKernelBridgeAdapter, GpuStubBridgeAdapter
+from minicnn.cuda_native.gpu_bridge_adapter import (
+    GpuFixedBridgeAdapter,
+    GpuFlatBridgeAdapter,
+    GpuKernelBridgeAdapter,
+    GpuStubBridgeAdapter,
+)
 from minicnn.cuda_native.gpu_dispatch import (
     GpuDispatchPlan,
     GpuLaunchPacket,
@@ -36,8 +43,10 @@ class GpuStubExecutionResult:
     launch_trace: tuple[GpuLaunchPacket, ...]
     bridge_trace: tuple[GpuKernelBridgeRequest, ...]
     flat_bridge_trace: tuple[GpuFlatKernelRequest, ...]
+    fixed_bridge_trace: tuple[GpuFixedKernelCall, ...]
     bridge_results: tuple[dict[str, Any], ...]
     flat_bridge_results: tuple[dict[str, Any], ...]
+    fixed_bridge_results: tuple[dict[str, Any], ...]
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -47,8 +56,10 @@ class GpuStubExecutionResult:
             'launch_trace': [packet.summary() for packet in self.launch_trace],
             'bridge_trace': [request.summary() for request in self.bridge_trace],
             'flat_bridge_trace': [request.summary() for request in self.flat_bridge_trace],
+            'fixed_bridge_trace': [request.summary() for request in self.fixed_bridge_trace],
             'bridge_results': [dict(result) for result in self.bridge_results],
             'flat_bridge_results': [dict(result) for result in self.flat_bridge_results],
+            'fixed_bridge_results': [dict(result) for result in self.fixed_bridge_results],
         }
 
 
@@ -66,12 +77,14 @@ class GpuStubExecutor:
         device_runtime: DeviceRuntime | None = None,
         bridge_adapter: GpuKernelBridgeAdapter | None = None,
         flat_bridge_adapter: GpuFlatBridgeAdapter | None = None,
+        fixed_bridge_adapter: GpuFixedBridgeAdapter | None = None,
     ) -> None:
         self.lowering_registry = (
             lowering_registry if lowering_registry is not None else make_default_gpu_lowering_registry()
         )
         self.bridge_adapter = bridge_adapter if bridge_adapter is not None else GpuStubBridgeAdapter()
         self.flat_bridge_adapter = flat_bridge_adapter if flat_bridge_adapter is not None else GpuFlatBridgeAdapter()
+        self.fixed_bridge_adapter = fixed_bridge_adapter if fixed_bridge_adapter is not None else GpuFixedBridgeAdapter()
         self.device_runtime = device_runtime if device_runtime is not None else DeviceRuntime(
             execution_mode='gpu_native',
             tensor_execution_device='gpu',
@@ -162,8 +175,10 @@ class GpuStubExecutor:
         self.device_runtime.release_buffer(output_tensor)
         bridge_trace = build_gpu_bridge_trace(tuple(launch_trace))
         flat_bridge_trace = build_flat_gpu_bridge_trace(bridge_trace)
+        fixed_bridge_trace = build_fixed_kernel_trace(flat_bridge_trace)
         bridge_results: list[dict[str, Any]] = []
         flat_bridge_results: list[dict[str, Any]] = []
+        fixed_bridge_results: list[dict[str, Any]] = []
         for request in bridge_trace:
             bridge_results.append(dict(self.bridge_adapter.submit(request)))
             self.device_runtime.record_execution(
@@ -180,6 +195,14 @@ class GpuStubExecutor:
                 output_name=request.node_name,
                 node_count=0,
             )
+        for request in fixed_bridge_trace:
+            fixed_bridge_results.append(dict(self.fixed_bridge_adapter.submit_fixed(request)))
+            self.device_runtime.record_execution(
+                f'gpu_stub_fixed_bridge:{request.launch_family}',
+                input_name=request.input_binding,
+                output_name=request.node_name,
+                node_count=0,
+            )
         return GpuStubExecutionResult(
             output_name=graph.output_spec.name,
             output=host_output,
@@ -187,6 +210,8 @@ class GpuStubExecutor:
             launch_trace=tuple(launch_trace),
             bridge_trace=bridge_trace,
             flat_bridge_trace=flat_bridge_trace,
+            fixed_bridge_trace=fixed_bridge_trace,
             bridge_results=tuple(bridge_results),
             flat_bridge_results=tuple(flat_bridge_results),
+            fixed_bridge_results=tuple(fixed_bridge_results),
         )

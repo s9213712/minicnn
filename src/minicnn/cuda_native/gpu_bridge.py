@@ -145,6 +145,56 @@ class GpuFlatKernelRequest:
         }
 
 
+@dataclass(frozen=True)
+class GpuFixedKernelCall:
+    request_id: str
+    node_name: str
+    op_name: str
+    launch_family: str
+    dispatch_mode: str
+    preferred_layout: str
+    input_binding: str
+    output_binding: str
+    weight_binding: str
+    bias_binding: str
+    tensor_dtype: str
+    input_shape: tuple[int, ...]
+    output_shape: tuple[int, ...]
+    stride_h: int
+    stride_w: int
+    padding_h: int
+    padding_w: int
+    groups: int
+    matmul_m: int
+    matmul_k: int
+    matmul_n: int
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            'request_id': self.request_id,
+            'node_name': self.node_name,
+            'op_name': self.op_name,
+            'launch_family': self.launch_family,
+            'dispatch_mode': self.dispatch_mode,
+            'preferred_layout': self.preferred_layout,
+            'input_binding': self.input_binding,
+            'output_binding': self.output_binding,
+            'weight_binding': self.weight_binding,
+            'bias_binding': self.bias_binding,
+            'tensor_dtype': self.tensor_dtype,
+            'input_shape': list(self.input_shape),
+            'output_shape': list(self.output_shape),
+            'stride_h': self.stride_h,
+            'stride_w': self.stride_w,
+            'padding_h': self.padding_h,
+            'padding_w': self.padding_w,
+            'groups': self.groups,
+            'matmul_m': self.matmul_m,
+            'matmul_k': self.matmul_k,
+            'matmul_n': self.matmul_n,
+        }
+
+
 def build_gpu_bridge_request(packet: GpuLaunchPacket, *, index: int) -> GpuKernelBridgeRequest:
     return GpuKernelBridgeRequest(
         request_id=f'{packet.node_name}:{index}',
@@ -208,3 +258,55 @@ def build_flat_gpu_bridge_trace(
     requests: tuple[GpuKernelBridgeRequest, ...],
 ) -> tuple[GpuFlatKernelRequest, ...]:
     return tuple(flatten_gpu_bridge_request(request) for request in requests)
+
+
+def build_fixed_kernel_call(request: GpuFlatKernelRequest) -> GpuFixedKernelCall:
+    tensor_shape_map = {
+        binding: shape
+        for binding, shape in zip(request.tensor_bindings, request.tensor_shapes)
+    }
+    payload = request.bridge_payload
+    input_binding = next((binding for binding, role in zip(request.tensor_bindings, request.tensor_roles) if role == 'input'), '')
+    output_binding = next((binding for binding, role in zip(request.tensor_bindings, request.tensor_roles) if role == 'output'), '')
+    param_bindings = list(request.param_bindings)
+    weight_binding = param_bindings[0] if param_bindings else ''
+    bias_binding = param_bindings[1] if len(param_bindings) > 1 else ''
+    stride = payload.get('stride', 0)
+    if isinstance(stride, (list, tuple)):
+        stride_h, stride_w = int(stride[0]), int(stride[1])
+    else:
+        stride_h = stride_w = int(stride)
+    padding = payload.get('padding', 0)
+    if isinstance(padding, (list, tuple)):
+        padding_h, padding_w = int(padding[0]), int(padding[1])
+    else:
+        padding_h = padding_w = int(padding)
+    return GpuFixedKernelCall(
+        request_id=request.request_id,
+        node_name=request.node_name,
+        op_name=request.op_name,
+        launch_family=request.launch_family,
+        dispatch_mode='gpu_fixed_bridge_stub',
+        preferred_layout=request.preferred_layout,
+        input_binding=input_binding,
+        output_binding=output_binding,
+        weight_binding=weight_binding,
+        bias_binding=bias_binding,
+        tensor_dtype=str(payload.get('tensor_dtype', 'float32')),
+        input_shape=tuple(int(v) for v in tensor_shape_map.get(input_binding, ())),
+        output_shape=tuple(int(v) for v in tensor_shape_map.get(output_binding, ())),
+        stride_h=stride_h,
+        stride_w=stride_w,
+        padding_h=padding_h,
+        padding_w=padding_w,
+        groups=int(payload.get('groups', 1)),
+        matmul_m=int(payload.get('matmul_m', 0)),
+        matmul_k=int(payload.get('matmul_k', 0)),
+        matmul_n=int(payload.get('matmul_n', 0)),
+    )
+
+
+def build_fixed_kernel_trace(
+    requests: tuple[GpuFlatKernelRequest, ...],
+) -> tuple[GpuFixedKernelCall, ...]:
+    return tuple(build_fixed_kernel_call(request) for request in requests)
