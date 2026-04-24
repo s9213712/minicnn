@@ -174,9 +174,8 @@ Validated train-native support boundary:
 - `summary.json` exposes `amp_runtime`, `optimizer_runtime`, `planner`, and `performance_report`
 - `metrics.jsonl` exposes per-epoch AMP, optimizer, and planner telemetry
 
-`gpu_native` Linear subsets support native `optimizer.grad_clip_global`.
-Conv-family `gpu_native` subsets still require `optimizer.grad_clip_global=0.0`
-while multi-node reduction support is pending.
+Supported `gpu_native` training subsets use native `optimizer.grad_clip_global`
+through `grad_l2_sumsq` plus `scale_inplace`.
 
 Still rejected at validation or train-native gating: unsupported optimizers outside `SGD` / `Adam` / `AdamW` / `RMSprop`.
 
@@ -428,9 +427,8 @@ Debugging order:
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
 - `train.amp=true|false`（帶 loss scaling / overflow backoff 的實驗性 mixed-precision prototype）
 
-`gpu_native` Linear subsets 已支援 native `optimizer.grad_clip_global`。
-Conv-family `gpu_native` subsets 目前仍要求 `optimizer.grad_clip_global=0.0`，
-等待 multi-node reduction 支援後再開放。
+支援的 `gpu_native` training subsets 已透過 `grad_l2_sumsq` 加
+`scale_inplace` 支援 native `optimizer.grad_clip_global`。
 
 支援 op：`BatchNorm2d`（forward/backward prototype）、`Concat`、`Conv2d`、`DepthwiseConv2d`、`PointwiseConv2d`、`GroupNorm`、`LayerNorm`、`LayerNorm2d`、`ResidualBlock`、`ConvNeXtBlock`、`Dropout`、`DropPath`、`Add`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`GELU`、`Identity`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`、`AdaptiveAvgPool2d`（僅 `output_size=(1,1)`）、`GlobalAvgPool2d`。
 

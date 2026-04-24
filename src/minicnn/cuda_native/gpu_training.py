@@ -147,6 +147,35 @@ def _load_bound_lib(bound_lib: Any | None) -> Any:
     return lib
 
 
+def _apply_global_grad_clip(
+    runtime: DeviceRuntime,
+    lib: Any,
+    grad_tensors: tuple[tuple[Any, int], ...],
+    max_norm: float,
+) -> None:
+    if float(max_norm) <= 0.0:
+        return
+    grad_norm_sumsq_t = runtime.allocate((1,), dtype='float32', name='grad_norm_sumsq')
+    try:
+        lib.gpu_memset(grad_norm_sumsq_t.device_ptr, 0, grad_norm_sumsq_t.nbytes)
+        for grad_t, size in grad_tensors:
+            lib.grad_l2_sumsq(grad_t.device_ptr, grad_norm_sumsq_t.device_ptr, int(size))
+        grad_sumsq = float(runtime.stage_to_host(grad_norm_sumsq_t)[0])
+        grad_norm = float(np.sqrt(max(grad_sumsq, 0.0)))
+        if grad_norm > float(max_norm) and grad_norm > 0.0:
+            clip_scale = float(max_norm) / (grad_norm + 1e-12)
+            for grad_t, size in grad_tensors:
+                lib.scale_inplace(grad_t.device_ptr, clip_scale, int(size))
+        runtime.record_execution(
+            'gpu_native_train:grad_clip_global',
+            input_name='gradients',
+            output_name='gradients',
+            node_count=1,
+        )
+    finally:
+        runtime.release_buffer(grad_norm_sumsq_t)
+
+
 def native_gpu_linear_training_step(
     x: np.ndarray,
     labels: np.ndarray,
@@ -604,6 +633,7 @@ def native_gpu_two_linear_relu_training_step(
     *,
     lr: float,
     momentum: float = 0.0,
+    grad_clip_value: float = 0.0,
     weight1_velocity: np.ndarray | None = None,
     bias1_velocity: np.ndarray | None = None,
     weight2_velocity: np.ndarray | None = None,
@@ -752,6 +782,17 @@ def native_gpu_two_linear_relu_training_step(
             hidden_f,
         )
         runtime.record_execution('gpu_native_train:dense_backward_full_1', input_name='grad_hidden', output_name='grad_weight1', node_count=1)
+        _apply_global_grad_clip(
+            runtime,
+            lib,
+            (
+                (grad_w1_t, int(w1_f32.size)),
+                (grad_b1_t, int(b1_f32.size)),
+                (grad_w2_t, int(w2_f32.size)),
+                (grad_b2_t, int(b2_f32.size)),
+            ),
+            float(grad_clip_value),
+        )
         if float(momentum) != 0.0:
             updates = (
                 (w1_t, grad_w1_t, w1v_t, int(w1_f32.size)),
@@ -837,6 +878,7 @@ def native_gpu_pool_linear_training_step(
     *,
     lr: float,
     momentum: float = 0.0,
+    grad_clip_value: float = 0.0,
     weight_velocity: np.ndarray | None = None,
     bias_velocity: np.ndarray | None = None,
     bound_lib: Any | None = None,
@@ -971,6 +1013,15 @@ def native_gpu_pool_linear_training_step(
             pool_w,
         )
         runtime.record_execution('gpu_native_train:maxpool_backward_nchw', input_name='grad_pooled', output_name='grad_input', node_count=1)
+        _apply_global_grad_clip(
+            runtime,
+            lib,
+            (
+                (grad_weight_t, int(weight_f32.size)),
+                (grad_bias_t, int(bias_f32.size)),
+            ),
+            float(grad_clip_value),
+        )
         if float(momentum) != 0.0:
             lib.apply_momentum_update(weight_t.device_ptr, grad_weight_t.device_ptr, weight_velocity_t.device_ptr, float(lr), float(momentum), int(weight_f32.size))
             lib.apply_momentum_update(bias_t.device_ptr, grad_bias_t.device_ptr, bias_velocity_t.device_ptr, float(lr), float(momentum), int(bias_f32.size))
@@ -1028,6 +1079,7 @@ def native_gpu_conv_linear_training_step(
     *,
     lr: float,
     momentum: float = 0.0,
+    grad_clip_value: float = 0.0,
     conv_weight_velocity: np.ndarray | None = None,
     linear_weight_velocity: np.ndarray | None = None,
     linear_bias_velocity: np.ndarray | None = None,
@@ -1232,6 +1284,16 @@ def native_gpu_conv_linear_training_step(
             out_c,
         )
         runtime.record_execution('gpu_native_train:conv_backward', input_name='grad_conv_output', output_name='grad_conv_weight', node_count=1)
+        _apply_global_grad_clip(
+            runtime,
+            lib,
+            (
+                (grad_conv_w_t, int(conv_w_f32.size)),
+                (grad_linear_w_t, int(linear_w_f32.size)),
+                (grad_linear_b_t, int(linear_b_f32.size)),
+            ),
+            float(grad_clip_value),
+        )
         if float(momentum) != 0.0:
             lib.apply_momentum_update(conv_w_t.device_ptr, grad_conv_w_t.device_ptr, conv_wv_t.device_ptr, float(lr), float(momentum), int(conv_w_f32.size))
             lib.apply_momentum_update(linear_w_t.device_ptr, grad_linear_w_t.device_ptr, linear_wv_t.device_ptr, float(lr), float(momentum), int(linear_w_f32.size))
@@ -1302,6 +1364,7 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
     *,
     lr: float,
     momentum: float = 0.0,
+    grad_clip_value: float = 0.0,
     conv1_weight_velocity: np.ndarray | None = None,
     conv2_weight_velocity: np.ndarray | None = None,
     linear_weight_velocity: np.ndarray | None = None,
@@ -1512,6 +1575,17 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
             conv1_out_c,
         )
         runtime.record_execution('gpu_native_train:conv_backward_1', input_name='grad_conv1_output', output_name='grad_conv1_weight', node_count=1)
+        _apply_global_grad_clip(
+            runtime,
+            lib,
+            (
+                (grad_conv1_w_t, int(conv1_w_f32.size)),
+                (grad_conv2_w_t, int(conv2_w_f32.size)),
+                (grad_linear_w_t, int(linear_w_f32.size)),
+                (grad_linear_b_t, int(linear_b_f32.size)),
+            ),
+            float(grad_clip_value),
+        )
         if float(momentum) != 0.0:
             updates = (
                 (conv1_w_t, grad_conv1_w_t, conv1_wv_t, int(conv1_w_f32.size)),

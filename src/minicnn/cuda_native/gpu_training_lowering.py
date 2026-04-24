@@ -290,9 +290,6 @@ def build_gpu_training_lowering_plan(
         unsupported_reasons.append('gpu_native training lowering currently requires train.grad_accum_steps=1')
     if bool(train_cfg.get('amp', False)):
         unsupported_reasons.append('gpu_native training lowering currently requires train.amp=false')
-    if float(optim_cfg.get('grad_clip_global', 0.0)) != 0.0 and subset_name not in {'linear', 'flatten_linear'}:
-        unsupported_reasons.append('gpu_native training lowering currently supports optimizer.grad_clip_global only for Linear subsets')
-
     forward_steps = tuple(_forward_training_step(step) for step in dispatch_plan.steps)
     backward_steps = _backward_steps(graph, subset_name) if subset_name is not None else tuple()
     ready = (

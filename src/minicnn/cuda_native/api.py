@@ -260,8 +260,6 @@ def _validate_gpu_native_training_subset(
             errors.append('cuda_native gpu_native non-Linear train-native currently requires optimizer.weight_decay=0.0.')
     if int(train_cfg.get('grad_accum_steps', 1)) != 1:
         errors.append('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
-    if float(optim_cfg.get('grad_clip_global', 0.0)) != 0.0 and ops not in (['Linear'], ['Flatten', 'Linear']):
-        errors.append('cuda_native gpu_native train-native currently supports optimizer.grad_clip_global only for the Linear subset.')
     if bool(train_cfg.get('amp', False)):
         errors.append('cuda_native gpu_native train-native currently requires train.amp=false.')
     return errors

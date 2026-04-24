@@ -33,6 +33,8 @@ Representative real CUDA smoke now passes on this machine:
 - minimal Linear RMSprop smoke emits `gpu_native_train:rmsprop_update_fused`
 - minimal Linear global grad-clip smoke emits `gpu_native_train:grad_clip_global`
   and clips the reported gradient norm to the requested threshold
+- minimal Conv+Linear global grad-clip smoke emits `gpu_native_train:grad_clip_global`
+  and clips the combined Conv/Linear gradient norm to the requested threshold
 - CIFAR-10 repeated-Conv smoke uses `official:cifar10:test_batch` and matches
   NumPy reference updated weights with max absolute diffs around `1e-9`
 

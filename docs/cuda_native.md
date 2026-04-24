@@ -269,9 +269,8 @@ only report the coarse helper-pattern name.
 
 - Linear subsets: `SGD`, `Adam`, `AdamW`, `RMSprop`
 - Conv-family subsets: `SGD`
-- Linear subsets support native `optimizer.grad_clip_global`; Conv-family
-  subsets still require `optimizer.grad_clip_global=0.0` until multi-node
-  reduction support lands.
+- Supported `gpu_native` training subsets use native `optimizer.grad_clip_global`
+  through `grad_l2_sumsq` plus `scale_inplace`.
 
 If `gpu_native` fails with `CUDA runtime preflight failed`, the Python runtime
 reached the real CUDA library but the installed NVIDIA driver/runtime pair is

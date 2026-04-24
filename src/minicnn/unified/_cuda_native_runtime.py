@@ -510,8 +510,6 @@ def _validate_gpu_native_training_context(ctx: NativeTrainingContext) -> None:
             raise ValueError('cuda_native gpu_native non-Linear train-native currently requires optimizer.weight_decay=0.0.')
     if ctx.grad_accum_steps != 1:
         raise ValueError('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
-    if ctx.grad_clip_global != 0.0 and plan['kind'] != 'linear':
-        raise ValueError('cuda_native gpu_native train-native currently supports optimizer.grad_clip_global only for the Linear subset.')
     if ctx.amp:
         raise ValueError('cuda_native gpu_native train-native currently requires train.amp=false.')
 
@@ -714,6 +712,7 @@ def run_training_loop(
                             params[b2_key],
                             lr=float(optimizer_view.lr),
                             momentum=float(ctx.momentum),
+                            grad_clip_value=float(ctx.grad_clip_global),
                             weight1_velocity=velocity_state.get(w1_key),
                             bias1_velocity=velocity_state.get(b1_key),
                             weight2_velocity=velocity_state.get(w2_key),
@@ -740,6 +739,7 @@ def run_training_loop(
                             params[bias_key],
                             lr=float(optimizer_view.lr),
                             momentum=float(ctx.momentum),
+                            grad_clip_value=float(ctx.grad_clip_global),
                             weight_velocity=velocity_state.get(weight_key),
                             bias_velocity=velocity_state.get(bias_key),
                             bound_lib=ctx.device_runtime.bound_lib,
@@ -763,6 +763,7 @@ def run_training_loop(
                             params[linear_bias_key],
                             lr=float(optimizer_view.lr),
                             momentum=float(ctx.momentum),
+                            grad_clip_value=float(ctx.grad_clip_global),
                             conv_weight_velocity=velocity_state.get(conv_weight_key),
                             linear_weight_velocity=velocity_state.get(linear_weight_key),
                             linear_bias_velocity=velocity_state.get(linear_bias_key),
@@ -793,6 +794,7 @@ def run_training_loop(
                             params[linear_bias_key],
                             lr=float(optimizer_view.lr),
                             momentum=float(ctx.momentum),
+                            grad_clip_value=float(ctx.grad_clip_global),
                             conv1_weight_velocity=velocity_state.get(conv1_weight_key),
                             conv2_weight_velocity=velocity_state.get(conv2_weight_key),
                             linear_weight_velocity=velocity_state.get(linear_weight_key),
