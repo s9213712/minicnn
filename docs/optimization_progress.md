@@ -120,5 +120,6 @@ The next phase is narrower and more technical:
 - stronger performance-oriented reporting without overstating production readiness
 - initial torch parity coverage for selected sensitive ops
   - current parity baseline: `Add`, `Concat`, `Linear`, `Conv2d`, `BatchNorm2d`, `LayerNorm`, `LayerNorm2d`, `GroupNorm` forward/backward
+  - `BatchNorm2d` train-mode running-stat semantics are now aligned with PyTorch (`running_var` uses unbiased batch variance)
 
 For the formal productionization path, see [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md).

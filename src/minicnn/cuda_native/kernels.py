@@ -249,8 +249,13 @@ def _batchnorm2d_forward_array(
     if mode == 'train':
         mean = x.mean(axis=(0, 2, 3)).astype(np.float32)
         var = x.var(axis=(0, 2, 3)).astype(np.float32)
+        sample_count = int(x.shape[0] * x.shape[2] * x.shape[3])
+        if sample_count > 1:
+            running_batch_var = (var * (sample_count / float(sample_count - 1))).astype(np.float32)
+        else:
+            running_batch_var = var.astype(np.float32)
         next_mean = ((1.0 - momentum) * running_mean + momentum * mean).astype(np.float32)
-        next_var = ((1.0 - momentum) * running_var + momentum * var).astype(np.float32)
+        next_var = ((1.0 - momentum) * running_var + momentum * running_batch_var).astype(np.float32)
     else:
         mean = running_mean.astype(np.float32)
         var = running_var.astype(np.float32)

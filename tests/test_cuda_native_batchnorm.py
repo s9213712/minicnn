@@ -65,13 +65,14 @@ def test_batchnorm2d_train_mode_uses_batch_stats_and_updates_running_stats():
     out = ForwardExecutor().run_inference(graph, x, params=params, mode='train')
     batch_mean = np.array([x.mean()], dtype=np.float32)
     batch_var = np.array([x.var()], dtype=np.float32)
+    running_batch_var = np.array([x.var(ddof=1)], dtype=np.float32)
     expected = (x - batch_mean.reshape(1, 1, 1, 1)) / np.sqrt(batch_var.reshape(1, 1, 1, 1) + 1e-5)
 
     np.testing.assert_allclose(out, expected.astype(np.float32), atol=1e-5)
     np.testing.assert_allclose(params['_running_mean_batchnorm2d_0'], 0.25 * batch_mean, atol=1e-6)
     np.testing.assert_allclose(
         params['_running_var_batchnorm2d_0'],
-        (1.0 - 0.25) * np.array([1.0], dtype=np.float32) + 0.25 * batch_var,
+        (1.0 - 0.25) * np.array([1.0], dtype=np.float32) + 0.25 * running_batch_var,
         atol=1e-6,
     )
 

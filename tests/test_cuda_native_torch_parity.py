@@ -375,6 +375,95 @@ def test_batchnorm2d_eval_backward_matches_torch():
     assert np.allclose(native_param_grads['_b_batchnorm2d_0'], tb.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
 
 
+def test_batchnorm2d_train_forward_matches_torch_and_updates_running_stats():
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'BatchNorm2d', 'eps': 1e-5, 'momentum': 0.25}],
+        (2, 3, 4, 4),
+    )
+    x = np.random.default_rng(54).standard_normal((2, 3, 4, 4)).astype(np.float32)
+    gamma = np.random.default_rng(55).standard_normal((3,)).astype(np.float32)
+    beta = np.random.default_rng(56).standard_normal((3,)).astype(np.float32)
+    running_mean = np.random.default_rng(57).standard_normal((3,)).astype(np.float32)
+    running_var = np.abs(np.random.default_rng(58).standard_normal((3,)).astype(np.float32)) + 0.5
+    params = {
+        '_w_batchnorm2d_0': gamma,
+        '_b_batchnorm2d_0': beta,
+        '_running_mean_batchnorm2d_0': running_mean.copy(),
+        '_running_var_batchnorm2d_0': running_var.copy(),
+    }
+
+    native = ForwardExecutor().run_inference(graph, x, params=params, mode='train')
+
+    bn = torch.nn.BatchNorm2d(
+        num_features=3,
+        eps=1e-5,
+        momentum=0.25,
+        affine=True,
+        track_running_stats=True,
+    )
+    bn.train()
+    with torch.no_grad():
+        bn.weight.copy_(torch.from_numpy(gamma))
+        bn.bias.copy_(torch.from_numpy(beta))
+        bn.running_mean.copy_(torch.from_numpy(running_mean))
+        bn.running_var.copy_(torch.from_numpy(running_var))
+    expected = bn(torch.from_numpy(x)).detach().cpu().numpy()
+
+    assert np.allclose(native, expected, atol=1e-5, rtol=1e-5)
+    assert np.allclose(params['_running_mean_batchnorm2d_0'], bn.running_mean.detach().cpu().numpy(), atol=1e-6)
+    assert np.allclose(params['_running_var_batchnorm2d_0'], bn.running_var.detach().cpu().numpy(), atol=1e-6)
+
+
+def test_batchnorm2d_train_backward_matches_torch():
+    from minicnn.cuda_native.backward import BackwardExecutor
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'BatchNorm2d', 'eps': 1e-5, 'momentum': 0.25}],
+        (2, 3, 4, 4),
+    )
+    x = np.random.default_rng(59).standard_normal((2, 3, 4, 4)).astype(np.float32)
+    grad_out = np.random.default_rng(60).standard_normal((2, 3, 4, 4)).astype(np.float32)
+    gamma = np.random.default_rng(61).standard_normal((3,)).astype(np.float32)
+    beta = np.random.default_rng(62).standard_normal((3,)).astype(np.float32)
+    running_mean = np.random.default_rng(63).standard_normal((3,)).astype(np.float32)
+    running_var = np.abs(np.random.default_rng(64).standard_normal((3,)).astype(np.float32)) + 0.5
+    params = {
+        '_w_batchnorm2d_0': gamma,
+        '_b_batchnorm2d_0': beta,
+        '_running_mean_batchnorm2d_0': running_mean.copy(),
+        '_running_var_batchnorm2d_0': running_var.copy(),
+    }
+
+    _ctx, cache = ForwardExecutor().run_with_cache(graph, {'input': x}, params=params, mode='train')
+    native_grad_input, native_param_grads = BackwardExecutor().run(graph, grad_out, cache)
+
+    bn = torch.nn.BatchNorm2d(
+        num_features=3,
+        eps=1e-5,
+        momentum=0.25,
+        affine=True,
+        track_running_stats=True,
+    )
+    bn.train()
+    with torch.no_grad():
+        bn.weight.copy_(torch.from_numpy(gamma))
+        bn.bias.copy_(torch.from_numpy(beta))
+        bn.running_mean.copy_(torch.from_numpy(running_mean))
+        bn.running_var.copy_(torch.from_numpy(running_var))
+    tx = torch.tensor(x, dtype=torch.float32, requires_grad=True)
+    tout = bn(tx)
+    tout.backward(torch.tensor(grad_out, dtype=torch.float32))
+
+    assert np.allclose(native_grad_input, tx.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads['_w_batchnorm2d_0'], bn.weight.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads['_b_batchnorm2d_0'], bn.bias.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+
+
 def test_layernorm2d_forward_matches_torch():
     import torch.nn.functional as F
 
