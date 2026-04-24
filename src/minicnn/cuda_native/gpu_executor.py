@@ -16,6 +16,7 @@ from minicnn.cuda_native.gpu_bridge import (
     build_gpu_bridge_trace,
 )
 from minicnn.cuda_native.gpu_bridge_adapter import (
+    GpuBackendStubAdapter,
     GpuFixedBridgeAdapter,
     GpuFlatBridgeAdapter,
     GpuKernelBridgeAdapter,
@@ -84,7 +85,7 @@ class GpuStubExecutor:
         )
         self.bridge_adapter = bridge_adapter if bridge_adapter is not None else GpuStubBridgeAdapter()
         self.flat_bridge_adapter = flat_bridge_adapter if flat_bridge_adapter is not None else GpuFlatBridgeAdapter()
-        self.fixed_bridge_adapter = fixed_bridge_adapter if fixed_bridge_adapter is not None else GpuFixedBridgeAdapter()
+        self.fixed_bridge_adapter = fixed_bridge_adapter if fixed_bridge_adapter is not None else GpuBackendStubAdapter()
         self.device_runtime = device_runtime if device_runtime is not None else DeviceRuntime(
             execution_mode='gpu_native',
             tensor_execution_device='gpu',

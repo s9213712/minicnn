@@ -56,6 +56,9 @@ def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     assert summary['fixed_bridge_trace'][1]['weight_binding'] == '_w_linear_1'
     assert summary['fixed_bridge_trace'][1]['matmul_k'] == 64
     assert summary['fixed_bridge_results'][1]['accepted'] is True
+    assert summary['fixed_bridge_results'][1]['dispatch_mode'] == 'gpu_backend_stub'
+    assert summary['fixed_bridge_results'][1]['abi_version'] == 1
+    assert summary['fixed_bridge_results'][1]['kernel_symbol'] == 'minicnn_gpu_linear_f32'
     assert summary['fixed_bridge_results'][1]['matmul_signature'] == [1, 64, 8]
     assert tuple(summary['output_shape']) == (1, 2)
     assert runtime_summary['tensor_execution_device'] == 'gpu'
@@ -106,3 +109,33 @@ def test_gpu_stub_executor_rejects_graph_outside_bootstrap_subset():
 
     assert 'unsupported_ops' in message
     assert 'BatchNorm2d' in message
+
+
+def test_gpu_stub_executor_backend_stub_routes_conv2d():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Conv2d', 'out_channels': 4, 'kernel_size': 3, 'padding': 1},
+                {'type': 'ReLU'},
+                {'type': 'MaxPool2d', 'kernel_size': 2, 'stride': 2},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 3, 8, 8),
+    )
+    params = _init_params(graph, seed=11)
+    runtime = DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu')
+    runtime.reserve_from_planner(total_bytes=8192, num_buffers=8)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    result = executor.run(graph, np.ones((1, 3, 8, 8), dtype=np.float32), params=params)
+    summary = result.summary()
+
+    conv_result = summary['fixed_bridge_results'][0]
+    assert conv_result['dispatch_mode'] == 'gpu_backend_stub'
+    assert conv_result['kernel_symbol'] == 'minicnn_gpu_conv2d_nchw_f32'
+    assert conv_result['input_shape'] == [1, 3, 8, 8]
+    assert conv_result['output_shape'] == [1, 4, 8, 8]
+    assert conv_result['stride'] == [1, 1]
+    assert conv_result['padding'] == [1, 1]

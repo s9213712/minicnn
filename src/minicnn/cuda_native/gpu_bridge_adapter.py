@@ -55,3 +55,59 @@ class GpuFixedBridgeAdapter:
             'matmul_signature': [request.matmul_m, request.matmul_k, request.matmul_n],
             'accepted': True,
         }
+
+
+@dataclass
+class GpuBackendStubAdapter:
+    submitted_requests: list[GpuFixedKernelCall] = field(default_factory=list)
+    abi_version: int = 1
+
+    def submit_fixed(self, request: GpuFixedKernelCall) -> dict[str, Any]:
+        self.submitted_requests.append(request)
+        if request.launch_family == 'gemm_affine':
+            return self._submit_linear(request)
+        if request.launch_family == 'conv2d_nchw':
+            return self._submit_conv2d(request)
+        return self._submit_generic(request)
+
+    def _base_result(self, request: GpuFixedKernelCall, *, kernel_symbol: str) -> dict[str, Any]:
+        return {
+            'request_id': request.request_id,
+            'dispatch_mode': 'gpu_backend_stub',
+            'abi_version': self.abi_version,
+            'launch_family': request.launch_family,
+            'kernel_symbol': kernel_symbol,
+            'accepted': True,
+        }
+
+    def _submit_linear(self, request: GpuFixedKernelCall) -> dict[str, Any]:
+        result = self._base_result(request, kernel_symbol='minicnn_gpu_linear_f32')
+        result.update({
+            'matmul_signature': [request.matmul_m, request.matmul_k, request.matmul_n],
+            'input_binding': request.input_binding,
+            'output_binding': request.output_binding,
+            'weight_binding': request.weight_binding,
+            'bias_binding': request.bias_binding,
+        })
+        return result
+
+    def _submit_conv2d(self, request: GpuFixedKernelCall) -> dict[str, Any]:
+        result = self._base_result(request, kernel_symbol='minicnn_gpu_conv2d_nchw_f32')
+        result.update({
+            'input_binding': request.input_binding,
+            'output_binding': request.output_binding,
+            'weight_binding': request.weight_binding,
+            'bias_binding': request.bias_binding,
+            'input_shape': list(request.input_shape),
+            'output_shape': list(request.output_shape),
+            'stride': [request.stride_h, request.stride_w],
+            'padding': [request.padding_h, request.padding_w],
+            'groups': request.groups,
+        })
+        return result
+
+    def _submit_generic(self, request: GpuFixedKernelCall) -> dict[str, Any]:
+        return self._base_result(
+            request,
+            kernel_symbol=f"minicnn_gpu_{request.launch_family}_f32",
+        )
