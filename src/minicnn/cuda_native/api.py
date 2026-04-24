@@ -186,6 +186,7 @@ def _validate_gpu_native_training_subset(
         ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
         ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
     ):
         errors.append(
             'cuda_native gpu_native train-native currently supports only the narrow '
@@ -193,7 +194,8 @@ def _validate_gpu_native_training_subset(
             '[Linear, ReLU, Linear], [Flatten, Linear, ReLU, Linear], '
             '[MaxPool2d, Flatten, Linear], [Conv2d, Flatten, Linear], '
             '[Conv2d, ReLU, Flatten, Linear], [Conv2d, MaxPool2d, Flatten, Linear], '
-            'or [Conv2d, ReLU, MaxPool2d, Flatten, Linear], '
+            '[Conv2d, ReLU, MaxPool2d, Flatten, Linear], or '
+            '[Conv2d, ReLU, Conv2d, ReLU, MaxPool2d, Flatten, Linear], '
             f'got {ops}.'
         )
     if ops in (
@@ -201,8 +203,11 @@ def _validate_gpu_native_training_subset(
         ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
         ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
     ):
-        conv_attrs = dict(getattr(nodes[0], 'attrs', {}) or {})
+        conv_attr_nodes = [nodes[0]]
+        if ops == ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear']:
+            conv_attr_nodes.append(nodes[2])
 
         def _pair(value: Any, default: int) -> tuple[int, int]:
             if value is None:
@@ -213,16 +218,18 @@ def _validate_gpu_native_training_subset(
                 return (int(value[0]), int(value[1]))
             return (int(value), int(value))
 
-        if bool(conv_attrs.get('bias', False)):
-            errors.append('cuda_native gpu_native Conv2d train-native subset currently requires bias=false.')
-        if int(conv_attrs.get('groups', 1)) != 1:
-            errors.append('cuda_native gpu_native Conv2d train-native subset currently requires groups=1.')
-        if _pair(conv_attrs.get('stride', 1), 1) != (1, 1):
-            errors.append('cuda_native gpu_native Conv2d train-native subset currently requires stride=1.')
-        if _pair(conv_attrs.get('padding', 0), 0) != (0, 0):
-            errors.append('cuda_native gpu_native Conv2d train-native subset currently requires padding=0.')
-        if _pair(conv_attrs.get('dilation', 1), 1) != (1, 1):
-            errors.append('cuda_native gpu_native Conv2d train-native subset currently requires dilation=1.')
+        for conv_node in conv_attr_nodes:
+            conv_attrs = dict(getattr(conv_node, 'attrs', {}) or {})
+            if bool(conv_attrs.get('bias', False)):
+                errors.append('cuda_native gpu_native Conv2d train-native subset currently requires bias=false.')
+            if int(conv_attrs.get('groups', 1)) != 1:
+                errors.append('cuda_native gpu_native Conv2d train-native subset currently requires groups=1.')
+            if _pair(conv_attrs.get('stride', 1), 1) != (1, 1):
+                errors.append('cuda_native gpu_native Conv2d train-native subset currently requires stride=1.')
+            if _pair(conv_attrs.get('padding', 0), 0) != (0, 0):
+                errors.append('cuda_native gpu_native Conv2d train-native subset currently requires padding=0.')
+            if _pair(conv_attrs.get('dilation', 1), 1) != (1, 1):
+                errors.append('cuda_native gpu_native Conv2d train-native subset currently requires dilation=1.')
     if str(loss_cfg.get('type', 'CrossEntropyLoss')) != 'CrossEntropyLoss':
         errors.append('cuda_native gpu_native train-native currently supports only CrossEntropyLoss.')
     if str(optim_cfg.get('type', 'SGD')).lower() != 'sgd':

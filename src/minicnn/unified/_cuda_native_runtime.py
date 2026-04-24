@@ -18,6 +18,7 @@ from minicnn.cuda_native.gpu_training import (
     native_gpu_conv_linear_training_step,
     native_gpu_linear_training_step,
     native_gpu_pool_linear_training_step,
+    native_gpu_two_conv_relu_pool_linear_training_step,
     native_gpu_two_linear_relu_training_step,
 )
 from minicnn.cuda_native.graph import NativeGraph
@@ -431,6 +432,7 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
         ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
     ):
         conv_attrs = dict(getattr(nodes[0], 'attrs', {}) or {})
 
@@ -453,6 +455,23 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
             raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires padding=0.')
         if _pair(conv_attrs.get('dilation', 1), 1) != (1, 1):
             raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires dilation=1.')
+        if ops == ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear']:
+            conv2_attrs = dict(getattr(nodes[2], 'attrs', {}) or {})
+            if bool(conv2_attrs.get('bias', False)):
+                raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires bias=false.')
+            if int(conv2_attrs.get('groups', 1)) != 1:
+                raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires groups=1.')
+            if _pair(conv2_attrs.get('stride', 1), 1) != (1, 1):
+                raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires stride=1.')
+            if _pair(conv2_attrs.get('padding', 0), 0) != (0, 0):
+                raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires padding=0.')
+            if _pair(conv2_attrs.get('dilation', 1), 1) != (1, 1):
+                raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires dilation=1.')
+            return {
+                'kind': 'two_conv_relu_pool_linear',
+                'conv_nodes': [nodes[0], nodes[2]],
+                'linear_nodes': [nodes[-1]],
+            }
         has_relu = 'ReLU' in ops
         has_pool = 'MaxPool2d' in ops
         linear_node = nodes[-1]
@@ -469,7 +488,8 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         'ops=[Flatten, Linear, ReLU, Linear], ops=[MaxPool2d, Flatten, Linear], '
         'ops=[Conv2d, Flatten, Linear], ops=[Conv2d, ReLU, Flatten, Linear], '
         'ops=[Conv2d, MaxPool2d, Flatten, Linear], or '
-        'ops=[Conv2d, ReLU, MaxPool2d, Flatten, Linear], '
+        'ops=[Conv2d, ReLU, MaxPool2d, Flatten, Linear], or '
+        'ops=[Conv2d, ReLU, Conv2d, ReLU, MaxPool2d, Flatten, Linear], '
         f'got {ops}.'
     )
 
@@ -660,7 +680,7 @@ def run_training_loop(
                         params[bias_key] = step.updated_bias
                         velocity_state[weight_key] = step.updated_weight_velocity
                         velocity_state[bias_key] = step.updated_bias_velocity
-                    else:
+                    elif gpu_training_plan['kind'] == 'conv_linear':
                         conv_node = gpu_training_plan['conv_node']
                         gpu_linear_node = gpu_training_plan['linear_nodes'][0]
                         conv_weight_key = f'_w_{conv_node.name}'
@@ -686,6 +706,37 @@ def run_training_loop(
                         params[linear_weight_key] = step.updated_linear_weight
                         params[linear_bias_key] = step.updated_linear_bias
                         velocity_state[conv_weight_key] = step.updated_conv_weight_velocity
+                        velocity_state[linear_weight_key] = step.updated_linear_weight_velocity
+                        velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
+                    else:
+                        conv1_node, conv2_node = gpu_training_plan['conv_nodes']
+                        gpu_linear_node = gpu_training_plan['linear_nodes'][0]
+                        conv1_weight_key = f'_w_{conv1_node.name}'
+                        conv2_weight_key = f'_w_{conv2_node.name}'
+                        linear_weight_key = f'_w_{gpu_linear_node.name}'
+                        linear_bias_key = f'_b_{gpu_linear_node.name}'
+                        step = native_gpu_two_conv_relu_pool_linear_training_step(
+                            xb,
+                            yb,
+                            params[conv1_weight_key],
+                            params[conv2_weight_key],
+                            params[linear_weight_key],
+                            params[linear_bias_key],
+                            lr=float(optimizer_view.lr),
+                            momentum=float(ctx.momentum),
+                            conv1_weight_velocity=velocity_state.get(conv1_weight_key),
+                            conv2_weight_velocity=velocity_state.get(conv2_weight_key),
+                            linear_weight_velocity=velocity_state.get(linear_weight_key),
+                            linear_bias_velocity=velocity_state.get(linear_bias_key),
+                            bound_lib=ctx.device_runtime.bound_lib,
+                        )
+                        params = dict(params)
+                        params[conv1_weight_key] = step.updated_conv1_weight
+                        params[conv2_weight_key] = step.updated_conv2_weight
+                        params[linear_weight_key] = step.updated_linear_weight
+                        params[linear_bias_key] = step.updated_linear_bias
+                        velocity_state[conv1_weight_key] = step.updated_conv1_weight_velocity
+                        velocity_state[conv2_weight_key] = step.updated_conv2_weight_velocity
                         velocity_state[linear_weight_key] = step.updated_linear_weight_velocity
                         velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
                     loss_val = float(step.loss_mean)

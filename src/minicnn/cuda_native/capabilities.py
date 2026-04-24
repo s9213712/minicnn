@@ -14,7 +14,7 @@ CAPABILITY_SCHEMA_VERSION = 1
 GPU_NATIVE_BOOTSTRAP_OPS = [spec.op_name for spec in list_gpu_kernel_specs()]
 GPU_NATIVE_BOOTSTRAP_BLOCKERS = [
     'gpu_graph_backward_generalization_pending',
-    'gpu_repeated_conv_composite_training_pending',
+    'gpu_composite_block_training_pending',
     'gpu_real_hardware_parity_pending',
 ]
 GPU_NATIVE_TRAINING_SUBSETS = [
@@ -70,6 +70,12 @@ GPU_NATIVE_TRAINING_SUBSETS = [
         'name': 'conv_relu_pool_linear',
         'ops': ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
         'helper': 'native_gpu_conv_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
+        'name': 'two_conv_relu_pool_linear',
+        'ops': ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        'helper': 'native_gpu_two_conv_relu_pool_linear_training_step',
         'parity': 'hermetic_reference_math',
     },
 ]
@@ -244,7 +250,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'ResidualBlock, ConvNeXtBlock, Dropout, and DropPath run through composite/reference numpy kernels; support tier is published separately.',
         'Explicit ordered DAG wiring is supported through named tensor outputs plus Add/Concat multi-input nodes.',
         'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and beta AMP with loss scaling / overflow backoff.',
-        'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, and Conv2d(valid, bias=false)+ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
+        'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, and two-Conv ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
         'validate-cuda-native-config enforces the current train-native support boundary.',
     ],
 }

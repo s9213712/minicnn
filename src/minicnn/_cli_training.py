@@ -345,7 +345,8 @@ def handle_train_native(args) -> int:
             'beta-grade backend; train-native supports reference_numpy broadly and gpu_native '
             'for the narrow Linear, Linear+ReLU, MaxPool+Linear, '
             'Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, '
-            'Conv2d(valid, bias=false)+MaxPool+Linear, and Conv2d(valid, bias=false)+ReLU+MaxPool+Linear '
+            'Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, '
+            'and two-Conv ReLU+MaxPool+Linear '
             '/ CrossEntropyLoss / SGD training subsets'
         ),
     })

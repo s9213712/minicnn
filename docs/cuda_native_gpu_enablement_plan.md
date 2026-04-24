@@ -141,10 +141,10 @@ Current status:
   - `Flatten` uses device-pointer aliasing
   - `Linear`, `ReLU`, `LeakyReLU`, `Add`, `Concat`, `MaxPool2d`, and a constrained `Conv2d` path lower to native CUDA symbols when a bound library is attached
   - `Linear + SoftmaxCE + SGD` now has a narrow native GPU training-step helper that exercises forward, loss gradient, dense backward, and optimizer update through the C ABI
-  - `train-native engine.execution_mode=gpu_native` now accepts the narrow `Flatten -> Linear`, `Flatten -> Linear -> ReLU -> Linear`, `MaxPool2d -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`, and `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` / `CrossEntropyLoss` / `SGD` subset
+  - `train-native engine.execution_mode=gpu_native` now accepts the narrow `Flatten -> Linear`, `Flatten -> Linear -> ReLU -> Linear`, `MaxPool2d -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`, and `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` / `CrossEntropyLoss` / `SGD` subset
   - CUDA runtime preflight now fails before allocation when the installed driver/runtime pair is incompatible, instead of aborting inside `cudaMalloc`
   - hermetic GPU training parity matrix now exists in `cuda_native_gpu_parity_matrix.md`
-  - remaining blockers are wider repeated-Conv/composite GPU training composition and real-hardware parity after CUDA driver/runtime compatibility is restored
+  - remaining blockers are composite-block GPU training composition and real-hardware parity after CUDA driver/runtime compatibility is restored
 
 Goal:
 

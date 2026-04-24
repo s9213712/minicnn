@@ -376,7 +376,7 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['execution_mode_readiness']['gpu_native']['status'] == 'bootstrap_training_partial'
     assert 'Conv2d' in payload['execution_mode_readiness']['gpu_native']['bootstrap_subset_ops']
     assert payload['execution_mode_readiness']['gpu_native']['kernel_readiness']['Conv2d'] == 'partial_native'
-    assert 'gpu_repeated_conv_composite_training_pending' in payload['execution_mode_readiness']['gpu_native']['remaining_blockers']
+    assert 'gpu_composite_block_training_pending' in payload['execution_mode_readiness']['gpu_native']['remaining_blockers']
     assert any(entry['op_name'] == 'Conv2d' and entry['forward_status'] == 'partial_native' for entry in payload['gpu_kernel_registry_surface'])
     assert any(entry['op_name'] == 'Flatten' and entry['backward_status'] == 'not_needed' for entry in payload['gpu_kernel_registry_surface'])
     assert payload['graduation_gates']['core_beta_subset']['ready'] is True
