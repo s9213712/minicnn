@@ -353,6 +353,7 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     ):
         assert op in payload['supported_ops']
     assert 'Conv2d' in payload['support_tiers']['stable']['ops']
+    assert 'Flatten' in payload['support_tiers']['stable']['ops']
     assert 'AdamW' in payload['support_tiers']['stable']['optimizers']
     assert 'BCEWithLogitsLoss' in payload['support_tiers']['beta']['losses']
     assert 'DropPath' in payload['support_tiers']['experimental']['ops']
@@ -707,7 +708,7 @@ def test_cli_validate_cuda_native_config_rejects_invalid_optimizer_with_stable_c
     assert payload['status'] == 'error'
     assert payload['backend'] == 'cuda_native'
     assert payload['ok'] is False
-    assert payload['support_tier_assessment']['ops_by_tier']['stable'] == ['Linear']
+    assert payload['support_tier_assessment']['ops_by_tier']['stable'] == ['Flatten', 'Linear']
     assert payload['support_tier_assessment']['losses_by_tier']['stable'] == ['CrossEntropyLoss']
     assert payload['support_tier_assessment']['optimizers_by_tier']['stable'] == []
 

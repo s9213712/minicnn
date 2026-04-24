@@ -53,7 +53,7 @@ def test_cuda_native_artifact_schema_is_explicit(tmp_path):
     assert summary['schema_name'] == 'minicnn.cuda_native.training.summary'
     assert summary['schema_version'] == 1
     assert summary['artifact_kind'] == 'training_run_summary'
-    assert summary['support_tier_assessment']['highest_tier'] == 'beta'
+    assert summary['support_tier_assessment']['highest_tier'] == 'stable'
     assert summary['checkpoint_contract']['format'] == 'npz'
     assert summary['checkpoint_contract']['version'] == 1
     assert summary['checkpoint_contract']['best_model_path_key'] == 'best_model_path'
@@ -61,4 +61,4 @@ def test_cuda_native_artifact_schema_is_explicit(tmp_path):
     assert row['schema_name'] == 'minicnn.cuda_native.training.metrics.epoch'
     assert row['schema_version'] == 1
     assert row['artifact_kind'] == 'training_metrics_epoch'
-    assert row['support_tier_assessment']['highest_tier'] == 'beta'
+    assert row['support_tier_assessment']['highest_tier'] == 'stable'

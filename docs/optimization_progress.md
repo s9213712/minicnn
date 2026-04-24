@@ -121,6 +121,7 @@ The next phase is narrower and more technical:
 - initial torch parity coverage for selected sensitive ops
 - machine-readable `support_tiers` / `support_tier_assessment` now expose which configs stay on `stable` surfaces and which touch `beta` / `experimental` areas
   - the same `support_tier_assessment` is now persisted into `summary.json` and `metrics.jsonl`
+  - trivial `Flatten -> Linear` native training paths now stay on the `stable` tier instead of being artificially forced into `beta`
   - current parity baseline: `Add`, `Concat`, `Linear`, `Conv2d` (including grouped/depthwise), `BatchNorm2d`, `LayerNorm`, `LayerNorm2d`, `GroupNorm` forward/backward
   - `BatchNorm2d` train-mode running-stat semantics are now aligned with PyTorch (`running_var` uses unbiased batch variance)
   - composite forward parity now covers `ResidualBlock` and `ConvNeXtBlock`
