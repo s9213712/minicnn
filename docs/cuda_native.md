@@ -260,6 +260,12 @@ not compatible. Update the driver, rebuild against a compatible CUDA toolkit, or
 select a compatible `MINICNN_CUDA_VARIANT` before treating the machine as a valid
 GPU smoke environment.
 
+Repeated-Conv real-data GPU smoke entrypoint:
+
+```bash
+PYTHONPATH=src python3 examples/cuda_native_gpu_two_conv_training_cifar10_demo.py --batch-size 2
+```
+
 Validate a config:
 
 ```bash

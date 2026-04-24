@@ -34,3 +34,14 @@ CUDA driver version is insufficient for CUDA runtime version
 Until that environment issue is fixed, `gpu_native` can be regression-tested
 through hermetic fake-library parity, but not certified as real-hardware parity
 complete.
+
+## Real-data smoke entrypoint
+
+Once CUDA driver/runtime compatibility is restored, run:
+
+```bash
+PYTHONPATH=src python3 examples/cuda_native_gpu_two_conv_training_cifar10_demo.py --batch-size 2
+```
+
+The script runs the repeated-Conv `gpu_native` training helper on a CIFAR-10
+batch and compares updated weights against a NumPy reference step.
