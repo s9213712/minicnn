@@ -36,6 +36,13 @@ _BLOCK_PRESETS: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
+_LAYER_TYPE_ALIASES = {
+    'depthwise_conv2d': 'DepthwiseConv2d',
+    'pointwise_conv2d': 'PointwiseConv2d',
+    'layernorm2d': 'LayerNorm2d',
+    'convnext_block': 'ConvNeXtBlock',
+}
+
 
 def _expand_presets(layers_cfg: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Replace any preset layer entry with its constituent layer configs."""
@@ -44,7 +51,6 @@ def _expand_presets(layers_cfg: list[dict[str, Any]]) -> list[dict[str, Any]]:
         layer_type = raw.get('type', '')
         if layer_type in _BLOCK_PRESETS:
             conv_keys = {'out_channels', 'kernel_size', 'stride', 'padding', 'dilation', 'bias', 'groups'}
-            conv_cfg = {k: v for k, v in raw.items() if k in conv_keys or k == 'type'}
             for template in _BLOCK_PRESETS[layer_type]:
                 entry = deepcopy(template)
                 if entry['type'] == 'Conv2d':
@@ -109,10 +115,17 @@ class ShapeTracer:
 def _ensure_tuple2(value: Any) -> tuple[int, int]:
     if isinstance(value, int):
         return (value, value)
-    return tuple(value)
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise ValueError(f'Expected a 2D tuple/list value, got {value!r}')
+    return (int(value[0]), int(value[1]))
+
+
+def canonical_layer_type(layer_type: str) -> str:
+    return _LAYER_TYPE_ALIASES.get(str(layer_type), str(layer_type))
 
 
 def _infer_output_shape(layer_type: str, kwargs: dict[str, Any], tracer: ShapeTracer) -> tuple[int, ...]:
+    layer_type = canonical_layer_type(layer_type)
     shape = tracer.shape
     if layer_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d'}:
         c, h, w = shape
@@ -177,7 +190,7 @@ def _resolve_factory(category: str, type_name: str):
 
 def _materialize_layer(layer_cfg: dict[str, Any], tracer: ShapeTracer):
     cfg = deepcopy(layer_cfg)
-    layer_type = cfg.pop('type')
+    layer_type = canonical_layer_type(cfg.pop('type'))
     if layer_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d'} and 'in_channels' not in cfg:
         cfg['in_channels'] = tracer.channels
     if layer_type == 'BatchNorm2d' and 'num_features' not in cfg:

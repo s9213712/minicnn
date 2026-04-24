@@ -254,6 +254,12 @@ minicnn train-flex --config templates/cifar10/convnext_like.yaml
 DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d(expand) -> GELU -> PointwiseConv2d(shrink)
 ```
 
+這條 explicit path 是「顯式 primitive stack」，目前刻意不包含 residual add
+與 layer scale。若你要更接近 ConvNeXt block semantics，請改用：
+
+- `templates/cifar10/convnext_like.yaml`
+- 或直接使用 `ConvNeXtBlock`
+
 **執行**
 
 ```bash

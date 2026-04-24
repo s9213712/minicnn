@@ -9,8 +9,11 @@ from minicnn.user_errors import format_user_error
 def _convnext_tiny_spec(model_cfg: dict[str, Any]) -> dict[str, Any]:
     stem_channels = int(model_cfg.get('stem_channels', 64))
     stage2_channels = int(model_cfg.get('stage2_channels', 128))
+    num_classes = int(model_cfg.get('num_classes', 10))
     if stem_channels <= 0 or stage2_channels <= 0:
         raise ValueError('convnext_tiny requires positive channel sizes')
+    if num_classes <= 0:
+        raise ValueError('convnext_tiny requires a positive num_classes value')
     return {
         'type': 'convnext_tiny',
         'layers': [
@@ -33,7 +36,7 @@ def _convnext_tiny_spec(model_cfg: dict[str, Any]) -> dict[str, Any]:
             {'type': 'ConvNeXtBlock'},
             {'type': 'GlobalAvgPool2d'},
             {'type': 'Flatten'},
-            {'type': 'Linear', 'out_features': 10},
+            {'type': 'Linear', 'out_features': num_classes},
         ],
     }
 

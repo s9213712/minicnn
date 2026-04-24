@@ -13,8 +13,10 @@ from minicnn._cli_config import (
     _load_flex_config_or_exit,
     _load_unified_config_or_exit,
 )
-from minicnn._cli_errors import _ensure_torch_device_supported_or_exit, _run_user_operation_or_exit
+from minicnn.backend_capability import validate_backend_model_capabilities
+from minicnn._cli_errors import _ensure_torch_device_supported_or_exit, _exit_user_error, _run_user_operation_or_exit
 from minicnn._cli_output import _print_json
+from minicnn.config.parsing import parse_bool
 from minicnn.user_errors import format_user_error
 
 
@@ -222,6 +224,24 @@ def handle_train_flex(args) -> int:
     from minicnn.flex.trainer import train_from_config
 
     cfg = _load_flex_config_or_exit(args.config, [*common_train_overrides(args), *args.overrides])
+    engine_cfg = cfg.get('engine', {})
+    backend = str(engine_cfg.get('backend', 'torch') or 'torch')
+    if backend != 'torch':
+        _exit_user_error(format_user_error(
+            f"train-flex cannot run engine.backend={backend!r}.",
+            cause=f'train-flex is the torch/flex execution path, but the config requested {backend}.',
+            fix='Use engine.backend=torch for train-flex, or run validate-config/train-native for cuda_native.',
+            example='minicnn train-flex --config templates/cifar10/convnext_like.yaml engine.backend=torch',
+        ))
+    if parse_bool(engine_cfg.get('strict_backend_validation', False), label='engine.strict_backend_validation'):
+        backend_errors = validate_backend_model_capabilities(cfg.get('model', {}), 'torch')
+        if backend_errors:
+            _exit_user_error(format_user_error(
+                'train-flex backend validation failed.',
+                cause='; '.join(backend_errors),
+                fix='Adjust model.layers so they stay within the torch/flex supported surface, or disable strict backend validation.',
+                example='minicnn validate-config --config templates/cifar10/convnext_like.yaml engine.backend=torch',
+            ))
     _ensure_torch_device_supported_or_exit(cfg, 'train-flex')
     with _training_output_scope(args):
         run_dir = _run_user_operation_or_exit(train_from_config, cfg)

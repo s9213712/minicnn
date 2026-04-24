@@ -4,7 +4,7 @@ from pathlib import Path
 
 from minicnn.config import settings
 from minicnn.core.cuda_backend import check_cuda_ready, resolve_library_path
-from minicnn.data.cifar10 import cifar10_ready
+from minicnn.data.cifar10 import cifar10_ready, missing_cifar10_files
 from minicnn.flex.registry import describe_registries
 from minicnn.paths import CPP_ROOT, DATA_ROOT, PROJECT_ROOT
 from minicnn.unified.cuda_legacy import CUDA_LEGACY_SUPPORTED
@@ -81,6 +81,8 @@ def find_native_artifacts(root: Path) -> list[str]:
 
 def healthcheck() -> dict[str, object]:
     native_artifacts = find_native_artifacts(CPP_ROOT) if CPP_ROOT.exists() else []
+    cifar_missing = missing_cifar10_files(DATA_ROOT)
+    cifar_ready = cifar10_ready(DATA_ROOT)
     checks = [
         _check(
             'project_root',
@@ -104,15 +106,20 @@ def healthcheck() -> dict[str, object]:
         ),
         _check(
             'cifar10_data',
-            DATA_ROOT.exists(),
+            cifar_ready,
             required=False,
-            details={'data_root': str(DATA_ROOT)},
+            details={
+                'data_root': str(DATA_ROOT),
+                'missing': cifar_missing,
+            },
             suggested_fix='Run minicnn prepare-data if you need the handcrafted CIFAR-10 path.',
         ),
     ]
     return build_diagnostic_payload(checks=checks, extra={
         'project_root_exists': PROJECT_ROOT.exists(),
         'data_root_exists': DATA_ROOT.exists(),
+        'cifar10_ready': cifar_ready,
+        'cifar10_missing_files': cifar_missing,
         'cpp_root_exists': CPP_ROOT.exists(),
         'native_artifacts': native_artifacts,
         'shared_objects': native_artifacts,

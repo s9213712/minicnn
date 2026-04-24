@@ -27,6 +27,7 @@ contract.
   - smallest built-in cuda_native smoke config for the block-based named-model path
 - `templates/cifar10/convnext_explicit.yaml`
   - explicit primitive path for direct editing
+  - sequential primitive stack only; does not encode residual add / layer scale
 - `templates/cifar10/convnext_explicit_smoke.yaml`
   - smallest built-in smoke training config
 - `templates/cifar10/convnext_explicit_cuda_native_smoke.yaml`

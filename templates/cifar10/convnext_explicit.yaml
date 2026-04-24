@@ -2,14 +2,16 @@
 #
 # Architecture:
 #   Stem Conv64
-#   -> explicit depthwise/LayerNorm2d/pointwise/GELU/pointwise block x2
+#   -> explicit sequential depthwise/LayerNorm2d/pointwise/GELU/pointwise stack x2
 #   -> Downsample Conv128/stride=2
-#   -> explicit depthwise/LayerNorm2d/pointwise/GELU/pointwise block x2
+#   -> explicit sequential depthwise/LayerNorm2d/pointwise/GELU/pointwise stack x2
 #   -> GAP -> FC10
 #
 # Scope:
 # - Uses MiniCNN's explicit ConvNeXt primitives.
 # - LayerNorm is channel-first LayerNorm2d on NCHW tensors.
+# - This explicit primitive path does NOT include residual add or layer scale.
+# - Use ConvNeXtBlock / convnext_like.yaml when you want residual ConvNeXt semantics.
 # - This is an experimental frontend path, not repo-wide ConvNeXt support.
 # - This full CIFAR + AdamW template is for torch/flex.
 # - For the experimental cuda_native primitive path, use
