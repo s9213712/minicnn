@@ -106,6 +106,8 @@ def test_validate_cuda_native_config_rejects_planned_gpu_native_mode(tmp_path, c
     assert payload['execution_readiness_assessment']['bootstrap_subset_complete'] is True
     assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Flatten', 'Linear']
     assert payload['execution_readiness_assessment']['bootstrap_missing_ops'] == []
+    assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['Flatten']['forward_status'] == 'planned'
+    assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['Linear']['backward_status'] == 'planned'
     assert 'gpu_native_execution_not_implemented' in payload['execution_readiness_assessment']['remaining_blockers']
     assert any('planned but not yet implemented' in err for err in payload['errors'])
 

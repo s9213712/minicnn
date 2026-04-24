@@ -225,6 +225,10 @@ For GPU enablement work, the same capability payload now also exposes
 - which ops make up the first `gpu_native` bootstrap subset
 - which blockers still prevent `gpu_native` from being a runnable mode
 
+The same payload also exposes `gpu_kernel_registry_surface`, which is the
+planned bootstrap kernel table for `gpu_native` with per-op forward/backward
+status markers.
+
 Validation payloads and the `train-native` preamble now also include
 `execution_readiness_assessment`, so a concrete config can report:
 

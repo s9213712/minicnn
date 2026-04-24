@@ -8,17 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
+
 CAPABILITY_SCHEMA_VERSION = 1
-GPU_NATIVE_BOOTSTRAP_OPS = [
-    'Add',
-    'Concat',
-    'Conv2d',
-    'Flatten',
-    'LeakyReLU',
-    'Linear',
-    'MaxPool2d',
-    'ReLU',
-]
+GPU_NATIVE_BOOTSTRAP_OPS = [spec.op_name for spec in list_gpu_kernel_specs()]
 GPU_NATIVE_BOOTSTRAP_BLOCKERS = [
     'device_allocator_runtime_incomplete',
     'gpu_kernel_registry_unimplemented',
@@ -216,8 +209,8 @@ CUDA_NATIVE_EXECUTION_MODE_READINESS: dict[str, dict[str, object]] = {
         'tensor_execution_device': 'gpu',
         'bootstrap_subset_ops': GPU_NATIVE_BOOTSTRAP_OPS,
         'kernel_readiness': {
-            op_name: 'planned'
-            for op_name in GPU_NATIVE_BOOTSTRAP_OPS
+            spec.op_name: spec.forward_status
+            for spec in list_gpu_kernel_specs()
         },
         'remaining_blockers': GPU_NATIVE_BOOTSTRAP_BLOCKERS,
     },
@@ -267,6 +260,18 @@ def _kernel_registry_surface() -> list[dict[str, str]]:
     ]
 
 
+def _gpu_kernel_registry_surface() -> list[dict[str, str]]:
+    return [
+        {
+            'op_name': spec.op_name,
+            'category': spec.category,
+            'forward_status': spec.forward_status,
+            'backward_status': spec.backward_status,
+        }
+        for spec in list_gpu_kernel_specs()
+    ]
+
+
 def _normalized_execution_mode_readiness() -> dict[str, dict[str, object]]:
     normalized: dict[str, dict[str, object]] = {}
     for mode, readiness in CUDA_NATIVE_EXECUTION_MODE_READINESS.items():
@@ -303,6 +308,7 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
     support_tiers = _normalized_support_tiers()
     graduation_gates = _normalized_graduation_gates()
     kernel_surface = _kernel_registry_surface()
+    gpu_kernel_surface = _gpu_kernel_registry_surface()
     execution_mode_readiness = _normalized_execution_mode_readiness()
     caps.update({
         'schema_version': CAPABILITY_SCHEMA_VERSION,
@@ -327,5 +333,6 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
         'execution_mode_readiness': execution_mode_readiness,
         'supported_op_categories': sorted({entry['category'] for entry in kernel_surface}),
         'kernel_registry_surface': kernel_surface,
+        'gpu_kernel_registry_surface': gpu_kernel_surface,
     })
     return caps

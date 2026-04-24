@@ -336,6 +336,7 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert 'support_tier_counts' in payload
     assert 'graduation_gates' in payload
     assert 'execution_mode_readiness' in payload
+    assert 'gpu_kernel_registry_surface' in payload
     assert payload['supports_depthwise_conv'] is True
     assert payload['supports_pointwise_conv'] is True
     assert payload['supports_groupnorm'] is True
@@ -376,6 +377,8 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert 'Conv2d' in payload['execution_mode_readiness']['gpu_native']['bootstrap_subset_ops']
     assert payload['execution_mode_readiness']['gpu_native']['kernel_readiness']['Conv2d'] == 'planned'
     assert 'gpu_kernel_registry_unimplemented' in payload['execution_mode_readiness']['gpu_native']['remaining_blockers']
+    assert any(entry['op_name'] == 'Conv2d' and entry['forward_status'] == 'planned' for entry in payload['gpu_kernel_registry_surface'])
+    assert any(entry['op_name'] == 'Flatten' and entry['backward_status'] == 'not_needed' for entry in payload['gpu_kernel_registry_surface'])
     assert payload['graduation_gates']['core_beta_subset']['ready'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['ready'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['amp_tolerance_matrix_present'] is True

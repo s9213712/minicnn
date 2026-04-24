@@ -129,6 +129,7 @@ Current status:
 - capability/validation surfaces now expose machine-readable GPU readiness:
   - `execution_mode_readiness` in `cuda-native-capabilities`
   - `execution_readiness_assessment` in validation and train preambles
+  - `gpu_kernel_registry_surface` in `cuda-native-capabilities`
 
 Goal:
 

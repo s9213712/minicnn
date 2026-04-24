@@ -8,6 +8,7 @@ from minicnn.cuda_native.capabilities import (
     CUDA_NATIVE_SUPPORT_TIERS,
     get_cuda_native_capabilities,
 )
+from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
 from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.validators import validate_cuda_native_model_config
 from minicnn.model_spec import resolve_model_config
@@ -56,6 +57,14 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
         if isinstance(layer, dict) and layer.get('type')
     })
     bootstrap_subset = set(str(item) for item in mode_readiness.get('bootstrap_subset_ops', []))
+    kernel_specs = {
+        spec.op_name: {
+            'forward_status': spec.forward_status,
+            'backward_status': spec.backward_status,
+            'category': spec.category,
+        }
+        for spec in list_gpu_kernel_specs()
+    }
     supported_ops = sorted(op for op in layer_types if op in bootstrap_subset)
     missing_ops = sorted(op for op in layer_types if op not in bootstrap_subset)
     remaining_blockers = [str(item) for item in mode_readiness.get('remaining_blockers', [])]
@@ -70,6 +79,17 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
         'bootstrap_subset_complete': len(missing_ops) == 0,
         'bootstrap_supported_ops': supported_ops,
         'bootstrap_missing_ops': missing_ops,
+        'kernel_readiness_for_requested_ops': {
+            op_name: kernel_specs.get(
+                op_name,
+                {
+                    'forward_status': 'outside_bootstrap',
+                    'backward_status': 'outside_bootstrap',
+                    'category': 'unknown',
+                },
+            )
+            for op_name in layer_types
+        },
         'remaining_blockers': remaining_blockers,
     }
 
