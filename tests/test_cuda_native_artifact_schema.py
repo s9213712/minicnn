@@ -53,6 +53,9 @@ def test_cuda_native_artifact_schema_is_explicit(tmp_path):
     assert summary['schema_name'] == 'minicnn.cuda_native.training.summary'
     assert summary['schema_version'] == 1
     assert summary['artifact_kind'] == 'training_run_summary'
+    assert summary['execution_mode'] == 'reference_numpy'
+    assert summary['effective_execution_mode'] == 'reference_numpy'
+    assert summary['tensor_execution_device'] == 'cpu'
     assert summary['support_tier_assessment']['highest_tier'] == 'stable'
     assert summary['checkpoint_contract']['format'] == 'npz'
     assert summary['checkpoint_contract']['version'] == 1
@@ -61,4 +64,7 @@ def test_cuda_native_artifact_schema_is_explicit(tmp_path):
     assert row['schema_name'] == 'minicnn.cuda_native.training.metrics.epoch'
     assert row['schema_version'] == 1
     assert row['artifact_kind'] == 'training_metrics_epoch'
+    assert row['execution_mode'] == 'reference_numpy'
+    assert row['effective_execution_mode'] == 'reference_numpy'
+    assert row['tensor_execution_device'] == 'cpu'
     assert row['support_tier_assessment']['highest_tier'] == 'stable'

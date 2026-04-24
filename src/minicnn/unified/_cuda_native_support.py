@@ -19,6 +19,10 @@ TRAINING_SUMMARY_SCHEMA_VERSION = 1
 TRAINING_METRICS_SCHEMA_NAME = 'minicnn.cuda_native.training.metrics.epoch'
 TRAINING_METRICS_SCHEMA_VERSION = 1
 CHECKPOINT_CONTRACT_VERSION = 1
+EXECUTION_MODE_REFERENCE_NUMPY = 'reference_numpy'
+EXECUTION_MODE_GPU_NATIVE = 'gpu_native'
+EXECUTION_DEVICE_CPU = 'cpu'
+EXECUTION_DEVICE_GPU = 'gpu'
 
 
 def _sanitize_amp_runtime(amp_runtime: dict[str, Any] | None) -> dict[str, Any]:
@@ -336,11 +340,17 @@ def build_epoch_row(
     optimizer_state: dict[str, Any] | None = None,
     planner_state: dict[str, Any] | None = None,
     support_tier_assessment: dict[str, Any] | None = None,
+    execution_mode: str = EXECUTION_MODE_REFERENCE_NUMPY,
+    tensor_execution_device: str = EXECUTION_DEVICE_CPU,
 ) -> dict[str, Any]:
     row = {
         'schema_name': TRAINING_METRICS_SCHEMA_NAME,
         'schema_version': TRAINING_METRICS_SCHEMA_VERSION,
         'artifact_kind': 'training_metrics_epoch',
+        'execution_mode': execution_mode,
+        'effective_execution_mode': execution_mode,
+        'tensor_execution_device': tensor_execution_device,
+        'tensors_ran_on': tensor_execution_device,
         'epoch': epoch,
         'train_loss': train_loss,
         'val_loss': val_metrics['loss'],
@@ -433,6 +443,8 @@ def build_training_summary(
     epochs: int,
     capabilities: dict[str, Any],
     support_tier_assessment: dict[str, Any] | None = None,
+    execution_mode: str = EXECUTION_MODE_REFERENCE_NUMPY,
+    tensor_execution_device: str = EXECUTION_DEVICE_CPU,
 ) -> dict[str, Any]:
     optim_type = str(optimizer_cfg.get('type', 'SGD'))
     optimizer_summary = {
@@ -466,7 +478,13 @@ def build_training_summary(
             efficiency_summary=efficiency_summary,
             runtime_profile=dict(runtime_profile or {}),
         ),
-        'runtime': dict(runtime_profile or {}),
+        'runtime': {
+            **dict(runtime_profile or {}),
+            'execution_mode': execution_mode,
+            'effective_execution_mode': execution_mode,
+            'tensor_execution_device': tensor_execution_device,
+            'tensors_ran_on': tensor_execution_device,
+        },
         'training': {
             'batch_size': int(train_cfg.get('batch_size', 64)),
             'grad_accum_steps': int(train_cfg.get('grad_accum_steps', 1)),
@@ -479,6 +497,11 @@ def build_training_summary(
         'schema_version': TRAINING_SUMMARY_SCHEMA_VERSION,
         'artifact_kind': 'training_run_summary',
         'status': 'ok',
+        'execution_mode': execution_mode,
+        'selected_execution_mode': execution_mode,
+        'effective_execution_mode': execution_mode,
+        'tensor_execution_device': tensor_execution_device,
+        'tensors_ran_on': tensor_execution_device,
         'selected_backend': 'cuda_native',
         'effective_backend': 'cuda_native',
         'variant': 'reference',

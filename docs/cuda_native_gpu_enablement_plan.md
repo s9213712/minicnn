@@ -112,6 +112,12 @@ This plan does not assume:
 
 ## Phase G0: Execution Boundary Freeze
 
+Current status:
+
+- initial execution-mode contract slice landed
+- successful `cuda_native` runs now explicitly report `execution_mode=reference_numpy` and `tensor_execution_device=cpu` in CLI, `summary.json`, and `metrics.jsonl`
+- `gpu_native` is now a planned execution mode, not a silently implied one
+
 Goal:
 
 - freeze what "GPU-enabled cuda_native" means before implementing kernels

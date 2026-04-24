@@ -248,6 +248,11 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
         'status': 'ok',
         'summary_status': 'beta',
         'capability_kind': 'backend_capability_summary',
+        'execution_modes_supported': ['reference_numpy'],
+        'execution_modes_planned': ['gpu_native'],
+        'default_execution_mode': 'reference_numpy',
+        'default_tensor_execution_device': 'cpu',
+        'gpu_execution': False,
         'support_tiers': support_tiers,
         'support_tier_counts': {
             tier: {

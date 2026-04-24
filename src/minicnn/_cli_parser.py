@@ -140,15 +140,15 @@ def build_cli_parser() -> argparse.ArgumentParser:
     p_show_graph.add_argument('overrides', nargs='*')
     _add_format_arg(p_show_graph)
 
-    p_train_native = sub.add_parser('train-native', help='[EXPERIMENTAL] Train with cuda_native backend (research prototype)')
+    p_train_native = sub.add_parser('train-native', help='[BETA] Train with cuda_native backend (NumPy-reference native runtime)')
     p_train_native.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
     p_train_native.add_argument('overrides', nargs='*')
 
-    p_validate_native = sub.add_parser('validate-cuda-native-config', help='[EXPERIMENTAL] Validate config against cuda_native constraints')
+    p_validate_native = sub.add_parser('validate-cuda-native-config', help='[BETA] Validate config against cuda_native constraints and execution-mode contract')
     p_validate_native.add_argument('--config', type=str, default='configs/dual_backend_cnn.yaml')
     p_validate_native.add_argument('overrides', nargs='*')
     _add_format_arg(p_validate_native)
 
-    sub.add_parser('cuda-native-capabilities', help='[EXPERIMENTAL] Print cuda_native capability descriptor')
+    sub.add_parser('cuda-native-capabilities', help='[BETA] Print cuda_native capability descriptor and execution-mode contract')
 
     return parser

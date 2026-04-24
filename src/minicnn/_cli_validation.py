@@ -29,6 +29,10 @@ def handle_validate_config(args) -> int:
     }
     if backend == 'cuda_native':
         payload['support_tier_assessment'] = assess_cuda_native_support_tier(cfg)
+        payload['execution_mode'] = 'reference_numpy'
+        payload['effective_execution_mode'] = 'reference_numpy'
+        payload['tensor_execution_device'] = 'cpu'
+        payload['tensors_ran_on'] = 'cpu'
     _print_validation_result(payload, command='validate-config', output_format=args.format)
     return 0 if not errors else 2
 
@@ -48,9 +52,13 @@ def handle_validate_cuda_native_config(args) -> int:
         'errors': errors,
         'backend': 'cuda_native',
         'support_tier_assessment': assess_cuda_native_support_tier(cfg),
+        'execution_mode': 'reference_numpy',
+        'effective_execution_mode': 'reference_numpy',
+        'tensor_execution_device': 'cpu',
+        'tensors_ran_on': 'cpu',
     }
     if not errors:
-        payload['note'] = 'experimental — backward/training prototypes present, strict boundary validation applied'
+        payload['note'] = 'beta-grade backend; current execution mode is reference_numpy on CPU, with gpu_native still planned'
     _print_validation_result(payload, command='validate-cuda-native-config', output_format=args.format)
     return 0 if not errors else 2
 

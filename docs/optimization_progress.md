@@ -159,3 +159,10 @@ For the separate path from reference execution to real GPU execution, see
 - `support_tiers.experimental.ops == []`
 - `support_tiers.experimental.features == []`
 - final real-dataset demo now exists at `examples/cuda_native_amp_cifar10_beta_demo.py` and evaluates against the official CIFAR-10 test split
+
+
+## GPU Enablement Progress
+
+- Phase G0 execution-boundary freeze has started
+- `cuda_native` now reports `execution_mode=reference_numpy` and `tensor_execution_device=cpu` across CLI, summary, and metrics artifacts
+- `gpu_native` is now explicitly published as a planned execution mode rather than an implied capability

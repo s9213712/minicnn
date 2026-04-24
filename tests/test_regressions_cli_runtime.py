@@ -327,6 +327,11 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['backend'] == 'cuda_native'
     assert payload['status'] == 'ok'
     assert payload['summary_status'] == 'beta'
+    assert payload['default_execution_mode'] == 'reference_numpy'
+    assert payload['default_tensor_execution_device'] == 'cpu'
+    assert payload['execution_modes_supported'] == ['reference_numpy']
+    assert payload['execution_modes_planned'] == ['gpu_native']
+    assert payload['gpu_execution'] is False
     assert 'support_tiers' in payload
     assert 'support_tier_counts' in payload
     assert 'graduation_gates' in payload
@@ -763,6 +768,9 @@ def test_cli_validate_cuda_native_config_reports_experimental_amp_tier(capsys, t
 
     assert rc == 0
     assert payload['ok'] is True
+    assert payload['execution_mode'] == 'reference_numpy'
+    assert payload['effective_execution_mode'] == 'reference_numpy'
+    assert payload['tensor_execution_device'] == 'cpu'
     assert payload['support_tier_assessment']['highest_tier'] == 'beta'
     assert payload['support_tier_assessment']['optimizers_by_tier']['stable'] == ['AdamW']
     assert payload['support_tier_assessment']['features_by_tier']['beta'] == ['amp']
@@ -848,7 +856,11 @@ def test_train_native_preamble_exposes_support_tier_assessment(capsys, tmp_path,
 
     assert rc == 0
     assert payload['backend'] == 'cuda_native'
-    assert payload['status'] == 'experimental'
+    assert payload['status'] == 'beta'
+    assert payload['execution_mode'] == 'reference_numpy'
+    assert payload['effective_execution_mode'] == 'reference_numpy'
+    assert payload['tensor_execution_device'] == 'cpu'
+    assert payload['tensors_ran_on'] == 'cpu'
     assert payload['support_tier_assessment']['highest_tier'] == 'stable'
     assert payload['support_tier_assessment']['ops_by_tier']['stable'] == ['Flatten', 'Linear']
 
