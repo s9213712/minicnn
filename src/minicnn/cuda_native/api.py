@@ -157,16 +157,39 @@ def _validate_engine_cfg(engine_cfg: dict[str, Any]) -> list[str]:
     if execution_mode in _SUPPORTED_EXECUTION_MODES:
         return errors
     if execution_mode in _PLANNED_EXECUTION_MODES:
-        errors.append(
-            "cuda_native engine.execution_mode='gpu_native' has partial native forward execution, "
-            "but train-native GPU execution is not yet supported; currently supported execution modes: "
-            "{reference_numpy}."
-        )
         return errors
     supported = ', '.join(sorted(_SUPPORTED_EXECUTION_MODES | _PLANNED_EXECUTION_MODES))
     errors.append(
         f'cuda_native does not recognize engine.execution_mode={execution_mode!r}. Supported/planned: {supported}.'
     )
+    return errors
+
+
+def _validate_gpu_native_training_subset(
+    cfg: dict[str, Any],
+    graph: NativeGraph,
+    *,
+    loss_cfg: dict[str, Any],
+    optim_cfg: dict[str, Any],
+    train_cfg: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    ops = [node.op_type for node in graph.topological_order()]
+    if ops not in (['Linear'], ['Flatten', 'Linear']):
+        errors.append(
+            'cuda_native gpu_native train-native currently supports only the narrow '
+            f'Linear training subset ops=[Linear] or [Flatten, Linear], got {ops}.'
+        )
+    if str(loss_cfg.get('type', 'CrossEntropyLoss')) != 'CrossEntropyLoss':
+        errors.append('cuda_native gpu_native train-native currently supports only CrossEntropyLoss.')
+    if str(optim_cfg.get('type', 'SGD')).lower() != 'sgd':
+        errors.append('cuda_native gpu_native train-native currently supports only optimizer.type=SGD.')
+    if float(optim_cfg.get('weight_decay', 0.0)) != 0.0:
+        errors.append('cuda_native gpu_native train-native currently requires optimizer.weight_decay=0.0.')
+    if int(train_cfg.get('grad_accum_steps', 1)) != 1:
+        errors.append('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
+    if bool(train_cfg.get('amp', False)):
+        errors.append('cuda_native gpu_native train-native currently requires train.amp=false.')
     return errors
 
 
@@ -549,14 +572,21 @@ def validate_cuda_native_config(cfg: dict[str, Any]) -> list[str]:
     errors.extend(_validate_scheduler_cfg(scheduler_cfg))
     errors.extend(_validate_train_cfg(train_cfg))
     execution_mode = resolve_cuda_native_execution_mode(cfg)
-    if str(execution_mode.get('selected_execution_mode')) == 'gpu_native':
-        readiness = assess_cuda_native_execution_readiness(cfg)
-        errors.append(_gpu_native_bootstrap_error(readiness))
 
     validation_input_shape = _validation_input_shape(dataset_cfg)
     if validation_input_shape is not None and not model_errors:
         try:
             graph = build_cuda_native_graph(model_cfg, validation_input_shape)
+            if str(execution_mode.get('selected_execution_mode')) == 'gpu_native':
+                errors.extend(
+                    _validate_gpu_native_training_subset(
+                        cfg,
+                        graph,
+                        loss_cfg=loss_cfg,
+                        optim_cfg=optim_cfg,
+                        train_cfg=train_cfg,
+                    )
+                )
             loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
             if loss_type == 'BCEWithLogitsLoss':
                 output_shape = tuple(graph.output_spec.shape) if graph.output_spec is not None else ()

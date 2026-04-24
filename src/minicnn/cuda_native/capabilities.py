@@ -13,8 +13,8 @@ from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
 CAPABILITY_SCHEMA_VERSION = 1
 GPU_NATIVE_BOOTSTRAP_OPS = [spec.op_name for spec in list_gpu_kernel_specs()]
 GPU_NATIVE_BOOTSTRAP_BLOCKERS = [
-    'gpu_backward_kernel_lowering_unimplemented',
-    'gpu_training_loop_not_integrated',
+    'gpu_graph_backward_generalization_pending',
+    'gpu_conv_training_not_integrated',
     'gpu_parity_matrix_missing',
 ]
 
@@ -202,8 +202,8 @@ CUDA_NATIVE_EXECUTION_MODE_READINESS: dict[str, dict[str, object]] = {
         'remaining_blockers': [],
     },
     'gpu_native': {
-        'status': 'bootstrap_forward_partial',
-        'ready': False,
+        'status': 'bootstrap_training_partial',
+        'ready': True,
         'tensor_execution_device': 'gpu',
         'bootstrap_subset_ops': GPU_NATIVE_BOOTSTRAP_OPS,
         'kernel_readiness': {
@@ -314,8 +314,8 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
         'status': 'ok',
         'summary_status': 'beta',
         'capability_kind': 'backend_capability_summary',
-        'execution_modes_supported': ['reference_numpy'],
-        'execution_modes_planned': ['gpu_native'],
+        'execution_modes_supported': ['reference_numpy', 'gpu_native'],
+        'execution_modes_planned': [],
         'default_execution_mode': 'reference_numpy',
         'default_tensor_execution_device': 'cpu',
         'gpu_execution': False,

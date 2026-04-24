@@ -79,6 +79,13 @@ class _RawFakeCudaLib:
         grads = self._float(d_grad)
         values[:int(size)] -= float(lr) * grads[:int(size)]
 
+    def apply_momentum_update(self, d_weight, d_grad, d_velocity, lr, momentum, size):
+        values = self._float(d_weight)
+        grads = self._float(d_grad)
+        velocity = self._float(d_velocity)
+        velocity[:int(size)] = float(momentum) * velocity[:int(size)] - float(lr) * grads[:int(size)]
+        values[:int(size)] += velocity[:int(size)]
+
 
 def test_native_gpu_linear_training_step_matches_reference_math():
     x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)

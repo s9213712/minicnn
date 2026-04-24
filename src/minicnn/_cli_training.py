@@ -342,9 +342,8 @@ def handle_train_native(args) -> int:
         'execution_readiness_assessment': assess_cuda_native_execution_readiness(cfg),
         **execution_mode,
         'note': (
-            'beta-grade backend; train-native currently executes reference_numpy on CPU, '
-            'while gpu_native has partial native forward execution but is not yet integrated '
-            'with the training loop'
+            'beta-grade backend; train-native supports reference_numpy broadly and gpu_native '
+            'for the narrow Flatten/Linear + CrossEntropyLoss + SGD training subset'
         ),
     })
     try:

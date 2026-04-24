@@ -65,8 +65,8 @@ def handle_validate_cuda_native_config(args) -> int:
     payload.update(resolve_cuda_native_execution_mode(cfg))
     if not errors:
         payload['note'] = (
-            'beta-grade backend; reference_numpy is the supported train-native execution mode, '
-            'while gpu_native has partial native forward execution pending training-loop integration'
+            'beta-grade backend; reference_numpy is broadly supported, while gpu_native is '
+            'supported for the narrow Flatten/Linear + CrossEntropyLoss + SGD training subset'
         )
     _print_validation_result(payload, command='validate-cuda-native-config', output_format=args.format)
     return 0 if not errors else 2

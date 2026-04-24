@@ -78,7 +78,7 @@ def test_train_native_preamble_reports_reference_numpy_mode(tmp_path, capsys):
     assert payload['gpu_execution'] is False
 
 
-def test_validate_cuda_native_config_rejects_planned_gpu_native_mode(tmp_path, capsys):
+def test_validate_cuda_native_config_accepts_gpu_native_linear_training_subset(tmp_path, capsys):
     from minicnn.cli import main
 
     config_path = tmp_path / 'cfg.yaml'
@@ -95,14 +95,14 @@ def test_validate_cuda_native_config_rejects_planned_gpu_native_mode(tmp_path, c
     out = capsys.readouterr().out
     payload = json.loads(out)
 
-    assert rc == 2
+    assert rc == 0
     assert payload['selected_execution_mode'] == 'gpu_native'
-    assert payload['effective_execution_mode'] == 'unsupported'
+    assert payload['effective_execution_mode'] == 'gpu_native'
     assert payload['tensor_execution_device'] == 'gpu'
-    assert payload['gpu_execution'] is False
+    assert payload['gpu_execution'] is True
     assert payload['execution_readiness_assessment']['selected_execution_mode'] == 'gpu_native'
-    assert payload['execution_readiness_assessment']['status'] == 'bootstrap_forward_partial'
-    assert payload['execution_readiness_assessment']['ready'] is False
+    assert payload['execution_readiness_assessment']['status'] == 'bootstrap_training_partial'
+    assert payload['execution_readiness_assessment']['ready'] is True
     assert payload['execution_readiness_assessment']['bootstrap_subset_complete'] is True
     assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Flatten', 'Linear']
     assert payload['execution_readiness_assessment']['bootstrap_missing_ops'] == []
@@ -110,30 +110,28 @@ def test_validate_cuda_native_config_rejects_planned_gpu_native_mode(tmp_path, c
     assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['Linear']['backward_status'] == 'partial_native'
     assert payload['execution_readiness_assessment']['dispatch_plan']['ready'] is True
     assert payload['execution_readiness_assessment']['dispatch_plan']['num_steps'] == 2
-    assert 'gpu_training_loop_not_integrated' in payload['execution_readiness_assessment']['remaining_blockers']
-    assert any('partial native forward execution' in err for err in payload['errors'])
-    assert any('bootstrap subset coverage' in err for err in payload['errors'])
-    assert any('all requested ops are within bootstrap subset' in err for err in payload['errors'])
+    assert 'gpu_conv_training_not_integrated' in payload['execution_readiness_assessment']['remaining_blockers']
+    assert payload['errors'] == []
 
 
-def test_train_native_preamble_reports_requested_gpu_native_mode_before_failure(tmp_path, capsys):
+def test_train_native_runs_gpu_native_linear_training_subset(tmp_path, capsys):
     from minicnn.cli import main
-    import pytest
 
     config_path = tmp_path / 'cfg.yaml'
     _write_cfg(config_path)
 
-    with pytest.raises(SystemExit) as excinfo:
-        main(['train-native', '--config', str(config_path), 'engine.execution_mode=gpu_native'])
-
-    assert excinfo.value.code == 2
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        rc = main(['train-native', '--config', str(config_path), 'engine.execution_mode=gpu_native'])
+    assert rc == 0
     stdout = capsys.readouterr().out
-    payload, _ = json.JSONDecoder().raw_decode(stdout.strip())
+    json_text = stdout.split('Artifacts written to:')[0].strip()
+    payload, _ = json.JSONDecoder().raw_decode(json_text)
 
     assert payload['selected_execution_mode'] == 'gpu_native'
-    assert payload['effective_execution_mode'] == 'unsupported'
+    assert payload['effective_execution_mode'] == 'gpu_native'
     assert payload['tensor_execution_device'] == 'gpu'
-    assert payload['gpu_execution'] is False
+    assert payload['gpu_execution'] is True
     assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Flatten', 'Linear']
 
 
@@ -168,7 +166,7 @@ def test_validate_cuda_native_config_reports_ops_outside_gpu_bootstrap_subset(tm
     assert payload['execution_readiness_assessment']['dispatch_plan']['unsupported_ops'] == ['BatchNorm2d']
     assert payload['execution_readiness_assessment']['dispatch_plan']['steps'][0]['op_name'] == 'BatchNorm2d'
     assert payload['execution_readiness_assessment']['dispatch_plan']['steps'][0]['supported'] is False
-    assert any("outside_bootstrap=['BatchNorm2d']" in err for err in payload['errors'])
+    assert any("got ['BatchNorm2d', 'Flatten', 'Linear']" in err for err in payload['errors'])
 
 
 def test_execution_mode_sets_are_disjoint():

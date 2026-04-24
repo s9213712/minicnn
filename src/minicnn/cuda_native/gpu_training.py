@@ -18,6 +18,8 @@ class NativeGpuLinearTrainingStepResult:
     grad_bias: np.ndarray
     updated_weight: np.ndarray
     updated_bias: np.ndarray
+    updated_weight_velocity: np.ndarray | None
+    updated_bias_velocity: np.ndarray | None
     loss_sum: float
     loss_mean: float
     correct_count: int
@@ -39,6 +41,9 @@ def native_gpu_linear_training_step(
     bias: np.ndarray,
     *,
     lr: float,
+    momentum: float = 0.0,
+    weight_velocity: np.ndarray | None = None,
+    bias_velocity: np.ndarray | None = None,
     bound_lib: Any | None = None,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
@@ -54,6 +59,16 @@ def native_gpu_linear_training_step(
     labels_i32 = np.ascontiguousarray(labels, dtype=np.int32)
     weight_f32 = np.ascontiguousarray(weight, dtype=np.float32)
     bias_f32 = np.ascontiguousarray(bias, dtype=np.float32)
+    weight_velocity_f32 = (
+        np.zeros_like(weight_f32)
+        if weight_velocity is None
+        else np.ascontiguousarray(weight_velocity, dtype=np.float32)
+    )
+    bias_velocity_f32 = (
+        np.zeros_like(bias_f32)
+        if bias_velocity is None
+        else np.ascontiguousarray(bias_velocity, dtype=np.float32)
+    )
     if x_f32.ndim != 2:
         raise ValueError(f'native_gpu_linear_training_step expects x with shape (N, in_f), got {x_f32.shape}')
     if labels_i32.ndim != 1 or labels_i32.shape[0] != x_f32.shape[0]:
@@ -70,6 +85,16 @@ def native_gpu_linear_training_step(
         raise ValueError(
             'native_gpu_linear_training_step expects bias with shape (out_f,), '
             f'got bias={bias_f32.shape} for weight={weight_f32.shape}'
+        )
+    if weight_velocity_f32.shape != weight_f32.shape:
+        raise ValueError(
+            'native_gpu_linear_training_step expects weight_velocity with same shape as weight, '
+            f'got weight_velocity={weight_velocity_f32.shape} and weight={weight_f32.shape}'
+        )
+    if bias_velocity_f32.shape != bias_f32.shape:
+        raise ValueError(
+            'native_gpu_linear_training_step expects bias_velocity with same shape as bias, '
+            f'got bias_velocity={bias_velocity_f32.shape} and bias={bias_f32.shape}'
         )
     if np.any(labels_i32 < 0) or np.any(labels_i32 >= weight_f32.shape[0]):
         raise ValueError('native_gpu_linear_training_step labels must be in [0, out_f)')
@@ -89,6 +114,8 @@ def native_gpu_linear_training_step(
     labels_t = runtime.stage_to_device(labels_i32, name='labels')
     weight_t = runtime.stage_to_device(weight_f32, name='weight')
     bias_t = runtime.stage_to_device(bias_f32, name='bias')
+    weight_velocity_t = runtime.stage_to_device(weight_velocity_f32, name='weight_velocity')
+    bias_velocity_t = runtime.stage_to_device(bias_velocity_f32, name='bias_velocity')
     logits_t = runtime.allocate((n, out_f), dtype='float32', name='logits')
     probs_t = runtime.allocate((n, out_f), dtype='float32', name='probs')
     grad_logits_t = runtime.allocate((n, out_f), dtype='float32', name='grad_logits')
@@ -144,10 +171,30 @@ def native_gpu_linear_training_step(
             output_name='grad_weight',
             node_count=1,
         )
-        lib.apply_sgd_update(weight_t.device_ptr, grad_weight_t.device_ptr, float(lr), int(weight_f32.size))
-        lib.apply_sgd_update(bias_t.device_ptr, grad_bias_t.device_ptr, float(lr), int(bias_f32.size))
+        if float(momentum) != 0.0:
+            lib.apply_momentum_update(
+                weight_t.device_ptr,
+                grad_weight_t.device_ptr,
+                weight_velocity_t.device_ptr,
+                float(lr),
+                float(momentum),
+                int(weight_f32.size),
+            )
+            lib.apply_momentum_update(
+                bias_t.device_ptr,
+                grad_bias_t.device_ptr,
+                bias_velocity_t.device_ptr,
+                float(lr),
+                float(momentum),
+                int(bias_f32.size),
+            )
+            update_kind = 'gpu_native_train:apply_momentum_update'
+        else:
+            lib.apply_sgd_update(weight_t.device_ptr, grad_weight_t.device_ptr, float(lr), int(weight_f32.size))
+            lib.apply_sgd_update(bias_t.device_ptr, grad_bias_t.device_ptr, float(lr), int(bias_f32.size))
+            update_kind = 'gpu_native_train:apply_sgd_update'
         runtime.record_execution(
-            'gpu_native_train:apply_sgd_update',
+            update_kind,
             input_name='grad_weight',
             output_name='weight',
             node_count=1,
@@ -161,6 +208,8 @@ def native_gpu_linear_training_step(
         grad_bias = runtime.stage_to_host(grad_bias_t)
         updated_weight = runtime.stage_to_host(weight_t)
         updated_bias = runtime.stage_to_host(bias_t)
+        updated_weight_velocity = runtime.stage_to_host(weight_velocity_t)
+        updated_bias_velocity = runtime.stage_to_host(bias_velocity_t)
         loss_sum = float(runtime.stage_to_host(loss_sum_t)[0])
         correct_count = int(runtime.stage_to_host(correct_t)[0])
         runtime.synchronize('gpu-native-linear-training-step')
@@ -173,6 +222,8 @@ def native_gpu_linear_training_step(
             grad_bias=grad_bias,
             updated_weight=updated_weight,
             updated_bias=updated_bias,
+            updated_weight_velocity=updated_weight_velocity,
+            updated_bias_velocity=updated_bias_velocity,
             loss_sum=loss_sum,
             loss_mean=loss_sum / float(n),
             correct_count=correct_count,
@@ -184,6 +235,8 @@ def native_gpu_linear_training_step(
             labels_t,
             weight_t,
             bias_t,
+            weight_velocity_t,
+            bias_velocity_t,
             logits_t,
             probs_t,
             grad_logits_t,

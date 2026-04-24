@@ -140,7 +140,8 @@ Current status:
   - `Flatten` uses device-pointer aliasing
   - `Linear`, `ReLU`, `LeakyReLU`, `Add`, `Concat`, `MaxPool2d`, and a constrained `Conv2d` path lower to native CUDA symbols when a bound library is attached
   - `Linear + SoftmaxCE + SGD` now has a narrow native GPU training-step helper that exercises forward, loss gradient, dense backward, and optimizer update through the C ABI
-  - remaining blockers are graph-level backward lowering, train-native training-loop integration, and a full GPU parity matrix
+  - `train-native engine.execution_mode=gpu_native` now accepts the narrow `Flatten -> Linear` / `CrossEntropyLoss` / `SGD` subset
+  - remaining blockers are graph-level backward generalization, Conv/Composite GPU training integration, and a full GPU parity matrix
 
 Goal:
 

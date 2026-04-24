@@ -329,8 +329,8 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['summary_status'] == 'beta'
     assert payload['default_execution_mode'] == 'reference_numpy'
     assert payload['default_tensor_execution_device'] == 'cpu'
-    assert payload['execution_modes_supported'] == ['reference_numpy']
-    assert payload['execution_modes_planned'] == ['gpu_native']
+    assert payload['execution_modes_supported'] == ['reference_numpy', 'gpu_native']
+    assert payload['execution_modes_planned'] == []
     assert payload['gpu_execution'] is False
     assert 'support_tiers' in payload
     assert 'support_tier_counts' in payload
@@ -372,11 +372,11 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert 'amp' in payload['support_tiers']['beta']['features']
     assert payload['support_tier_counts']['stable']['ops'] >= 1
     assert payload['execution_mode_readiness']['reference_numpy']['ready'] is True
-    assert payload['execution_mode_readiness']['gpu_native']['ready'] is False
-    assert payload['execution_mode_readiness']['gpu_native']['status'] == 'bootstrap_forward_partial'
+    assert payload['execution_mode_readiness']['gpu_native']['ready'] is True
+    assert payload['execution_mode_readiness']['gpu_native']['status'] == 'bootstrap_training_partial'
     assert 'Conv2d' in payload['execution_mode_readiness']['gpu_native']['bootstrap_subset_ops']
     assert payload['execution_mode_readiness']['gpu_native']['kernel_readiness']['Conv2d'] == 'partial_native'
-    assert 'gpu_training_loop_not_integrated' in payload['execution_mode_readiness']['gpu_native']['remaining_blockers']
+    assert 'gpu_conv_training_not_integrated' in payload['execution_mode_readiness']['gpu_native']['remaining_blockers']
     assert any(entry['op_name'] == 'Conv2d' and entry['forward_status'] == 'partial_native' for entry in payload['gpu_kernel_registry_surface'])
     assert any(entry['op_name'] == 'Flatten' and entry['backward_status'] == 'not_needed' for entry in payload['gpu_kernel_registry_surface'])
     assert payload['graduation_gates']['core_beta_subset']['ready'] is True

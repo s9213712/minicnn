@@ -14,6 +14,7 @@ from minicnn.cuda_native.backward import BackwardExecutor
 from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.executor import ForwardExecutor
+from minicnn.cuda_native.gpu_training import native_gpu_linear_training_step
 from minicnn.cuda_native.graph import NativeGraph
 from minicnn.cuda_native.planner import make_plan
 from minicnn.cuda_native.training import train_step
@@ -351,9 +352,17 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
         **planner_summary_raw,
         **({} if not isinstance(buffer_plan, dict) else buffer_plan),
     }
+    selected_execution_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')
+    tensor_execution_device = 'gpu' if selected_execution_mode == 'gpu_native' else 'cpu'
+    bound_lib = None
+    if selected_execution_mode == 'gpu_native':
+        from minicnn.core._cuda_library import bind_symbols, load_library
+
+        bound_lib = bind_symbols(load_library())
     device_runtime = DeviceRuntime(
-        execution_mode='reference_numpy',
-        tensor_execution_device='cpu',
+        execution_mode=selected_execution_mode,
+        tensor_execution_device=tensor_execution_device,
+        bound_lib=bound_lib,
     )
     device_runtime.reserve_from_planner(
         total_bytes=int(planner_summary.get('total_bytes', 0)),
@@ -392,10 +401,59 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
         optimizer_cfg=optim_cfg,
         scheduler_cfg=scheduler_cfg,
         support_tier_assessment=assess_cuda_native_support_tier(cfg),
-        execution_mode='reference_numpy',
-        tensor_execution_device='cpu',
+        execution_mode=selected_execution_mode,
+        tensor_execution_device=tensor_execution_device,
         device_runtime=device_runtime,
     )
+
+
+def _gpu_native_linear_node(graph: NativeGraph):
+    nodes = list(graph.topological_order())
+    ops = [node.op_type for node in nodes]
+    if ops == ['Linear']:
+        return nodes[0]
+    if ops == ['Flatten', 'Linear']:
+        return nodes[1]
+    raise ValueError(
+        'cuda_native gpu_native train-native currently supports only '
+        f'ops=[Linear] or ops=[Flatten, Linear], got {ops}.'
+    )
+
+
+def _validate_gpu_native_training_context(ctx: NativeTrainingContext) -> None:
+    _gpu_native_linear_node(ctx.graph)
+    if ctx.loss_type != 'cross_entropy':
+        raise ValueError('cuda_native gpu_native train-native currently supports only CrossEntropyLoss.')
+    if ctx.optimizer_type != 'sgd':
+        raise ValueError('cuda_native gpu_native train-native currently supports only optimizer.type=SGD.')
+    if ctx.weight_decay != 0.0:
+        raise ValueError('cuda_native gpu_native train-native currently requires optimizer.weight_decay=0.0.')
+    if ctx.grad_accum_steps != 1:
+        raise ValueError('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
+    if ctx.amp:
+        raise ValueError('cuda_native gpu_native train-native currently requires train.amp=false.')
+
+
+def _merge_gpu_native_step_runtime(ctx: NativeTrainingContext, step_summary: dict[str, Any]) -> None:
+    for attr in (
+        'host_to_device_transfer_events',
+        'host_to_device_transfer_bytes',
+        'device_to_host_transfer_events',
+        'device_to_host_transfer_bytes',
+        'allocation_events',
+        'allocated_bytes',
+        'synchronization_events',
+        'device_pointer_allocation_events',
+        'device_pointer_free_events',
+        'device_pointer_bytes',
+        'device_sync_to_host_events',
+        'device_sync_to_device_events',
+    ):
+        setattr(ctx.device_runtime, attr, int(getattr(ctx.device_runtime, attr)) + int(step_summary.get(attr, 0)))
+    ctx.device_runtime.device_pointer_live_bytes += int(step_summary.get('device_pointer_live_bytes', 0))
+    for kind, count in dict(step_summary.get('execution_kinds', {})).items():
+        for _ in range(int(count)):
+            ctx.device_runtime.record_execution(str(kind), node_count=0)
 
 
 def run_training_loop(
@@ -409,6 +467,15 @@ def run_training_loop(
     optimizer_view = SimpleNamespace(lr=ctx.lr)
     scheduler, scheduler_kind = _make_scheduler(ctx.scheduler_cfg, optimizer_view)
     optimizer_state: dict[str, Any] = {}
+    gpu_linear_node = None
+    if ctx.execution_mode == 'gpu_native':
+        _validate_gpu_native_training_context(ctx)
+        gpu_linear_node = _gpu_native_linear_node(ctx.graph)
+        optimizer_state['optimizer_runtime'] = {
+            'optimizer_type': 'sgd',
+            'steps': 0,
+        }
+        optimizer_state['velocity'] = {}
     best_val_acc = float('-inf')
     best_params = dict(ctx.params)
     params = ctx.params
@@ -459,47 +526,85 @@ def run_training_loop(
                 yb = y_shuf[i:i + ctx.batch_size]
                 if xb.shape[0] == 0:
                     continue
-                xb_device = ctx.device_runtime.stage_to_device(
-                    xb,
-                    name=ctx.graph.input_spec.name if ctx.graph.input_spec else 'input',
-                    prefer_reserved=True,
-                )
                 apply_optimizer_step = (
                     batch_idx % ctx.grad_accum_steps == 0
                     or batch_idx == num_batches
                 )
-                loss_val, params = train_step(
-                    ctx.graph,
-                    xb_device.data,
-                    yb,
-                    params,
-                    lr=optimizer_view.lr,
-                    loss_type=ctx.loss_type,
-                    optimizer_type=ctx.optimizer_type,
-                    weight_decay=ctx.weight_decay,
-                    momentum=ctx.momentum,
-                    label_smoothing=float(ctx.loss_cfg.get('label_smoothing', 0.0)),
-                    grad_accum_steps=ctx.grad_accum_steps,
-                    apply_optimizer_step=apply_optimizer_step,
-                    amp_enabled=ctx.amp,
-                    amp_loss_scale=ctx.amp_loss_scale,
-                    amp_dynamic_scale=ctx.amp_dynamic_scale,
-                    amp_scale_growth=ctx.amp_scale_growth,
-                    amp_scale_backoff=ctx.amp_scale_backoff,
-                    amp_scale_window=ctx.amp_scale_window,
-                    optimizer_state=optimizer_state,
-                    grad_clip_global=ctx.grad_clip_global,
-                    fwd_executor=fwd,
-                    bwd_executor=bwd,
-                )
-                ctx.device_runtime.record_execution(
-                    'train_batch',
-                    input_name=ctx.graph.input_spec.name if ctx.graph.input_spec is not None else 'input',
-                    output_name=ctx.graph.output_spec.name if ctx.graph.output_spec is not None else 'output',
-                    node_count=len(ctx.graph.nodes),
-                )
-                ctx.device_runtime.synchronize('train-batch')
-                ctx.device_runtime.release_buffer(xb_device)
+                if ctx.execution_mode == 'gpu_native':
+                    if not apply_optimizer_step:
+                        raise ValueError('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
+                    assert gpu_linear_node is not None
+                    weight_key = f'_w_{gpu_linear_node.name}'
+                    bias_key = f'_b_{gpu_linear_node.name}'
+                    velocity_state = optimizer_state.setdefault('velocity', {})
+                    weight_velocity = velocity_state.get(weight_key)
+                    bias_velocity = velocity_state.get(bias_key)
+                    step = native_gpu_linear_training_step(
+                        xb.reshape(xb.shape[0], -1),
+                        yb,
+                        params[weight_key],
+                        params[bias_key],
+                        lr=float(optimizer_view.lr),
+                        momentum=float(ctx.momentum),
+                        weight_velocity=weight_velocity,
+                        bias_velocity=bias_velocity,
+                        bound_lib=ctx.device_runtime.bound_lib,
+                    )
+                    loss_val = float(step.loss_mean)
+                    params = dict(params)
+                    params[weight_key] = step.updated_weight
+                    params[bias_key] = step.updated_bias
+                    velocity_state[weight_key] = step.updated_weight_velocity
+                    velocity_state[bias_key] = step.updated_bias_velocity
+                    _merge_gpu_native_step_runtime(ctx, step.runtime_summary)
+                    optimizer_runtime = optimizer_state.setdefault('optimizer_runtime', {})
+                    optimizer_runtime['optimizer_type'] = 'sgd'
+                    optimizer_runtime['steps'] = int(optimizer_runtime.get('steps', 0)) + 1
+                    ctx.device_runtime.record_execution(
+                        'gpu_native_train_batch',
+                        input_name=ctx.graph.input_spec.name if ctx.graph.input_spec is not None else 'input',
+                        output_name=ctx.graph.output_spec.name if ctx.graph.output_spec is not None else 'output',
+                        node_count=len(ctx.graph.nodes),
+                    )
+                    ctx.device_runtime.synchronize('gpu-native-train-batch')
+                else:
+                    xb_device = ctx.device_runtime.stage_to_device(
+                        xb,
+                        name=ctx.graph.input_spec.name if ctx.graph.input_spec else 'input',
+                        prefer_reserved=True,
+                    )
+                    loss_val, params = train_step(
+                        ctx.graph,
+                        xb_device.data,
+                        yb,
+                        params,
+                        lr=optimizer_view.lr,
+                        loss_type=ctx.loss_type,
+                        optimizer_type=ctx.optimizer_type,
+                        weight_decay=ctx.weight_decay,
+                        momentum=ctx.momentum,
+                        label_smoothing=float(ctx.loss_cfg.get('label_smoothing', 0.0)),
+                        grad_accum_steps=ctx.grad_accum_steps,
+                        apply_optimizer_step=apply_optimizer_step,
+                        amp_enabled=ctx.amp,
+                        amp_loss_scale=ctx.amp_loss_scale,
+                        amp_dynamic_scale=ctx.amp_dynamic_scale,
+                        amp_scale_growth=ctx.amp_scale_growth,
+                        amp_scale_backoff=ctx.amp_scale_backoff,
+                        amp_scale_window=ctx.amp_scale_window,
+                        optimizer_state=optimizer_state,
+                        grad_clip_global=ctx.grad_clip_global,
+                        fwd_executor=fwd,
+                        bwd_executor=bwd,
+                    )
+                    ctx.device_runtime.record_execution(
+                        'train_batch',
+                        input_name=ctx.graph.input_spec.name if ctx.graph.input_spec is not None else 'input',
+                        output_name=ctx.graph.output_spec.name if ctx.graph.output_spec is not None else 'output',
+                        node_count=len(ctx.graph.nodes),
+                    )
+                    ctx.device_runtime.synchronize('train-batch')
+                    ctx.device_runtime.release_buffer(xb_device)
                 running_loss += loss_val * xb.shape[0]
                 seen += xb.shape[0]
             train_loss = running_loss / max(seen, 1)
