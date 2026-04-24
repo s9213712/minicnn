@@ -49,12 +49,23 @@ class DeviceRuntime:
     def gpu_execution(self) -> bool:
         return self.tensor_execution_device == 'gpu'
 
-    def stage_to_device(self, array: Any, *, name: str | None = None, copy: bool = True) -> DeviceTensor:
+    def stage_to_device(
+        self,
+        array: Any,
+        *,
+        name: str | None = None,
+        copy: bool = True,
+        prefer_reserved: bool = False,
+    ) -> DeviceTensor:
         host_array = np.asarray(array)
-        if copy:
-            host_array = np.array(host_array, copy=True)
         self.host_to_device_transfer_events += 1
         self.host_to_device_transfer_bytes += int(host_array.nbytes)
+        if prefer_reserved:
+            staged = self.allocate_staging_buffer(host_array.shape, dtype=host_array.dtype, name=name)
+            np.copyto(staged.data, host_array)
+            return staged
+        if copy:
+            host_array = np.array(host_array, copy=True)
         return DeviceTensor(host_array, self.tensor_execution_device, self.execution_mode, name=name)
 
     def stage_to_host(self, tensor: DeviceTensor, *, copy: bool = True) -> np.ndarray:

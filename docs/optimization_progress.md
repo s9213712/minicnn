@@ -49,6 +49,7 @@ The stable default backend toggle is still:
   - planner reservation accounting in `device_runtime`
   - explicit staged eval-forward execution telemetry
   - reserved-buffer reuse/release telemetry for staged outputs
+  - reserved-buffer-backed input/output staging for train/eval batch paths
 
 ## What Is Still Constrained
 

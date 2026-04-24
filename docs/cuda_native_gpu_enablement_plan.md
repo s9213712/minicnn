@@ -125,6 +125,7 @@ Current status:
 - planner reservation accounting now lands in `device_runtime`
 - eval forward now runs through an explicit staged helper with execution telemetry
 - reserved planner buffers now back staged output allocation/release telemetry
+- train/eval input staging now also prefers reserved buffers, so the pool models a real staged IO lifecycle
 
 Goal:
 

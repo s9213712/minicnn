@@ -459,7 +459,11 @@ def run_training_loop(
                 yb = y_shuf[i:i + ctx.batch_size]
                 if xb.shape[0] == 0:
                     continue
-                xb_device = ctx.device_runtime.stage_to_device(xb, name=ctx.graph.input_spec.name if ctx.graph.input_spec else 'input')
+                xb_device = ctx.device_runtime.stage_to_device(
+                    xb,
+                    name=ctx.graph.input_spec.name if ctx.graph.input_spec else 'input',
+                    prefer_reserved=True,
+                )
                 apply_optimizer_step = (
                     batch_idx % ctx.grad_accum_steps == 0
                     or batch_idx == num_batches
@@ -495,6 +499,7 @@ def run_training_loop(
                     node_count=len(ctx.graph.nodes),
                 )
                 ctx.device_runtime.synchronize('train-batch')
+                ctx.device_runtime.release_buffer(xb_device)
                 running_loss += loss_val * xb.shape[0]
                 seen += xb.shape[0]
             train_loss = running_loss / max(seen, 1)
