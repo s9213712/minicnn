@@ -43,6 +43,9 @@ class _FakeCudaLib:
         b = self.memory[d_bias].reshape(int(out_f))
         self.memory[d_output][...] = (x @ w.T + b).reshape(-1)
 
+    def apply_relu(self, d_data, size):
+        self.memory[d_data][:int(size)] = np.maximum(self.memory[d_data][:int(size)], 0.0)
+
 
 def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     graph = build_cuda_native_graph(
@@ -255,3 +258,38 @@ def test_gpu_stub_executor_uses_native_dense_forward_when_device_pointers_availa
     assert summary['device_pointer_allocation_events'] >= 4
     assert summary['device_sync_to_device_events'] >= 3
     assert summary['device_sync_to_host_events'] >= 1
+
+
+def test_gpu_stub_executor_uses_native_relu_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 3},
+                {'type': 'ReLU'},
+            ],
+        },
+        (1, 3),
+    )
+    params = {
+        '_w_linear_1': np.asarray([[1.0, 0.0, 0.0], [-1.0, -1.0, 0.0], [0.0, 0.5, 1.0]], dtype=np.float32),
+        '_b_linear_1': np.asarray([-2.0, 0.0, -1.0], dtype=np.float32),
+    }
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.asarray([[1.0, 2.0, 3.0]], dtype=np.float32)
+    result = executor.run(graph, x, params=params)
+
+    expected = np.maximum(x @ params['_w_linear_1'].T + params['_b_linear_1'], 0.0)
+    np.testing.assert_allclose(result.output, expected.astype(np.float32))
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:dense_forward'] == 1
+    assert summary['execution_kinds']['gpu_native_kernel:apply_relu'] == 1

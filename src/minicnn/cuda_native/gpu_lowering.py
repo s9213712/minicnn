@@ -145,7 +145,29 @@ def _lower_linear(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
 
 
 def _lower_relu(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
-    x = np.asarray(_input_tensor(node, ctx).data, dtype=np.float32)
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
+    if (
+        ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and hasattr(ctx.runtime.bound_lib, 'apply_relu')
+    ):
+        output = ctx.runtime.allocate_staging_buffer(
+            tuple(node.output_specs[0].shape),
+            dtype='float32',
+            name=node.outputs[0],
+        )
+        np.copyto(output.data, x)
+        ctx.runtime.sync_tensor_to_device(output)
+        ctx.runtime.bound_lib.apply_relu(output.device_ptr, int(output.data.size))
+        ctx.runtime.record_execution(
+            'gpu_native_kernel:apply_relu',
+            input_name=node.inputs[0],
+            output_name=node.outputs[0],
+            node_count=1,
+        )
+        ctx.runtime.sync_tensor_to_host(output)
+        return output
     return _allocate_output(node, ctx, np.maximum(x, 0.0).astype(np.float32))
 
 
