@@ -96,3 +96,13 @@ PYTHONPATH=src python3 examples/cuda_native_amp_cifar10_beta_demo.py \
 ```
 
 This demo trains a small `cuda_native` model with `AdamW + AMP + grad_accum_steps=2`, then evaluates on the official CIFAR-10 `test_batch` split and prints a JSON summary.
+
+Run the partial native-forward GPU demo against CIFAR-10:
+
+```bash
+PYTHONPATH=src python3 examples/cuda_native_gpu_forward_cifar10_demo.py \
+  --data-root data/cifar-10-batches-py \
+  --batch-size 4
+```
+
+This demo loads an official CIFAR-10 test batch, executes `Conv2d -> ReLU -> MaxPool2d -> Flatten -> Linear` through the native GPU forward executor, compares against the NumPy reference executor, and prints the native kernel execution kinds.
