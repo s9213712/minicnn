@@ -55,7 +55,8 @@ def _conv2d_backward_arrays(
     out_per_group = c_out // groups
     if w_in_per_group != in_per_group:
         raise ValueError(
-            f'Conv2d backward helper: weight expects {w_in_per_group} input channels per group, '
+            f'[E_CONV2D_CHANNEL_GROUP_MISMATCH] Conv2d backward helper: '
+            f'weight expects {w_in_per_group} input channels per group, '
             f'expected {in_per_group}'
         )
     grad_b = grad_out.sum(axis=(0, 2, 3)).astype(np.float32)

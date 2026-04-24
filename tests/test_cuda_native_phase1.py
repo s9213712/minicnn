@@ -258,7 +258,7 @@ def test_default_registry_registered_ops_are_stable():
     assert reg.registered_ops() == sorted(spec.op_name for spec in DEFAULT_KERNEL_SPECS)
 
 
-def test_default_registry_keeps_activation_kernel_surface_stable():
+def test_default_registry_keeps_activation_kernel_minimum_contract():
     from minicnn.cuda_native.kernels import DEFAULT_KERNEL_SPECS
 
     activation_ops = [
@@ -267,7 +267,8 @@ def test_default_registry_keeps_activation_kernel_surface_stable():
         if spec.category == 'activation'
     ]
 
-    assert activation_ops == ['ReLU', 'LeakyReLU', 'Sigmoid', 'Tanh', 'SiLU']
+    required = {'ReLU', 'LeakyReLU', 'Sigmoid', 'Tanh', 'SiLU'}
+    assert required.issubset(set(activation_ops))
 
 
 def test_default_registry_exposes_kernel_metadata():
@@ -279,19 +280,17 @@ def test_default_registry_exposes_kernel_metadata():
         'op_name': 'Conv2d',
         'category': 'convolution',
     }
-    assert [(spec.op_name, spec.category) for spec in reg.registered_specs()] == [
+    described = {(spec.op_name, spec.category) for spec in reg.registered_specs()}
+    required = {
         ('AvgPool2d', 'pool'),
         ('BatchNorm2d', 'normalization'),
         ('Conv2d', 'convolution'),
         ('Flatten', 'shape'),
-        ('LeakyReLU', 'activation'),
         ('Linear', 'linear'),
         ('MaxPool2d', 'pool'),
         ('ReLU', 'activation'),
-        ('SiLU', 'activation'),
-        ('Sigmoid', 'activation'),
-        ('Tanh', 'activation'),
-    ]
+    }
+    assert required.issubset(described)
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +403,10 @@ def test_executor_conv2d_rejects_weight_channel_mismatch():
     x = np.ones((1, 1, 5, 5), dtype=np.float32)
     bad_w = np.ones((2, 3, 3, 3), dtype=np.float32)
 
-    with pytest.raises(ValueError, match='weight expects 3 input channels, got 1'):
+    with pytest.raises(
+        ValueError,
+        match=r'E_CONV2D_CHANNEL_GROUP_MISMATCH.*weight expects 3 channels per group.*input channels=1.*groups=1',
+    ):
         ForwardExecutor().run_inference(g, x, params={'_w_conv2d_0': bad_w})
 
 

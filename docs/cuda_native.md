@@ -324,6 +324,13 @@ Config / YAML
 4. Correctness before optimization — conservative planner, no clever tricks until stable
 5. Separation of concerns — IR, planner, execution, debug are distinct layers
 
+Public executor contract:
+
+- `ForwardExecutor` is stateless
+- use `run(graph, feeds, params=None, mode='eval')`
+- or the wrappers `run_inference(graph, x, ...)` / `run_with_cache(graph, feeds, ...)`
+- do not instantiate it with a graph object
+
 ## Roadmap
 
 | Phase | Goal | Status |

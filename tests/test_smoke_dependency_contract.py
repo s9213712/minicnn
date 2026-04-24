@@ -57,3 +57,18 @@ def test_cli_smoke_json_contract_exposes_registry_aliases_and_flags(capsys):
     assert 'depthwise_conv2d' in layers
     assert 'pointwise_conv2d' in layers
     assert 'layernorm2d' in layers
+
+
+def test_run_smoke_checks_reports_optional_cuda_legacy_artifact_precisely():
+    from minicnn._cli_readonly import run_smoke_checks
+
+    payload = run_smoke_checks()
+    native_check = next(
+        check for check in payload['checks']
+        if check['name'] == 'optional_cuda_legacy_native_artifacts'
+    )
+
+    assert native_check['required'] is False
+    assert native_check['details']['component'] == 'optional cuda_legacy native artifact'
+    assert 'cuda_native_validation' in native_check['details']['available_surfaces']
+    assert 'cuda_legacy_validation' in native_check['details']['available_surfaces']

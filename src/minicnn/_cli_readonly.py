@@ -109,15 +109,22 @@ def run_smoke_checks() -> dict[str, Any]:
     ))
 
     checks.append(_smoke_check(
-        'native_cuda_artifacts',
+        'optional_cuda_legacy_native_artifacts',
         native_available,
         required=False,
         details={
             'native_artifacts': native_artifacts,
             'shared_objects': native_artifacts,
-            'hint': 'Run minicnn build --legacy-make --check if you need cuda_legacy.',
+            'component': 'optional cuda_legacy native artifact',
+            'available_surfaces': [
+                'torch',
+                'autograd',
+                'cuda_native_validation',
+                'cuda_legacy_validation',
+            ],
+            'hint': 'Optional cuda_legacy native artifact is missing. Run minicnn build --legacy-make --check only if you need the compiled cuda_legacy runtime.',
         },
-        suggested_fix='Run minicnn build --legacy-make --check if you need cuda_legacy.',
+        suggested_fix='Optional cuda_legacy native artifact is missing. Run minicnn build --legacy-make --check only if you need the compiled cuda_legacy runtime.',
     ))
 
     cifar10_ready = bool(health.get('data_root_exists'))

@@ -196,7 +196,8 @@ def _conv2d_forward_array(
     expected_w_in = c_in // groups
     if w_in_per_group != expected_w_in:
         raise ValueError(
-            f'{node_desc}: weight expects {w_in_per_group} channels per group, '
+            f'[E_CONV2D_CHANNEL_GROUP_MISMATCH] {node_desc}: '
+            f'weight expects {w_in_per_group} channels per group, '
             f'got input channels={c_in}, groups={groups}'
         )
     if ph > 0 or pw > 0:

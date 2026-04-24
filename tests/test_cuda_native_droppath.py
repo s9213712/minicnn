@@ -8,10 +8,8 @@ def test_droppath_kernel_preserves_shape_in_eval():
     from minicnn.cuda_native.executor import ForwardExecutor
 
     graph = build_graph([{'type': 'DropPath', 'p': 0.2}], (4, 8, 8, 8))
-    executor = ForwardExecutor(graph)
     x = np.random.default_rng(0).standard_normal((4, 8, 8, 8)).astype(np.float32)
-    ctx = {'input': x, '__mode__': 'eval'}
-    executor.run(ctx)
+    ctx = ForwardExecutor().run(graph, {'input': x}, mode='eval')
     out = ctx[graph.output_spec.name]
     assert out.shape == x.shape
     assert np.allclose(out, x)

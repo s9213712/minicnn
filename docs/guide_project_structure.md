@@ -64,6 +64,12 @@ minicnn/
 `cpp/Release/*`, `artifacts/models/*`, `__pycache__/`, `.pytest_cache/`, and
 other runtime artifacts are local files not tracked in Git.
 
+Output-path policy:
+
+- persistent run outputs belong under `artifacts/`
+- ad-hoc generated files belong under `outputs/`
+- root-level scratch directories such as `path-policy-artifacts/` are treated as unmanaged local output and should not be used for new tooling
+
 ## include
 
 | File | Purpose |

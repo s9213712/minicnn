@@ -13,10 +13,8 @@ def test_layernorm_kernel_preserves_shape():
         (2, 3, 4, 5),
     )
     params = _init_params(graph, seed=0)
-    executor = ForwardExecutor(graph)
     x = np.random.default_rng(0).standard_normal((2, 3, 4, 5)).astype(np.float32)
-    ctx = {'input': x, **params}
-    executor.run(ctx)
+    ctx = ForwardExecutor().run(graph, {'input': x}, params=params)
     assert ctx[graph.output_spec.name].shape == x.shape
 
 
