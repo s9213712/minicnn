@@ -105,6 +105,132 @@ def test_concat_backward_matches_torch():
     assert np.allclose(native_grad_input, tx.grad.detach().cpu().numpy(), atol=1e-6)
 
 
+def test_linear_forward_matches_torch():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'Linear', 'out_features': 3}],
+        (2, 4),
+    )
+    x = np.random.default_rng(29).standard_normal((2, 4)).astype(np.float32)
+    weight = np.random.default_rng(30).standard_normal((3, 4)).astype(np.float32)
+    bias = np.random.default_rng(31).standard_normal((3,)).astype(np.float32)
+    params = {
+        '_w_linear_0': weight,
+        '_b_linear_0': bias,
+    }
+
+    native = ForwardExecutor().run_inference(graph, x, params=params)
+    expected = F.linear(
+        torch.from_numpy(x),
+        weight=torch.from_numpy(weight),
+        bias=torch.from_numpy(bias),
+    ).detach().cpu().numpy()
+
+    assert np.allclose(native, expected, atol=1e-6, rtol=1e-6)
+
+
+def test_linear_backward_matches_torch():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.backward import BackwardExecutor
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'Linear', 'out_features': 3}],
+        (2, 4),
+    )
+    x = np.random.default_rng(32).standard_normal((2, 4)).astype(np.float32)
+    grad_out = np.random.default_rng(33).standard_normal((2, 3)).astype(np.float32)
+    weight = np.random.default_rng(34).standard_normal((3, 4)).astype(np.float32)
+    bias = np.random.default_rng(35).standard_normal((3,)).astype(np.float32)
+    params = {
+        '_w_linear_0': weight,
+        '_b_linear_0': bias,
+    }
+
+    _ctx, cache = ForwardExecutor().run_with_cache(graph, {'input': x}, params=params, mode='train')
+    native_grad_input, native_param_grads = BackwardExecutor().run(graph, grad_out, cache)
+
+    tx = torch.tensor(x, dtype=torch.float32, requires_grad=True)
+    tw = torch.tensor(weight, dtype=torch.float32, requires_grad=True)
+    tb = torch.tensor(bias, dtype=torch.float32, requires_grad=True)
+    tout = F.linear(tx, weight=tw, bias=tb)
+    tout.backward(torch.tensor(grad_out, dtype=torch.float32))
+
+    assert np.allclose(native_grad_input, tx.grad.detach().cpu().numpy(), atol=1e-5, rtol=1e-5)
+    assert np.allclose(native_param_grads['_w_linear_0'], tw.grad.detach().cpu().numpy(), atol=1e-5, rtol=1e-5)
+    assert np.allclose(native_param_grads['_b_linear_0'], tb.grad.detach().cpu().numpy(), atol=1e-5, rtol=1e-5)
+
+
+def test_conv2d_forward_matches_torch():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'Conv2d', 'out_channels': 2, 'kernel_size': 3, 'padding': 1}],
+        (2, 3, 5, 5),
+    )
+    x = np.random.default_rng(36).standard_normal((2, 3, 5, 5)).astype(np.float32)
+    weight = np.random.default_rng(37).standard_normal((2, 3, 3, 3)).astype(np.float32)
+    bias = np.random.default_rng(38).standard_normal((2,)).astype(np.float32)
+    params = {
+        '_w_conv2d_0': weight,
+        '_b_conv2d_0': bias,
+    }
+
+    native = ForwardExecutor().run_inference(graph, x, params=params)
+    expected = F.conv2d(
+        torch.from_numpy(x),
+        weight=torch.from_numpy(weight),
+        bias=torch.from_numpy(bias),
+        stride=1,
+        padding=1,
+    ).detach().cpu().numpy()
+
+    assert np.allclose(native, expected, atol=1e-5, rtol=1e-5)
+
+
+def test_conv2d_backward_matches_torch():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.backward import BackwardExecutor
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'Conv2d', 'out_channels': 2, 'kernel_size': 3, 'padding': 1}],
+        (2, 3, 5, 5),
+    )
+    x = np.random.default_rng(39).standard_normal((2, 3, 5, 5)).astype(np.float32)
+    grad_out = np.random.default_rng(40).standard_normal((2, 2, 5, 5)).astype(np.float32)
+    weight = np.random.default_rng(41).standard_normal((2, 3, 3, 3)).astype(np.float32)
+    bias = np.random.default_rng(42).standard_normal((2,)).astype(np.float32)
+    params = {
+        '_w_conv2d_0': weight,
+        '_b_conv2d_0': bias,
+    }
+
+    _ctx, cache = ForwardExecutor().run_with_cache(graph, {'input': x}, params=params, mode='train')
+    native_grad_input, native_param_grads = BackwardExecutor().run(graph, grad_out, cache)
+
+    tx = torch.tensor(x, dtype=torch.float32, requires_grad=True)
+    tw = torch.tensor(weight, dtype=torch.float32, requires_grad=True)
+    tb = torch.tensor(bias, dtype=torch.float32, requires_grad=True)
+    tout = F.conv2d(tx, weight=tw, bias=tb, stride=1, padding=1)
+    tout.backward(torch.tensor(grad_out, dtype=torch.float32))
+
+    assert np.allclose(native_grad_input, tx.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads['_w_conv2d_0'], tw.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads['_b_conv2d_0'], tb.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+
+
 def test_layernorm_forward_matches_torch():
     import torch.nn.functional as F
 
@@ -163,6 +289,90 @@ def test_groupnorm_forward_matches_torch():
     ).detach().cpu().numpy()
 
     assert np.allclose(native, expected, atol=1e-5, rtol=1e-5)
+
+
+def test_batchnorm2d_eval_forward_matches_torch():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'BatchNorm2d', 'eps': 1e-5}],
+        (2, 3, 4, 4),
+    )
+    x = np.random.default_rng(43).standard_normal((2, 3, 4, 4)).astype(np.float32)
+    gamma = np.random.default_rng(44).standard_normal((3,)).astype(np.float32)
+    beta = np.random.default_rng(45).standard_normal((3,)).astype(np.float32)
+    running_mean = np.random.default_rng(46).standard_normal((3,)).astype(np.float32)
+    running_var = np.abs(np.random.default_rng(47).standard_normal((3,)).astype(np.float32)) + 0.5
+    params = {
+        '_w_batchnorm2d_0': gamma,
+        '_b_batchnorm2d_0': beta,
+        '_running_mean_batchnorm2d_0': running_mean.copy(),
+        '_running_var_batchnorm2d_0': running_var.copy(),
+    }
+
+    native = ForwardExecutor().run_inference(graph, x, params=params, mode='eval')
+    expected = F.batch_norm(
+        torch.from_numpy(x),
+        running_mean=torch.from_numpy(running_mean),
+        running_var=torch.from_numpy(running_var),
+        weight=torch.from_numpy(gamma),
+        bias=torch.from_numpy(beta),
+        training=False,
+        momentum=0.1,
+        eps=1e-5,
+    ).detach().cpu().numpy()
+
+    assert np.allclose(native, expected, atol=1e-5, rtol=1e-5)
+
+
+def test_batchnorm2d_eval_backward_matches_torch():
+    import torch.nn.functional as F
+
+    from minicnn.cuda_native.backward import BackwardExecutor
+    from minicnn.cuda_native.executor import ForwardExecutor
+    from minicnn.cuda_native.graph import build_graph
+
+    graph = build_graph(
+        [{'type': 'BatchNorm2d', 'eps': 1e-5}],
+        (2, 3, 4, 4),
+    )
+    x = np.random.default_rng(48).standard_normal((2, 3, 4, 4)).astype(np.float32)
+    grad_out = np.random.default_rng(49).standard_normal((2, 3, 4, 4)).astype(np.float32)
+    gamma = np.random.default_rng(50).standard_normal((3,)).astype(np.float32)
+    beta = np.random.default_rng(51).standard_normal((3,)).astype(np.float32)
+    running_mean = np.random.default_rng(52).standard_normal((3,)).astype(np.float32)
+    running_var = np.abs(np.random.default_rng(53).standard_normal((3,)).astype(np.float32)) + 0.5
+    params = {
+        '_w_batchnorm2d_0': gamma,
+        '_b_batchnorm2d_0': beta,
+        '_running_mean_batchnorm2d_0': running_mean.copy(),
+        '_running_var_batchnorm2d_0': running_var.copy(),
+    }
+
+    _ctx, cache = ForwardExecutor().run_with_cache(graph, {'input': x}, params=params, mode='eval')
+    native_grad_input, native_param_grads = BackwardExecutor().run(graph, grad_out, cache)
+
+    tx = torch.tensor(x, dtype=torch.float32, requires_grad=True)
+    tw = torch.tensor(gamma, dtype=torch.float32, requires_grad=True)
+    tb = torch.tensor(beta, dtype=torch.float32, requires_grad=True)
+    tout = F.batch_norm(
+        tx,
+        running_mean=torch.tensor(running_mean, dtype=torch.float32),
+        running_var=torch.tensor(running_var, dtype=torch.float32),
+        weight=tw,
+        bias=tb,
+        training=False,
+        momentum=0.1,
+        eps=1e-5,
+    )
+    tout.backward(torch.tensor(grad_out, dtype=torch.float32))
+
+    assert np.allclose(native_grad_input, tx.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads['_w_batchnorm2d_0'], tw.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
+    assert np.allclose(native_param_grads['_b_batchnorm2d_0'], tb.grad.detach().cpu().numpy(), atol=1e-4, rtol=1e-4)
 
 
 def test_layernorm2d_forward_matches_torch():

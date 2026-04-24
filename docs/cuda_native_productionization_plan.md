@@ -188,6 +188,9 @@ Current status:
 - current baseline covers:
   - `Add`
   - `Concat`
+  - `Linear`
+  - `Conv2d`
+  - `BatchNorm2d`
   - `LayerNorm`
   - `LayerNorm2d`
   - `GroupNorm`
