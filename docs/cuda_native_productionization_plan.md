@@ -197,7 +197,11 @@ Current status:
   - `GroupNorm`
 - this creates a first reference-backed slice before widening to larger composite blocks
 - `BatchNorm2d` training-mode running-stat semantics now match PyTorch's biased-for-output / unbiased-for-running-var split
-- composite forward reference checks now also cover `ResidualBlock` and `ConvNeXtBlock`
+- composite parity now covers:
+  - `ResidualBlock` eval forward/backward
+  - `ResidualBlock` train forward/backward with shortcut projection
+  - `ConvNeXtBlock` forward/backward
+  - `ConvNeXtBlock` forward/backward with `layer_scale`
 - fixed-seed smoke reproducibility is now regression-tested for a minimal `cuda_native` training path
 - canonical `fp32`, `AMP`, and `grad_accum` native variants are now covered by an explicit tolerance-matrix regression test
 - `cuda-native-capabilities` and `validate-cuda-native-config` now expose machine-readable support-tier metadata instead of leaving `Stable` / `Beta` / `Experimental` only in prose

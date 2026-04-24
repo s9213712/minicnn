@@ -124,7 +124,11 @@ The next phase is narrower and more technical:
   - trivial `Flatten -> Linear` native training paths now stay on the `stable` tier instead of being artificially forced into `beta`
   - current parity baseline: `Add`, `Concat`, `Linear`, `Conv2d` (including grouped/depthwise), `BatchNorm2d`, `LayerNorm`, `LayerNorm2d`, `GroupNorm` forward/backward
   - `BatchNorm2d` train-mode running-stat semantics are now aligned with PyTorch (`running_var` uses unbiased batch variance)
-  - composite forward parity now covers `ResidualBlock` and `ConvNeXtBlock`
+  - composite parity now covers:
+    - `ResidualBlock` eval forward/backward
+    - `ResidualBlock` train forward/backward with shortcut projection
+    - `ConvNeXtBlock` forward/backward
+    - `ConvNeXtBlock` forward/backward with `layer_scale`
   - fixed-seed smoke reproducibility is now locked for a minimal `cuda_native` training path
   - canonical `fp32`, `AMP`, and `grad_accum` native runs now have an explicit tolerance-matrix regression gate
 
