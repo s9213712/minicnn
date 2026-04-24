@@ -182,6 +182,16 @@ Required work:
 
 Without parity and numeric regression, the backend remains research-grade.
 
+Current status:
+
+- initial torch parity coverage now exists for selected forward/backward-sensitive ops
+- current baseline covers:
+  - `Add`
+  - `Concat`
+  - `LayerNorm`
+  - `GroupNorm`
+- this creates a first reference-backed slice before widening to larger composite blocks
+
 ## Phase 4: Support Tiers
 
 Goal:

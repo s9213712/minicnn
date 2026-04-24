@@ -118,5 +118,7 @@ The next phase is narrower and more technical:
 - runtime efficiency
 - memory / state reuse quality
 - stronger performance-oriented reporting without overstating production readiness
+- initial torch parity coverage for selected sensitive ops
+  - current parity baseline: `Add`, `Concat`, `LayerNorm`, `GroupNorm` forward/backward
 
 For the formal productionization path, see [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md).
