@@ -151,6 +151,21 @@ def _validate_engine_cfg(engine_cfg: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _gpu_native_bootstrap_error(readiness: dict[str, object]) -> str:
+    supported_ops = list(readiness.get('bootstrap_supported_ops', []))
+    missing_ops = list(readiness.get('bootstrap_missing_ops', []))
+    blockers = list(readiness.get('remaining_blockers', []))
+    if missing_ops:
+        return (
+            'cuda_native gpu_native bootstrap subset coverage: '
+            f'supported={supported_ops}, outside_bootstrap={missing_ops}, blockers={blockers}.'
+        )
+    return (
+        'cuda_native gpu_native bootstrap subset coverage: '
+        f'all requested ops are within bootstrap subset={supported_ops}, blockers={blockers}.'
+    )
+
+
 def _matched_support_tiers(items: set[str], bucket: str) -> dict[str, list[str]]:
     return {
         tier: sorted(items & set(values.get(bucket, [])))
@@ -514,6 +529,10 @@ def validate_cuda_native_config(cfg: dict[str, Any]) -> list[str]:
     errors.extend(_validate_optimizer_cfg(optim_cfg))
     errors.extend(_validate_scheduler_cfg(scheduler_cfg))
     errors.extend(_validate_train_cfg(train_cfg))
+    execution_mode = resolve_cuda_native_execution_mode(cfg)
+    if str(execution_mode.get('selected_execution_mode')) == 'gpu_native':
+        readiness = assess_cuda_native_execution_readiness(cfg)
+        errors.append(_gpu_native_bootstrap_error(readiness))
 
     validation_input_shape = _validation_input_shape(dataset_cfg)
     if validation_input_shape is not None and not model_errors:
