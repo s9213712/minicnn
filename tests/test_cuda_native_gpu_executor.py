@@ -46,6 +46,10 @@ class _FakeCudaLib:
     def apply_relu(self, d_data, size):
         self.memory[d_data][:int(size)] = np.maximum(self.memory[d_data][:int(size)], 0.0)
 
+    def leaky_relu_forward(self, d_data, alpha, size):
+        data = self.memory[d_data][:int(size)]
+        self.memory[d_data][:int(size)] = np.where(data >= 0.0, data, float(alpha) * data)
+
     def apply_maxpool(self, d_input, d_output, n, c, h, w):
         x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
         out_h = int(h) // 2
@@ -329,6 +333,37 @@ def test_gpu_stub_executor_uses_native_relu_when_device_pointers_available():
     summary = runtime.summary()
     assert summary['execution_kinds']['gpu_native_kernel:dense_forward'] == 1
     assert summary['execution_kinds']['gpu_native_kernel:apply_relu'] == 1
+
+
+def test_gpu_stub_executor_uses_native_leaky_relu_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'LeakyReLU', 'negative_slope': 0.2},
+            ],
+        },
+        (1, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.asarray([[-2.0, -0.5, 0.0, 3.0]], dtype=np.float32)
+    result = executor.run(graph, x, params={})
+
+    expected = np.where(x >= 0.0, x, 0.2 * x).astype(np.float32)
+    np.testing.assert_allclose(result.output, expected)
+
+    summary = runtime.summary()
+    assert summary['native_device_pointers_enabled'] is True
+    assert summary['execution_kinds']['gpu_native_kernel:leaky_relu_forward'] == 1
+    assert summary['device_sync_to_device_events'] >= 1
+    assert summary['device_sync_to_host_events'] >= 1
 
 
 def test_gpu_stub_executor_uses_native_maxpool_when_device_pointers_available():

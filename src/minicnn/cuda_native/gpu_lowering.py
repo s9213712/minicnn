@@ -172,8 +172,30 @@ def _lower_relu(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
 
 
 def _lower_leaky_relu(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
-    x = np.asarray(_input_tensor(node, ctx).data, dtype=np.float32)
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
     alpha = float(node.attrs.get('negative_slope', 0.01))
+    if (
+        ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and hasattr(ctx.runtime.bound_lib, 'leaky_relu_forward')
+    ):
+        output = ctx.runtime.allocate_staging_buffer(
+            tuple(node.output_specs[0].shape),
+            dtype='float32',
+            name=node.outputs[0],
+        )
+        np.copyto(output.data, x)
+        ctx.runtime.sync_tensor_to_device(output)
+        ctx.runtime.bound_lib.leaky_relu_forward(output.device_ptr, float(alpha), int(output.data.size))
+        ctx.runtime.record_execution(
+            'gpu_native_kernel:leaky_relu_forward',
+            input_name=node.inputs[0],
+            output_name=node.outputs[0],
+            node_count=1,
+        )
+        ctx.runtime.sync_tensor_to_host(output)
+        return output
     output = np.where(x >= 0.0, x, alpha * x).astype(np.float32)
     return _allocate_output(node, ctx, output)
 
