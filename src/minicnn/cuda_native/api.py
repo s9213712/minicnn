@@ -8,6 +8,7 @@ from minicnn.cuda_native.capabilities import (
     CUDA_NATIVE_SUPPORT_TIERS,
     get_cuda_native_capabilities,
 )
+from minicnn.cuda_native.gpu_dispatch import build_gpu_dispatch_plan
 from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
 from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.validators import validate_cuda_native_model_config
@@ -50,6 +51,7 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
     selected_mode = str(execution_mode.get('selected_execution_mode', 'reference_numpy'))
     mode_readiness = dict(readiness_table.get(selected_mode, {}))
     model_cfg, _ = _as_mapping('model', cfg.get('model'))
+    dataset_cfg, _ = _as_mapping('dataset', cfg.get('dataset'))
     resolved_model_cfg = resolve_model_config(model_cfg)
     layer_types = sorted({
         str(layer.get('type'))
@@ -70,6 +72,15 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
     remaining_blockers = [str(item) for item in mode_readiness.get('remaining_blockers', [])]
     if selected_mode == 'gpu_native' and 'gpu_native_execution_not_implemented' not in remaining_blockers:
         remaining_blockers = ['gpu_native_execution_not_implemented', *remaining_blockers]
+    dispatch_plan_summary: dict[str, object] | None = None
+    validation_input_shape = _validation_input_shape(dataset_cfg)
+    if validation_input_shape is not None:
+        try:
+            graph = build_cuda_native_graph(model_cfg, validation_input_shape)
+            dispatch_plan = build_gpu_dispatch_plan(graph)
+            dispatch_plan_summary = dispatch_plan.summary()
+        except ValueError:
+            dispatch_plan_summary = None
     return {
         'selected_execution_mode': selected_mode,
         'status': str(mode_readiness.get('status', 'unknown')),
@@ -90,6 +101,7 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
             )
             for op_name in layer_types
         },
+        'dispatch_plan': dispatch_plan_summary,
         'remaining_blockers': remaining_blockers,
     }
 

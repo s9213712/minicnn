@@ -130,6 +130,10 @@ Current status:
   - `execution_mode_readiness` in `cuda-native-capabilities`
   - `execution_readiness_assessment` in validation and train preambles
   - `gpu_kernel_registry_surface` in `cuda-native-capabilities`
+- initial GPU dispatch seam now exists:
+  - `gpu_dispatch.py`
+  - per-node bootstrap dispatch plans for supported subset graphs
+  - explicit unsupported-op reporting for graphs outside the bootstrap subset
 
 Goal:
 

@@ -108,6 +108,8 @@ def test_validate_cuda_native_config_rejects_planned_gpu_native_mode(tmp_path, c
     assert payload['execution_readiness_assessment']['bootstrap_missing_ops'] == []
     assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['Flatten']['forward_status'] == 'planned'
     assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['Linear']['backward_status'] == 'planned'
+    assert payload['execution_readiness_assessment']['dispatch_plan']['ready'] is True
+    assert payload['execution_readiness_assessment']['dispatch_plan']['num_steps'] == 2
     assert 'gpu_native_execution_not_implemented' in payload['execution_readiness_assessment']['remaining_blockers']
     assert any('planned but not yet implemented' in err for err in payload['errors'])
     assert any('bootstrap subset coverage' in err for err in payload['errors'])
@@ -143,7 +145,7 @@ def test_validate_cuda_native_config_reports_ops_outside_gpu_bootstrap_subset(tm
     config_path.write_text(
         config_path.read_text(encoding='utf-8').replace(
             "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
-            "  layers:\n    - type: Flatten\n    - type: BatchNorm2d\n      num_features: 1\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: BatchNorm2d\n      num_features: 1\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
         ),
         encoding='utf-8',
     )
@@ -162,4 +164,6 @@ def test_validate_cuda_native_config_reports_ops_outside_gpu_bootstrap_subset(tm
     assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Flatten', 'Linear']
     assert payload['execution_readiness_assessment']['bootstrap_missing_ops'] == ['BatchNorm2d']
     assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['BatchNorm2d']['forward_status'] == 'outside_bootstrap'
+    assert payload['execution_readiness_assessment']['dispatch_plan']['ready'] is False
+    assert payload['execution_readiness_assessment']['dispatch_plan']['unsupported_ops'] == ['BatchNorm2d']
     assert any("outside_bootstrap=['BatchNorm2d']" in err for err in payload['errors'])
