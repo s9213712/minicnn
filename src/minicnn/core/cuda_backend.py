@@ -5,10 +5,12 @@ import os
 import threading
 
 from minicnn.core._cuda_library import (
+    CUDA_NATIVE_SYMBOL_GROUPS,
     REQUIRED_SYMBOLS,
     SO_PATH,
     bind_symbols,
     load_library,
+    missing_symbols,
     resolve_library_path,
 )
 from minicnn.core._cuda_ops import (
@@ -62,6 +64,7 @@ def check_cuda_ready(path: str | os.PathLike[str] | None = None) -> dict[str, ob
         'exists': exists,
         'loadable': False,
         'missing_symbols': [],
+        'symbol_groups': {},
         'error': None,
     }
     if not exists:
@@ -69,8 +72,18 @@ def check_cuda_ready(path: str | os.PathLike[str] | None = None) -> dict[str, ob
         return result
     try:
         candidate = bind_symbols(load_library(resolved))
-        missing = [name for name in REQUIRED_SYMBOLS if not hasattr(candidate, name)]
+        symbol_groups = {
+            group_name: {
+                'required_symbols': list(symbols),
+                'missing_symbols': list(missing_symbols(candidate, symbols)),
+            }
+            for group_name, symbols in CUDA_NATIVE_SYMBOL_GROUPS.items()
+        }
+        for group_summary in symbol_groups.values():
+            group_summary['ready'] = not bool(group_summary['missing_symbols'])
+        missing = list(missing_symbols(candidate, REQUIRED_SYMBOLS))
         result['missing_symbols'] = missing
+        result['symbol_groups'] = symbol_groups
         result['loadable'] = not missing
         if missing:
             result['error'] = f'Missing required symbols: {missing}'

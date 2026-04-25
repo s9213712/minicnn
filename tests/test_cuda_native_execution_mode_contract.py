@@ -50,6 +50,98 @@ def _run_train_native_or_skip(args: list[str]) -> int:
         raise
 
 
+def test_cuda_library_symbol_inventory_covers_training_lowering_plans():
+    from minicnn.core._cuda_library import GPU_NATIVE_TRAINING_SYMBOLS, missing_symbols
+    from minicnn.cuda_native.api import build_cuda_native_graph
+    from minicnn.cuda_native.gpu_training_lowering import build_gpu_training_lowering_plan
+
+    cases = [
+        (
+            [{'type': 'Flatten'}, {'type': 'Linear', 'out_features': 2}],
+            (1, 1, 8, 8),
+            {'type': 'CrossEntropyLoss', 'label_smoothing': 0.1},
+            {'type': 'SGD', 'momentum': 0.9},
+        ),
+        (
+            [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 4},
+                {'type': 'GELU'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+            (1, 1, 8, 8),
+            {'type': 'CrossEntropyLoss'},
+            {'type': 'SGD'},
+        ),
+        (
+            [
+                {'type': 'Conv2d', 'out_channels': 2, 'kernel_size': 3, 'bias': False},
+                {'type': 'ReLU'},
+                {'type': 'MaxPool2d', 'kernel_size': 2, 'stride': 2},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+            (1, 1, 8, 8),
+            {'type': 'CrossEntropyLoss'},
+            {'type': 'SGD', 'momentum': 0.9},
+        ),
+        (
+            [
+                {'type': 'DepthwiseConv2d', 'kernel_size': 3, 'bias': False},
+                {'type': 'ReLU'},
+                {'type': 'MaxPool2d', 'kernel_size': 2, 'stride': 2},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+            (1, 2, 8, 8),
+            {'type': 'CrossEntropyLoss'},
+            {'type': 'SGD', 'momentum': 0.9},
+        ),
+        (
+            [{'type': 'AvgPool2d', 'kernel_size': 2, 'stride': 2}, {'type': 'Flatten'}, {'type': 'Linear', 'out_features': 2}],
+            (1, 1, 8, 8),
+            {'type': 'CrossEntropyLoss'},
+            {'type': 'SGD'},
+        ),
+        (
+            [{'type': 'BatchNorm2d', 'num_features': 2}, {'type': 'Flatten'}, {'type': 'Linear', 'out_features': 2}],
+            (1, 2, 8, 8),
+            {'type': 'CrossEntropyLoss'},
+            {'type': 'SGD'},
+        ),
+        (
+            [{'type': 'LayerNorm2d'}, {'type': 'Flatten'}, {'type': 'Linear', 'out_features': 2}],
+            (1, 2, 8, 8),
+            {'type': 'CrossEntropyLoss'},
+            {'type': 'SGD'},
+        ),
+        (
+            [{'type': 'GroupNorm', 'num_groups': 1}, {'type': 'Flatten'}, {'type': 'Linear', 'out_features': 2}],
+            (1, 2, 8, 8),
+            {'type': 'CrossEntropyLoss'},
+            {'type': 'SGD'},
+        ),
+        (
+            [{'type': 'GlobalAvgPool2d'}, {'type': 'Flatten'}, {'type': 'Linear', 'out_features': 2}],
+            (1, 2, 8, 8),
+            {'type': 'CrossEntropyLoss'},
+            {'type': 'SGD'},
+        ),
+    ]
+    inventory = set(GPU_NATIVE_TRAINING_SYMBOLS)
+    for layers, input_shape, loss_cfg, optim_cfg in cases:
+        graph = build_cuda_native_graph({'layers': layers}, input_shape)
+        plan = build_gpu_training_lowering_plan(graph, loss_cfg=loss_cfg, optim_cfg=optim_cfg)
+
+        assert plan.ready is True
+        assert set(plan.required_symbols()).issubset(inventory)
+
+    class _FakeLib:
+        dense_forward = object()
+
+    assert missing_symbols(_FakeLib(), ('dense_forward', 'not_present')) == ('not_present',)
+
+
 def test_validate_cuda_native_config_reports_reference_numpy_mode(tmp_path, capsys):
     from minicnn.cli import main
 

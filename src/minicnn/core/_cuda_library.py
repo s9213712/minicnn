@@ -30,6 +30,7 @@ REQUIRED_SYMBOLS = (
     'gpu_free',
     'gpu_memcpy_h2d',
     'gpu_memcpy_d2h',
+    'gpu_memset',
     'im2col_forward',
     'gemm_forward',
     'dense_forward',
@@ -39,6 +40,59 @@ REQUIRED_SYMBOLS = (
     'concat_forward',
     'softmax_xent_grad_loss_acc',
 )
+GPU_NATIVE_TRAINING_SYMBOLS = tuple(dict.fromkeys((
+    *REQUIRED_SYMBOLS,
+    'gpu_memcpy_d2d',
+    'gpu_synchronize',
+    'leaky_relu_forward',
+    'leaky_relu_backward',
+    'apply_relu_backward',
+    'sigmoid_forward',
+    'sigmoid_backward',
+    'tanh_forward',
+    'tanh_backward',
+    'silu_forward',
+    'silu_backward',
+    'gelu_forward',
+    'gelu_backward',
+    'dense_backward_full',
+    'softmax_xent_smooth_grad_loss_acc',
+    'mse_fwd_grad_loss_acc',
+    'bce_fwd_grad_loss_acc',
+    'count_correct',
+    'apply_sgd_update',
+    'apply_momentum_update',
+    'sgd_update_fused',
+    'adam_update_fused',
+    'rmsprop_update_fused',
+    'grad_l2_sumsq',
+    'scale_inplace',
+    'bn_eval_forward',
+    'bn_backward',
+    'avgpool2d_forward',
+    'avgpool2d_backward',
+    'global_avgpool2d_forward',
+    'global_avgpool2d_backward',
+    'maxpool_backward_nchw',
+    'nchw_to_cnhw',
+    'cnhw_to_nchw',
+    'conv_backward',
+    'conv_backward_precol',
+    'depthwise_conv2d_forward',
+    'depthwise_conv2d_backward',
+    'layernorm2d_forward',
+    'layernorm2d_backward',
+    'groupnorm_forward',
+    'groupnorm_backward',
+)))
+CUDA_NATIVE_SYMBOL_GROUPS = {
+    'core': REQUIRED_SYMBOLS,
+    'gpu_native_training': GPU_NATIVE_TRAINING_SYMBOLS,
+}
+
+
+def missing_symbols(bound_lib: object, symbols: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    return tuple(name for name in symbols if not hasattr(bound_lib, name))
 
 
 def resolve_library_path(path: str | os.PathLike[str] | None = None) -> str:
