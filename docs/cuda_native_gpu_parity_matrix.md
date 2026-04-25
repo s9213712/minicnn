@@ -76,6 +76,10 @@ Representative real CUDA smoke now passes on this machine:
 - ConvNeXt-style bridge CIFAR-10 smoke entrypoint exists; on the current host it
   stops at CUDA preflight with status 35 because the installed driver is older
   than the CUDA runtime selected by the native library
+- rebuilding an isolated CUDA 11.5 handmade native variant succeeds, but the
+  host still reports preflight status 35 with `driver=unknown`; real-smoke
+  execution is therefore blocked by local CUDA driver visibility/runtime init,
+  not by missing exported native symbols
 
 This is not yet a claim of full graph-level GPU backward generalization.
 

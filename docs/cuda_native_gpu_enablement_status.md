@@ -179,6 +179,11 @@ Current real CUDA evidence:
   PointwiseConv2d -> Flatten -> Linear`; the current host stops at CUDA runtime
   preflight with status 35 because the installed driver is older than the CUDA
   runtime used to build/load the native library
+- a CUDA 11.5 handmade native variant built successfully with `/usr/bin/nvcc`,
+  but the same host still reports CUDA runtime preflight status 35 with
+  `driver=unknown`; this narrows the remaining real-smoke blocker to local CUDA
+  driver visibility/runtime initialization rather than missing native symbols or
+  the CUDA 13.2 build alone
 
 If a future machine fails with `CUDA runtime preflight failed`, the repo still
 fails before allocation with a Python `RuntimeError` instead of aborting inside
