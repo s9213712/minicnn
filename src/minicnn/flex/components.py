@@ -27,6 +27,8 @@ if nn is not None:
             channel_multiplier: int = 1,
             bias: bool = True,
         ):
+            if int(in_channels) <= 0:
+                raise ValueError('DepthwiseConv2d in_channels must be positive')
             if out_channels is None:
                 out_channels = int(in_channels) * int(channel_multiplier)
             if int(out_channels) <= 0:

@@ -225,6 +225,7 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'compile' in help_text
     assert 'show-model' in help_text
     assert 'show-graph' in help_text
+    assert 'check-cuda-ready' in help_text
     assert '--quiet' in subparsers.choices['train-flex'].format_help()
     assert '--verbose' in subparsers.choices['train-flex'].format_help()
     assert '--cuda-arch' in build_help
@@ -234,6 +235,50 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert '--format {json,text}' in subparsers.choices['validate-dual-config'].format_help()
     assert '--format {json,text}' in subparsers.choices['show-model'].format_help()
     assert '--format {json,text}' in subparsers.choices['show-graph'].format_help()
+    assert '--path PATH' in subparsers.choices['check-cuda-ready'].format_help()
+
+
+def test_cli_check_cuda_ready_returns_environment_diagnostics(capsys, monkeypatch):
+    import json
+
+    from minicnn.cli import main
+    import minicnn.core.cuda_backend as cuda_backend
+
+    def fake_check_cuda_ready(path=None):
+        return {
+            'path': path or '/tmp/libcuda.so',
+            'exists': True,
+            'loadable': True,
+            'ready': False,
+            'missing_symbols': [],
+            'runtime_preflight': {
+                'available': True,
+                'ready': False,
+                'status': 35,
+                'status_message': 'CUDA driver version is insufficient for CUDA runtime version',
+                'driver_version': 0,
+                'runtime_version': 13020,
+            },
+            'environment_diagnostics': {
+                'issue': 'wsl_cuda_device_node_missing',
+                'device_nodes': {'/dev/dxg': False},
+                'runtime_driver_mismatch': True,
+                'remediation': ['Restart WSL.'],
+            },
+            'error': 'CUDA runtime preflight failed',
+        }
+
+    monkeypatch.setattr(cuda_backend, 'check_cuda_ready', fake_check_cuda_ready)
+
+    rc = main(['check-cuda-ready', '--path', 'handmade'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 2
+    assert payload['command'] == 'check-cuda-ready'
+    assert payload['status'] == 'error'
+    assert payload['path'] == 'handmade'
+    assert payload['runtime_preflight']['status'] == 35
+    assert payload['environment_diagnostics']['issue'] == 'wsl_cuda_device_node_missing'
 
 
 def test_user_error_goes_to_stderr_not_stdout(capsys):
@@ -327,14 +372,18 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['backend'] == 'cuda_native'
     assert payload['status'] == 'ok'
     assert payload['summary_status'] == 'beta'
-    assert payload['default_execution_mode'] == 'reference_numpy'
-    assert payload['default_tensor_execution_device'] == 'cpu'
-    assert payload['execution_modes_supported'] == ['reference_numpy']
-    assert payload['execution_modes_planned'] == ['gpu_native']
+    assert payload['default_execution_mode'] == 'gpu_native_auto'
+    assert payload['default_execution_policy'] == 'gpu_first_with_reference_numpy_fallback'
+    assert payload['default_tensor_execution_device'] == 'auto'
+    assert payload['execution_modes_supported'] == ['reference_numpy', 'gpu_native_auto', 'gpu_native']
+    assert payload['preferred_gpu_first_execution_mode'] == 'gpu_native_auto'
+    assert payload['execution_modes_planned'] == []
     assert payload['gpu_execution'] is False
     assert 'support_tiers' in payload
     assert 'support_tier_counts' in payload
     assert 'graduation_gates' in payload
+    assert 'execution_mode_readiness' in payload
+    assert 'gpu_kernel_registry_surface' in payload
     assert payload['supports_depthwise_conv'] is True
     assert payload['supports_pointwise_conv'] is True
     assert payload['supports_groupnorm'] is True
@@ -369,6 +418,14 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['support_tiers']['experimental']['features'] == []
     assert 'amp' in payload['support_tiers']['beta']['features']
     assert payload['support_tier_counts']['stable']['ops'] >= 1
+    assert payload['execution_mode_readiness']['reference_numpy']['ready'] is True
+    assert payload['execution_mode_readiness']['gpu_native']['ready'] is True
+    assert payload['execution_mode_readiness']['gpu_native']['status'] == 'bootstrap_training_partial'
+    assert 'Conv2d' in payload['execution_mode_readiness']['gpu_native']['bootstrap_subset_ops']
+    assert payload['execution_mode_readiness']['gpu_native']['kernel_readiness']['Conv2d'] == 'partial_native'
+    assert 'gpu_composite_block_training_pending' in payload['execution_mode_readiness']['gpu_native']['remaining_blockers']
+    assert any(entry['op_name'] == 'Conv2d' and entry['forward_status'] == 'partial_native' for entry in payload['gpu_kernel_registry_surface'])
+    assert any(entry['op_name'] == 'Flatten' and entry['backward_status'] == 'not_needed' for entry in payload['gpu_kernel_registry_surface'])
     assert payload['graduation_gates']['core_beta_subset']['ready'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['ready'] is True
     assert payload['graduation_gates']['full_backend_non_experimental']['criteria']['amp_tolerance_matrix_present'] is True
@@ -732,10 +789,11 @@ def test_cli_validate_cuda_native_config_rejects_invalid_optimizer_with_stable_c
     assert payload['support_tier_assessment']['optimizers_by_tier']['stable'] == []
 
 
-def test_cli_validate_cuda_native_config_reports_experimental_amp_tier(capsys, tmp_path):
+def test_cli_validate_cuda_native_config_reports_experimental_amp_tier(capsys, tmp_path, monkeypatch):
     import json
 
     from minicnn.cli import main
+    import minicnn.cuda_native.api as cuda_api
 
     config_path = tmp_path / 'cuda_native_amp_tier.yaml'
     config_path.write_text(
@@ -763,6 +821,8 @@ def test_cli_validate_cuda_native_config_reports_experimental_amp_tier(capsys, t
         encoding='utf-8',
     )
 
+    monkeypatch.setattr(cuda_api, '_cuda_runtime_ready_for_gpu_native', lambda: (False, 'test_runtime_unavailable'))
+
     rc = main(['validate-cuda-native-config', '--config', str(config_path)])
     payload = json.loads(capsys.readouterr().out)
 
@@ -774,6 +834,8 @@ def test_cli_validate_cuda_native_config_reports_experimental_amp_tier(capsys, t
     assert payload['support_tier_assessment']['highest_tier'] == 'beta'
     assert payload['support_tier_assessment']['optimizers_by_tier']['stable'] == ['AdamW']
     assert payload['support_tier_assessment']['features_by_tier']['beta'] == ['amp']
+    assert payload['execution_readiness_assessment']['selected_execution_mode'] == 'gpu_native_auto'
+    assert payload['execution_readiness_assessment']['fallback_active'] is True
 
 
 def test_train_native_rejects_unsupported_config_with_failure_category(capsys, tmp_path):
@@ -819,6 +881,7 @@ def test_train_native_preamble_exposes_support_tier_assessment(capsys, tmp_path,
 
     from minicnn.cli import main
     import minicnn._cli_training as cli_training
+    import minicnn.cuda_native.api as cuda_api
     import minicnn.unified.trainer as unified_trainer
 
     config_path = tmp_path / 'cuda_native_train_preamble.yaml'
@@ -849,6 +912,7 @@ def test_train_native_preamble_exposes_support_tier_assessment(capsys, tmp_path,
 
     monkeypatch.setattr(unified_trainer, 'train_unified_from_config', lambda cfg: tmp_path / 'fake-run')
     monkeypatch.setattr(cli_training, '_print_run_dir', lambda run_dir: 0)
+    monkeypatch.setattr(cuda_api, '_cuda_runtime_ready_for_gpu_native', lambda: (False, 'test_runtime_unavailable'))
 
     rc = main(['train-native', '--config', str(config_path)])
     out = capsys.readouterr().out
@@ -863,6 +927,9 @@ def test_train_native_preamble_exposes_support_tier_assessment(capsys, tmp_path,
     assert payload['tensors_ran_on'] == 'cpu'
     assert payload['support_tier_assessment']['highest_tier'] == 'stable'
     assert payload['support_tier_assessment']['ops_by_tier']['stable'] == ['Flatten', 'Linear']
+    assert payload['execution_readiness_assessment']['selected_execution_mode'] == 'gpu_native_auto'
+    assert payload['execution_readiness_assessment']['fallback_active'] is True
+    assert payload['execution_readiness_assessment']['bootstrap_subset_complete'] is True
 
 
 def test_cli_show_cuda_mapping_returns_structured_json(capsys):

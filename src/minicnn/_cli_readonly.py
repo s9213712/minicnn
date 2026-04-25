@@ -40,6 +40,7 @@ def _smoke_check(
 def run_smoke_checks() -> dict[str, Any]:
     from minicnn.compiler import optimize, trace_model_config
     from minicnn.cuda_native.api import validate_cuda_native_config
+    from minicnn.data.cifar10 import cifar10_ready
     from minicnn.flex.config import load_flex_config
     from minicnn.framework.health import build_diagnostic_payload, healthcheck
     from minicnn.unified.config import load_unified_config
@@ -127,13 +128,14 @@ def run_smoke_checks() -> dict[str, Any]:
         suggested_fix='Optional cuda_legacy native artifact is missing. Run minicnn build --legacy-make --check only if you need the compiled cuda_legacy runtime.',
     ))
 
-    cifar10_ready = bool(health.get('data_root_exists'))
+    cifar10_data_ready = bool(health.get('cifar10_ready', cifar10_ready(DATA_ROOT)))
     checks.append(_smoke_check(
         'cifar10_data',
-        cifar10_ready,
+        cifar10_data_ready,
         required=False,
         details={
             'data_root': str(DATA_ROOT),
+            'missing': list(health.get('cifar10_missing_files', [])),
             'hint': 'Run minicnn prepare-data if you want the handcrafted CUDA CIFAR-10 path.',
         },
         suggested_fix='Run minicnn prepare-data if you want the handcrafted CUDA CIFAR-10 path.',
@@ -185,7 +187,7 @@ def run_smoke_checks() -> dict[str, Any]:
     next_steps: list[str] = []
     if not native_artifacts:
         next_steps.append('minicnn build --legacy-make --check')
-    if not cifar10_ready:
+    if not cifar10_data_ready:
         next_steps.append('minicnn prepare-data')
     if not torch_available:
         next_steps.append('python -m pip install -e .[torch]')

@@ -256,3 +256,7 @@ minicnn/
 - `cuda_legacy` validation 會把格式錯誤的數值欄位報告為 validation error，而不是在 `ExperimentConfig` compile 後才失敗。
 - `healthcheck`、`doctor`、`smoke` 會回傳 JSON-friendly payload，方便 shell 工具與 agent 使用。
 - torch 路徑若要求 `train.device=cuda`，但當前 runtime 不支援 CUDA，現在會提早失敗。
+
+## CUDA Native maintenance map
+
+The CUDA-native GPU training surface is being split incrementally without breaking public imports. `gpu_training.py` stays as the compatibility-facing module, while focused `gpu_training_*` modules hold result types, shared helpers, linear, pool, norm, and conv-family helper code. Runtime context/diagnostics and GPU lowering registry/utility helpers have also been extracted. See `docs/cuda_native_large_file_inventory.md` for the active large-file cleanup queue.

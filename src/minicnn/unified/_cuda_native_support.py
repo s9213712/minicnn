@@ -254,9 +254,23 @@ def evaluate_native_graph(
             )
             for key, value in params.items()
         }
+    gpu_forward_executor = None
+    if device_runtime is not None and getattr(device_runtime, 'native_device_pointers_enabled', False):
+        from minicnn.cuda_native.gpu_executor import GpuStubExecutor
+
+        gpu_forward_executor = GpuStubExecutor(device_runtime=device_runtime)
 
     def _run_forward_with_device_runtime(x_batch: np.ndarray) -> np.ndarray:
         assert device_runtime is not None
+        if gpu_forward_executor is not None:
+            result = gpu_forward_executor.run(graph, x_batch, params=eval_params, mode='eval')
+            device_runtime.record_execution(
+                'eval_forward',
+                input_name=graph.input_spec.name,
+                output_name=out_name,
+                node_count=len(graph.nodes),
+            )
+            return result.output
         input_name = graph.input_spec.name
         staged_input = device_runtime.stage_to_device(x_batch, name=input_name, prefer_reserved=True)
         ctx = fwd.run(graph, {input_name: staged_input.data}, params=eval_params)
@@ -358,6 +372,7 @@ def build_epoch_row(
     *,
     epoch: int,
     train_loss: float,
+    train_acc: float | None = None,
     val_metrics: dict[str, float],
     lr: float,
     epoch_time_s: float,
@@ -367,13 +382,18 @@ def build_epoch_row(
     device_runtime_state: dict[str, Any] | None = None,
     support_tier_assessment: dict[str, Any] | None = None,
     execution_mode: str = EXECUTION_MODE_REFERENCE_NUMPY,
+    selected_execution_mode: str | None = None,
     tensor_execution_device: str = EXECUTION_DEVICE_CPU,
+    execution_mode_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    selected_mode = execution_mode if selected_execution_mode is None else selected_execution_mode
+    mode_policy = dict(execution_mode_policy or {})
     row = {
         'schema_name': TRAINING_METRICS_SCHEMA_NAME,
         'schema_version': TRAINING_METRICS_SCHEMA_VERSION,
         'artifact_kind': 'training_metrics_epoch',
         'execution_mode': execution_mode,
+        'selected_execution_mode': selected_mode,
         'effective_execution_mode': execution_mode,
         'tensor_execution_device': tensor_execution_device,
         'tensors_ran_on': tensor_execution_device,
@@ -384,6 +404,20 @@ def build_epoch_row(
         'lr': lr,
         'epoch_time_s': epoch_time_s,
     }
+    if train_acc is not None:
+        row['train_acc'] = train_acc
+    if mode_policy:
+        row['execution_mode_policy'] = mode_policy
+        for key in (
+            'fallback_execution_mode',
+            'fallback_available',
+            'fallback_active',
+            'fallback_reason',
+            'gpu_native_lowering_ready',
+            'gpu_native_runtime_ready',
+        ):
+            if key in mode_policy:
+                row[key] = mode_policy[key]
     if amp_state:
         row['amp'] = dict(amp_state)
     if optimizer_state:
@@ -408,15 +442,18 @@ def epoch_log_message(
     epoch: int,
     epochs: int,
     train_loss: float,
+    train_acc: float | None = None,
     val_acc: float,
     lr: float,
     epoch_time_s: float,
     amp_state: dict[str, Any] | None = None,
     optimizer_state: dict[str, Any] | None = None,
 ) -> str:
+    train_acc_part = '' if train_acc is None else f"train_acc={train_acc * 100:.2f}%, "
     message = (
         f"[cuda_native] Epoch {epoch}/{epochs}: "
         f"train_loss={train_loss:.4f}, "
+        f"{train_acc_part}"
         f"val_acc={val_acc * 100:.2f}%, "
         f"lr={lr:.6f}, "
         f"time={epoch_time_s:.1f}s"
@@ -472,9 +509,13 @@ def build_training_summary(
     capabilities: dict[str, Any],
     support_tier_assessment: dict[str, Any] | None = None,
     execution_mode: str = EXECUTION_MODE_REFERENCE_NUMPY,
+    selected_execution_mode: str | None = None,
     tensor_execution_device: str = EXECUTION_DEVICE_CPU,
+    execution_mode_policy: dict[str, Any] | None = None,
     device_runtime_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    selected_mode = execution_mode if selected_execution_mode is None else selected_execution_mode
+    mode_policy = dict(execution_mode_policy or {})
     optim_type = str(optimizer_cfg.get('type', 'SGD'))
     optimizer_summary = {
         'type': optim_type,
@@ -510,9 +551,11 @@ def build_training_summary(
         'runtime': {
             **dict(runtime_profile or {}),
             'execution_mode': execution_mode,
+            'selected_execution_mode': selected_mode,
             'effective_execution_mode': execution_mode,
             'tensor_execution_device': tensor_execution_device,
             'tensors_ran_on': tensor_execution_device,
+            'execution_mode_policy': mode_policy,
             'device_runtime': dict(device_runtime_state or {}),
         },
         'training': {
@@ -522,16 +565,17 @@ def build_training_summary(
             'support_tier': dict(support_tier_assessment or {}),
         },
     }
-    return {
+    summary = {
         'schema_name': TRAINING_SUMMARY_SCHEMA_NAME,
         'schema_version': TRAINING_SUMMARY_SCHEMA_VERSION,
         'artifact_kind': 'training_run_summary',
         'status': 'ok',
         'execution_mode': execution_mode,
-        'selected_execution_mode': execution_mode,
+        'selected_execution_mode': selected_mode,
         'effective_execution_mode': execution_mode,
         'tensor_execution_device': tensor_execution_device,
         'tensors_ran_on': tensor_execution_device,
+        'execution_mode_policy': mode_policy,
         'device_runtime': dict(device_runtime_state or {}),
         'selected_backend': 'cuda_native',
         'effective_backend': 'cuda_native',
@@ -573,3 +617,15 @@ def build_training_summary(
         'test_acc': None,
         'capabilities': capabilities,
     }
+    if mode_policy:
+        for key in (
+            'fallback_execution_mode',
+            'fallback_available',
+            'fallback_active',
+            'fallback_reason',
+            'gpu_native_lowering_ready',
+            'gpu_native_runtime_ready',
+        ):
+            if key in mode_policy:
+                summary[key] = mode_policy[key]
+    return summary

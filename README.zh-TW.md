@@ -63,7 +63,7 @@ MiniCNN 不是要取代 PyTorch。
 | Backend | 角色 | 目前狀態 |
 |---|---|---|
 | `torch` | reference implementation | 穩定，功能最廣，新模型功能優先落這裡 |
-| `cuda_native` | 主要 native backend | beta、graph-based、具備 ordered DAG 能力、目前仍是 NumPy reference execution 的主成長方向 |
+| `cuda_native` | 主要 native backend | beta、graph-based、具備 ordered DAG 能力、reference mode 加上部分 real-CUDA `gpu_native` execution |
 | `autograd` | correctness oracle | 穩定、CPU-only，適合 deterministic 檢查與框架學習 |
 | `cuda_legacy` | 歷史 native backend | 在窄邊界內穩定，但屬 maintenance-only，不是新功能擴充主戰場 |
 
@@ -81,7 +81,7 @@ MiniCNN 不是要取代 PyTorch。
 ```text
 shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
                                \
-                                -> cuda_native [PRIMARY NATIVE] (beta graph IR, planner, numpy executor)
+                                -> cuda_native [PRIMARY NATIVE] (beta graph IR, planner, reference + gpu_native executor)
                                \
                                 -> cuda_legacy [MAINTENANCE ONLY] (historical handwritten CUDA path)
 ```
@@ -100,6 +100,7 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 - `show-model` 與 `show-graph` 已是實際可用的 introspection 指令，不再是 placeholder
 - `cuda_native` graph semantics 已從單純 sequential graph 擴成具名 tensor wiring 的 ordered DAG，並支援 `Add` / `Concat`
 - `cuda_native` training surface 已擴到 `SGD`、`Adam`、`AdamW`、`RMSprop`、`CrossEntropyLoss`、`BCEWithLogitsLoss`、`MSELoss`、`label_smoothing`、`grad_accum_steps` 與 beta AMP
+- `cuda_native` strict `gpu_native` 已有 real CIFAR-10 two-Conv native CUDA helper training runbook
 - `summary.json` / `metrics.jsonl` 現在也會穩定輸出 planner、AMP 與 optimizer-state telemetry
 
 結果是：對使用者來說，主要命令集合仍維持精簡；對維護者來說，模組邊界更清楚、
@@ -163,6 +164,16 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 - named `ConvNeXtBlock` 路徑：`templates/cifar10/convnext_tiny_cuda_native_smoke.yaml`
 - `ResidualBlock` 路徑：`templates/cifar10/resnet_like_cuda_native_smoke.yaml`
 
+目前 strict real-CUDA CIFAR-10 training 可用於 two-Conv helper subset：
+
+```bash
+minicnn validate-cuda-native-config --config configs/cifar10_cuda_native_gpu_stronger.yaml
+
+minicnn train-native --config configs/cifar10_cuda_native_gpu_stronger.yaml
+```
+
+目前 real-data GPU 結果與效能瓶頸請見 [docs/cuda_native_gpu_cifar10_runbook.md](docs/cuda_native_gpu_cifar10_runbook.md)。
+
 ```bash
 # 查看 cuda_native 支援能力
 minicnn cuda-native-capabilities
@@ -184,6 +195,7 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 從實驗走向可承諾實裝邊界的規劃請見 [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md)。
 AMP 從 experimental 畢業到 beta 的檢查項目請見 [docs/cuda_native_amp_graduation_checklist.md](docs/cuda_native_amp_graduation_checklist.md)。
 從 NumPy reference execution 走向真正 GPU execution 的未來路徑請見 [docs/cuda_native_gpu_enablement_plan.md](docs/cuda_native_gpu_enablement_plan.md)。
+目前完整 CIFAR-10 strict `gpu_native` 訓練指令請見 [docs/cuda_native_gpu_cifar10_runbook.md](docs/cuda_native_gpu_cifar10_runbook.md)。
 
 真實資料集示範：
 
@@ -555,7 +567,7 @@ minicnn/
 │   ├── flex/               # torch/flex 前端、registry、builder、trainer
 │   ├── unified/            # shared-config dispatch 與 backend bridge
 │   ├── training/           # cuda_legacy 與 autograd 訓練程式碼
-│   ├── cuda_native/        # 實驗性 graph/planner/executor backend
+│   ├── cuda_native/        # graph/planner/executor backend（含 reference 與 gpu_native）
 │   ├── nn/ ops/ optim/     # NumPy autograd stack
 │   ├── compiler/ runtime/  # tracing、optimization 與 CPU inference 流水線
 │   └── core/               # native build helpers 與 ctypes CUDA binding
@@ -572,3 +584,9 @@ minicnn/
 ## License
 
 MIT
+
+## CUDA Native 維護備註
+
+- 完整 CIFAR-10 GPU-native smoke/benchmark 建議從 `configs/cifar10_cuda_native_gpu_stronger.yaml` 與 `docs/cuda_native_gpu_cifar10_runbook.md` 開始。
+- `cuda_native` 對符合條件的 `gpu_native` 路徑已改成 GPU-first；NumPy reference 保留作為 fallback 與 parity 基準。
+- 肥檔清理狀態記錄在 `docs/cuda_native_large_file_inventory.md`。測試檔目前刻意保留，因為它們承載 CUDA-native regression coverage。

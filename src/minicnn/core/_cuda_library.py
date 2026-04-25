@@ -30,11 +30,69 @@ REQUIRED_SYMBOLS = (
     'gpu_free',
     'gpu_memcpy_h2d',
     'gpu_memcpy_d2h',
+    'gpu_memset',
     'im2col_forward',
     'gemm_forward',
     'dense_forward',
+    'apply_relu',
+    'apply_maxpool',
+    'add_forward',
+    'concat_forward',
     'softmax_xent_grad_loss_acc',
 )
+GPU_NATIVE_TRAINING_SYMBOLS = tuple(dict.fromkeys((
+    *REQUIRED_SYMBOLS,
+    'gpu_memcpy_d2d',
+    'gpu_synchronize',
+    'leaky_relu_forward',
+    'leaky_relu_backward',
+    'apply_relu_backward',
+    'sigmoid_forward',
+    'sigmoid_backward',
+    'tanh_forward',
+    'tanh_backward',
+    'silu_forward',
+    'silu_backward',
+    'gelu_forward',
+    'gelu_backward',
+    'dense_backward_full',
+    'softmax_xent_smooth_grad_loss_acc',
+    'mse_fwd_grad_loss_acc',
+    'bce_fwd_grad_loss_acc',
+    'count_correct',
+    'apply_sgd_update',
+    'apply_momentum_update',
+    'sgd_update_fused',
+    'adam_update_fused',
+    'rmsprop_update_fused',
+    'grad_l2_sumsq',
+    'scale_inplace',
+    'bn_eval_forward',
+    'bn_backward',
+    'avgpool2d_forward',
+    'avgpool2d_backward',
+    'global_avgpool2d_forward',
+    'global_avgpool2d_backward',
+    'maxpool_backward_nchw',
+    'nchw_to_cnhw',
+    'cnhw_to_nchw',
+    'conv_backward',
+    'conv_backward_precol',
+    'depthwise_conv2d_forward',
+    'depthwise_conv2d_backward',
+    'layernorm2d_forward',
+    'layernorm2d_backward',
+    'groupnorm_forward',
+    'groupnorm_backward',
+)))
+CUDA_NATIVE_SYMBOL_GROUPS = {
+    'core': REQUIRED_SYMBOLS,
+    'gpu_native_training': GPU_NATIVE_TRAINING_SYMBOLS,
+}
+
+
+def missing_symbols(bound_lib: object, symbols: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    return tuple(name for name in symbols if not hasattr(bound_lib, name))
 
 
 def resolve_library_path(path: str | os.PathLike[str] | None = None) -> str:
@@ -92,17 +150,55 @@ def load_library(path: str | os.PathLike[str] | None = None):
 
 
 def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
+    if hasattr(bound_lib, 'cuda_runtime_status'):
+        bound_lib.cuda_runtime_status.argtypes = []
+        bound_lib.cuda_runtime_status.restype = c_int
+    if hasattr(bound_lib, 'cuda_runtime_driver_version'):
+        bound_lib.cuda_runtime_driver_version.argtypes = []
+        bound_lib.cuda_runtime_driver_version.restype = c_int
+    if hasattr(bound_lib, 'cuda_runtime_version'):
+        bound_lib.cuda_runtime_version.argtypes = []
+        bound_lib.cuda_runtime_version.restype = c_int
+    if hasattr(bound_lib, 'cuda_runtime_status_string'):
+        bound_lib.cuda_runtime_status_string.argtypes = [c_int]
+        bound_lib.cuda_runtime_status_string.restype = ctypes.c_char_p
     bound_lib.gpu_malloc.argtypes = [ctypes.c_size_t]
     bound_lib.gpu_malloc.restype = c_void_p
     bound_lib.gpu_free.argtypes = [c_void_p]
     bound_lib.gpu_memcpy_h2d.argtypes = [c_void_p, c_void_p, ctypes.c_size_t]
     bound_lib.gpu_memcpy_d2h.argtypes = [c_void_p, c_void_p, ctypes.c_size_t]
+    if hasattr(bound_lib, 'gpu_memcpy_d2d'):
+        bound_lib.gpu_memcpy_d2d.argtypes = [c_void_p, c_void_p, ctypes.c_size_t]
     bound_lib.gpu_memset.argtypes = [c_void_p, c_int, ctypes.c_size_t]
     if hasattr(bound_lib, 'gpu_synchronize'):
         bound_lib.gpu_synchronize.argtypes = []
         bound_lib.gpu_synchronize.restype = None
     bound_lib.im2col_forward.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int]
     bound_lib.gemm_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
+    bound_lib.apply_relu.argtypes = [c_void_p, c_int]
+    if hasattr(bound_lib, 'apply_relu_backward'):
+        bound_lib.apply_relu_backward.argtypes = [c_void_p, c_void_p, c_int]
+    if hasattr(bound_lib, 'sigmoid_backward'):
+        bound_lib.sigmoid_backward.argtypes = [c_void_p, c_void_p, c_int]
+    if hasattr(bound_lib, 'tanh_backward'):
+        bound_lib.tanh_backward.argtypes = [c_void_p, c_void_p, c_int]
+    if hasattr(bound_lib, 'silu_backward'):
+        bound_lib.silu_backward.argtypes = [c_void_p, c_void_p, c_int]
+    if hasattr(bound_lib, 'gelu_backward'):
+        bound_lib.gelu_backward.argtypes = [c_void_p, c_void_p, c_int]
+    bound_lib.apply_maxpool.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
+    if hasattr(bound_lib, 'sigmoid_forward'):
+        bound_lib.sigmoid_forward.argtypes = [c_void_p, c_int]
+    if hasattr(bound_lib, 'tanh_forward'):
+        bound_lib.tanh_forward.argtypes = [c_void_p, c_int]
+    if hasattr(bound_lib, 'silu_forward'):
+        bound_lib.silu_forward.argtypes = [c_void_p, c_int]
+    if hasattr(bound_lib, 'gelu_forward'):
+        bound_lib.gelu_forward.argtypes = [c_void_p, c_int]
+    if hasattr(bound_lib, 'add_forward'):
+        bound_lib.add_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int]
+    if hasattr(bound_lib, 'concat_forward'):
+        bound_lib.concat_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
     bound_lib.leaky_relu_forward.argtypes = [c_void_p, c_float, c_int]
     bound_lib.leaky_relu_backward.argtypes = [c_void_p, c_void_p, c_float, c_int]
     bound_lib.dense_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int]
@@ -115,6 +211,11 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
         c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
         c_int, c_int,
     ]
+    if hasattr(bound_lib, 'softmax_xent_smooth_grad_loss_acc'):
+        bound_lib.softmax_xent_smooth_grad_loss_acc.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_float,
+        ]
     if hasattr(bound_lib, 'mse_fwd_grad_loss_acc'):
         bound_lib.mse_fwd_grad_loss_acc.argtypes = [
             c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int,
@@ -126,12 +227,22 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
     bound_lib.count_correct.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int]
     bound_lib.apply_sgd_update.argtypes = [c_void_p, c_void_p, c_float, c_int]
     bound_lib.apply_momentum_update.argtypes = [c_void_p, c_void_p, c_void_p, c_float, c_float, c_int]
+    if hasattr(bound_lib, 'sgd_update_fused'):
+        bound_lib.sgd_update_fused.argtypes = [
+            c_void_p, c_void_p, c_void_p,
+            c_float, c_float, c_float, c_float, c_float,
+            c_int,
+        ]
     bound_lib.conv_update_fused.argtypes = [
         c_void_p, c_void_p, c_void_p,
         c_float, c_float, c_float, c_float, c_float,
         c_int,
     ]
     bound_lib.clip_inplace.argtypes = [c_void_p, c_float, c_int]
+    if hasattr(bound_lib, 'grad_l2_sumsq'):
+        bound_lib.grad_l2_sumsq.argtypes = [c_void_p, c_void_p, c_int]
+    if hasattr(bound_lib, 'scale_inplace'):
+        bound_lib.scale_inplace.argtypes = [c_void_p, c_float, c_int]
     if hasattr(bound_lib, 'layer_norm_forward'):
         bound_lib.layer_norm_forward.argtypes = [
             c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_float,
@@ -164,6 +275,12 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
             c_float, c_float, c_float, c_float, c_float, c_float, c_float, c_float, c_float,
             c_int,
         ]
+    if hasattr(bound_lib, 'rmsprop_update_fused'):
+        bound_lib.rmsprop_update_fused.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p,
+            c_float, c_float, c_float, c_float, c_float, c_float, c_float,
+            c_int,
+        ]
     bound_lib.nchw_to_cnhw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
     bound_lib.cnhw_to_nchw.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
     bound_lib.maxpool_forward_store.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int]
@@ -177,6 +294,54 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
             c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_int, c_int,
         ]
         bound_lib.maxpool_backward_nchw_status.restype = c_int
+    if hasattr(bound_lib, 'global_avgpool2d_forward'):
+        bound_lib.global_avgpool2d_forward.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
+    if hasattr(bound_lib, 'global_avgpool2d_backward'):
+        bound_lib.global_avgpool2d_backward.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
+    if hasattr(bound_lib, 'avgpool2d_forward'):
+        bound_lib.avgpool2d_forward.argtypes = [
+            c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
+            c_int, c_int, c_int, c_int,
+        ]
+    if hasattr(bound_lib, 'avgpool2d_backward'):
+        bound_lib.avgpool2d_backward.argtypes = [
+            c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
+            c_int, c_int, c_int, c_int,
+        ]
+    if hasattr(bound_lib, 'depthwise_conv2d_forward'):
+        bound_lib.depthwise_conv2d_forward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
+            c_int, c_int, c_int, c_int, c_int,
+        ]
+    if hasattr(bound_lib, 'depthwise_conv2d_backward'):
+        bound_lib.depthwise_conv2d_backward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
+            c_int, c_int, c_int, c_int, c_int,
+        ]
+    if hasattr(bound_lib, 'layernorm2d_forward'):
+        bound_lib.layernorm2d_forward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_float,
+        ]
+    if hasattr(bound_lib, 'layernorm2d_backward'):
+        bound_lib.layernorm2d_backward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_float,
+        ]
+    if hasattr(bound_lib, 'groupnorm_forward'):
+        bound_lib.groupnorm_forward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_int, c_float,
+        ]
+    if hasattr(bound_lib, 'groupnorm_backward'):
+        bound_lib.groupnorm_backward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_int, c_float,
+        ]
     bound_lib.conv_backward.argtypes = [
         c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
         c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
@@ -186,3 +351,41 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
         c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
     ]
     return bound_lib
+
+
+def _format_cuda_version(raw_version: int) -> str:
+    if raw_version <= 0:
+        return 'unknown'
+    return f'{raw_version // 1000}.{(raw_version % 1000) // 10}'
+
+
+def ensure_cuda_runtime_available(bound_lib: ctypes.CDLL) -> None:
+    """Fail before cuda_native enters CUDA allocation calls that abort on error."""
+
+    if not hasattr(bound_lib, 'cuda_runtime_status'):
+        return
+    status = int(bound_lib.cuda_runtime_status())
+    if status == 0:
+        return
+    status_message = 'unknown CUDA runtime error'
+    if hasattr(bound_lib, 'cuda_runtime_status_string'):
+        raw_message = bound_lib.cuda_runtime_status_string(status)
+        if raw_message:
+            status_message = raw_message.decode('utf-8', errors='replace')
+    driver_version = (
+        int(bound_lib.cuda_runtime_driver_version())
+        if hasattr(bound_lib, 'cuda_runtime_driver_version')
+        else 0
+    )
+    runtime_version = (
+        int(bound_lib.cuda_runtime_version())
+        if hasattr(bound_lib, 'cuda_runtime_version')
+        else 0
+    )
+    raise RuntimeError(
+        'CUDA runtime preflight failed before cuda_native gpu_native allocation: '
+        f'{status_message} (status={status}, '
+        f'driver={_format_cuda_version(driver_version)}, '
+        f'runtime={_format_cuda_version(runtime_version)}). '
+        'Update the NVIDIA driver or rebuild/select a CUDA toolkit variant compatible with the installed driver.'
+    )

@@ -52,3 +52,27 @@ def test_load_batch_reads_bytes_keys_and_uses_latin1(monkeypatch, tmp_path):
     assert calls == ['latin1']
     assert x.shape == (2, 3, 32, 32)
     assert y.tolist() == [1, 7]
+
+
+def test_load_cifar10_defaults_to_all_five_training_batches(tmp_path):
+    from minicnn.data.cifar10 import load_cifar10
+
+    root = tmp_path / 'cifar-10-batches-py'
+    for index in range(1, 6):
+        _write_fake_cifar_batch(root / f'data_batch_{index}', use_bytes_keys=False)
+    _write_fake_cifar_batch(root / 'test_batch', use_bytes_keys=False)
+
+    x_train, y_train, x_val, y_val, x_test, y_test = load_cifar10(
+        root,
+        n_train=8,
+        n_val=2,
+        seed=0,
+        download=False,
+    )
+
+    assert x_train.shape == (8, 3, 32, 32)
+    assert y_train.shape == (8,)
+    assert x_val.shape == (2, 3, 32, 32)
+    assert y_val.shape == (2,)
+    assert x_test.shape == (2, 3, 32, 32)
+    assert y_test.tolist() == [1, 7]

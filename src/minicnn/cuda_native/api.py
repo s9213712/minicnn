@@ -8,6 +8,9 @@ from minicnn.cuda_native.capabilities import (
     CUDA_NATIVE_SUPPORT_TIERS,
     get_cuda_native_capabilities,
 )
+from minicnn.cuda_native.gpu_dispatch import build_gpu_dispatch_plan
+from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
+from minicnn.cuda_native.gpu_training_lowering import build_gpu_training_lowering_plan
 from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.validators import validate_cuda_native_model_config
 from minicnn.model_spec import resolve_model_config
@@ -28,6 +31,9 @@ _SUPPORTED_EXECUTION_MODES = frozenset(
 _PLANNED_EXECUTION_MODES = frozenset(
     str(item) for item in get_cuda_native_capabilities().get('execution_modes_planned', ['gpu_native'])
 )
+_DEFAULT_EXECUTION_MODE = str(
+    get_cuda_native_capabilities().get('default_execution_mode', 'gpu_native_auto')
+)
 _SUPPORTED_SCHEDULERS = frozenset(
     str(item) for item in CUDA_NATIVE_CAPABILITIES['supported_schedulers']
 )
@@ -42,9 +48,132 @@ _SCHEDULER_ALIASES = {
 _SUPPORT_TIER_ORDER = ('stable', 'beta', 'experimental')
 
 
+def _assert_execution_mode_invariants() -> None:
+    overlap = _SUPPORTED_EXECUTION_MODES & _PLANNED_EXECUTION_MODES
+    assert not overlap, f'cuda_native execution mode sets overlap: {sorted(overlap)}'
+
+
+def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, object]:
+    _assert_execution_mode_invariants()
+    caps = get_cuda_native_capabilities()
+    readiness_table = dict(caps.get('execution_mode_readiness', {}))
+    execution_mode = resolve_cuda_native_execution_mode(cfg)
+    selected_mode = str(execution_mode.get('selected_execution_mode', _DEFAULT_EXECUTION_MODE))
+    mode_readiness = dict(readiness_table.get(selected_mode, {}))
+    model_cfg, _ = _as_mapping('model', cfg.get('model'))
+    dataset_cfg, _ = _as_mapping('dataset', cfg.get('dataset'))
+    resolved_model_cfg = resolve_model_config(model_cfg)
+    layer_types = sorted({
+        str(layer.get('type'))
+        for layer in resolved_model_cfg.get('layers', [])
+        if isinstance(layer, dict) and layer.get('type')
+    })
+    bootstrap_subset = set(str(item) for item in mode_readiness.get('bootstrap_subset_ops', []))
+    kernel_specs = {
+        spec.op_name: {
+            'forward_status': spec.forward_status,
+            'backward_status': spec.backward_status,
+            'category': spec.category,
+        }
+        for spec in list_gpu_kernel_specs()
+    }
+    supported_ops = sorted(op for op in layer_types if op in bootstrap_subset)
+    missing_ops = sorted(op for op in layer_types if op not in bootstrap_subset)
+    remaining_blockers = [str(item) for item in mode_readiness.get('remaining_blockers', [])]
+    dispatch_plan_summary: dict[str, object] | None = None
+    training_lowering_plan_summary: dict[str, object] | None = None
+    validation_input_shape = _validation_input_shape(dataset_cfg)
+    if validation_input_shape is not None:
+        try:
+            graph = build_cuda_native_graph(model_cfg, validation_input_shape)
+            dispatch_plan = build_gpu_dispatch_plan(graph)
+            dispatch_plan_summary = dispatch_plan.summary()
+            loss_cfg, _ = _as_mapping('loss', cfg.get('loss'))
+            optim_cfg, _ = _as_mapping('optimizer', cfg.get('optimizer'))
+            train_cfg, _ = _as_mapping('train', cfg.get('train'))
+            training_lowering_plan = build_gpu_training_lowering_plan(
+                graph,
+                loss_cfg=loss_cfg,
+                optim_cfg=optim_cfg,
+                train_cfg=train_cfg,
+            )
+            training_lowering_plan_summary = training_lowering_plan.summary()
+            if selected_mode in {'gpu_native', 'gpu_native_auto'}:
+                supported_from_plan = {
+                    str(step.get('op_name'))
+                    for step in dispatch_plan_summary.get('steps', [])
+                    if bool(step.get('supported', False))
+                }
+                supported_ops = sorted(op for op in layer_types if op in supported_from_plan)
+                missing_ops = sorted(op for op in layer_types if op not in supported_from_plan)
+                for step in dispatch_plan_summary.get('steps', []):
+                    if bool(step.get('supported', False)):
+                        continue
+                    op_name = str(step.get('op_name'))
+                    kernel_specs[op_name] = {
+                        'forward_status': 'outside_bootstrap',
+                        'backward_status': 'outside_bootstrap',
+                        'category': 'unsupported',
+                    }
+        except ValueError:
+            dispatch_plan_summary = None
+            training_lowering_plan_summary = None
+    return {
+        'selected_execution_mode': selected_mode,
+        'status': str(mode_readiness.get('status', 'unknown')),
+        'ready': bool(mode_readiness.get('ready', False)),
+        'tensor_execution_device': str(mode_readiness.get('tensor_execution_device', 'unknown')),
+        'effective_execution_mode': str(execution_mode.get('effective_execution_mode', selected_mode)),
+        'fallback_execution_mode': execution_mode.get('fallback_execution_mode'),
+        'fallback_available': bool(execution_mode.get('fallback_available', False)),
+        'fallback_active': bool(execution_mode.get('fallback_active', False)),
+        'fallback_reason': str(execution_mode.get('fallback_reason', 'not_configured')),
+        'requested_ops': layer_types,
+        'bootstrap_subset_complete': len(missing_ops) == 0,
+        'bootstrap_supported_ops': supported_ops,
+        'bootstrap_missing_ops': missing_ops,
+        'kernel_readiness_for_requested_ops': {
+            op_name: kernel_specs.get(
+                op_name,
+                {
+                    'forward_status': 'outside_bootstrap',
+                    'backward_status': 'outside_bootstrap',
+                    'category': 'unknown',
+                },
+            )
+            for op_name in layer_types
+        },
+        'dispatch_plan': dispatch_plan_summary,
+        'training_lowering_plan': training_lowering_plan_summary,
+        'remaining_blockers': remaining_blockers,
+    }
+
+
 def resolve_cuda_native_execution_mode(cfg: dict[str, Any]) -> dict[str, object]:
+    _assert_execution_mode_invariants()
     engine_cfg, _ = _as_mapping('engine', cfg.get('engine'))
-    selected_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')
+    selected_mode = str(engine_cfg.get('execution_mode', _DEFAULT_EXECUTION_MODE) or _DEFAULT_EXECUTION_MODE)
+    if selected_mode == 'gpu_native_auto':
+        auto_policy = _resolve_gpu_native_auto_policy(cfg)
+        effective_mode = 'gpu_native' if bool(auto_policy['gpu_native_ready']) else 'reference_numpy'
+        tensor_execution_device = 'gpu' if effective_mode == 'gpu_native' else 'cpu'
+        return {
+            'execution_mode': effective_mode,
+            'selected_execution_mode': selected_mode,
+            'effective_execution_mode': effective_mode,
+            'tensor_execution_device': tensor_execution_device,
+            'tensors_ran_on': tensor_execution_device,
+            'gpu_execution': effective_mode == 'gpu_native',
+            'planned': False,
+            'supported': True,
+            'gpu_native_ready': bool(auto_policy['gpu_native_ready']),
+            'gpu_native_lowering_ready': bool(auto_policy['gpu_native_lowering_ready']),
+            'gpu_native_runtime_ready': bool(auto_policy['gpu_native_runtime_ready']),
+            'fallback_execution_mode': 'reference_numpy',
+            'fallback_available': True,
+            'fallback_active': effective_mode != 'gpu_native',
+            'fallback_reason': str(auto_policy['fallback_reason']),
+        }
     if selected_mode in _SUPPORTED_EXECUTION_MODES:
         effective_mode = selected_mode
         tensor_execution_device = 'cpu' if selected_mode == 'reference_numpy' else 'gpu'
@@ -81,22 +210,236 @@ def resolve_cuda_native_execution_mode(cfg: dict[str, Any]) -> dict[str, object]
     }
 
 
+def _cuda_runtime_ready_for_gpu_native() -> tuple[bool, str]:
+    try:
+        from minicnn.core.cuda_backend import check_cuda_ready
+
+        readiness = check_cuda_ready()
+    except Exception as exc:  # pragma: no cover - environment dependent
+        return False, str(exc)
+    if bool(readiness.get('ready', False)):
+        return True, 'not_needed'
+    return False, str(readiness.get('error') or 'cuda_runtime_not_ready')
+
+
+def _resolve_gpu_native_auto_policy(cfg: dict[str, Any]) -> dict[str, object]:
+    model_cfg, _ = _as_mapping('model', cfg.get('model'))
+    dataset_cfg, _ = _as_mapping('dataset', cfg.get('dataset'))
+    loss_cfg, _ = _as_mapping('loss', cfg.get('loss'))
+    optim_cfg, _ = _as_mapping('optimizer', cfg.get('optimizer'))
+    train_cfg, _ = _as_mapping('train', cfg.get('train'))
+    validation_input_shape = _validation_input_shape(dataset_cfg)
+    lowering_ready = False
+    lowering_reason = 'validation_input_shape_unavailable'
+    if validation_input_shape is not None:
+        try:
+            graph = build_cuda_native_graph(model_cfg, validation_input_shape)
+            plan = build_gpu_training_lowering_plan(
+                graph,
+                loss_cfg=loss_cfg,
+                optim_cfg=optim_cfg,
+                train_cfg=train_cfg,
+            )
+            policy = plan.fallback_policy()
+            lowering_ready = bool(policy.get('gpu_native_ready', False))
+            lowering_reason = str(policy.get('fallback_reason', 'gpu_native_training_lowering_not_ready'))
+        except ValueError as exc:
+            lowering_reason = str(exc)
+    runtime_ready, runtime_reason = _cuda_runtime_ready_for_gpu_native()
+    gpu_native_ready = lowering_ready and runtime_ready
+    if gpu_native_ready:
+        fallback_reason = 'not_needed'
+    elif not lowering_ready:
+        fallback_reason = lowering_reason
+    else:
+        fallback_reason = runtime_reason
+    return {
+        'gpu_native_ready': gpu_native_ready,
+        'gpu_native_lowering_ready': lowering_ready,
+        'gpu_native_runtime_ready': runtime_ready,
+        'fallback_reason': fallback_reason,
+    }
+
+
 def _validate_engine_cfg(engine_cfg: dict[str, Any]) -> list[str]:
+    _assert_execution_mode_invariants()
     errors: list[str] = []
-    execution_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')
+    execution_mode = str(engine_cfg.get('execution_mode', _DEFAULT_EXECUTION_MODE) or _DEFAULT_EXECUTION_MODE)
     if execution_mode in _SUPPORTED_EXECUTION_MODES:
         return errors
     if execution_mode in _PLANNED_EXECUTION_MODES:
-        errors.append(
-            "cuda_native engine.execution_mode='gpu_native' is planned but not yet implemented; "
-            "currently supported execution modes: {reference_numpy}."
-        )
         return errors
     supported = ', '.join(sorted(_SUPPORTED_EXECUTION_MODES | _PLANNED_EXECUTION_MODES))
     errors.append(
         f'cuda_native does not recognize engine.execution_mode={execution_mode!r}. Supported/planned: {supported}.'
     )
     return errors
+
+
+def _validate_gpu_native_training_subset(
+    cfg: dict[str, Any],
+    graph: NativeGraph,
+    *,
+    loss_cfg: dict[str, Any],
+    optim_cfg: dict[str, Any],
+    train_cfg: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    nodes = list(graph.topological_order())
+    ops = [node.op_type for node in nodes]
+    if ops not in (
+        ['Linear'],
+        ['Flatten', 'Linear'],
+        ['Linear', 'ReLU', 'Linear'],
+        ['Flatten', 'Linear', 'ReLU', 'Linear'],
+        ['Linear', 'GELU', 'Linear'],
+        ['Flatten', 'Linear', 'GELU', 'Linear'],
+        ['Linear', 'SiLU', 'Linear'],
+        ['Flatten', 'Linear', 'SiLU', 'Linear'],
+        ['Linear', 'Sigmoid', 'Linear'],
+        ['Flatten', 'Linear', 'Sigmoid', 'Linear'],
+        ['Linear', 'Tanh', 'Linear'],
+        ['Flatten', 'Linear', 'Tanh', 'Linear'],
+        ['MaxPool2d', 'Flatten', 'Linear'],
+        ['AvgPool2d', 'Flatten', 'Linear'],
+        ['BatchNorm2d', 'Flatten', 'Linear'],
+        ['LayerNorm2d', 'Flatten', 'Linear'],
+        ['GroupNorm', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear'],
+        ['GlobalAvgPool2d', 'Flatten', 'Linear'],
+        ['AdaptiveAvgPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['PointwiseConv2d', 'Flatten', 'Linear'],
+        ['PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+    ):
+        errors.append(
+            'cuda_native gpu_native train-native currently supports only the narrow '
+            'Linear training subset ops=[Linear], [Flatten, Linear], '
+            '[Linear, ReLU, Linear], [Flatten, Linear, ReLU, Linear], '
+            '[Linear, GELU/SiLU/Sigmoid/Tanh, Linear], '
+            '[Flatten, Linear, GELU/SiLU/Sigmoid/Tanh, Linear], '
+            '[MaxPool2d, Flatten, Linear], [AvgPool2d, Flatten, Linear], '
+            '[BatchNorm2d, Flatten, Linear], [LayerNorm2d, Flatten, Linear], '
+            '[GroupNorm, Flatten, Linear], '
+            '[DepthwiseConv2d, LayerNorm2d, Flatten, Linear], '
+            '[DepthwiseConv2d, LayerNorm2d, PointwiseConv2d, Flatten, Linear], '
+            '[DepthwiseConv2d, LayerNorm2d, PointwiseConv2d, GELU, PointwiseConv2d, Flatten, Linear], '
+            '[GlobalAvgPool2d, Flatten, Linear], '
+            '[AdaptiveAvgPool2d, Flatten, Linear], [Conv2d, Flatten, Linear], '
+            '[Conv2d, ReLU, Flatten, Linear], [PointwiseConv2d, Flatten, Linear], '
+            '[PointwiseConv2d, ReLU, Flatten, Linear], [DepthwiseConv2d, Flatten, Linear], '
+            '[DepthwiseConv2d, ReLU, Flatten, Linear], '
+            '[DepthwiseConv2d, MaxPool2d, Flatten, Linear], '
+            '[DepthwiseConv2d, ReLU, MaxPool2d, Flatten, Linear], '
+            '[Conv2d, MaxPool2d, Flatten, Linear], '
+            '[Conv2d, ReLU, MaxPool2d, Flatten, Linear], or '
+            '[Conv2d, ReLU, Conv2d, ReLU, MaxPool2d, Flatten, Linear], '
+            f'got {ops}.'
+        )
+    if ops in (
+        ['Conv2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['PointwiseConv2d', 'Flatten', 'Linear'],
+        ['PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+    ):
+        conv_attr_nodes = [nodes[0]]
+        if ops == ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear']:
+            conv_attr_nodes.append(nodes[2])
+        if ops == ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear']:
+            conv_attr_nodes.append(nodes[2])
+        if ops == ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear']:
+            conv_attr_nodes.extend((nodes[2], nodes[4]))
+
+        def _pair(value: Any, default: int) -> tuple[int, int]:
+            if value is None:
+                return (default, default)
+            if isinstance(value, (list, tuple)):
+                if len(value) == 1:
+                    return (int(value[0]), int(value[0]))
+                return (int(value[0]), int(value[1]))
+            return (int(value), int(value))
+
+        for conv_node in conv_attr_nodes:
+            conv_attrs = dict(getattr(conv_node, 'attrs', {}) or {})
+            conv_op = str(getattr(conv_node, 'op_type', 'Conv2d'))
+            if bool(conv_attrs.get('bias', False)):
+                errors.append(f'cuda_native gpu_native {conv_op} train-native subset currently requires bias=false.')
+            if conv_op != 'DepthwiseConv2d' and int(conv_attrs.get('groups', 1)) != 1:
+                errors.append(f'cuda_native gpu_native {conv_op} train-native subset currently requires groups=1.')
+            if _pair(conv_attrs.get('stride', 1), 1) != (1, 1):
+                errors.append(f'cuda_native gpu_native {conv_op} train-native subset currently requires stride=1.')
+            if _pair(conv_attrs.get('padding', 0), 0) != (0, 0):
+                errors.append(f'cuda_native gpu_native {conv_op} train-native subset currently requires padding=0.')
+            if _pair(conv_attrs.get('dilation', 1), 1) != (1, 1):
+                errors.append(f'cuda_native gpu_native {conv_op} train-native subset currently requires dilation=1.')
+    if ops == ['AvgPool2d', 'Flatten', 'Linear']:
+        pool_attrs = dict(getattr(nodes[0], 'attrs', {}) or {})
+
+        def _pool_pair(value: Any, default: int) -> tuple[int, int]:
+            if value is None:
+                return (default, default)
+            if isinstance(value, (list, tuple)):
+                if len(value) == 1:
+                    return (int(value[0]), int(value[0]))
+                return (int(value[0]), int(value[1]))
+            return (int(value), int(value))
+
+        if _pool_pair(pool_attrs.get('kernel_size', 2), 2) != (2, 2):
+            errors.append('cuda_native gpu_native AvgPool2d train-native subset currently requires kernel_size=2.')
+        if _pool_pair(pool_attrs.get('stride', pool_attrs.get('kernel_size', 2)), 2) != (2, 2):
+            errors.append('cuda_native gpu_native AvgPool2d train-native subset currently requires stride=2.')
+        if _pool_pair(pool_attrs.get('padding', 0), 0) != (0, 0):
+            errors.append('cuda_native gpu_native AvgPool2d train-native subset currently requires padding=0.')
+    loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
+    if loss_type != 'CrossEntropyLoss' and ops not in (['Linear'], ['Flatten', 'Linear']):
+        errors.append('cuda_native gpu_native train-native currently supports MSELoss/BCEWithLogitsLoss only for the Linear subset.')
+    optimizer_type = str(optim_cfg.get('type', 'SGD')).lower()
+    if ops in (['Linear'], ['Flatten', 'Linear']):
+        if optimizer_type not in {'sgd', 'adam', 'adamw', 'rmsprop'}:
+            errors.append('cuda_native gpu_native Linear train-native currently supports optimizer.type in {SGD, Adam, AdamW, RMSprop}.')
+        if optimizer_type == 'adam' and float(optim_cfg.get('weight_decay', 0.0)) != 0.0:
+            errors.append('cuda_native gpu_native Linear train-native currently requires Adam weight_decay=0.0; use AdamW for decoupled weight decay.')
+    else:
+        if optimizer_type != 'sgd':
+            errors.append('cuda_native gpu_native non-Linear train-native currently supports only optimizer.type=SGD.')
+    if bool(train_cfg.get('amp', False)):
+        errors.append('cuda_native gpu_native train-native currently requires train.amp=false.')
+    return errors
+
+
+def _gpu_native_bootstrap_error(readiness: dict[str, object]) -> str:
+    supported_ops = list(readiness.get('bootstrap_supported_ops', []))
+    missing_ops = list(readiness.get('bootstrap_missing_ops', []))
+    blockers = list(readiness.get('remaining_blockers', []))
+    if missing_ops:
+        return (
+            'cuda_native gpu_native bootstrap subset coverage: '
+            f'supported={supported_ops}, outside_bootstrap={missing_ops}, blockers={blockers}.'
+        )
+    return (
+        'cuda_native gpu_native bootstrap subset coverage: '
+        f'all requested ops are within bootstrap subset={supported_ops}, blockers={blockers}.'
+    )
 
 
 def _matched_support_tiers(items: set[str], bucket: str) -> dict[str, list[str]]:
@@ -374,7 +717,11 @@ def _validate_scheduler_cfg(scheduler_cfg: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _validate_train_cfg(train_cfg: dict[str, Any]) -> list[str]:
+def _validate_train_cfg(
+    train_cfg: dict[str, Any],
+    *,
+    execution_mode: str = _DEFAULT_EXECUTION_MODE,
+) -> list[str]:
     errors: list[str] = []
     grad_accum_steps, grad_accum_errors = _coerce_int(
         'train.grad_accum_steps',
@@ -412,9 +759,13 @@ def _validate_train_cfg(train_cfg: dict[str, Any]) -> list[str]:
     if amp_scale_window is not None and amp_scale_window <= 0:
         errors.append('train.amp_scale_window must be >= 1 for cuda_native AMP.')
     device = train_cfg.get('device')
-    if device not in {None, 'auto', 'cpu'}:
+    allowed_devices = {None, 'auto', 'cpu'}
+    if execution_mode in {'gpu_native', 'gpu_native_auto'}:
+        allowed_devices = {None, 'auto', 'cpu', 'cuda', 'gpu'}
+    if device not in allowed_devices:
         errors.append(
-            f'cuda_native ignores train.device={device!r}; use "auto" or "cpu".'
+            f'cuda_native execution_mode={execution_mode!r} does not accept train.device={device!r}; '
+            f'use one of {sorted(str(item) for item in allowed_devices if item is not None)}.'
         )
     return errors
 
@@ -461,12 +812,24 @@ def validate_cuda_native_config(cfg: dict[str, Any]) -> list[str]:
     errors.extend(_validate_loss_cfg(loss_cfg))
     errors.extend(_validate_optimizer_cfg(optim_cfg))
     errors.extend(_validate_scheduler_cfg(scheduler_cfg))
-    errors.extend(_validate_train_cfg(train_cfg))
+    execution_mode = resolve_cuda_native_execution_mode(cfg)
+    selected_execution_mode = str(execution_mode.get('selected_execution_mode', _DEFAULT_EXECUTION_MODE))
+    errors.extend(_validate_train_cfg(train_cfg, execution_mode=selected_execution_mode))
 
     validation_input_shape = _validation_input_shape(dataset_cfg)
     if validation_input_shape is not None and not model_errors:
         try:
             graph = build_cuda_native_graph(model_cfg, validation_input_shape)
+            if str(execution_mode.get('selected_execution_mode')) == 'gpu_native':
+                errors.extend(
+                    _validate_gpu_native_training_subset(
+                        cfg,
+                        graph,
+                        loss_cfg=loss_cfg,
+                        optim_cfg=optim_cfg,
+                        train_cfg=train_cfg,
+                    )
+                )
             loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
             if loss_type == 'BCEWithLogitsLoss':
                 output_shape = tuple(graph.output_spec.shape) if graph.output_spec is not None else ()

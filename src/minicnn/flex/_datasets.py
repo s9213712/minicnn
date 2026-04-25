@@ -54,6 +54,13 @@ def _random_dataset(cfg: dict, _train_cfg: dict):
     num_classes = int(cfg.get('num_classes', 10))
     num_samples = int(cfg.get('num_samples', 512))
     val_samples = int(cfg.get('val_samples', max(64, num_samples // 4)))
+    if num_samples < 0 or val_samples < 0:
+        raise ValueError(format_user_error(
+            'Dataset split invalid',
+            cause='num_samples and val_samples must be non-negative.',
+            fix='Use values greater than or equal to 0.',
+            example='num_samples=8\nval_samples=4',
+        ))
     seed = int(cfg.get('seed', 42))
     rng = np.random.default_rng(seed)
     x_train = rng.normal(size=(num_samples, *input_shape)).astype(np.float32)

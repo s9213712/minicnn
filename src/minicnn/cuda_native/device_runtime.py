@@ -13,6 +13,8 @@ class DeviceTensor:
     execution_mode: str
     name: str | None = None
     reservation_id: str | None = None
+    device_ptr: Any | None = None
+    owns_device_ptr: bool = False
 
     @property
     def nbytes(self) -> int:
@@ -23,6 +25,7 @@ class DeviceTensor:
 class DeviceRuntime:
     execution_mode: str = 'reference_numpy'
     tensor_execution_device: str = 'cpu'
+    bound_lib: Any | None = None
     reserve_events: int = 0
     reserved_buffer_count: int = 0
     reserved_bytes: int = 0
@@ -37,9 +40,16 @@ class DeviceRuntime:
     allocated_bytes: int = 0
     synchronization_events: int = 0
     synchronization_reasons: list[str] = field(default_factory=list)
+    device_pointer_allocation_events: int = 0
+    device_pointer_free_events: int = 0
+    device_pointer_bytes: int = 0
+    device_pointer_live_bytes: int = 0
+    device_sync_to_host_events: int = 0
+    device_sync_to_device_events: int = 0
     execution_events: int = 0
     executed_node_count: int = 0
     execution_kinds: dict[str, int] = field(default_factory=dict)
+    execution_trace: list[dict[str, Any]] = field(default_factory=list)
     last_input_name: str | None = None
     last_output_name: str | None = None
     _reserved_pool: dict[str, int] = field(default_factory=dict)
@@ -48,6 +58,43 @@ class DeviceRuntime:
     @property
     def gpu_execution(self) -> bool:
         return self.tensor_execution_device == 'gpu'
+
+    @property
+    def native_device_pointers_enabled(self) -> bool:
+        return self.gpu_execution and self.bound_lib is not None
+
+    def _malloc_device(self, nbytes: int) -> Any | None:
+        if not self.native_device_pointers_enabled:
+            return None
+        ptr = self.bound_lib.gpu_malloc(int(nbytes))
+        self.device_pointer_allocation_events += 1
+        self.device_pointer_bytes += int(nbytes)
+        self.device_pointer_live_bytes += int(nbytes)
+        return ptr
+
+    def _free_device(self, tensor: DeviceTensor) -> None:
+        if tensor.device_ptr is None or not tensor.owns_device_ptr or self.bound_lib is None:
+            return
+        self.bound_lib.gpu_free(tensor.device_ptr)
+        self.device_pointer_free_events += 1
+        self.device_pointer_live_bytes -= int(tensor.nbytes)
+        tensor.device_ptr = None
+        tensor.owns_device_ptr = False
+
+    def sync_tensor_to_device(self, tensor: DeviceTensor) -> None:
+        if tensor.device_ptr is None or self.bound_lib is None:
+            return
+        arr = np.ascontiguousarray(tensor.data)
+        if arr is not tensor.data:
+            tensor.data = arr
+        self.bound_lib.gpu_memcpy_h2d(tensor.device_ptr, tensor.data.ctypes.data, int(tensor.data.nbytes))
+        self.device_sync_to_device_events += 1
+
+    def sync_tensor_to_host(self, tensor: DeviceTensor) -> None:
+        if tensor.device_ptr is None or self.bound_lib is None:
+            return
+        self.bound_lib.gpu_memcpy_d2h(tensor.data.ctypes.data, tensor.device_ptr, int(tensor.data.nbytes))
+        self.device_sync_to_host_events += 1
 
     def stage_to_device(
         self,
@@ -63,12 +110,23 @@ class DeviceRuntime:
         if prefer_reserved:
             staged = self.allocate_staging_buffer(host_array.shape, dtype=host_array.dtype, name=name)
             np.copyto(staged.data, host_array)
+            self.sync_tensor_to_device(staged)
             return staged
         if copy:
             host_array = np.array(host_array, copy=True)
-        return DeviceTensor(host_array, self.tensor_execution_device, self.execution_mode, name=name)
+        tensor = DeviceTensor(
+            host_array,
+            self.tensor_execution_device,
+            self.execution_mode,
+            name=name,
+            device_ptr=self._malloc_device(int(host_array.nbytes)),
+            owns_device_ptr=self.native_device_pointers_enabled,
+        )
+        self.sync_tensor_to_device(tensor)
+        return tensor
 
     def stage_to_host(self, tensor: DeviceTensor, *, copy: bool = True) -> np.ndarray:
+        self.sync_tensor_to_host(tensor)
         host_array = tensor.data
         if copy:
             host_array = np.array(host_array, copy=True)
@@ -80,7 +138,14 @@ class DeviceRuntime:
         array = np.zeros(shape, dtype=np.dtype(dtype))
         self.allocation_events += 1
         self.allocated_bytes += int(array.nbytes)
-        return DeviceTensor(array, self.tensor_execution_device, self.execution_mode, name=name)
+        return DeviceTensor(
+            array,
+            self.tensor_execution_device,
+            self.execution_mode,
+            name=name,
+            device_ptr=self._malloc_device(int(array.nbytes)),
+            owns_device_ptr=self.native_device_pointers_enabled,
+        )
 
     def reserve_from_planner(
         self,
@@ -123,6 +188,8 @@ class DeviceRuntime:
                 chosen_id = self._available_reserved_ids.pop(idx)
                 break
         array = np.zeros(shape, dtype=dtype_obj)
+        device_ptr = self._malloc_device(required_bytes)
+        owns_device_ptr = self.native_device_pointers_enabled
         if chosen_id is not None:
             self.reserved_buffer_reuse_events += 1
             return DeviceTensor(
@@ -131,12 +198,22 @@ class DeviceRuntime:
                 self.execution_mode,
                 name=name,
                 reservation_id=chosen_id,
+                device_ptr=device_ptr,
+                owns_device_ptr=owns_device_ptr,
             )
         self.allocation_events += 1
         self.allocated_bytes += int(array.nbytes)
-        return DeviceTensor(array, self.tensor_execution_device, self.execution_mode, name=name)
+        return DeviceTensor(
+            array,
+            self.tensor_execution_device,
+            self.execution_mode,
+            name=name,
+            device_ptr=device_ptr,
+            owns_device_ptr=owns_device_ptr,
+        )
 
     def release_buffer(self, tensor: DeviceTensor) -> None:
+        self._free_device(tensor)
         if tensor.reservation_id is None:
             return
         self.reserved_buffer_release_events += 1
@@ -158,6 +235,14 @@ class DeviceRuntime:
         self.execution_events += 1
         self.executed_node_count += int(node_count)
         self.execution_kinds[execution_kind] = int(self.execution_kinds.get(execution_kind, 0)) + 1
+        self.execution_trace.append(
+            {
+                'kind': execution_kind,
+                'input_name': input_name,
+                'output_name': output_name,
+                'node_count': int(node_count),
+            }
+        )
         self.last_input_name = input_name
         self.last_output_name = output_name
 
@@ -168,6 +253,7 @@ class DeviceRuntime:
             'tensor_execution_device': self.tensor_execution_device,
             'tensors_ran_on': self.tensor_execution_device,
             'gpu_execution': self.gpu_execution,
+            'native_device_pointers_enabled': self.native_device_pointers_enabled,
             'reserve_events': self.reserve_events,
             'reserved_buffer_count': self.reserved_buffer_count,
             'reserved_bytes': self.reserved_bytes,
@@ -183,9 +269,16 @@ class DeviceRuntime:
             'allocated_bytes': self.allocated_bytes,
             'synchronization_events': self.synchronization_events,
             'synchronization_reasons': list(self.synchronization_reasons),
+            'device_pointer_allocation_events': self.device_pointer_allocation_events,
+            'device_pointer_free_events': self.device_pointer_free_events,
+            'device_pointer_bytes': self.device_pointer_bytes,
+            'device_pointer_live_bytes': self.device_pointer_live_bytes,
+            'device_sync_to_device_events': self.device_sync_to_device_events,
+            'device_sync_to_host_events': self.device_sync_to_host_events,
             'execution_events': self.execution_events,
             'executed_node_count': self.executed_node_count,
             'execution_kinds': dict(self.execution_kinds),
+            'execution_trace': [dict(item) for item in self.execution_trace],
             'last_input_name': self.last_input_name,
             'last_output_name': self.last_output_name,
         }

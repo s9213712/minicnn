@@ -6,7 +6,12 @@ from minicnn.backend_capability import validate_backend_model_capabilities
 
 
 def handle_validate_config(args) -> int:
-    from minicnn.cuda_native.api import assess_cuda_native_support_tier, resolve_cuda_native_execution_mode, validate_cuda_native_config
+    from minicnn.cuda_native.api import (
+        assess_cuda_native_execution_readiness,
+        assess_cuda_native_support_tier,
+        resolve_cuda_native_execution_mode,
+        validate_cuda_native_config,
+    )
     from minicnn.unified.cuda_legacy import validate_cuda_legacy_compatibility
 
     cfg = _load_unified_config_or_exit(args.config, args.overrides)
@@ -29,6 +34,7 @@ def handle_validate_config(args) -> int:
     }
     if backend == 'cuda_native':
         payload['support_tier_assessment'] = assess_cuda_native_support_tier(cfg)
+        payload['execution_readiness_assessment'] = assess_cuda_native_execution_readiness(cfg)
         payload.update(resolve_cuda_native_execution_mode(cfg))
     _print_validation_result(payload, command='validate-config', output_format=args.format)
     return 0 if not errors else 2
@@ -36,6 +42,7 @@ def handle_validate_config(args) -> int:
 
 def handle_validate_cuda_native_config(args) -> int:
     from minicnn.cuda_native.api import (
+        assess_cuda_native_execution_readiness,
         assess_cuda_native_support_tier,
         resolve_cuda_native_execution_mode,
         validate_cuda_native_config,
@@ -53,10 +60,18 @@ def handle_validate_cuda_native_config(args) -> int:
         'errors': errors,
         'backend': 'cuda_native',
         'support_tier_assessment': assess_cuda_native_support_tier(cfg),
+        'execution_readiness_assessment': assess_cuda_native_execution_readiness(cfg),
     }
     payload.update(resolve_cuda_native_execution_mode(cfg))
     if not errors:
-        payload['note'] = 'beta-grade backend; current execution mode is reference_numpy on CPU, with gpu_native still planned'
+        payload['note'] = (
+            'beta-grade backend; reference_numpy is broadly supported, while gpu_native is '
+            'supported for the narrow Linear, Linear+ReLU, MaxPool+Linear, '
+            'Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, '
+            'Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, '
+            'and two-Conv ReLU+MaxPool+Linear '
+            '/ CrossEntropyLoss / SGD training subsets'
+        )
     _print_validation_result(payload, command='validate-cuda-native-config', output_format=args.format)
     return 0 if not errors else 2
 
@@ -66,3 +81,19 @@ def handle_cuda_native_capabilities() -> int:
 
     _print_json(get_cuda_native_summary())
     return 0
+
+
+def handle_check_cuda_ready(args) -> int:
+    from minicnn.core.cuda_backend import check_cuda_ready
+
+    payload = check_cuda_ready(getattr(args, 'path', None))
+    payload.update({
+        'schema_name': 'minicnn.cli.cuda_ready',
+        'schema_version': 1,
+        'artifact_kind': 'cuda_ready_result',
+        'kind': 'cuda_ready_result',
+        'command': 'check-cuda-ready',
+        'status': 'ok' if payload.get('ready') else 'error',
+    })
+    _print_json(payload)
+    return 0 if payload.get('ready') else 2

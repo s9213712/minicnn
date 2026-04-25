@@ -1,6 +1,6 @@
 # Optimization And Backend Progress
 
-Last updated: 2026-04-24
+Last updated: 2026-04-25
 
 This file tracks the current technical direction of MiniCNN without binding the
 status to a specific historic PR number or branch name.
@@ -50,6 +50,10 @@ The stable default backend toggle is still:
   - explicit staged eval-forward execution telemetry
   - reserved-buffer reuse/release telemetry for staged outputs
   - reserved-buffer-backed input/output staging for train/eval batch paths
+  - machine-readable `gpu_native` readiness and per-config bootstrap assessment
+  - initial GPU dispatch-plan seam for bootstrap-subset graphs
+  - per-step GPU param-binding manifests for future lowering
+  - execution-mode invariants and GPU dispatch unsupported-step visibility are now regression-locked
 
 ## What Is Still Constrained
 
@@ -172,5 +176,16 @@ For the separate path from reference execution to real GPU execution, see
 
 - Phase G0 execution-boundary freeze has started
 - `cuda_native` now reports `execution_mode=reference_numpy` and `tensor_execution_device=cpu` across CLI, summary, and metrics artifacts
-- `gpu_native` is now explicitly published as a planned execution mode rather than an implied capability
-- a first `DeviceRuntime` / `DeviceTensor` substrate now exists for future GPU enablement work, with staging/allocation/synchronization telemetry wired into artifacts
+- `gpu_native` is now explicitly published as a partial native-forward execution track rather than an implied full-training capability
+- `DeviceRuntime` / `DeviceTensor` now support native device pointers, host/device sync accounting, and real forward calls for the current bootstrap subset when a CUDA library is bound
+- native forward bridge coverage currently includes Flatten aliasing plus Linear, ReLU, LeakyReLU, Add, Concat, MaxPool2d, and constrained Conv2d lowering
+- `train-native engine.execution_mode=gpu_native` now runs the narrow `Flatten -> Linear`, `Flatten -> Linear -> ReLU -> Linear`, `MaxPool2d -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`, and `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` / `CrossEntropyLoss` / `SGD` subset through native GPU forward, activation/pool/conv backward, loss-gradient, dense-backward, and SGD/momentum-update calls
+- `gpu_native` runtime setup now performs a CUDA driver/runtime preflight so incompatible machines fail with a Python `RuntimeError` before CUDA allocation instead of aborting in native code
+- repeated-Conv real-data smoke entrypoint now exists at `examples/cuda_native_gpu_two_conv_training_cifar10_demo.py`; it runs the two-Conv native GPU helper on a CIFAR-10 batch and compares against a NumPy reference step when the CUDA environment is valid
+- `gpu_native` Linear subsets now use native CUDA loss-gradient helpers for `CrossEntropyLoss`, `MSELoss`, and `BCEWithLogitsLoss`; Conv-family subsets remain on `CrossEntropyLoss`
+- `gpu_native` Linear subsets now use native CUDA update helpers for `SGD`, `Adam`, `AdamW`, and `RMSprop`; Conv-family subsets remain on `SGD`
+- supported `gpu_native` training subsets now use native global-norm gradient clipping through `grad_l2_sumsq` plus `scale_inplace`
+- supported SGD `gpu_native` helper subsets now use native `optimizer.weight_decay` through `sgd_update_fused`
+- supported `gpu_native` CrossEntropyLoss helpers now use native `label_smoothing` through `softmax_xent_smooth_grad_loss_acc`
+- `validate-cuda-native-config` now exposes `training_lowering_plan`, a per-phase manifest for forward/loss/backward/optimizer lowerings behind each accepted `gpu_native` helper subset
+- representative real CUDA smoke now passes for minimal Linear SGD, minimal Linear RMSprop, and CIFAR-10 repeated-Conv helper parity
