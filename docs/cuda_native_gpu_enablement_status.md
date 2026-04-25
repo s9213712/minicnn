@@ -61,6 +61,9 @@ Completed:
 - native `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU ->
   PointwiseConv2d -> Flatten -> Linear` training helper routing through the
   same depthwise/norm/pointwise C ABI shims plus native GELU forward/backward
+- kernel registry backward statuses now mark helper-backed backward ops as
+  `partial_native`, so per-op diagnostics line up with the implemented
+  GPU-training helper surface instead of leaving those ops as only `planned`
 - named model spec `convnext_bridge_tiny`, which expands directly to the
   deepest current ConvNeXt-style native GPU bridge subset instead of requiring
   users to hand-write the primitive layer sequence

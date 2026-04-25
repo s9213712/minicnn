@@ -11,6 +11,37 @@ from minicnn.cuda_native.gpu_dispatch import build_gpu_dispatch_plan, build_gpu_
 from minicnn.cuda_native.gpu_training_lowering import build_gpu_training_lowering_plan
 
 
+def test_gpu_kernel_registry_marks_helper_backed_backward_ops_partial_native():
+    from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
+
+    statuses = {spec.op_name: spec.backward_status for spec in list_gpu_kernel_specs()}
+    helper_backed_backward_ops = {
+        'AdaptiveAvgPool2d',
+        'AvgPool2d',
+        'BatchNorm2d',
+        'Conv2d',
+        'DepthwiseConv2d',
+        'GELU',
+        'GlobalAvgPool2d',
+        'GroupNorm',
+        'LayerNorm2d',
+        'Linear',
+        'MaxPool2d',
+        'PointwiseConv2d',
+        'ReLU',
+        'Sigmoid',
+        'SiLU',
+        'Tanh',
+    }
+
+    assert {op: statuses[op] for op in helper_backed_backward_ops} == {
+        op: 'partial_native' for op in helper_backed_backward_ops
+    }
+    assert statuses['Flatten'] == 'not_needed'
+    assert statuses['Dropout'] == 'planned'
+    assert statuses['DropPath'] == 'planned'
+
+
 def test_gpu_dispatch_plan_supports_bootstrap_subset_graph():
     graph = build_cuda_native_graph(
         {
