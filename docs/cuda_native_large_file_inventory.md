@@ -8,9 +8,26 @@ This note tracks large MiniCNN files that can slow review and maintenance as `cu
 
 | File | Approx. lines | Status | Suggested next action |
 | --- | ---: | --- | --- |
-| `src/minicnn/cuda_native/gpu_training.py` | ~3.2k | Partially split. Public imports remain compatible. Dataclasses, shared CUDA helpers, and conv-family helpers were moved out. | Continue extracting optimizer-state handling and MLP/linear-family helpers. |
-| `src/minicnn/unified/_cuda_native_runtime.py` | ~1.6k | Large orchestration file for support checks, execution selection, fallback, training, evaluation, and metrics. | Split into runtime planning, training dispatch, evaluation dispatch, and diagnostics modules. |
-| `src/minicnn/cuda_native/gpu_lowering.py` | ~1.1k | Growing per-op lowering shim. | Split by op family once per-op coverage stabilizes: convolution/pooling, activation/loss, optimizer/update, tensor utilities. |
+| `src/minicnn/cuda_native/gpu_lowering.py` | ~980 | Partially split. Registry types and shared tensor helpers were moved out. | Split lowering implementations by op family once per-op coverage stabilizes. |
+| `src/minicnn/cuda_native/gpu_training.py` | ~900 | Compatibility import surface plus remaining depthwise-family helpers. Linear, pool, norm, conv, result types, and shared helpers were moved out. | Move remaining depthwise-family helpers into a dedicated module, then leave this file as a thin compatibility facade. |
+| `src/minicnn/unified/_cuda_native_training_loop.py` | ~800 | Extracted from `_cuda_native_runtime.py`; owns epoch loop, fallback training path, metrics, and profiling orchestration. GPU-native plan selection moved out. | Split epoch metrics construction only if this file grows again. |
+
+## Extracted production modules
+
+| File | Role |
+| --- | --- |
+| `src/minicnn/unified/_cuda_native_context.py` | Training context dataclass. |
+| `src/minicnn/unified/_cuda_native_diagnostics.py` | Optimizer runtime snapshot, hotspot profiling, and hotspot diff summaries. |
+| `src/minicnn/unified/_cuda_native_training_loop.py` | Runtime epoch loop and training orchestration. |
+| `src/minicnn/unified/_cuda_native_training_plan.py` | GPU-native training plan selection, validation, and runtime counter merge helpers. |
+| `src/minicnn/cuda_native/gpu_training_types.py` | GPU training result dataclasses. |
+| `src/minicnn/cuda_native/gpu_training_common.py` | Shared CUDA binding, loss, and gradient-clip helpers. |
+| `src/minicnn/cuda_native/gpu_training_linear.py` | Linear and two-linear GPU training helpers. |
+| `src/minicnn/cuda_native/gpu_training_pool.py` | Pool/avgpool/global-avgpool GPU training helpers. |
+| `src/minicnn/cuda_native/gpu_training_norm.py` | BatchNorm/LayerNorm/GroupNorm GPU training helpers. |
+| `src/minicnn/cuda_native/gpu_training_conv.py` | Conv-family GPU training helpers. |
+| `src/minicnn/cuda_native/gpu_lowering_registry.py` | GPU lowering registry/context/spec types. |
+| `src/minicnn/cuda_native/gpu_lowering_utils.py` | Shared GPU lowering tensor helpers. |
 
 ## Files intentionally deprioritized
 
@@ -23,7 +40,7 @@ Large test modules are acceptable for now because they encode regression coverag
 
 ## Completed cleanup in this pass
 
-- Added `src/minicnn/cuda_native/gpu_training_types.py` for result dataclasses.
-- Added `src/minicnn/cuda_native/gpu_training_common.py` for shared CUDA binding and loss/clip helpers.
-- Added `src/minicnn/cuda_native/gpu_training_conv.py` for conv-family GPU training helpers.
-- Kept `src/minicnn/cuda_native/gpu_training.py` as the compatibility import surface while further extraction continues.
+- Reduced `src/minicnn/cuda_native/gpu_training.py` from ~3.9k lines before cleanup to ~900 lines.
+- Reduced `src/minicnn/cuda_native/gpu_lowering.py` to below 1k lines.
+- Reduced `src/minicnn/unified/_cuda_native_runtime.py` to a small prepare/finalize facade by extracting context, diagnostics, training-loop, and training-plan modules.
+- Kept public import surfaces compatible for existing callers.

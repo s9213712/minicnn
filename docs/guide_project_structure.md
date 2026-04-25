@@ -259,4 +259,4 @@ minicnn/
 
 ## CUDA Native maintenance map
 
-The CUDA-native GPU training surface is being split incrementally without breaking public imports. `gpu_training.py` stays as the compatibility-facing module, while `gpu_training_types.py`, `gpu_training_common.py`, and `gpu_training_conv.py` hold extracted result types, shared helpers, and conv-family helper code. See `docs/cuda_native_large_file_inventory.md` for the active large-file cleanup queue.
+The CUDA-native GPU training surface is being split incrementally without breaking public imports. `gpu_training.py` stays as the compatibility-facing module, while focused `gpu_training_*` modules hold result types, shared helpers, linear, pool, norm, and conv-family helper code. Runtime context/diagnostics and GPU lowering registry/utility helpers have also been extracted. See `docs/cuda_native_large_file_inventory.md` for the active large-file cleanup queue.

@@ -294,4 +294,4 @@ src/minicnn/
 
 ## CUDA Native source layout note
 
-`src/minicnn/cuda_native/gpu_training.py` remains the compatibility import surface for GPU training helpers. Large reusable pieces have started moving into focused modules: result dataclasses live in `gpu_training_types.py`, shared CUDA binding/loss/clip helpers live in `gpu_training_common.py`, and conv-family training helpers live in `gpu_training_conv.py`. The next production-code split candidates are `src/minicnn/unified/_cuda_native_runtime.py` and `src/minicnn/cuda_native/gpu_lowering.py`.
+`src/minicnn/cuda_native/gpu_training.py` remains the compatibility import surface for GPU training helpers. Result dataclasses, shared CUDA helpers, linear, pool, norm, and conv-family helpers now live in focused `gpu_training_*` modules. Runtime context, diagnostics, training-loop execution, and GPU-native plan selection also moved into focused `src/minicnn/unified/_cuda_native_*` modules, and lowering registry/tensor helpers moved into `gpu_lowering_registry.py` and `gpu_lowering_utils.py`.
