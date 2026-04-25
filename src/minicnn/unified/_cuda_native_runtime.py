@@ -325,7 +325,9 @@ class NativeTrainingContext:
     scheduler_cfg: dict[str, Any]
     support_tier_assessment: dict[str, Any]
     execution_mode: str
+    selected_execution_mode: str
     tensor_execution_device: str
+    execution_mode_policy: dict[str, Any]
     device_runtime: DeviceRuntime
 
 
@@ -369,6 +371,18 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
     execution_mode_info = resolve_cuda_native_execution_mode(cfg)
     selected_execution_mode = str(execution_mode_info.get('effective_execution_mode', 'reference_numpy'))
     requested_execution_mode = str(execution_mode_info.get('selected_execution_mode', selected_execution_mode))
+    execution_mode_policy = {
+        key: execution_mode_info[key]
+        for key in (
+            'fallback_execution_mode',
+            'fallback_available',
+            'fallback_active',
+            'fallback_reason',
+            'gpu_native_lowering_ready',
+            'gpu_native_runtime_ready',
+        )
+        if key in execution_mode_info
+    }
     tensor_execution_device = 'gpu' if selected_execution_mode == 'gpu_native' else 'cpu'
     bound_lib = None
     if selected_execution_mode == 'gpu_native':
@@ -377,12 +391,20 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
         try:
             bound_lib = bind_symbols(load_library())
             ensure_cuda_runtime_available(bound_lib)
-        except RuntimeError:
+        except RuntimeError as exc:
             if requested_execution_mode != 'gpu_native_auto':
                 raise
             selected_execution_mode = 'reference_numpy'
             tensor_execution_device = 'cpu'
             bound_lib = None
+            execution_mode_policy = {
+                **execution_mode_policy,
+                'fallback_execution_mode': 'reference_numpy',
+                'fallback_available': True,
+                'fallback_active': True,
+                'fallback_reason': str(exc),
+                'gpu_native_runtime_ready': False,
+            }
     device_runtime = DeviceRuntime(
         execution_mode=selected_execution_mode,
         tensor_execution_device=tensor_execution_device,
@@ -426,7 +448,9 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
         scheduler_cfg=scheduler_cfg,
         support_tier_assessment=assess_cuda_native_support_tier(cfg),
         execution_mode=selected_execution_mode,
+        selected_execution_mode=requested_execution_mode,
         tensor_execution_device=tensor_execution_device,
+        execution_mode_policy=execution_mode_policy,
         device_runtime=device_runtime,
     )
 
@@ -1434,7 +1458,9 @@ def run_training_loop(
                 device_runtime_state=ctx.device_runtime.summary(),
                 support_tier_assessment=ctx.support_tier_assessment,
                 execution_mode=ctx.execution_mode,
+                selected_execution_mode=ctx.selected_execution_mode,
                 tensor_execution_device=ctx.tensor_execution_device,
+                execution_mode_policy=ctx.execution_mode_policy,
             )
             mf.write(json.dumps(row) + '\n')
             mf.flush()
@@ -1532,7 +1558,9 @@ def finalize_training_run(
         capabilities=capabilities,
         support_tier_assessment=ctx.support_tier_assessment,
         execution_mode=ctx.execution_mode,
+        selected_execution_mode=ctx.selected_execution_mode,
         tensor_execution_device=ctx.tensor_execution_device,
+        execution_mode_policy=ctx.execution_mode_policy,
         device_runtime_state=ctx.device_runtime.summary(),
     )
     dump_summary(run_dir, summary)

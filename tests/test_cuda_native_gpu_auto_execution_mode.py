@@ -113,6 +113,9 @@ project:
     stdout = capsys.readouterr().out
     json_text = stdout.split('Artifacts written to:')[0].strip()
     payload, _ = json.JSONDecoder().raw_decode(json_text)
+    run_dir = stdout.split('Artifacts written to:', 1)[1].strip().splitlines()[0]
+    summary = json.loads((tmp_path / 'artifacts' / run_dir.rsplit('/', 1)[-1] / 'summary.json').read_text(encoding='utf-8'))
+    row = json.loads((tmp_path / 'artifacts' / run_dir.rsplit('/', 1)[-1] / 'metrics.jsonl').read_text(encoding='utf-8').strip().splitlines()[-1])
 
     assert rc == 0
     assert payload['selected_execution_mode'] == 'gpu_native_auto'
@@ -121,3 +124,12 @@ project:
     assert payload['gpu_execution'] is False
     assert payload['fallback_active'] is True
     assert payload['fallback_reason'] == 'cuda_runtime_not_ready'
+    assert summary['selected_execution_mode'] == 'gpu_native_auto'
+    assert summary['effective_execution_mode'] == 'reference_numpy'
+    assert summary['fallback_active'] is True
+    assert summary['fallback_reason'] == 'cuda_runtime_not_ready'
+    assert summary['execution_mode_policy']['gpu_native_runtime_ready'] is False
+    assert summary['performance_report']['runtime']['selected_execution_mode'] == 'gpu_native_auto'
+    assert row['selected_execution_mode'] == 'gpu_native_auto'
+    assert row['effective_execution_mode'] == 'reference_numpy'
+    assert row['fallback_active'] is True

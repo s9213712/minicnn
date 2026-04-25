@@ -367,13 +367,18 @@ def build_epoch_row(
     device_runtime_state: dict[str, Any] | None = None,
     support_tier_assessment: dict[str, Any] | None = None,
     execution_mode: str = EXECUTION_MODE_REFERENCE_NUMPY,
+    selected_execution_mode: str | None = None,
     tensor_execution_device: str = EXECUTION_DEVICE_CPU,
+    execution_mode_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    selected_mode = execution_mode if selected_execution_mode is None else selected_execution_mode
+    mode_policy = dict(execution_mode_policy or {})
     row = {
         'schema_name': TRAINING_METRICS_SCHEMA_NAME,
         'schema_version': TRAINING_METRICS_SCHEMA_VERSION,
         'artifact_kind': 'training_metrics_epoch',
         'execution_mode': execution_mode,
+        'selected_execution_mode': selected_mode,
         'effective_execution_mode': execution_mode,
         'tensor_execution_device': tensor_execution_device,
         'tensors_ran_on': tensor_execution_device,
@@ -384,6 +389,18 @@ def build_epoch_row(
         'lr': lr,
         'epoch_time_s': epoch_time_s,
     }
+    if mode_policy:
+        row['execution_mode_policy'] = mode_policy
+        for key in (
+            'fallback_execution_mode',
+            'fallback_available',
+            'fallback_active',
+            'fallback_reason',
+            'gpu_native_lowering_ready',
+            'gpu_native_runtime_ready',
+        ):
+            if key in mode_policy:
+                row[key] = mode_policy[key]
     if amp_state:
         row['amp'] = dict(amp_state)
     if optimizer_state:
@@ -472,9 +489,13 @@ def build_training_summary(
     capabilities: dict[str, Any],
     support_tier_assessment: dict[str, Any] | None = None,
     execution_mode: str = EXECUTION_MODE_REFERENCE_NUMPY,
+    selected_execution_mode: str | None = None,
     tensor_execution_device: str = EXECUTION_DEVICE_CPU,
+    execution_mode_policy: dict[str, Any] | None = None,
     device_runtime_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    selected_mode = execution_mode if selected_execution_mode is None else selected_execution_mode
+    mode_policy = dict(execution_mode_policy or {})
     optim_type = str(optimizer_cfg.get('type', 'SGD'))
     optimizer_summary = {
         'type': optim_type,
@@ -510,9 +531,11 @@ def build_training_summary(
         'runtime': {
             **dict(runtime_profile or {}),
             'execution_mode': execution_mode,
+            'selected_execution_mode': selected_mode,
             'effective_execution_mode': execution_mode,
             'tensor_execution_device': tensor_execution_device,
             'tensors_ran_on': tensor_execution_device,
+            'execution_mode_policy': mode_policy,
             'device_runtime': dict(device_runtime_state or {}),
         },
         'training': {
@@ -522,16 +545,17 @@ def build_training_summary(
             'support_tier': dict(support_tier_assessment or {}),
         },
     }
-    return {
+    summary = {
         'schema_name': TRAINING_SUMMARY_SCHEMA_NAME,
         'schema_version': TRAINING_SUMMARY_SCHEMA_VERSION,
         'artifact_kind': 'training_run_summary',
         'status': 'ok',
         'execution_mode': execution_mode,
-        'selected_execution_mode': execution_mode,
+        'selected_execution_mode': selected_mode,
         'effective_execution_mode': execution_mode,
         'tensor_execution_device': tensor_execution_device,
         'tensors_ran_on': tensor_execution_device,
+        'execution_mode_policy': mode_policy,
         'device_runtime': dict(device_runtime_state or {}),
         'selected_backend': 'cuda_native',
         'effective_backend': 'cuda_native',
@@ -573,3 +597,15 @@ def build_training_summary(
         'test_acc': None,
         'capabilities': capabilities,
     }
+    if mode_policy:
+        for key in (
+            'fallback_execution_mode',
+            'fallback_available',
+            'fallback_active',
+            'fallback_reason',
+            'gpu_native_lowering_ready',
+            'gpu_native_runtime_ready',
+        ):
+            if key in mode_policy:
+                summary[key] = mode_policy[key]
+    return summary
