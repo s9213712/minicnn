@@ -81,3 +81,19 @@ def handle_cuda_native_capabilities() -> int:
 
     _print_json(get_cuda_native_summary())
     return 0
+
+
+def handle_check_cuda_ready(args) -> int:
+    from minicnn.core.cuda_backend import check_cuda_ready
+
+    payload = check_cuda_ready(getattr(args, 'path', None))
+    payload.update({
+        'schema_name': 'minicnn.cli.cuda_ready',
+        'schema_version': 1,
+        'artifact_kind': 'cuda_ready_result',
+        'kind': 'cuda_ready_result',
+        'command': 'check-cuda-ready',
+        'status': 'ok' if payload.get('ready') else 'error',
+    })
+    _print_json(payload)
+    return 0 if payload.get('ready') else 2

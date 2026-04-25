@@ -106,6 +106,11 @@ Completed:
 - `check_cuda_ready()` now reports `runtime_preflight` and overall `ready`, so
   environments with complete symbols but failing CUDA driver/runtime init no
   longer look fully usable
+- `minicnn check-cuda-ready` now reports CUDA runtime preflight plus environment
+  diagnostics. The current local blocker is diagnosed as WSL CUDA device-node
+  absence (`/dev/dxg` missing) plus runtime/driver mismatch; symbols are
+  complete, but CUDA Driver API initialization is blocked before real GPU
+  kernel launch.
 - real-data CIFAR-10 smoke entrypoints for linear and repeated-conv native GPU training
 - docs and capability payloads aligned with the implemented surface
 - native `MSELoss` and `BCEWithLogitsLoss` loss-gradient helpers for Linear

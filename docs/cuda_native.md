@@ -260,6 +260,10 @@ Execution-mode guidance:
 - `train.device=cuda` or `train.device=gpu` is accepted only with
   `gpu_native` / `gpu_native_auto`; the actual execution device is still
   reported by `effective_execution_mode` and `tensor_execution_device`
+- `minicnn check-cuda-ready` probes the selected native library, required
+  symbols, CUDA runtime preflight, driver/runtime mismatch, and WSL device-node
+  state. On WSL, a missing `/dev/dxg` means CUDA Driver API initialization is
+  blocked before `cuda_native` can run real GPU kernels.
 
 Current `train-native engine.execution_mode=gpu_native` training subsets:
 

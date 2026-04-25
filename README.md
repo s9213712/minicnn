@@ -179,6 +179,9 @@ Hermetic native smoke examples now exist for:
 # Check what cuda_native supports
 minicnn cuda-native-capabilities
 
+# Check native CUDA library, driver/runtime, and WSL/device-node readiness
+minicnn check-cuda-ready
+
 # Validate your config
 minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml \
   optimizer.momentum=0.9 optimizer.grad_clip_global=1.0 \

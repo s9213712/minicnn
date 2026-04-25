@@ -3,6 +3,7 @@
 import ctypes
 import os
 import threading
+from collections.abc import Callable
 
 from minicnn.core._cuda_library import (
     CUDA_NATIVE_SYMBOL_GROUPS,
@@ -56,6 +57,94 @@ def is_lib_loaded() -> bool:
     return _lib is not None
 
 
+def _format_cuda_runtime_version(raw_version: object) -> str:
+    try:
+        value = int(raw_version)
+    except (TypeError, ValueError):
+        return 'unknown'
+    if value <= 0:
+        return 'unknown'
+    return f'{value // 1000}.{(value % 1000) // 10}'
+
+
+def _is_wsl_environment() -> bool:
+    if os.environ.get('WSL_INTEROP') or os.environ.get('WSL_DISTRO_NAME'):
+        return True
+    try:
+        with open('/proc/version', encoding='utf-8') as handle:
+            return 'microsoft' in handle.read().lower()
+    except OSError:
+        return False
+
+
+def _cuda_environment_diagnostics(
+    runtime_preflight: dict[str, object],
+    *,
+    exists_fn: Callable[[str], bool] = os.path.exists,
+    realpath_fn: Callable[[str], str] = os.path.realpath,
+) -> dict[str, object]:
+    status = runtime_preflight.get('status')
+    driver_version = int(runtime_preflight.get('driver_version') or 0)
+    runtime_version = int(runtime_preflight.get('runtime_version') or 0)
+    runtime_driver_mismatch = (
+        status == 35
+        or (driver_version > 0 and runtime_version > 0 and driver_version < runtime_version)
+    )
+    wsl = _is_wsl_environment()
+    device_nodes = {
+        '/dev/dxg': exists_fn('/dev/dxg'),
+        '/dev/nvidiactl': exists_fn('/dev/nvidiactl'),
+        '/dev/nvidia0': exists_fn('/dev/nvidia0'),
+    }
+    libcuda_candidates = []
+    for path in (
+        '/usr/lib/wsl/lib/libcuda.so.1',
+        '/lib/x86_64-linux-gnu/libcuda.so.1',
+        '/usr/lib/x86_64-linux-gnu/libcuda.so.1',
+    ):
+        exists = exists_fn(path)
+        libcuda_candidates.append({
+            'path': path,
+            'exists': exists,
+            'resolved_path': realpath_fn(path) if exists else None,
+        })
+
+    remediation: list[str] = []
+    issue = None
+    if wsl and not device_nodes['/dev/dxg']:
+        issue = 'wsl_cuda_device_node_missing'
+        remediation.append(
+            'Restart WSL and ensure the Windows NVIDIA driver exposes /dev/dxg inside the distro.'
+        )
+    if runtime_driver_mismatch:
+        issue = issue or 'cuda_driver_runtime_mismatch'
+        remediation.append(
+            'Use a CUDA runtime/toolkit compatible with the driver visible to the process '
+            f'(driver={_format_cuda_runtime_version(driver_version)}, '
+            f'runtime={_format_cuda_runtime_version(runtime_version)}).'
+        )
+    if driver_version <= 0:
+        issue = issue or 'cuda_driver_api_unavailable'
+        remediation.append(
+            'Ensure libcuda.so.1 resolves to the active NVIDIA driver rather than a stale stub.'
+        )
+    if wsl:
+        remediation.append(
+            'In WSL, prefer the Windows-provided CUDA driver path /usr/lib/wsl/lib and avoid stale Linux NVIDIA driver packages shadowing it.'
+        )
+
+    return {
+        'wsl': wsl,
+        'ld_library_path': os.environ.get('LD_LIBRARY_PATH', ''),
+        'cuda_home': os.environ.get('CUDA_HOME') or os.environ.get('CUDA_PATH'),
+        'device_nodes': device_nodes,
+        'libcuda_candidates': libcuda_candidates,
+        'runtime_driver_mismatch': runtime_driver_mismatch,
+        'issue': issue,
+        'remediation': remediation,
+    }
+
+
 def check_cuda_ready(path: str | os.PathLike[str] | None = None) -> dict[str, object]:
     resolved = resolve_library_path(path)
     exists = os.path.exists(resolved)
@@ -74,6 +163,7 @@ def check_cuda_ready(path: str | os.PathLike[str] | None = None) -> dict[str, ob
             'driver_version': None,
             'runtime_version': None,
         },
+        'environment_diagnostics': {},
         'error': None,
     }
     if not exists:
@@ -121,16 +211,25 @@ def check_cuda_ready(path: str | os.PathLike[str] | None = None) -> dict[str, ob
                 'driver_version': driver_version,
                 'runtime_version': runtime_version,
             }
+            result['environment_diagnostics'] = _cuda_environment_diagnostics(
+                result['runtime_preflight']
+            )
         if missing:
             result['error'] = f'Missing required symbols: {missing}'
         elif not runtime_ready:
             runtime_summary = result['runtime_preflight']
+            diagnostics = result['environment_diagnostics']
+            remediation = diagnostics.get('remediation') if isinstance(diagnostics, dict) else None
+            remediation_text = ''
+            if remediation:
+                remediation_text = ' Remediation: ' + ' '.join(str(item) for item in remediation)
             result['error'] = (
                 'CUDA runtime preflight failed: '
                 f"{runtime_summary['status_message']} "
                 f"(status={runtime_summary['status']}, "
                 f"driver={runtime_summary['driver_version']}, "
-                f"runtime={runtime_summary['runtime_version']})"
+                f"runtime={runtime_summary['runtime_version']})."
+                f"{remediation_text}"
             )
         result['ready'] = bool(result['loadable']) and runtime_ready
     except Exception as exc:

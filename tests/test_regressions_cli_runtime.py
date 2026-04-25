@@ -225,6 +225,7 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert 'compile' in help_text
     assert 'show-model' in help_text
     assert 'show-graph' in help_text
+    assert 'check-cuda-ready' in help_text
     assert '--quiet' in subparsers.choices['train-flex'].format_help()
     assert '--verbose' in subparsers.choices['train-flex'].format_help()
     assert '--cuda-arch' in build_help
@@ -234,6 +235,50 @@ def test_cli_exposes_doctor_compare_and_backend_aliases():
     assert '--format {json,text}' in subparsers.choices['validate-dual-config'].format_help()
     assert '--format {json,text}' in subparsers.choices['show-model'].format_help()
     assert '--format {json,text}' in subparsers.choices['show-graph'].format_help()
+    assert '--path PATH' in subparsers.choices['check-cuda-ready'].format_help()
+
+
+def test_cli_check_cuda_ready_returns_environment_diagnostics(capsys, monkeypatch):
+    import json
+
+    from minicnn.cli import main
+    import minicnn.core.cuda_backend as cuda_backend
+
+    def fake_check_cuda_ready(path=None):
+        return {
+            'path': path or '/tmp/libcuda.so',
+            'exists': True,
+            'loadable': True,
+            'ready': False,
+            'missing_symbols': [],
+            'runtime_preflight': {
+                'available': True,
+                'ready': False,
+                'status': 35,
+                'status_message': 'CUDA driver version is insufficient for CUDA runtime version',
+                'driver_version': 0,
+                'runtime_version': 13020,
+            },
+            'environment_diagnostics': {
+                'issue': 'wsl_cuda_device_node_missing',
+                'device_nodes': {'/dev/dxg': False},
+                'runtime_driver_mismatch': True,
+                'remediation': ['Restart WSL.'],
+            },
+            'error': 'CUDA runtime preflight failed',
+        }
+
+    monkeypatch.setattr(cuda_backend, 'check_cuda_ready', fake_check_cuda_ready)
+
+    rc = main(['check-cuda-ready', '--path', 'handmade'])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 2
+    assert payload['command'] == 'check-cuda-ready'
+    assert payload['status'] == 'error'
+    assert payload['path'] == 'handmade'
+    assert payload['runtime_preflight']['status'] == 35
+    assert payload['environment_diagnostics']['issue'] == 'wsl_cuda_device_node_missing'
 
 
 def test_user_error_goes_to_stderr_not_stdout(capsys):
