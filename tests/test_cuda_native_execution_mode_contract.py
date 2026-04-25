@@ -116,6 +116,17 @@ def test_cuda_library_symbol_inventory_covers_training_lowering_plans():
             {'type': 'SGD'},
         ),
         (
+            [
+                {'type': 'DepthwiseConv2d', 'kernel_size': 3, 'bias': False},
+                {'type': 'LayerNorm2d'},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+            (1, 2, 8, 8),
+            {'type': 'CrossEntropyLoss'},
+            {'type': 'SGD'},
+        ),
+        (
             [{'type': 'GroupNorm', 'num_groups': 1}, {'type': 'Flatten'}, {'type': 'Linear', 'out_features': 2}],
             (1, 2, 8, 8),
             {'type': 'CrossEntropyLoss'},
@@ -471,6 +482,40 @@ def test_validate_cuda_native_config_accepts_gpu_native_layernorm2d_linear_train
     assert payload['execution_readiness_assessment']['training_lowering_plan']['backward_steps'][-1]['required_symbols'] == [
         'layernorm2d_backward'
     ]
+    assert payload['errors'] == []
+
+
+def test_validate_cuda_native_config_accepts_gpu_native_depthwise_layernorm2d_linear_training_subset(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding='utf-8').replace(
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: DepthwiseConv2d\n      kernel_size: 3\n      stride: 1\n      padding: 0\n      bias: false\n    - type: LayerNorm2d\n      eps: 0.00001\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+        ),
+        encoding='utf-8',
+    )
+
+    rc = main([
+        'validate-cuda-native-config',
+        '--config',
+        str(config_path),
+        '--format',
+        'json',
+        'engine.execution_mode=gpu_native',
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['selected_execution_mode'] == 'gpu_native'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'depthwise_layernorm2d_linear'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['helper'] == 'native_gpu_depthwise_layernorm2d_linear_training_step'
+    assert 'depthwise_conv2d_forward' in payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols_by_phase']['forward']
+    assert 'layernorm2d_forward' in payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols_by_phase']['forward']
+    assert 'depthwise_conv2d_backward' in payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols_by_phase']['backward']
+    assert 'layernorm2d_backward' in payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols_by_phase']['backward']
     assert payload['errors'] == []
 
 

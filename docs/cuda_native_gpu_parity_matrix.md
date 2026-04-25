@@ -17,7 +17,8 @@ For the closure/status summary, see
 and `BatchNorm2d -> Flatten -> Linear` are also covered in the helper-backed
 train-native subset matrix. `DepthwiseConv2d` now has helper-backed
 train-native coverage for the same SGD/CrossEntropyLoss envelope as the narrow
-conv-family helpers.
+conv-family helpers. `DepthwiseConv2d -> LayerNorm2d -> Flatten -> Linear` is
+covered as the first ConvNeXt-style bridge subset.
 
 | Subset | Helper | Evidence | Hardware status |
 |---|---|---|---|
@@ -40,6 +41,7 @@ conv-family helpers.
 | `PointwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by Conv2d+ReLU helper math | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
+| `DepthwiseConv2d(bias=false) -> LayerNorm2d -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |

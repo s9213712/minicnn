@@ -52,6 +52,9 @@ Completed:
   prerequisite for LayerNorm2d helper-backed training subsets
 - native `LayerNorm2d -> Flatten -> Linear` training helper routing through the
   layernorm2d forward/backward C ABI shims
+- native `DepthwiseConv2d -> LayerNorm2d -> Flatten -> Linear` training helper
+  routing through depthwise and layernorm2d forward/backward C ABI shims as the
+  first ConvNeXt-style bridge subset
 - native training helpers for the current narrow training subsets
 - native `GlobalAvgPool2d -> Flatten -> Linear` and
   `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` training helpers
@@ -101,6 +104,7 @@ Supported through native GPU helper paths:
 - `PointwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> LayerNorm2d -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`
@@ -172,13 +176,15 @@ fails before allocation with a Python `RuntimeError` instead of aborting inside
 Still not claimed as complete:
 
 - full graph-level GPU backward generalization
-- composite/block training lowering for residual and ConvNeXt-style models
+- composite/block training lowering for residual and full ConvNeXt-style models
 - broader `BatchNorm2d` graph-level train-native coverage beyond the
   `BatchNorm2d -> Flatten -> Linear` helper subset
 - broader modern elementwise activation graph-level train-native coverage beyond
   the two-linear helper subsets
 - broader `PointwiseConv2d` graph-level train-native coverage beyond the
   `PointwiseConv2d -> Flatten -> Linear` helper subsets
+- full ConvNeXt block train-native coverage beyond the current
+  `DepthwiseConv2d -> LayerNorm2d -> Flatten -> Linear` bridge subset
 
 ## Validation evidence
 

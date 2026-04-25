@@ -175,6 +175,10 @@ _TRAINING_SUBSETS: dict[tuple[str, ...], tuple[str, str]] = {
     ('BatchNorm2d', 'Flatten', 'Linear'): ('batchnorm_linear', 'native_gpu_batchnorm_linear_training_step'),
     ('LayerNorm2d', 'Flatten', 'Linear'): ('layernorm2d_linear', 'native_gpu_layernorm2d_linear_training_step'),
     ('GroupNorm', 'Flatten', 'Linear'): ('groupnorm_linear', 'native_gpu_groupnorm_linear_training_step'),
+    ('DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'): (
+        'depthwise_layernorm2d_linear',
+        'native_gpu_depthwise_layernorm2d_linear_training_step',
+    ),
     ('GlobalAvgPool2d', 'Flatten', 'Linear'): ('global_avgpool_linear', 'native_gpu_global_avgpool_linear_training_step'),
     ('AdaptiveAvgPool2d', 'Flatten', 'Linear'): ('adaptive_avgpool_linear', 'native_gpu_global_avgpool_linear_training_step'),
     ('Conv2d', 'Flatten', 'Linear'): ('conv_linear', 'native_gpu_conv_linear_training_step'),
@@ -338,7 +342,7 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
                 launch_family='normalization_backward',
             )
         )
-    if subset_name == 'layernorm2d_linear':
+    if subset_name in {'layernorm2d_linear', 'depthwise_layernorm2d_linear'}:
         steps.append(
             GpuTrainingLoweringStep(
                 phase='backward',
