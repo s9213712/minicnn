@@ -174,6 +174,11 @@ Current real CUDA evidence:
 - CIFAR-10 repeated-Conv smoke used `official:cifar10:test_batch`; updated
   Conv/Linear weights matched NumPy reference with max absolute diffs around
   `1e-9`
+- ConvNeXt-style bridge CIFAR-10 smoke entrypoint exists for
+  `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU ->
+  PointwiseConv2d -> Flatten -> Linear`; the current host stops at CUDA runtime
+  preflight with status 35 because the installed driver is older than the CUDA
+  runtime used to build/load the native library
 
 If a future machine fails with `CUDA runtime preflight failed`, the repo still
 fails before allocation with a Python `RuntimeError` instead of aborting inside
@@ -221,4 +226,5 @@ Run after fixing CUDA driver/runtime compatibility:
 ```bash
 PYTHONPATH=src python3 examples/cuda_native_gpu_linear_training_cifar10_demo.py --batch-size 8
 PYTHONPATH=src python3 examples/cuda_native_gpu_two_conv_training_cifar10_demo.py --batch-size 2
+PYTHONPATH=src python3 examples/cuda_native_gpu_convnext_bridge_training_cifar10_demo.py --batch-size 2
 ```

@@ -73,6 +73,9 @@ Representative real CUDA smoke now passes on this machine:
   and clips the combined Conv/Linear gradient norm to the requested threshold
 - CIFAR-10 repeated-Conv smoke uses `official:cifar10:test_batch` and matches
   NumPy reference updated weights with max absolute diffs around `1e-9`
+- ConvNeXt-style bridge CIFAR-10 smoke entrypoint exists; on the current host it
+  stops at CUDA preflight with status 35 because the installed driver is older
+  than the CUDA runtime selected by the native library
 
 This is not yet a claim of full graph-level GPU backward generalization.
 
@@ -82,7 +85,8 @@ Once CUDA driver/runtime compatibility is restored, run:
 
 ```bash
 PYTHONPATH=src python3 examples/cuda_native_gpu_two_conv_training_cifar10_demo.py --batch-size 2
+PYTHONPATH=src python3 examples/cuda_native_gpu_convnext_bridge_training_cifar10_demo.py --batch-size 2
 ```
 
-The script runs the repeated-Conv `gpu_native` training helper on a CIFAR-10
-batch and compares updated weights against a NumPy reference step.
+These scripts run representative `gpu_native` training helpers on CIFAR-10
+batches and compare updated weights against NumPy reference steps.
