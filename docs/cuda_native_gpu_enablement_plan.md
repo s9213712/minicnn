@@ -26,7 +26,7 @@ See also:
 
 ## Current State
 
-Today, `cuda_native` is:
+Today, default `cuda_native` execution is:
 
 - a native graph/training contract backend
 - a NumPy reference execution backend
@@ -37,18 +37,28 @@ Today, `cuda_native` is:
   - parity/tolerance work
   - planner/telemetry experimentation
 
-Today, `cuda_native` is **not**:
+The opt-in `gpu_native` execution mode is now a partial real-CUDA path:
 
-- a real CUDA-kernel backend
-- a GPU execution backend
+- supported forward ops lower through device-pointer CUDA kernels when a bound
+  native library is available
+- supported training subsets run native forward/loss/backward/update helper
+  steps through the CUDA C ABI
+- unsupported graphs remain rejected or fall back only where the contract says
+  fallback is allowed
+
+Today, `gpu_native` is **not yet**:
+
+- a full-graph CUDA backend
+- a full-backward generalization layer
 - a throughput-oriented runtime
 
 That means:
 
-- `engine.backend=cuda_native` currently executes on CPU through NumPy
-- support for `AMP`, ordered DAG, `Add`, `Concat`, `ResidualBlock`,
-  `ConvNeXtBlock`, and related ops is about semantics and correctness, not GPU
-  acceleration
+- `engine.backend=cuda_native` without `execution_mode=gpu_native` still uses
+  the reference NumPy execution mode
+- `execution_mode=gpu_native` is the GPU-first path for the supported subset
+- support for broader composite blocks is still about semantics/correctness
+  until those blocks are lowered into native GPU training composition
 
 ## Why GPU Enablement Is A Separate Phase
 
@@ -146,6 +156,9 @@ Current status:
   - CUDA runtime preflight now fails before allocation when the installed driver/runtime pair is incompatible, instead of aborting inside `cudaMalloc`
   - hermetic GPU training parity matrix now exists in `cuda_native_gpu_parity_matrix.md`
   - remaining blockers are full graph-level GPU backward generalization and composite-block GPU training composition
+- bridge telemetry now tracks the required CUDA symbols for the current native
+  forward surface, including activation, pool, normalization, convolution, and
+  alias ops, so diagnostics no longer under-report native kernel requirements
 
 Goal:
 

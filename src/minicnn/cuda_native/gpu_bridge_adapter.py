@@ -185,9 +185,11 @@ class GpuNativeLibraryBridgeAdapter:
     @staticmethod
     def _symbol_for(request: GpuCAbiKernelCall) -> str:
         symbols = GpuNativeLibraryBridgeAdapter._symbols_for(request)
-        if request.op_name == 'Flatten':
+        if request.op_name in {'Flatten', 'Identity', 'Dropout', 'DropPath'}:
             return 'device_pointer_alias'
         if request.op_name == 'Conv2d':
+            return 'conv2d_im2col_gemm'
+        if request.op_name == 'PointwiseConv2d':
             return 'conv2d_im2col_gemm'
         if len(symbols) == 1:
             return symbols[0]
@@ -197,7 +199,7 @@ class GpuNativeLibraryBridgeAdapter:
 
     @staticmethod
     def _symbols_for(request: GpuCAbiKernelCall) -> tuple[str, ...]:
-        if request.op_name == 'Flatten':
+        if request.op_name in {'Flatten', 'Identity', 'Dropout', 'DropPath'}:
             return tuple()
         if request.op_name == 'Add':
             return ('add_forward',)
@@ -205,12 +207,32 @@ class GpuNativeLibraryBridgeAdapter:
             return ('concat_forward',)
         if request.op_name == 'Linear':
             return ('dense_forward',)
-        if request.op_name == 'Conv2d':
+        if request.op_name in {'Conv2d', 'PointwiseConv2d'}:
             return ('im2col_forward', 'gemm_forward', 'cnhw_to_nchw')
+        if request.op_name == 'DepthwiseConv2d':
+            return ('depthwise_conv2d_forward',)
         if request.op_name == 'ReLU':
             return ('apply_relu',)
         if request.op_name == 'LeakyReLU':
             return ('leaky_relu_forward',)
+        if request.op_name == 'Sigmoid':
+            return ('sigmoid_forward',)
+        if request.op_name == 'Tanh':
+            return ('tanh_forward',)
+        if request.op_name == 'SiLU':
+            return ('silu_forward',)
+        if request.op_name == 'GELU':
+            return ('gelu_forward',)
         if request.op_name == 'MaxPool2d':
             return ('apply_maxpool',)
+        if request.op_name == 'AvgPool2d':
+            return ('avgpool2d_forward',)
+        if request.op_name in {'GlobalAvgPool2d', 'AdaptiveAvgPool2d'}:
+            return ('global_avgpool2d_forward',)
+        if request.op_name == 'BatchNorm2d':
+            return ('bn_eval_forward',)
+        if request.op_name == 'LayerNorm2d':
+            return ('layernorm2d_forward',)
+        if request.op_name == 'GroupNorm':
+            return ('groupnorm_forward',)
         return tuple()

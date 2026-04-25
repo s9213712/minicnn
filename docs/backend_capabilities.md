@@ -9,7 +9,7 @@ The frontend surface is broader than the narrowest backend. That is expected.
 | Backend | Role | Practical meaning |
 |---|---|---|
 | `torch/flex` | reference implementation | first destination for new frontend features, broadest stable surface |
-| `cuda_native` | primary native backend | the native path that should grow next, now beta-grade but still not production-ready |
+| `cuda_native` | primary native backend | the native path that should grow next; beta-grade reference mode plus partial real-CUDA `gpu_native` execution |
 | `autograd` | correctness oracle | CPU-side reference path for deterministic checks and framework learning |
 | `cuda_legacy` | maintenance-only historical backend | narrow stable path, kept for compatibility and maintenance, not the default feature-expansion target |
 
@@ -45,7 +45,10 @@ These features were **not** supported in `cuda_legacy` and are now supported in 
 | Memory footprint estimate (`memory_footprint`) | ✗ | ✓ |
 | Buffer pool pre-allocation (`BufferPool`) | ✗ | ✓ |
 
-Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is now beta-grade, not experimental, but it is still not production-ready.
+Note: default `cuda_native` execution uses NumPy reference kernels. Opt-in
+`execution_mode=gpu_native` uses real device-pointer CUDA kernels for the
+supported forward/training subset. The backend is beta-grade, not experimental,
+but it is still not production-ready.
 
 ---
 
@@ -153,9 +156,16 @@ Validation failures now return short CLI messages or JSON payloads instead of ra
 
 ## cuda_native (Primary Native Direction, Beta)
 
-Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work. It is now beta-grade, but still not production-ready and still runs through NumPy reference execution rather than real CUDA kernels.
+Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work. It is now beta-grade, but still not production-ready. The default execution mode remains NumPy reference execution; opt-in `execution_mode=gpu_native` runs a growing subset through real CUDA device-pointer kernels and native training helpers.
 
-Supported ops: `BatchNorm2d` (forward/backward prototype), `Concat`, `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `DropPath`, `Add`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`.
+Supported reference-mode ops: `BatchNorm2d` (forward/backward prototype), `Concat`, `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `DropPath`, `Add`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`.
+
+Supported `gpu_native` forward kernel surface currently includes: `Flatten`,
+`Identity`, `Dropout(p=0)`, `DropPath(p=0)`, `Linear`, `ReLU`, `LeakyReLU`,
+`Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Add`, `Concat`, `Conv2d`,
+`PointwiseConv2d`, `DepthwiseConv2d`, `MaxPool2d`, `AvgPool2d`,
+`GlobalAvgPool2d`, `AdaptiveAvgPool2d(output_size=(1,1))`, `BatchNorm2d`
+eval forward, `LayerNorm2d`, and `GroupNorm`.
 
 Graph semantics:
 
@@ -181,7 +191,10 @@ through `sgd_update_fused`.
 
 Still rejected at validation or train-native gating: unsupported optimizers outside `SGD` / `Adam` / `AdamW` / `RMSprop`.
 
-Note: backward and training now meet the current beta graduation gate, and `BatchNorm2d` now has a prototype backward path too. The overall backend is beta, not production-ready. New native capability work should usually land here, not in `cuda_legacy`.
+Note: backward and training now meet the current beta graduation gate, and
+`BatchNorm2d` now has a prototype backward path too. The overall backend is
+beta, not production-ready. New native capability work should usually land here,
+not in `cuda_legacy`.
 
 Developer tooling (unique to cuda_native):
 
@@ -252,7 +265,8 @@ listed item is production-ready.
 ### Experimental
 
 - no public op/optimizer/loss surface currently remains in `experimental`
-- future GPU execution enablement still lives outside the current beta contract
+- full-graph GPU execution, generalized GPU backward, and composite-block GPU
+  training composition still live outside the current beta contract
 
 ## Reading Validation Errors
 

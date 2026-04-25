@@ -6,6 +6,7 @@ import numpy as np
 
 from minicnn.cuda_native.api import build_cuda_native_graph
 from minicnn.cuda_native.device_runtime import DeviceRuntime
+from minicnn.cuda_native.gpu_bridge import GpuCAbiKernelCall
 from minicnn.cuda_native.gpu_bridge_adapter import GpuNativeLibraryBridgeAdapter
 from minicnn.cuda_native.gpu_executor import GpuStubExecutor, make_native_gpu_forward_executor
 from minicnn.unified._cuda_native_bridge import _init_params
@@ -454,6 +455,124 @@ def test_gpu_stub_executor_can_use_native_library_bridge_adapter():
     assert linear_result['requires_device_pointers'] is True
     assert linear_result['executed'] is False
     assert linear_result['accepted'] is False
+
+
+def test_gpu_native_library_bridge_adapter_declares_current_native_forward_symbols():
+    symbol_names = {
+        'dense_forward',
+        'apply_relu',
+        'leaky_relu_forward',
+        'sigmoid_forward',
+        'tanh_forward',
+        'silu_forward',
+        'gelu_forward',
+        'add_forward',
+        'concat_forward',
+        'apply_maxpool',
+        'avgpool2d_forward',
+        'global_avgpool2d_forward',
+        'bn_eval_forward',
+        'im2col_forward',
+        'gemm_forward',
+        'cnhw_to_nchw',
+        'depthwise_conv2d_forward',
+        'layernorm2d_forward',
+        'groupnorm_forward',
+    }
+
+    class _SymbolLib:
+        def __init__(self):
+            for name in symbol_names:
+                setattr(self, name, lambda *args, **kwargs: None)
+
+    def _request(op_name, launch_family='elementwise_unary'):
+        return GpuCAbiKernelCall(
+            request_id=f'req_{op_name}',
+            node_name=f'node_{op_name}',
+            op_name=op_name,
+            op_code=0,
+            launch_family=launch_family,
+            launch_family_code=0,
+            dtype_code=1,
+            preferred_layout_code=0,
+            input_binding='input',
+            output_binding='output',
+            weight_binding='',
+            bias_binding='',
+            input_rank=4,
+            output_rank=4,
+            input_shape4=(1, 1, 1, 1),
+            output_shape4=(1, 1, 1, 1),
+            int_args8=(0, 0, 0, 0, 0, 0, 0, 0),
+            flags=(0, 0, 0, 0),
+        )
+
+    cases = {
+        'Flatten': ('reshape_view', 'device_pointer_alias', []),
+        'Identity': ('identity_alias', 'device_pointer_alias', []),
+        'Dropout': ('identity_alias', 'device_pointer_alias', []),
+        'DropPath': ('identity_alias', 'device_pointer_alias', []),
+        'Linear': ('gemm_affine', 'dense_forward', ['dense_forward']),
+        'ReLU': ('elementwise_unary', 'apply_relu', ['apply_relu']),
+        'LeakyReLU': ('elementwise_unary', 'leaky_relu_forward', ['leaky_relu_forward']),
+        'Sigmoid': ('elementwise_unary', 'sigmoid_forward', ['sigmoid_forward']),
+        'Tanh': ('elementwise_unary', 'tanh_forward', ['tanh_forward']),
+        'SiLU': ('elementwise_unary', 'silu_forward', ['silu_forward']),
+        'GELU': ('elementwise_unary', 'gelu_forward', ['gelu_forward']),
+        'Add': ('elementwise_merge', 'add_forward', ['add_forward']),
+        'Concat': ('concat_merge', 'concat_forward', ['concat_forward']),
+        'MaxPool2d': ('pool2d_nchw', 'apply_maxpool', ['apply_maxpool']),
+        'AvgPool2d': ('avgpool2d_nchw', 'avgpool2d_forward', ['avgpool2d_forward']),
+        'GlobalAvgPool2d': ('global_avgpool2d_nchw', 'global_avgpool2d_forward', ['global_avgpool2d_forward']),
+        'AdaptiveAvgPool2d': ('global_avgpool2d_nchw', 'global_avgpool2d_forward', ['global_avgpool2d_forward']),
+        'BatchNorm2d': ('batchnorm2d_nchw', 'bn_eval_forward', ['bn_eval_forward']),
+        'Conv2d': ('conv2d_nchw', 'conv2d_im2col_gemm', ['im2col_forward', 'gemm_forward', 'cnhw_to_nchw']),
+        'PointwiseConv2d': ('conv2d_nchw', 'conv2d_im2col_gemm', ['im2col_forward', 'gemm_forward', 'cnhw_to_nchw']),
+        'DepthwiseConv2d': ('depthwise_conv2d_nchw', 'depthwise_conv2d_forward', ['depthwise_conv2d_forward']),
+        'LayerNorm2d': ('layernorm2d_nchw', 'layernorm2d_forward', ['layernorm2d_forward']),
+        'GroupNorm': ('groupnorm_nchw', 'groupnorm_forward', ['groupnorm_forward']),
+    }
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=_SymbolLib())
+
+    for op_name, (launch_family, expected_symbol, expected_symbols) in cases.items():
+        result = adapter.submit_c_abi(_request(op_name, launch_family))
+        assert result['kernel_symbol'] == expected_symbol
+        assert result['required_symbols'] == expected_symbols
+        assert result['symbol_available'] is True
+        assert result['executed'] is False
+        assert result['accepted'] is False
+
+
+def test_gpu_native_library_bridge_adapter_reports_missing_required_symbol():
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=object())
+
+    result = adapter.submit_c_abi(
+        GpuCAbiKernelCall(
+            request_id='req_gelu',
+            node_name='gelu',
+            op_name='GELU',
+            op_code=0,
+            launch_family='elementwise_unary',
+            launch_family_code=0,
+            dtype_code=1,
+            preferred_layout_code=0,
+            input_binding='input',
+            output_binding='output',
+            weight_binding='',
+            bias_binding='',
+            input_rank=4,
+            output_rank=4,
+            input_shape4=(1, 1, 1, 1),
+            output_shape4=(1, 1, 1, 1),
+            int_args8=(0, 0, 0, 0, 0, 0, 0, 0),
+            flags=(0, 0, 0, 0),
+        )
+    )
+
+    assert result['kernel_symbol'] == 'gelu_forward'
+    assert result['required_symbols'] == ['gelu_forward']
+    assert result['symbol_available'] is False
+    assert result['accepted'] is False
 
 
 def test_bootstrap_subset_ops_all_have_lowering_shims():
