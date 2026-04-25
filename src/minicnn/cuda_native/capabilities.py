@@ -221,9 +221,31 @@ GPU_NATIVE_TRAINING_SUBSETS = [
     },
 ]
 
+
+def _training_subset_constraints(ops: list[str]) -> list[str]:
+    constraints: list[str] = []
+    if any(op in ops for op in ('Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d')):
+        constraints.append('Conv-family training helpers require bias=false, stride=1, padding=0, dilation=1')
+    if 'PointwiseConv2d' in ops:
+        constraints.append('PointwiseConv2d training helpers require kernel_size=1')
+    if any(op in ops for op in ('AvgPool2d', 'MaxPool2d')):
+        constraints.append('Pool training helpers require kernel_size=2, stride=2, padding=0')
+    if 'AdaptiveAvgPool2d' in ops:
+        constraints.append('AdaptiveAvgPool2d training helper requires output_size=1')
+    return constraints
+
+
 for _subset in GPU_NATIVE_TRAINING_SUBSETS:
     _subset.setdefault('losses', ['CrossEntropyLoss'])
     _subset.setdefault('optimizers', ['SGD'])
+    _subset.setdefault('execution_mode', 'gpu_native')
+    _subset.setdefault('fallback_execution_mode', 'reference_numpy')
+    _subset.setdefault('fallback_policy', {
+        'fallback_execution_mode': 'reference_numpy',
+        'fallback_available': True,
+        'fallback_active_when': 'gpu_native_lowering_not_ready',
+    })
+    _subset.setdefault('constraints', _training_subset_constraints(list(_subset.get('ops', []))))
 
 CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
     'stable': {

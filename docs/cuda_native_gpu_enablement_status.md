@@ -84,6 +84,9 @@ Completed:
   (`bias=false`, valid Conv padding/stride/dilation, 2x2 pool constraints, and
   adaptive/global average pool shape limits), so unsupported GPU requests expose
   an active NumPy fallback before runtime helper dispatch
+- GPU training capability entries now publish the same fallback and helper
+  constraint surface, so docs/CLI/diagnostics can distinguish GPU-first support
+  from NumPy fallback without duplicating policy text
 - runtime `execution_trace` telemetry that records the actual native
   forward/loss/backward/optimizer calls emitted by helper-backed training steps
 - `check_cuda_ready()` now reports `runtime_preflight` and overall `ready`, so
