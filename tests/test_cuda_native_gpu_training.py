@@ -358,6 +358,55 @@ def test_native_gpu_linear_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:softmax_xent_grad_loss_acc'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_sgd_update'] == 1
+    assert [item['kind'] for item in result.runtime_summary['execution_trace']] == [
+        'gpu_native_train:dense_forward',
+        'gpu_native_train:softmax_xent_grad_loss_acc',
+        'gpu_native_train:dense_backward_full',
+        'gpu_native_train:apply_sgd_update',
+    ]
+
+
+def test_native_gpu_linear_training_step_grad_accum_mega_batch_matches_reference_math():
+    x = np.asarray(
+        [
+            [1.0, 2.0, -1.0],
+            [0.5, -1.5, 2.0],
+            [-0.25, 0.75, 1.5],
+            [2.0, 0.25, -0.5],
+        ],
+        dtype=np.float32,
+    )
+    labels = np.asarray([2, 0, 1, 2], dtype=np.int32)
+    weight = np.asarray(
+        [
+            [0.2, -0.1, 0.05],
+            [-0.3, 0.4, 0.1],
+            [0.15, -0.2, 0.3],
+        ],
+        dtype=np.float32,
+    )
+    bias = np.asarray([0.01, -0.02, 0.03], dtype=np.float32)
+    lr = 0.1
+
+    result = native_gpu_linear_training_step(x, labels, weight, bias, lr=lr, bound_lib=_RawFakeCudaLib())
+
+    logits = x @ weight.T + bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_weight = grad_logits.T @ x
+    grad_bias = grad_logits.sum(axis=0)
+
+    np.testing.assert_allclose(result.logits, logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_weight, grad_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_bias, grad_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight, weight - lr * grad_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias, bias - lr * grad_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_trace'][0]['kind'] == 'gpu_native_train:dense_forward'
+    assert result.runtime_summary['execution_trace'][-1]['kind'] == 'gpu_native_train:apply_sgd_update'
 
 
 def test_native_gpu_linear_training_step_sgd_weight_decay_matches_reference_math():

@@ -259,6 +259,8 @@ GPU backward lowering is still pending.
 `gpu_native`. The plan decomposes each accepted helper subset into explicit
 forward, loss, backward, and optimizer lowering steps so diagnostics no longer
 only report the coarse helper-pattern name.
+At runtime, native training helpers also expose an `execution_trace` that records
+the actual emitted GPU training calls in order.
 
 `gpu_native` loss support is currently:
 

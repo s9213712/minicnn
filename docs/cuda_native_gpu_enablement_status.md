@@ -20,6 +20,8 @@ Completed:
 - hermetic reference-math parity matrix
 - readiness diagnostics with a `training_lowering_plan` that breaks helper
   subsets into forward/loss/backward/optimizer lowering steps
+- runtime `execution_trace` telemetry that records the actual native
+  forward/loss/backward/optimizer calls emitted by helper-backed training steps
 - real-data CIFAR-10 smoke entrypoints for linear and repeated-conv native GPU training
 - docs and capability payloads aligned with the implemented surface
 - native `MSELoss` and `BCEWithLogitsLoss` loss-gradient helpers for Linear
@@ -79,6 +81,7 @@ them outside the supported subsets.
 
 `train.grad_accum_steps >= 1` is supported for the same `gpu_native` helper
 subsets by accumulating microbatches into a single native GPU helper step.
+The Linear helper has hermetic mega-batch parity coverage for this path.
 
 ## Real-hardware smoke evidence
 
@@ -119,7 +122,7 @@ Still not claimed as complete:
 Current repo-side validation:
 
 ```text
-132 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+133 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:

@@ -49,6 +49,7 @@ class DeviceRuntime:
     execution_events: int = 0
     executed_node_count: int = 0
     execution_kinds: dict[str, int] = field(default_factory=dict)
+    execution_trace: list[dict[str, Any]] = field(default_factory=list)
     last_input_name: str | None = None
     last_output_name: str | None = None
     _reserved_pool: dict[str, int] = field(default_factory=dict)
@@ -234,6 +235,14 @@ class DeviceRuntime:
         self.execution_events += 1
         self.executed_node_count += int(node_count)
         self.execution_kinds[execution_kind] = int(self.execution_kinds.get(execution_kind, 0)) + 1
+        self.execution_trace.append(
+            {
+                'kind': execution_kind,
+                'input_name': input_name,
+                'output_name': output_name,
+                'node_count': int(node_count),
+            }
+        )
         self.last_input_name = input_name
         self.last_output_name = output_name
 
@@ -269,6 +278,7 @@ class DeviceRuntime:
             'execution_events': self.execution_events,
             'executed_node_count': self.executed_node_count,
             'execution_kinds': dict(self.execution_kinds),
+            'execution_trace': [dict(item) for item in self.execution_trace],
             'last_input_name': self.last_input_name,
             'last_output_name': self.last_output_name,
         }
