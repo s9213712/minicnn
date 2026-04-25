@@ -835,3 +835,36 @@ def test_execution_mode_sets_are_disjoint():
 
     overlap = _SUPPORTED_EXECUTION_MODES & _PLANNED_EXECUTION_MODES
     assert overlap == set(), f'Modes in both sets: {sorted(overlap)}'
+
+
+def test_validate_cuda_native_config_accepts_gpu_native_leaky_relu_two_linear_training_subset(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding='utf-8').replace(
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 4\n    - type: LeakyReLU\n      negative_slope: 0.2\n    - type: Linear\n      out_features: 2\n",
+        ),
+        encoding='utf-8',
+    )
+
+    rc = main([
+        'validate-cuda-native-config',
+        '--config',
+        str(config_path),
+        '--format',
+        'json',
+        'engine.execution_mode=gpu_native',
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    plan = payload['execution_readiness_assessment']['training_lowering_plan']
+    assert rc == 0
+    assert payload['selected_execution_mode'] == 'gpu_native'
+    assert plan['subset_name'] == 'flatten_linear_leaky_relu_linear'
+    assert plan['helper'] == 'native_gpu_two_linear_relu_training_step'
+    assert 'leaky_relu_forward' in plan['required_symbols_by_phase']['forward']
+    assert 'leaky_relu_backward' in plan['required_symbols_by_phase']['backward']
+    assert payload['errors'] == []

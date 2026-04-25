@@ -13,9 +13,9 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         return {'kind': 'linear', 'linear_nodes': [nodes[0]]}
     if ops == ['Flatten', 'Linear']:
         return {'kind': 'linear', 'linear_nodes': [nodes[1]]}
-    if len(ops) == 3 and ops[0] == 'Linear' and ops[1] in {'GELU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'} and ops[2] == 'Linear':
+    if len(ops) == 3 and ops[0] == 'Linear' and ops[1] in {'GELU', 'LeakyReLU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'} and ops[2] == 'Linear':
         return {'kind': 'two_linear_activation', 'linear_nodes': [nodes[0], nodes[2]], 'activation_node': nodes[1]}
-    if len(ops) == 4 and ops[0] == 'Flatten' and ops[1] == 'Linear' and ops[2] in {'GELU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'} and ops[3] == 'Linear':
+    if len(ops) == 4 and ops[0] == 'Flatten' and ops[1] == 'Linear' and ops[2] in {'GELU', 'LeakyReLU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'} and ops[3] == 'Linear':
         return {'kind': 'two_linear_activation', 'linear_nodes': [nodes[1], nodes[3]], 'activation_node': nodes[2]}
     if ops == ['MaxPool2d', 'Flatten', 'Linear']:
         return {'kind': 'pool_linear', 'pool_node': nodes[0], 'linear_nodes': [nodes[2]]}
@@ -196,7 +196,10 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
     raise ValueError(
         'cuda_native gpu_native train-native currently supports only '
         'ops=[Linear], ops=[Flatten, Linear], ops=[Linear, ReLU, Linear], '
-        'ops=[Flatten, Linear, ReLU, Linear], ops=[MaxPool2d, Flatten, Linear], '
+        'ops=[Flatten, Linear, ReLU, Linear], '
+        'ops=[Linear, LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Linear], '
+        'ops=[Flatten, Linear, LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Linear], '
+        'ops=[MaxPool2d, Flatten, Linear], '
         'ops=[GlobalAvgPool2d, Flatten, Linear], ops=[AdaptiveAvgPool2d, Flatten, Linear], '
         'ops=[DepthwiseConv2d, LayerNorm2d, Flatten, Linear], '
         'ops=[Conv2d, Flatten, Linear], ops=[Conv2d, ReLU, Flatten, Linear], '

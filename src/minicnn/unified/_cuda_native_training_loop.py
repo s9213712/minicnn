@@ -242,6 +242,7 @@ def run_training_loop(
                             weight2_velocity=velocity_state.get(w2_key),
                             bias2_velocity=velocity_state.get(b2_key),
                             activation=str(activation_node.op_type),
+                            activation_alpha=float(activation_node.attrs.get('negative_slope', 0.01)),
                             bound_lib=ctx.device_runtime.bound_lib,
                         )
                         params = dict(params)

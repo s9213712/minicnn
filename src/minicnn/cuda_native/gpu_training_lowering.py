@@ -234,6 +234,7 @@ def _required_symbols_for_lowering(lowering_kind: str) -> tuple[str, ...]:
         'bce_fwd_grad_loss_acc': ('bce_fwd_grad_loss_acc',),
         'dense_backward_full': ('dense_backward_full',),
         'apply_relu_backward': ('apply_relu_backward',),
+        'leaky_relu_backward': ('leaky_relu_backward',),
         'gelu_backward': ('gelu_backward',),
         'silu_backward': ('silu_backward',),
         'sigmoid_backward': ('sigmoid_backward',),
@@ -260,6 +261,8 @@ _TRAINING_SUBSETS: dict[tuple[str, ...], tuple[str, str]] = {
     ('Flatten', 'Linear'): ('flatten_linear', 'native_gpu_linear_training_step'),
     ('Linear', 'ReLU', 'Linear'): ('linear_relu_linear', 'native_gpu_two_linear_relu_training_step'),
     ('Flatten', 'Linear', 'ReLU', 'Linear'): ('flatten_linear_relu_linear', 'native_gpu_two_linear_relu_training_step'),
+    ('Linear', 'LeakyReLU', 'Linear'): ('linear_leaky_relu_linear', 'native_gpu_two_linear_relu_training_step'),
+    ('Flatten', 'Linear', 'LeakyReLU', 'Linear'): ('flatten_linear_leaky_relu_linear', 'native_gpu_two_linear_relu_training_step'),
     ('Linear', 'GELU', 'Linear'): ('linear_gelu_linear', 'native_gpu_two_linear_relu_training_step'),
     ('Flatten', 'Linear', 'GELU', 'Linear'): ('flatten_linear_gelu_linear', 'native_gpu_two_linear_relu_training_step'),
     ('Linear', 'SiLU', 'Linear'): ('linear_silu_linear', 'native_gpu_two_linear_relu_training_step'),
@@ -435,11 +438,13 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
         )
     activation_nodes = [
         node for node in graph.topological_order()
-        if node.op_type in {'GELU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'}
+        if node.op_type in {'GELU', 'LeakyReLU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'}
     ]
     if subset_name in {
         'linear_relu_linear',
         'flatten_linear_relu_linear',
+        'linear_leaky_relu_linear',
+        'flatten_linear_leaky_relu_linear',
         'linear_gelu_linear',
         'flatten_linear_gelu_linear',
         'linear_silu_linear',
@@ -450,7 +455,10 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
         'flatten_linear_tanh_linear',
     } and activation_nodes:
         activation_op = str(activation_nodes[0].op_type)
-        activation_lowering = 'apply_relu_backward' if activation_op == 'ReLU' else f'{activation_op.lower()}_backward'
+        activation_lowering = {
+            'ReLU': 'apply_relu_backward',
+            'LeakyReLU': 'leaky_relu_backward',
+        }.get(activation_op, f'{activation_op.lower()}_backward')
         steps.insert(
             1,
             GpuTrainingLoweringStep(

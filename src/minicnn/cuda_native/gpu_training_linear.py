@@ -503,6 +503,7 @@ def native_gpu_two_linear_relu_training_step(
     weight2_velocity: np.ndarray | None = None,
     bias2_velocity: np.ndarray | None = None,
     activation: str = 'ReLU',
+    activation_alpha: float = 0.01,
     bound_lib: Any | None = None,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
@@ -552,6 +553,7 @@ def native_gpu_two_linear_relu_training_step(
     activation_key = activation_name.lower()
     activation_forward = {
         'relu': ('apply_relu', 'apply_relu'),
+        'leakyrelu': ('leaky_relu_forward', 'leaky_relu_forward'),
         'gelu': ('gelu_forward', 'gelu_forward'),
         'silu': ('silu_forward', 'silu_forward'),
         'sigmoid': ('sigmoid_forward', 'sigmoid_forward'),
@@ -559,6 +561,7 @@ def native_gpu_two_linear_relu_training_step(
     }
     activation_backward = {
         'relu': ('apply_relu_backward', 'apply_relu_backward'),
+        'leakyrelu': ('leaky_relu_backward', 'leaky_relu_backward'),
         'gelu': ('gelu_backward', 'gelu_backward'),
         'silu': ('silu_backward', 'silu_backward'),
         'sigmoid': ('sigmoid_backward', 'sigmoid_backward'),
@@ -622,7 +625,10 @@ def native_gpu_two_linear_relu_training_step(
         runtime.record_execution('gpu_native_train:dense_forward_1', input_name='input', output_name='hidden_pre', node_count=1)
         lib.gpu_memcpy_d2d(hidden_t.device_ptr, hidden_pre_t.device_ptr, hidden_pre_t.nbytes)
         forward_symbol, forward_kind = activation_forward[activation_key]
-        getattr(lib, forward_symbol)(hidden_t.device_ptr, int(n * hidden_f))
+        if activation_key == 'leakyrelu':
+            getattr(lib, forward_symbol)(hidden_t.device_ptr, float(activation_alpha), int(n * hidden_f))
+        else:
+            getattr(lib, forward_symbol)(hidden_t.device_ptr, int(n * hidden_f))
         runtime.record_execution(f'gpu_native_train:{forward_kind}', input_name='hidden_pre', output_name='hidden', node_count=1)
         lib.dense_forward(hidden_t.device_ptr, w2_t.device_ptr, b2_t.device_ptr, logits_t.device_ptr, n, hidden_f, out_f)
         runtime.record_execution('gpu_native_train:dense_forward_2', input_name='hidden', output_name='logits', node_count=1)
@@ -658,7 +664,10 @@ def native_gpu_two_linear_relu_training_step(
         )
         runtime.record_execution('gpu_native_train:dense_backward_full_2', input_name='grad_logits', output_name='grad_weight2', node_count=1)
         backward_symbol, backward_kind = activation_backward[activation_key]
-        getattr(lib, backward_symbol)(hidden_pre_t.device_ptr, grad_hidden_t.device_ptr, int(n * hidden_f))
+        if activation_key == 'leakyrelu':
+            getattr(lib, backward_symbol)(hidden_pre_t.device_ptr, grad_hidden_t.device_ptr, float(activation_alpha), int(n * hidden_f))
+        else:
+            getattr(lib, backward_symbol)(hidden_pre_t.device_ptr, grad_hidden_t.device_ptr, int(n * hidden_f))
         runtime.record_execution(f'gpu_native_train:{backward_kind}', input_name='hidden_pre', output_name='grad_hidden', node_count=1)
         lib.dense_backward_full(
             grad_hidden_t.device_ptr,

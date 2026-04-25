@@ -231,6 +231,11 @@ class _RawFakeCudaLib:
         data = self._float(d_data)
         data[:int(size)] = np.maximum(data[:int(size)], 0.0)
 
+    def leaky_relu_forward(self, d_data, alpha, size):
+        data = self._float(d_data)
+        values = data[:int(size)]
+        data[:int(size)] = np.where(values > 0.0, values, float(alpha) * values)
+
     def sigmoid_forward(self, d_data, size):
         data = self._float(d_data)
         data[:int(size)] = 1.0 / (1.0 + np.exp(-data[:int(size)]))
@@ -255,6 +260,11 @@ class _RawFakeCudaLib:
         data = self._float(d_data)
         grad = self._float(d_grad)
         grad[:int(size)] = np.where(data[:int(size)] > 0.0, grad[:int(size)], 0.0)
+
+    def leaky_relu_backward(self, d_data, d_grad, alpha, size):
+        data = self._float(d_data)
+        grad = self._float(d_grad)
+        grad[:int(size)] *= np.where(data[:int(size)] > 0.0, 1.0, float(alpha))
 
     def sigmoid_backward(self, d_data, d_grad, size):
         data = self._float(d_data)
@@ -1193,6 +1203,10 @@ def test_native_gpu_two_linear_modern_activation_training_step_matches_reference
     lr = 0.03
 
     def activate(values: np.ndarray, activation: str) -> tuple[np.ndarray, np.ndarray]:
+        if activation == 'LeakyReLU':
+            alpha = 0.2
+            y = np.where(values > 0.0, values, alpha * values)
+            return y.astype(np.float32), np.where(values > 0.0, 1.0, alpha).astype(np.float32)
         if activation == 'Sigmoid':
             y = 1.0 / (1.0 + np.exp(-values))
             return y.astype(np.float32), (y * (1.0 - y)).astype(np.float32)
@@ -1213,7 +1227,7 @@ def test_native_gpu_two_linear_modern_activation_training_step_matches_reference
             return y.astype(np.float32), deriv.astype(np.float32)
         raise AssertionError(activation)
 
-    for activation in ('Sigmoid', 'Tanh', 'SiLU', 'GELU'):
+    for activation in ('LeakyReLU', 'Sigmoid', 'Tanh', 'SiLU', 'GELU'):
         result = native_gpu_two_linear_relu_training_step(
             x,
             labels,
@@ -1223,6 +1237,7 @@ def test_native_gpu_two_linear_modern_activation_training_step_matches_reference
             b2,
             lr=lr,
             activation=activation,
+            activation_alpha=0.2,
             bound_lib=_RawFakeCudaLib(),
         )
 
@@ -1254,8 +1269,12 @@ def test_native_gpu_two_linear_modern_activation_training_step_matches_reference
         np.testing.assert_allclose(result.updated_bias1, b1 - lr * grad_b1, rtol=1e-6, atol=1e-6)
         np.testing.assert_allclose(result.updated_weight2, w2 - lr * grad_w2, rtol=1e-6, atol=1e-6)
         np.testing.assert_allclose(result.updated_bias2, b2 - lr * grad_b2, rtol=1e-6, atol=1e-6)
-        assert result.runtime_summary['execution_kinds'][f'gpu_native_train:{activation.lower()}_forward'] == 1
-        assert result.runtime_summary['execution_kinds'][f'gpu_native_train:{activation.lower()}_backward'] == 1
+        if activation == 'LeakyReLU':
+            assert result.runtime_summary['execution_kinds']['gpu_native_train:leaky_relu_forward'] == 1
+            assert result.runtime_summary['execution_kinds']['gpu_native_train:leaky_relu_backward'] == 1
+        runtime_key = 'leaky_relu' if activation == 'LeakyReLU' else activation.lower()
+        assert result.runtime_summary['execution_kinds'][f'gpu_native_train:{runtime_key}_forward'] == 1
+        assert result.runtime_summary['execution_kinds'][f'gpu_native_train:{runtime_key}_backward'] == 1
 
 
 def test_native_gpu_pool_linear_training_step_matches_reference_math():
@@ -2455,6 +2474,8 @@ def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
         ('Flatten', 'Linear'),
         ('Linear', 'ReLU', 'Linear'),
         ('Flatten', 'Linear', 'ReLU', 'Linear'),
+        ('Linear', 'LeakyReLU', 'Linear'),
+        ('Flatten', 'Linear', 'LeakyReLU', 'Linear'),
         ('Linear', 'GELU', 'Linear'),
         ('Flatten', 'Linear', 'GELU', 'Linear'),
         ('Linear', 'SiLU', 'Linear'),
