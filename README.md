@@ -167,7 +167,7 @@ Current validated support boundary:
 - `summary.json` reports `amp_runtime`, `optimizer_runtime`, `planner`, and `performance_report`
 - `metrics.jsonl` rows report per-epoch AMP, optimizer, and planner telemetry
 
-`cuda_native` is now a beta-grade backend with stable artifact/validation contracts, `training_stable=true`, and `backward_stable=true`. The broad default path is still `reference_numpy`, while `engine.execution_mode=gpu_native` is the strict partial real-CUDA path for supported helper subsets. Use `engine.execution_mode=gpu_native_auto` when you want GPU-first execution with explicit `reference_numpy` fallback. It supports ordered DAG execution with explicit tensor wiring plus `Add` merge semantics; `cuda_legacy` remains a narrow maintenance path.
+`cuda_native` is now a beta-grade backend with stable artifact/validation contracts, `training_stable=true`, and `backward_stable=true`. The default path is `engine.execution_mode=gpu_native_auto`: it tries the supported real-CUDA helper subset first and falls back explicitly to `reference_numpy` when lowering or runtime preflight is not ready. Use `engine.execution_mode=gpu_native` when you want strict GPU-only failure semantics, or `engine.execution_mode=reference_numpy` for the historical CPU fallback path. It supports ordered DAG execution with explicit tensor wiring plus `Add` merge semantics; `cuda_legacy` remains a narrow maintenance path.
 
 Hermetic native smoke examples now exist for:
 

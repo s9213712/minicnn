@@ -180,30 +180,36 @@ def test_cuda_library_symbol_inventory_covers_training_lowering_plans():
     assert missing_symbols(_FakeLib(), ('dense_forward', 'not_present')) == ('not_present',)
 
 
-def test_validate_cuda_native_config_reports_reference_numpy_mode(tmp_path, capsys):
+def test_validate_cuda_native_config_reports_default_gpu_native_auto_fallback_mode(tmp_path, capsys, monkeypatch):
     from minicnn.cli import main
+    import minicnn.cuda_native.api as cuda_api
 
     config_path = tmp_path / 'cfg.yaml'
     _write_cfg(config_path)
+    monkeypatch.setattr(cuda_api, '_cuda_runtime_ready_for_gpu_native', lambda: (False, 'test_runtime_unavailable'))
 
     rc = main(['validate-cuda-native-config', '--config', str(config_path), '--format', 'json'])
     out = capsys.readouterr().out
     payload = json.loads(out)
 
     assert rc == 0
+    assert payload['selected_execution_mode'] == 'gpu_native_auto'
     assert payload['execution_mode'] == 'reference_numpy'
     assert payload['effective_execution_mode'] == 'reference_numpy'
     assert payload['tensor_execution_device'] == 'cpu'
     assert payload['tensors_ran_on'] == 'cpu'
-    assert payload['execution_readiness_assessment']['selected_execution_mode'] == 'reference_numpy'
-    assert payload['execution_readiness_assessment']['ready'] is True
+    assert payload['fallback_active'] is True
+    assert payload['execution_readiness_assessment']['selected_execution_mode'] == 'gpu_native_auto'
+    assert payload['execution_readiness_assessment']['fallback_active'] is True
 
 
-def test_train_native_preamble_reports_reference_numpy_mode(tmp_path, capsys):
+def test_train_native_preamble_reports_default_gpu_native_auto_fallback_mode(tmp_path, capsys, monkeypatch):
     from minicnn.cli import main
+    import minicnn.cuda_native.api as cuda_api
 
     config_path = tmp_path / 'cfg.yaml'
     _write_cfg(config_path)
+    monkeypatch.setattr(cuda_api, '_cuda_runtime_ready_for_gpu_native', lambda: (False, 'test_runtime_unavailable'))
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
@@ -214,11 +220,13 @@ def test_train_native_preamble_reports_reference_numpy_mode(tmp_path, capsys):
 
     assert rc == 0
     assert payload['status'] == 'beta'
+    assert payload['selected_execution_mode'] == 'gpu_native_auto'
     assert payload['execution_mode'] == 'reference_numpy'
     assert payload['effective_execution_mode'] == 'reference_numpy'
     assert payload['tensor_execution_device'] == 'cpu'
     assert payload['tensors_ran_on'] == 'cpu'
     assert payload['gpu_execution'] is False
+    assert payload['fallback_active'] is True
 
 
 def test_validate_cuda_native_config_accepts_gpu_native_linear_training_subset(tmp_path, capsys):

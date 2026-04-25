@@ -31,6 +31,9 @@ _SUPPORTED_EXECUTION_MODES = frozenset(
 _PLANNED_EXECUTION_MODES = frozenset(
     str(item) for item in get_cuda_native_capabilities().get('execution_modes_planned', ['gpu_native'])
 )
+_DEFAULT_EXECUTION_MODE = str(
+    get_cuda_native_capabilities().get('default_execution_mode', 'gpu_native_auto')
+)
 _SUPPORTED_SCHEDULERS = frozenset(
     str(item) for item in CUDA_NATIVE_CAPABILITIES['supported_schedulers']
 )
@@ -55,7 +58,7 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
     caps = get_cuda_native_capabilities()
     readiness_table = dict(caps.get('execution_mode_readiness', {}))
     execution_mode = resolve_cuda_native_execution_mode(cfg)
-    selected_mode = str(execution_mode.get('selected_execution_mode', 'reference_numpy'))
+    selected_mode = str(execution_mode.get('selected_execution_mode', _DEFAULT_EXECUTION_MODE))
     mode_readiness = dict(readiness_table.get(selected_mode, {}))
     model_cfg, _ = _as_mapping('model', cfg.get('model'))
     dataset_cfg, _ = _as_mapping('dataset', cfg.get('dataset'))
@@ -120,6 +123,11 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
         'status': str(mode_readiness.get('status', 'unknown')),
         'ready': bool(mode_readiness.get('ready', False)),
         'tensor_execution_device': str(mode_readiness.get('tensor_execution_device', 'unknown')),
+        'effective_execution_mode': str(execution_mode.get('effective_execution_mode', selected_mode)),
+        'fallback_execution_mode': execution_mode.get('fallback_execution_mode'),
+        'fallback_available': bool(execution_mode.get('fallback_available', False)),
+        'fallback_active': bool(execution_mode.get('fallback_active', False)),
+        'fallback_reason': str(execution_mode.get('fallback_reason', 'not_configured')),
         'requested_ops': layer_types,
         'bootstrap_subset_complete': len(missing_ops) == 0,
         'bootstrap_supported_ops': supported_ops,
@@ -144,7 +152,7 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
 def resolve_cuda_native_execution_mode(cfg: dict[str, Any]) -> dict[str, object]:
     _assert_execution_mode_invariants()
     engine_cfg, _ = _as_mapping('engine', cfg.get('engine'))
-    selected_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')
+    selected_mode = str(engine_cfg.get('execution_mode', _DEFAULT_EXECUTION_MODE) or _DEFAULT_EXECUTION_MODE)
     if selected_mode == 'gpu_native_auto':
         auto_policy = _resolve_gpu_native_auto_policy(cfg)
         effective_mode = 'gpu_native' if bool(auto_policy['gpu_native_ready']) else 'reference_numpy'
@@ -256,7 +264,7 @@ def _resolve_gpu_native_auto_policy(cfg: dict[str, Any]) -> dict[str, object]:
 def _validate_engine_cfg(engine_cfg: dict[str, Any]) -> list[str]:
     _assert_execution_mode_invariants()
     errors: list[str] = []
-    execution_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')
+    execution_mode = str(engine_cfg.get('execution_mode', _DEFAULT_EXECUTION_MODE) or _DEFAULT_EXECUTION_MODE)
     if execution_mode in _SUPPORTED_EXECUTION_MODES:
         return errors
     if execution_mode in _PLANNED_EXECUTION_MODES:
@@ -712,7 +720,7 @@ def _validate_scheduler_cfg(scheduler_cfg: dict[str, Any]) -> list[str]:
 def _validate_train_cfg(
     train_cfg: dict[str, Any],
     *,
-    execution_mode: str = 'reference_numpy',
+    execution_mode: str = _DEFAULT_EXECUTION_MODE,
 ) -> list[str]:
     errors: list[str] = []
     grad_accum_steps, grad_accum_errors = _coerce_int(
@@ -805,7 +813,7 @@ def validate_cuda_native_config(cfg: dict[str, Any]) -> list[str]:
     errors.extend(_validate_optimizer_cfg(optim_cfg))
     errors.extend(_validate_scheduler_cfg(scheduler_cfg))
     execution_mode = resolve_cuda_native_execution_mode(cfg)
-    selected_execution_mode = str(execution_mode.get('selected_execution_mode', 'reference_numpy'))
+    selected_execution_mode = str(execution_mode.get('selected_execution_mode', _DEFAULT_EXECUTION_MODE))
     errors.extend(_validate_train_cfg(train_cfg, execution_mode=selected_execution_mode))
 
     validation_input_shape = _validation_input_shape(dataset_cfg)

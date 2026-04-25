@@ -250,13 +250,13 @@ Training artifacts preserve the same distinction:
 
 Execution-mode guidance:
 
-- default `engine.execution_mode=reference_numpy` remains the broad, stable
-  fallback path
+- default `engine.execution_mode=gpu_native_auto` is the broad GPU-first path:
+  it selects `gpu_native` when the training lowering plan and CUDA runtime
+  readiness both pass, otherwise it explicitly falls back to `reference_numpy`
 - `engine.execution_mode=gpu_native` is strict GPU mode for the supported native
   helper subsets and fails when the graph/runtime is outside that boundary
-- `engine.execution_mode=gpu_native_auto` is the GPU-first path: it selects
-  `gpu_native` only when the training lowering plan and CUDA runtime readiness
-  both pass, otherwise it explicitly falls back to `reference_numpy`
+- `engine.execution_mode=reference_numpy` remains available as the historical
+  CPU fallback path
 - `train.device=cuda` or `train.device=gpu` is accepted only with
   `gpu_native` / `gpu_native_auto`; the actual execution device is still
   reported by `effective_execution_mode` and `tensor_execution_device`

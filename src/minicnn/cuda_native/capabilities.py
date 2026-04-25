@@ -581,9 +581,10 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
         'capability_kind': 'backend_capability_summary',
         'execution_modes_supported': ['reference_numpy', 'gpu_native_auto', 'gpu_native'],
         'execution_modes_planned': [],
-        'default_execution_mode': 'reference_numpy',
+        'default_execution_mode': 'gpu_native_auto',
         'preferred_gpu_first_execution_mode': 'gpu_native_auto',
-        'default_tensor_execution_device': 'cpu',
+        'default_execution_policy': 'gpu_first_with_reference_numpy_fallback',
+        'default_tensor_execution_device': 'auto',
         'gpu_execution': False,
         'support_tiers': support_tiers,
         'support_tier_counts': {
