@@ -74,6 +74,9 @@ Completed:
   subsets into forward/loss/backward/optimizer lowering steps
 - runtime `execution_trace` telemetry that records the actual native
   forward/loss/backward/optimizer calls emitted by helper-backed training steps
+- `check_cuda_ready()` now reports `runtime_preflight` and overall `ready`, so
+  environments with complete symbols but failing CUDA driver/runtime init no
+  longer look fully usable
 - real-data CIFAR-10 smoke entrypoints for linear and repeated-conv native GPU training
 - docs and capability payloads aligned with the implemented surface
 - native `MSELoss` and `BCEWithLogitsLoss` loss-gradient helpers for Linear

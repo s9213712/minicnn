@@ -63,8 +63,17 @@ def check_cuda_ready(path: str | os.PathLike[str] | None = None) -> dict[str, ob
         'path': resolved,
         'exists': exists,
         'loadable': False,
+        'ready': False,
         'missing_symbols': [],
         'symbol_groups': {},
+        'runtime_preflight': {
+            'available': False,
+            'ready': None,
+            'status': None,
+            'status_message': None,
+            'driver_version': None,
+            'runtime_version': None,
+        },
         'error': None,
     }
     if not exists:
@@ -85,8 +94,45 @@ def check_cuda_ready(path: str | os.PathLike[str] | None = None) -> dict[str, ob
         result['missing_symbols'] = missing
         result['symbol_groups'] = symbol_groups
         result['loadable'] = not missing
+        runtime_ready = True
+        if hasattr(candidate, 'cuda_runtime_status'):
+            status = int(candidate.cuda_runtime_status())
+            status_message = 'unknown CUDA runtime error'
+            if hasattr(candidate, 'cuda_runtime_status_string'):
+                raw_status_message = candidate.cuda_runtime_status_string(status)
+                if raw_status_message:
+                    status_message = raw_status_message.decode('utf-8', errors='replace')
+            driver_version = (
+                int(candidate.cuda_runtime_driver_version())
+                if hasattr(candidate, 'cuda_runtime_driver_version')
+                else 0
+            )
+            runtime_version = (
+                int(candidate.cuda_runtime_version())
+                if hasattr(candidate, 'cuda_runtime_version')
+                else 0
+            )
+            runtime_ready = status == 0
+            result['runtime_preflight'] = {
+                'available': True,
+                'ready': runtime_ready,
+                'status': status,
+                'status_message': status_message,
+                'driver_version': driver_version,
+                'runtime_version': runtime_version,
+            }
         if missing:
             result['error'] = f'Missing required symbols: {missing}'
+        elif not runtime_ready:
+            runtime_summary = result['runtime_preflight']
+            result['error'] = (
+                'CUDA runtime preflight failed: '
+                f"{runtime_summary['status_message']} "
+                f"(status={runtime_summary['status']}, "
+                f"driver={runtime_summary['driver_version']}, "
+                f"runtime={runtime_summary['runtime_version']})"
+            )
+        result['ready'] = bool(result['loadable']) and runtime_ready
     except Exception as exc:
         result['error'] = str(exc)
     return result
