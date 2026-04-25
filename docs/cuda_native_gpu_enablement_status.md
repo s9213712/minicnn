@@ -25,6 +25,8 @@ Completed:
   lowering path
 - `DepthwiseConv2d` forward dispatch through the native
   `depthwise_conv2d_forward` C ABI shim
+- `LayerNorm2d` forward dispatch through the native `layernorm2d_forward` C ABI
+  shim
 - native training helpers for the current narrow training subsets
 - native `GlobalAvgPool2d -> Flatten -> Linear` and
   `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` training helpers
@@ -138,13 +140,15 @@ Still not claimed as complete:
   dispatch only
 - `DepthwiseConv2d` train-native helper coverage; current work is forward
   dispatch only
+- `LayerNorm2d` train-native helper coverage; current work is forward dispatch
+  only
 
 ## Validation evidence
 
 Current repo-side validation:
 
 ```text
-146 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+148 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:

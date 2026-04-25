@@ -168,6 +168,40 @@ __global__ void depthwise_conv2d_forward_kernel(
     output[idx] = sum;
 }
 
+__global__ void layernorm2d_forward_kernel(
+    const float* input,
+    const float* gamma,
+    const float* beta,
+    float* output,
+    int n,
+    int c,
+    int h,
+    int w,
+    float eps
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n * h * w;
+    if (idx >= total) return;
+    int spatial = h * w;
+    int batch = idx / spatial;
+    int hw = idx % spatial;
+    float mean = 0.0f;
+    for (int ch = 0; ch < c; ++ch) {
+        mean += input[(batch * c + ch) * spatial + hw];
+    }
+    mean /= static_cast<float>(c);
+    float var = 0.0f;
+    for (int ch = 0; ch < c; ++ch) {
+        float diff = input[(batch * c + ch) * spatial + hw] - mean;
+        var += diff * diff;
+    }
+    float inv_std = rsqrtf(var / static_cast<float>(c) + eps);
+    for (int ch = 0; ch < c; ++ch) {
+        int offset = (batch * c + ch) * spatial + hw;
+        output[offset] = ((input[offset] - mean) * inv_std) * gamma[ch] + beta[ch];
+    }
+}
+
 __global__ void im2col_kernel(const float* input, float* output, int N, int C, int H, int W, int KH, int KW, int outH, int outW) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total_elements = (C * KH * KW) * (N * outH * outW);
@@ -343,6 +377,15 @@ extern "C" {
             d_input, d_weight, d_bias, d_output,
             n, c, h, w, out_c, kh, kw, out_h, out_w,
             stride_h, stride_w, pad_h, pad_w, has_bias
+        );
+        CUDA_KERNEL_CHECK();
+    }
+
+    void layernorm2d_forward(float* d_input, float* d_gamma, float* d_beta, float* d_output, int n, int c, int h, int w, float eps) {
+        int size = n * h * w;
+        int tpb = 256;
+        layernorm2d_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(
+            d_input, d_gamma, d_beta, d_output, n, c, h, w, eps
         );
         CUDA_KERNEL_CHECK();
     }

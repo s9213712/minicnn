@@ -159,6 +159,15 @@ class _FakeCudaLib:
                         out[ni, oc, oh, ow] = val
         self.memory[d_output][...] = out.reshape(-1)
 
+    def layernorm2d_forward(self, d_input, d_gamma, d_beta, d_output, n, c, h, w, eps):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        gamma = self.memory[d_gamma].reshape(int(c))
+        beta = self.memory[d_beta].reshape(int(c))
+        mean = x.mean(axis=1, keepdims=True)
+        var = x.var(axis=1, keepdims=True)
+        out = ((x - mean) / np.sqrt(var + float(eps))) * gamma.reshape(1, int(c), 1, 1) + beta.reshape(1, int(c), 1, 1)
+        self.memory[d_output][...] = out.astype(np.float32).reshape(-1)
+
 
 def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     graph = build_cuda_native_graph(
@@ -826,3 +835,38 @@ def test_gpu_stub_executor_uses_native_depthwise_conv_when_device_pointers_avail
 
     summary = runtime.summary()
     assert summary['execution_kinds']['gpu_native_kernel:depthwise_conv2d_forward'] == 1
+
+
+def test_gpu_stub_executor_uses_native_layernorm2d_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'LayerNorm2d', 'num_channels': 2, 'eps': 1e-5},
+            ],
+        },
+        (1, 2, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.asarray([[[[1.0, 2.0], [3.0, 4.0]], [[2.0, 4.0], [6.0, 8.0]]]], dtype=np.float32)
+    params = {
+        '_w_layernorm2d_0': np.asarray([1.0, 1.5], dtype=np.float32),
+        '_b_layernorm2d_0': np.asarray([0.0, -0.5], dtype=np.float32),
+    }
+
+    result = executor.run(graph, x, params=params)
+
+    mean = x.mean(axis=1, keepdims=True)
+    var = x.var(axis=1, keepdims=True)
+    expected = ((x - mean) / np.sqrt(var + 1e-5)) * np.asarray([1.0, 1.5], dtype=np.float32).reshape(1, 2, 1, 1)
+    expected += np.asarray([0.0, -0.5], dtype=np.float32).reshape(1, 2, 1, 1)
+    np.testing.assert_allclose(result.output, expected.astype(np.float32), rtol=1e-5, atol=1e-5)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:layernorm2d_forward'] == 1

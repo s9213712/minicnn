@@ -261,7 +261,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     'notes': [
         'Backward and training now meet the current beta graduation gate, but the backend is not yet production-ready.',
         'BatchNorm2d forward/backward exist within the beta training surface; runtime hardening still continues.',
-        'GroupNorm, LayerNorm, and LayerNorm2d use numpy reference kernels.',
+        'GroupNorm and LayerNorm use numpy reference kernels.',
         'ResidualBlock, ConvNeXtBlock, Dropout, and DropPath run through composite/reference numpy kernels; support tier is published separately.',
         'Explicit ordered DAG wiring is supported through named tensor outputs plus Add/Concat multi-input nodes.',
         'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and beta AMP with loss scaling / overflow backoff.',
@@ -270,6 +270,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'gpu_native forward dispatch now includes GELU, SiLU, Sigmoid, and Tanh elementwise activation C ABI shims; train-native helper coverage is still pending.',
         'gpu_native forward dispatch now includes PointwiseConv2d through the Conv2d im2col/GEMM lowering path; train-native helper coverage is still pending.',
         'gpu_native forward dispatch now includes DepthwiseConv2d through a native depthwise_conv2d C ABI shim; train-native helper coverage is still pending.',
+        'gpu_native forward dispatch now includes LayerNorm2d through a native layernorm2d C ABI shim; train-native helper coverage is still pending.',
         'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, and two-Conv ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
         'gpu_native readiness diagnostics expose a training_lowering_plan that decomposes helper subsets into forward, loss, backward, and optimizer lowering steps.',
         'gpu_native Linear subsets support native CrossEntropyLoss with label_smoothing, MSELoss, and BCEWithLogitsLoss loss-gradient helpers; Conv-family subsets currently support CrossEntropyLoss with label_smoothing.',

@@ -24,6 +24,7 @@ GPU_OP_CODES = {
     'Tanh': 15,
     'PointwiseConv2d': 16,
     'DepthwiseConv2d': 17,
+    'LayerNorm2d': 18,
 }
 
 GPU_LAUNCH_FAMILY_CODES = {
@@ -37,6 +38,7 @@ GPU_LAUNCH_FAMILY_CODES = {
     'batchnorm2d_nchw': 8,
     'global_avgpool2d_nchw': 9,
     'depthwise_conv2d_nchw': 10,
+    'layernorm2d_nchw': 11,
 }
 
 GPU_LAYOUT_CODES = {

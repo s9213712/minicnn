@@ -7,7 +7,13 @@ import numpy as np
 
 from minicnn.cuda_native.device_runtime import DeviceRuntime, DeviceTensor
 from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
-from minicnn.cuda_native.kernels import _attr_pair, _batchnorm2d_forward_array, _conv2d_forward_array, _pool2d_windows
+from minicnn.cuda_native.kernels import (
+    _attr_pair,
+    _batchnorm2d_forward_array,
+    _conv2d_forward_array,
+    _layernorm2d_forward_array,
+    _pool2d_windows,
+)
 from minicnn.cuda_native.nodes import Node
 
 
@@ -479,6 +485,62 @@ def _lower_batchnorm2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     return _allocate_output(node, ctx, output)
 
 
+def _lower_layernorm2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
+    if x.ndim != 4:
+        raise ValueError(f'LayerNorm2d node={node.name}: expected 4-D NCHW input, got {x.shape}')
+    channels = int(x.shape[1])
+    gamma = np.asarray(ctx.params.get(f'_w_{node.name}', np.ones(channels, dtype=np.float32)), dtype=np.float32)
+    beta = np.asarray(ctx.params.get(f'_b_{node.name}', np.zeros(channels, dtype=np.float32)), dtype=np.float32)
+    for label, value in (('weight', gamma), ('bias', beta)):
+        if value.shape != (channels,):
+            raise ValueError(f'LayerNorm2d node={node.name}: {label} must have shape {(channels,)}, got {value.shape}')
+    eps = float(node.attrs.get('eps', 1e-6))
+    if (
+        ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and hasattr(ctx.runtime.bound_lib, 'layernorm2d_forward')
+    ):
+        output = ctx.runtime.allocate_staging_buffer(
+            tuple(node.output_specs[0].shape),
+            dtype='float32',
+            name=node.outputs[0],
+        )
+        gamma_t = ctx.runtime.stage_to_device(gamma, name=f'_w_{node.name}')
+        beta_t = ctx.runtime.stage_to_device(beta, name=f'_b_{node.name}')
+        try:
+            ctx.runtime.bound_lib.layernorm2d_forward(
+                input_tensor.device_ptr,
+                gamma_t.device_ptr,
+                beta_t.device_ptr,
+                output.device_ptr,
+                int(x.shape[0]),
+                int(x.shape[1]),
+                int(x.shape[2]),
+                int(x.shape[3]),
+                eps,
+            )
+            ctx.runtime.record_execution(
+                'gpu_native_kernel:layernorm2d_forward',
+                input_name=node.inputs[0],
+                output_name=node.outputs[0],
+                node_count=1,
+            )
+            ctx.runtime.sync_tensor_to_host(output)
+        finally:
+            ctx.runtime.release_buffer(gamma_t)
+            ctx.runtime.release_buffer(beta_t)
+        return output
+    output, _cache = _layernorm2d_forward_array(
+        x,
+        gamma=gamma,
+        beta=beta,
+        eps=eps,
+    )
+    return _allocate_output(node, ctx, output)
+
+
 def _lower_conv2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     input_tensor = _input_tensor(node, ctx)
     x = np.asarray(input_tensor.data, dtype=np.float32)
@@ -759,6 +821,12 @@ def make_default_gpu_lowering_registry() -> GpuLoweringRegistry:
         lowering_kind='pool_global_avgpool2d_shim',
         kernel_category=kernel_categories['GlobalAvgPool2d'],
         fn=_lower_global_avgpool2d,
+    )
+    registry.register(
+        'LayerNorm2d',
+        lowering_kind='normalization_layernorm2d_shim',
+        kernel_category=kernel_categories['LayerNorm2d'],
+        fn=_lower_layernorm2d,
     )
     registry.register(
         'LeakyReLU',
