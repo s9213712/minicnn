@@ -51,12 +51,38 @@ class GpuTrainingLoweringPlan:
     optimizer_steps: tuple[GpuTrainingLoweringStep, ...]
     unsupported_reasons: tuple[str, ...]
 
+    def _steps_by_phase(self) -> dict[str, tuple[GpuTrainingLoweringStep, ...]]:
+        return {
+            'forward': self.forward_steps,
+            'loss': tuple() if self.loss_step is None else (self.loss_step,),
+            'backward': self.backward_steps,
+            'optimizer': self.optimizer_steps,
+        }
+
+    def required_symbols_by_phase(self) -> dict[str, list[str]]:
+        return {
+            phase: sorted({
+                symbol
+                for step in steps
+                for symbol in step.required_symbols
+            })
+            for phase, steps in self._steps_by_phase().items()
+        }
+
+    def required_symbols(self) -> list[str]:
+        symbols: set[str] = set()
+        for phase_symbols in self.required_symbols_by_phase().values():
+            symbols.update(phase_symbols)
+        return sorted(symbols)
+
     def summary(self) -> dict[str, Any]:
         return {
             'execution_mode': self.execution_mode,
             'ready': self.ready,
             'subset_name': self.subset_name,
             'helper': self.helper,
+            'required_symbols': self.required_symbols(),
+            'required_symbols_by_phase': self.required_symbols_by_phase(),
             'forward_steps': [step.summary() for step in self.forward_steps],
             'loss_step': None if self.loss_step is None else self.loss_step.summary(),
             'backward_steps': [step.summary() for step in self.backward_steps],

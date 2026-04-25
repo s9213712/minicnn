@@ -125,6 +125,18 @@ def test_validate_cuda_native_config_accepts_gpu_native_linear_training_subset(t
     assert payload['execution_readiness_assessment']['dispatch_plan']['num_steps'] == 2
     assert payload['execution_readiness_assessment']['training_lowering_plan']['ready'] is True
     assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'flatten_linear'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols'] == [
+        'apply_momentum_update',
+        'dense_backward_full',
+        'dense_forward',
+        'softmax_xent_grad_loss_acc',
+    ]
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols_by_phase'] == {
+        'backward': ['dense_backward_full'],
+        'forward': ['dense_forward'],
+        'loss': ['softmax_xent_grad_loss_acc'],
+        'optimizer': ['apply_momentum_update'],
+    }
     assert payload['execution_readiness_assessment']['training_lowering_plan']['optimizer_steps'][0]['lowering_kind'] == 'apply_momentum_update'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['optimizer_steps'][0]['required_symbols'] == [
         'apply_momentum_update'
@@ -397,6 +409,8 @@ def test_validate_cuda_native_config_accepts_gpu_native_groupnorm_linear_trainin
     assert payload['selected_execution_mode'] == 'gpu_native'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'groupnorm_linear'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['helper'] == 'native_gpu_groupnorm_linear_training_step'
+    assert 'groupnorm_forward' in payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols_by_phase']['forward']
+    assert 'groupnorm_backward' in payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols_by_phase']['backward']
     assert payload['execution_readiness_assessment']['training_lowering_plan']['forward_steps'][0]['required_symbols'] == [
         'groupnorm_forward'
     ]
