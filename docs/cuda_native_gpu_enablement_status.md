@@ -95,6 +95,10 @@ Completed:
   pass, otherwise it explicitly falls back to `reference_numpy`; strict
   `engine.execution_mode=gpu_native` remains GPU-only and still fails on invalid
   GPU/runtime conditions
+- `summary.json`, `metrics.jsonl`, and `performance_report.runtime` now preserve
+  both the selected execution mode and the effective execution mode, including
+  `fallback_active`, `fallback_reason`, and GPU lowering/runtime readiness bits
+  when `gpu_native_auto` falls back to `reference_numpy`
 - runtime `execution_trace` telemetry that records the actual native
   forward/loss/backward/optimizer calls emitted by helper-backed training steps
 - `check_cuda_ready()` now reports `runtime_preflight` and overall `ready`, so

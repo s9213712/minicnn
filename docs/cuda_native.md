@@ -240,6 +240,14 @@ Validation payloads and the `train-native` preamble now also include
 - which requested ops are already inside the GPU bootstrap subset
 - which requested ops still fall outside that subset
 
+Training artifacts preserve the same distinction:
+
+- `execution_mode` and `effective_execution_mode` report what actually ran
+- `selected_execution_mode` reports what the user requested
+- `execution_mode_policy` records fallback metadata such as `fallback_active`,
+  `fallback_reason`, `gpu_native_lowering_ready`, and
+  `gpu_native_runtime_ready`
+
 Execution-mode guidance:
 
 - default `engine.execution_mode=reference_numpy` remains the broad, stable
