@@ -283,6 +283,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'gpu_native train-native includes GlobalAvgPool2d/AdaptiveAvgPool2d(output_size=1)+Flatten+Linear through native global_avgpool2d forward/backward C ABI shims.',
         'gpu_native train-native includes AvgPool2d(2x2 stride-2)+Flatten+Linear through native avgpool2d forward/backward C ABI shims.',
         'gpu_native forward dispatch now includes GELU, SiLU, Sigmoid, and Tanh elementwise activation C ABI shims; train-native helper coverage is still pending.',
+        'gpu_native now exposes GELU, SiLU, Sigmoid, and Tanh activation backward C ABI shims as the prerequisite for modern activation train-native helpers.',
         'gpu_native forward dispatch now includes PointwiseConv2d through the Conv2d im2col/GEMM lowering path; train-native helper coverage is still pending.',
         'gpu_native forward dispatch now includes DepthwiseConv2d through a native depthwise_conv2d C ABI shim; train-native helper coverage is still pending.',
         'gpu_native forward dispatch now includes LayerNorm2d through a native layernorm2d C ABI shim; train-native helper coverage is still pending.',

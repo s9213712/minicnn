@@ -27,6 +27,8 @@ Completed:
   GPU aliases
 - `GELU`, `SiLU`, `Sigmoid`, and `Tanh` forward dispatch through native
   elementwise activation C ABI shims
+- `GELU`, `SiLU`, `Sigmoid`, and `Tanh` backward C ABI shims for upcoming
+  modern activation train-native helpers
 - `PointwiseConv2d` forward dispatch through the native Conv2d im2col/GEMM
   lowering path
 - `DepthwiseConv2d` forward dispatch through the native

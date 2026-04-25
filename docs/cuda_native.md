@@ -273,7 +273,8 @@ dispatch/bootstrap primitive set as no-op GPU aliases. Stochastic
 kernels and graph backward lowering land.
 `GELU`, `SiLU`, `Sigmoid`, and `Tanh` are part of the forward
 dispatch/bootstrap primitive set through native elementwise activation shims;
-train-native helper coverage is still pending.
+their backward C ABI shims are also present, with train-native helper coverage
+still pending.
 `PointwiseConv2d` is also part of the forward dispatch/bootstrap primitive set
 through the native Conv2d im2col/GEMM lowering path; train-native helper
 coverage is still pending.

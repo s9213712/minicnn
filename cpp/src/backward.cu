@@ -17,6 +17,45 @@ __global__ void relu_backward_inplace_kernel(float* data_grad, int size) {
     }
 }
 
+__global__ void sigmoid_backward_kernel(float* data, float* grad, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        float sig = 1.0f / (1.0f + expf(-data[idx]));
+        grad[idx] = grad[idx] * sig * (1.0f - sig);
+    }
+}
+
+__global__ void tanh_backward_kernel(float* data, float* grad, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        float t = tanhf(data[idx]);
+        grad[idx] = grad[idx] * (1.0f - t * t);
+    }
+}
+
+__global__ void silu_backward_kernel(float* data, float* grad, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        float x = data[idx];
+        float sig = 1.0f / (1.0f + expf(-x));
+        grad[idx] = grad[idx] * (sig + x * sig * (1.0f - sig));
+    }
+}
+
+__global__ void gelu_backward_kernel(float* data, float* grad, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        float x = data[idx];
+        float x2 = x * x;
+        float inner = 0.7978845608028654f * (x + 0.044715f * x * x2);
+        float t = tanhf(inner);
+        float sech2 = 1.0f - t * t;
+        float inner_grad = 0.7978845608028654f * (1.0f + 3.0f * 0.044715f * x2);
+        float deriv = 0.5f * (1.0f + t) + 0.5f * x * sech2 * inner_grad;
+        grad[idx] = grad[idx] * deriv;
+    }
+}
+
 // ============== MaxPool Backward ==============
 __global__ void maxpool_backward_kernel(const float* grad_out, const float* input, float* grad_input,
                                         int n, int c, int h, int w) {
@@ -59,6 +98,30 @@ extern "C" {
     void apply_relu_backward(float* data, float* grad, int size) {
         int tpb = 256;
         relu_backward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(data, grad, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void sigmoid_backward(float* data, float* grad, int size) {
+        int tpb = 256;
+        sigmoid_backward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(data, grad, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void tanh_backward(float* data, float* grad, int size) {
+        int tpb = 256;
+        tanh_backward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(data, grad, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void silu_backward(float* data, float* grad, int size) {
+        int tpb = 256;
+        silu_backward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(data, grad, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void gelu_backward(float* data, float* grad, int size) {
+        int tpb = 256;
+        gelu_backward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(data, grad, size);
         CUDA_KERNEL_CHECK();
     }
 
