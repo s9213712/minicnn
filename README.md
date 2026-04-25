@@ -74,7 +74,7 @@ It is useful when you want one of these:
 | Backend | Role | Current status |
 |---|---|---|
 | `torch` | reference implementation | stable, broadest feature surface, first destination for new model work |
-| `cuda_native` | primary native backend | beta, graph-based, ordered-DAG capable, NumPy-reference execution, active growth path |
+| `cuda_native` | primary native backend | beta, graph-based, ordered-DAG capable, reference mode plus partial real-CUDA `gpu_native` execution |
 | `autograd` | correctness oracle | stable, CPU-only, useful for deterministic checks and framework learning |
 | `cuda_legacy` | historical native backend | stable inside a narrow boundary, maintenance-only, not the target for new feature growth |
 
@@ -92,7 +92,7 @@ At a high level:
 ```text
 shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
                                \
-                                -> cuda_native [PRIMARY NATIVE] (beta graph IR, planner, numpy executor)
+                                -> cuda_native [PRIMARY NATIVE] (beta graph IR, planner, reference + gpu_native executor)
                                \
                                 -> cuda_legacy [MAINTENANCE ONLY] (historical handwritten CUDA path)
 ```
@@ -111,6 +111,7 @@ The current repo state includes:
 - real `show-model` and `show-graph` introspection commands instead of placeholders
 - `cuda_native` graph semantics broadened from strict sequential graphs to ordered DAG execution with named tensor wiring plus `Add` / `Concat`
 - `cuda_native` training surface broadened to `SGD`, `Adam`, `AdamW`, `RMSprop`, `CrossEntropyLoss`, `BCEWithLogitsLoss`, `MSELoss`, `label_smoothing`, `grad_accum_steps`, and beta AMP
+- `cuda_native` strict `gpu_native` now has a real CIFAR-10 two-Conv training runbook using native CUDA helper execution
 - `summary.json` / `metrics.jsonl` now expose planner, AMP, and optimizer-state telemetry through stable reporting keys
 
 The user-facing command surface is intentionally still small, but the internal
@@ -169,6 +170,16 @@ Current validated support boundary:
 
 `cuda_native` is now a beta-grade backend with stable artifact/validation contracts, `training_stable=true`, and `backward_stable=true`. The default path is `engine.execution_mode=gpu_native_auto`: it tries the supported real-CUDA helper subset first and falls back explicitly to `reference_numpy` when lowering or runtime preflight is not ready. Use `engine.execution_mode=gpu_native` when you want strict GPU-only failure semantics, or `engine.execution_mode=reference_numpy` for the historical CPU fallback path. It supports ordered DAG execution with explicit tensor wiring plus `Add` merge semantics; `cuda_legacy` remains a narrow maintenance path.
 
+Strict real-CUDA CIFAR-10 training is available for the current two-Conv helper subset:
+
+```bash
+minicnn validate-cuda-native-config --config configs/cifar10_cuda_native_gpu_stronger.yaml
+
+minicnn train-native --config configs/cifar10_cuda_native_gpu_stronger.yaml
+```
+
+See [docs/cuda_native_gpu_cifar10_runbook.md](docs/cuda_native_gpu_cifar10_runbook.md) for the current real-data GPU result and performance notes.
+
 Hermetic native smoke examples now exist for:
 
 - explicit ConvNeXt primitives: `templates/cifar10/convnext_explicit_cuda_native_smoke.yaml`
@@ -205,6 +216,7 @@ See [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md) for
 See [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md) for the path from experimental backend to implementation-grade public contract.
 See [docs/cuda_native_amp_graduation_checklist.md](docs/cuda_native_amp_graduation_checklist.md) for the AMP graduation gate that moved the backend to beta.
 See [docs/cuda_native_gpu_enablement_plan.md](docs/cuda_native_gpu_enablement_plan.md) for the separate path from NumPy reference execution to real GPU execution.
+See [docs/cuda_native_gpu_cifar10_runbook.md](docs/cuda_native_gpu_cifar10_runbook.md) for the current full CIFAR-10 strict `gpu_native` training runbook.
 
 Real-dataset demo:
 
@@ -479,7 +491,7 @@ python -u examples/inference/predict_image.py \
 
 Full format and reuse guidance lives in [docs/model_artifacts.md](docs/model_artifacts.md).
 
-Train the experimental cuda_native path:
+Train the cuda_native path (GPU-first when `engine.cuda_native_execution=gpu_native`):
 
 ```bash
 minicnn train-native --config configs/dual_backend_cnn.yaml \
@@ -495,7 +507,7 @@ That distinction matters:
 - `torch` is the default place for new model ideas
 - `torch/flex` is the reference implementation and first stop for new features
 - `autograd` is the internal oracle for correctness-oriented checks
-- `cuda_native` is the primary native direction, but still experimental
+- `cuda_native` is the primary native direction, but tracked by backend readiness tiers
 - `cuda_legacy` is kept for maintenance inside its validator-enforced boundary, not as the default place for new capability growth
 
 See [docs/backend_capabilities.md](docs/backend_capabilities.md) for the
@@ -593,7 +605,7 @@ minicnn/
 │   ├── flex/               # torch/flex frontend, registries, builder, trainer
 │   ├── unified/            # shared-config dispatch and backend bridges
 │   ├── training/           # cuda_legacy and autograd training code
-│   ├── cuda_native/        # experimental graph/planner/executor backend work
+│   ├── cuda_native/        # graph/planner/executor backend work
 │   ├── nn/ ops/ optim/     # NumPy autograd stack
 │   ├── compiler/ runtime/  # tracing, optimization, and CPU inference pipeline
 │   └── core/               # native build helpers and ctypes CUDA binding
@@ -605,8 +617,14 @@ minicnn/
 - explicit backend capability over vague parity claims
 - one config frontend where that abstraction is actually honest
 - fail fast on unsupported backend combinations
-- keep experimental backend work visible without pretending it is stable
+- keep backend readiness work visible without pretending it is stable
 
 ## License
 
 MIT
+
+## CUDA Native maintenance notes
+
+- Full CIFAR-10 GPU-native smoke/benchmark runs should start from `configs/cifar10_cuda_native_gpu_stronger.yaml` and the runbook in `docs/cuda_native_gpu_cifar10_runbook.md`.
+- `cuda_native` is now GPU-first for eligible `gpu_native` paths, while NumPy reference execution remains available as fallback/parity infrastructure.
+- Large-file cleanup status is tracked in `docs/cuda_native_large_file_inventory.md`. Test modules are intentionally left intact for now because they preserve regression coverage.

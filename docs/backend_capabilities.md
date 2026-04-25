@@ -61,9 +61,9 @@ but it is still not production-ready.
 | MNIST | ✓ | ✓ slow | ✗ | **✓** |
 | Random toy data | ✓ | ✓ | ✗ | **✓** |
 | **Layers** | | | | |
-| Conv2d | ✓ | ✓ | ✓ fixed 3×3 s1 p0 | ✓ numpy ref |
-| Linear | ✓ | ✓ | ✓ | ✓ numpy ref |
-| MaxPool2d | ✓ | ✓ | ✓ fixed 2×2 | ✓ numpy ref |
+| Conv2d | ✓ | ✓ | ✓ fixed 3×3 s1 p0 | ✓ numpy ref + partial `gpu_native` |
+| Linear | ✓ | ✓ | ✓ | ✓ numpy ref + partial `gpu_native` |
+| MaxPool2d | ✓ | ✓ | ✓ fixed 2×2 | ✓ numpy ref + partial `gpu_native` |
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | BatchNorm2d | ✓ | ✓ | ✗ | ✓ forward/backward prototype |
 | GroupNorm | ✓ | ✗ | ✗ | **✓** prototype |
@@ -78,19 +78,19 @@ but it is still not production-ready.
 | ConvNeXtBlock | ✓ experimental | ✗ | ✗ | **✓** composite prototype |
 | Dropout | ✓ | ✓ | ✗ | **✓** prototype |
 | **Activations** | | | | |
-| ReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
+| ReLU | ✓ | ✓ | ✓ | ✓ numpy ref + partial `gpu_native` |
 | LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
 | SiLU | ✓ | ✓ | ✗ | ✓ numpy ref |
 | Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref |
 | Tanh | ✓ | ✓ | ✗ | ✓ numpy ref |
 | GELU | ✓ | ✗ | ✗ | **✓** numpy ref |
 | **Losses** | | | | |
-| CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
+| CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy + partial `gpu_native` |
 | MSELoss | ✓ | ✓ | Experimental | **✓** numpy |
 | BCEWithLogitsLoss | ✓ binary | ✓ binary | ✗ | **✓** binary |
 | label_smoothing | ✓ | ✓ | ✗ | **✓** cross-entropy prototype |
 | **Optimizers** | | | | |
-| SGD | ✓ | ✓ | ✓ | ✓ numpy + gpu_native |
+| SGD | ✓ | ✓ | ✓ | ✓ numpy + partial `gpu_native` |
 | Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy + gpu_native |
 | Adam | ✓ | ✓ | Experimental | **✓** numpy + gpu_native Linear |
 | AdamW | ✓ | ✓ | ✗ | **✓** numpy + gpu_native Linear |
@@ -109,10 +109,10 @@ but it is still not production-ready.
 | dotted-path components | ✓ | ✗ | ✗ | ✗ |
 | block presets | ✓ | ✗ | ✗ | ✗ |
 | **Training** | | | | |
-| Forward pass | ✓ | ✓ | ✓ | ✓ |
-| Backward / gradients | ✓ | ✓ | ✓ | Prototype |
-| Full training loop | ✓ | ✓ | ✓ | Prototype |
-| Production-ready | ✓ | ✓ | ✓ | ✗ experimental |
+| Forward pass | ✓ | ✓ | ✓ | ✓ reference + partial `gpu_native` |
+| Backward / gradients | ✓ | ✓ | ✓ | ✓ beta within support boundary |
+| Full training loop | ✓ | ✓ | ✓ | ✓ beta within support boundary |
+| Production-ready | ✓ | ✓ | ✓ | ✗ beta, not production-ready |
 | **Developer tooling** | | | | |
 | Graph dump | ✗ | ✗ | ✗ | **✓** `dump_graph()` |
 | Plan dump | ✗ | ✗ | ✗ | **✓** `dump_plan()` |
@@ -156,7 +156,12 @@ Validation failures now return short CLI messages or JSON payloads instead of ra
 
 ## cuda_native (Primary Native Direction, Beta)
 
-Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work. It is now beta-grade, but still not production-ready. The default execution mode remains NumPy reference execution; opt-in `execution_mode=gpu_native` runs a growing subset through real CUDA device-pointer kernels and native training helpers.
+Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work. It is now beta-grade, but still not production-ready. The default execution mode is GPU-first auto execution when a CUDA-native lowering is eligible, with NumPy reference execution retained as fallback and parity baseline; opt-in `execution_mode=gpu_native` runs a growing subset through real CUDA device-pointer kernels and native training helpers.
+
+Real-data strict GPU training evidence exists for the current repeated-Conv
+subset. Use `configs/cifar10_cuda_native_gpu_stronger.yaml` for the full
+CIFAR-10 command path; see
+[cuda_native_gpu_cifar10_runbook.md](cuda_native_gpu_cifar10_runbook.md).
 
 Supported reference-mode ops: `BatchNorm2d` (forward/backward prototype), `Concat`, `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `DropPath`, `Add`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`.
 

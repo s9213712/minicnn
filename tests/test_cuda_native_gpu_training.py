@@ -2642,3 +2642,49 @@ def test_native_gpu_two_conv_relu_pool_linear_training_step_matches_reference_ma
     assert result.runtime_summary['execution_kinds']['gpu_native_train:conv2d_2_im2col_gemm'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:conv_backward_1'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:conv_backward_2'] == 1
+
+
+def test_native_gpu_two_conv_relu_pool_linear_training_step_can_skip_intermediate_host_copies():
+    x = (np.arange(72, dtype=np.float32).reshape(2, 1, 6, 6) - 30.0) / 20.0
+    labels = np.asarray([1, 0], dtype=np.int32)
+    conv1_weight = np.asarray(
+        [
+            [[[0.2, -0.1], [0.05, 0.3]]],
+            [[[-0.2, 0.1], [0.25, -0.05]]],
+        ],
+        dtype=np.float32,
+    )
+    conv2_weight = np.asarray(
+        [
+            [[[0.1, -0.2], [0.05, 0.15]], [[-0.05, 0.12], [0.2, -0.08]]],
+            [[[-0.15, 0.05], [0.18, -0.1]], [[0.22, -0.04], [-0.06, 0.11]]],
+        ],
+        dtype=np.float32,
+    )
+    linear_weight = np.asarray(
+        [
+            [0.1, -0.2, 0.3, 0.05, -0.1, 0.2, -0.05, 0.15],
+            [-0.05, 0.25, -0.15, 0.2, 0.05, -0.1, 0.3, -0.2],
+        ],
+        dtype=np.float32,
+    )
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+
+    result = native_gpu_two_conv_relu_pool_linear_training_step(
+        x,
+        labels,
+        conv1_weight,
+        conv2_weight,
+        linear_weight,
+        linear_bias,
+        lr=0.02,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    assert result.logits.shape == (0,)
+    assert result.grad_input.shape == (0,)
+    assert result.updated_conv1_weight.shape == conv1_weight.shape
+    assert result.updated_conv2_weight.shape == conv2_weight.shape
+    assert result.updated_linear_weight.shape == linear_weight.shape
+    assert result.runtime_summary['device_to_host_transfer_events'] == 10

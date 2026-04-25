@@ -761,6 +761,8 @@ def run_training_loop(
             idx = rng.permutation(ctx.x_train.shape[0])
             x_shuf, y_shuf = ctx.x_train[idx], ctx.y_train[idx]
             running_loss = 0.0
+            running_correct = 0
+            correct_seen = 0
             seen = 0
             num_batches = (x_shuf.shape[0] + ctx.batch_size - 1) // ctx.batch_size
             batch_idx = 0
@@ -772,6 +774,7 @@ def run_training_loop(
                 yb = y_shuf[i:i + ctx.batch_size]
                 if xb.shape[0] == 0:
                     continue
+                batch_correct: int | None = None
                 apply_optimizer_step = (
                     batch_idx % ctx.grad_accum_steps == 0
                     or batch_idx == num_batches
@@ -1279,6 +1282,7 @@ def run_training_loop(
                             linear_weight_velocity=velocity_state.get(linear_weight_key),
                             linear_bias_velocity=velocity_state.get(linear_bias_key),
                             bound_lib=ctx.device_runtime.bound_lib,
+                            return_intermediates=False,
                         )
                         params = dict(params)
                         params[conv1_weight_key] = step.updated_conv1_weight
@@ -1294,6 +1298,7 @@ def run_training_loop(
                             f"unhandled gpu_native training plan kind: {gpu_training_plan['kind']!r}"
                         )
                     loss_val = float(step.loss_mean)
+                    batch_correct = int(step.correct_count)
                     _merge_gpu_native_step_runtime(ctx, step.runtime_summary)
                     optimizer_runtime = optimizer_state.setdefault('optimizer_runtime', {})
                     optimizer_runtime['optimizer_type'] = ctx.optimizer_type
@@ -1344,8 +1349,12 @@ def run_training_loop(
                     ctx.device_runtime.synchronize('train-batch')
                     ctx.device_runtime.release_buffer(xb_device)
                 running_loss += loss_val * xb.shape[0]
+                if batch_correct is not None:
+                    running_correct += batch_correct
+                    correct_seen += xb.shape[0]
                 seen += xb.shape[0]
             train_loss = running_loss / max(seen, 1)
+            train_acc = (running_correct / correct_seen) if correct_seen > 0 else None
             val_metrics = _evaluate(
                 ctx.graph,
                 ctx.x_val,
@@ -1449,6 +1458,7 @@ def run_training_loop(
             row = _build_epoch_row(
                 epoch=epoch,
                 train_loss=train_loss,
+                train_acc=train_acc,
                 val_metrics=val_metrics,
                 lr=float(optimizer_view.lr),
                 epoch_time_s=epoch_time,
@@ -1472,6 +1482,7 @@ def run_training_loop(
                     epoch=epoch,
                     epochs=ctx.epochs,
                     train_loss=train_loss,
+                    train_acc=train_acc,
                     val_acc=val_metrics['acc'],
                     lr=float(optimizer_view.lr),
                     epoch_time_s=epoch_time,

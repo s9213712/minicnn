@@ -85,12 +85,13 @@ class GpuLoweringRegistry:
 
 
 def _allocate_output(node: Node, ctx: GpuLoweringContext, output: np.ndarray) -> DeviceTensor:
+    output_array = np.asarray(output, dtype=np.float32)
     staged = ctx.runtime.allocate_staging_buffer(
-        tuple(node.output_specs[0].shape),
-        dtype=output.dtype,
+        tuple(int(v) for v in output_array.shape),
+        dtype=output_array.dtype,
         name=node.outputs[0],
     )
-    np.copyto(staged.data, np.asarray(output, dtype=np.float32))
+    np.copyto(staged.data, output_array)
     ctx.runtime.sync_tensor_to_device(staged)
     return staged
 
@@ -175,7 +176,7 @@ def _lower_linear(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         and hasattr(ctx.runtime.bound_lib, 'dense_forward')
     ):
         output = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
+            (int(x.shape[0]), int(w.shape[0])),
             dtype='float32',
             name=node.outputs[0],
         )
@@ -219,7 +220,7 @@ def _lower_relu(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         and hasattr(ctx.runtime.bound_lib, 'apply_relu')
     ):
         output = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
+            tuple(int(v) for v in x.shape),
             dtype='float32',
             name=node.outputs[0],
         )
@@ -246,11 +247,8 @@ def _lower_leaky_relu(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         and input_tensor.device_ptr is not None
         and hasattr(ctx.runtime.bound_lib, 'leaky_relu_forward')
     ):
-        output = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
-            dtype='float32',
-            name=node.outputs[0],
-        )
+        output_shape = (n, c_out, out_h, out_w)
+        output = ctx.runtime.allocate_staging_buffer(output_shape, dtype='float32', name=node.outputs[0])
         np.copyto(output.data, x)
         ctx.runtime.sync_tensor_to_device(output)
         ctx.runtime.bound_lib.leaky_relu_forward(output.device_ptr, float(alpha), int(output.data.size))
@@ -282,7 +280,7 @@ def _lower_elementwise_unary(
         and hasattr(ctx.runtime.bound_lib, native_symbol)
     ):
         output = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
+            tuple(int(v) for v in x.shape),
             dtype='float32',
             name=node.outputs[0],
         )
@@ -362,7 +360,7 @@ def _lower_add(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         and hasattr(ctx.runtime.bound_lib, 'add_forward')
     ):
         output_tensor = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
+            tuple(int(v) for v in ref_shape),
             dtype='float32',
             name=node.outputs[0],
         )
@@ -411,8 +409,10 @@ def _lower_concat(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         and all(tensor.device_ptr is not None for tensor in input_tensors)
         and hasattr(ctx.runtime.bound_lib, 'concat_forward')
     ):
+        output_shape = list(arrays[0].shape)
+        output_shape[normalized_axis] = sum(int(arr.shape[normalized_axis]) for arr in arrays)
         output_tensor = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
+            tuple(output_shape),
             dtype='float32',
             name=node.outputs[0],
         )
@@ -472,7 +472,7 @@ def _lower_batchnorm2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         and hasattr(ctx.runtime.bound_lib, 'bn_eval_forward')
     ):
         output = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
+            tuple(int(v) for v in x.shape),
             dtype='float32',
             name=node.outputs[0],
         )
@@ -540,7 +540,7 @@ def _lower_layernorm2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         and hasattr(ctx.runtime.bound_lib, 'layernorm2d_forward')
     ):
         output = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
+            tuple(int(v) for v in x.shape),
             dtype='float32',
             name=node.outputs[0],
         )
@@ -601,7 +601,7 @@ def _lower_groupnorm(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         and hasattr(ctx.runtime.bound_lib, 'groupnorm_forward')
     ):
         output = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
+            tuple(int(v) for v in x.shape),
             dtype='float32',
             name=node.outputs[0],
         )
@@ -658,10 +658,10 @@ def _lower_conv2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     ):
         n, c_in, h_in, w_in = [int(v) for v in x.shape]
         c_out, _w_c, kh, kw = [int(v) for v in w.shape]
-        out_h = int(node.output_specs[0].shape[2])
-        out_w = int(node.output_specs[0].shape[3])
+        out_h = (h_in + 2 * int(padding[0]) - kh) // int(stride[0]) + 1
+        out_w = (w_in + 2 * int(padding[1]) - kw) // int(stride[1]) + 1
         output = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
+            (n, c_out, out_h, out_w),
             dtype='float32',
             name=node.outputs[0],
         )
@@ -718,11 +718,8 @@ def _lower_conv2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         c_out, _w_c, kh, kw = [int(v) for v in w.shape]
         out_h = h_in - kh + 1
         out_w = w_in - kw + 1
-        output = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
-            dtype='float32',
-            name=node.outputs[0],
-        )
+        output_shape = (n, c_out, out_h, out_w)
+        output = ctx.runtime.allocate_staging_buffer(output_shape, dtype='float32', name=node.outputs[0])
         weight_tensor = ctx.runtime.stage_to_device(w.reshape(c_out, -1), name=f'_w_{node.name}')
         col_elems = c_in * kh * kw * n * out_h * out_w
         raw_elems = c_out * n * out_h * out_w
@@ -789,8 +786,10 @@ def _lower_maxpool2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         and (sh, sw) == (2, 2)
         and (ph, pw) == (0, 0)
     ):
+        out_h = (int(x.shape[2]) + 2 * int(ph) - int(kh)) // int(sh) + 1
+        out_w = (int(x.shape[3]) + 2 * int(pw) - int(kw)) // int(sw) + 1
         output = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
+            (int(x.shape[0]), int(x.shape[1]), out_h, out_w),
             dtype='float32',
             name=node.outputs[0],
         )
@@ -833,7 +832,9 @@ def _lower_avgpool2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         and hasattr(ctx.runtime.bound_lib, 'avgpool2d_forward')
         and x.ndim == 4
     ):
-        output_shape = tuple(node.output_specs[0].shape)
+        out_h = (int(x.shape[2]) + 2 * int(ph) - int(kh)) // int(sh) + 1
+        out_w = (int(x.shape[3]) + 2 * int(pw) - int(kw)) // int(sw) + 1
+        output_shape = (int(x.shape[0]), int(x.shape[1]), out_h, out_w)
         output = ctx.runtime.allocate_staging_buffer(
             output_shape,
             dtype='float32',
@@ -885,7 +886,7 @@ def _lower_global_avgpool2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor
         and hasattr(ctx.runtime.bound_lib, 'global_avgpool2d_forward')
     ):
         output = ctx.runtime.allocate_staging_buffer(
-            tuple(node.output_specs[0].shape),
+            (int(x.shape[0]), int(x.shape[1]), 1, 1),
             dtype='float32',
             name=node.outputs[0],
         )

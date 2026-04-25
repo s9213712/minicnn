@@ -13,6 +13,7 @@ Related planning docs:
 - [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_plan.md)
 - [cuda_native_gpu_parity_matrix.md](cuda_native_gpu_parity_matrix.md)
 - [cuda_native_gpu_enablement_status.md](cuda_native_gpu_enablement_status.md)
+- [cuda_native_gpu_cifar10_runbook.md](cuda_native_gpu_cifar10_runbook.md)
 
 ## What cuda_native Is
 
@@ -32,7 +33,7 @@ A staged, modular backend structured in layers:
 ## What cuda_native Is Not
 
 - Not a production training backend
-- Default execution is still the NumPy reference path; `engine.execution_mode=gpu_native` is a partial real CUDA device-pointer path, not the full backend default
+- Default execution is GPU-first auto mode where supported; `engine.execution_mode=reference_numpy` remains the explicit CPU reference path and `engine.execution_mode=gpu_native` is strict real-CUDA mode for supported helper subsets
 - Not a full general-purpose graph backend yet (`Add`-based ordered DAG support exists, but richer merge ops are still missing)
 
 For the staged plan to move from NumPy reference execution to real GPU
@@ -44,7 +45,7 @@ execution, see [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_p
 |---|---|
 | Graph IR | ✓ Implemented |
 | Shape inference | ✓ Basic |
-| Forward execution | ✓ Basic (numpy) |
+| Forward execution | ✓ Basic reference mode plus partial native GPU lowering |
 | Planner | ✓ Conservative / beta-grade |
 | Reuse-aware planning | ✓ Experimental (`make_reuse_plan`, `make_plan(..., strategy="reuse")`) |
 | Liveness analysis | ✓ Experimental (`analyze_live_ranges`, `analyze_live_tensor_sets`, `estimate_peak_live_bytes`) |
@@ -55,12 +56,12 @@ execution, see [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_p
 | Memory footprint / pool | ✓ `memory_footprint()`, `BufferPool` |
 | Graph / plan dump | ✓ `dump_graph()`, `dump_plan()` |
 | Execution trace | ✓ `TracingForwardExecutor` |
-| Backward prototype | ⚠ Implemented, not stable |
-| Training loop | ⚠ Research prototype |
+| Backward prototype | ✓ Beta-grade within validated support boundary |
+| Training loop | ✓ Beta-grade within validated support boundary |
 | Training in production | ✗ Not enabled |
 | Dynamic graph | ✗ Not supported |
 | Mixed precision | ✓ Beta AMP |
-| `gpu_native` training | ⚠ Partial Linear / Linear+ReLU / MaxPool+Linear / Conv2d(valid, bias=false)+Linear / Conv2d(valid, bias=false)+ReLU+Linear / Conv2d(valid, bias=false)+MaxPool+Linear / Conv2d(valid, bias=false)+ReLU+MaxPool+Linear / two-Conv ReLU+MaxPool+Linear subset |
+| `gpu_native` training | ⚠ Partial helper-backed subsets, including full CIFAR-10 two-Conv strict GPU training |
 
 ## Supported Ops
 
@@ -353,6 +354,22 @@ Current evidence: representative real CUDA smoke passes for minimal Linear SGD,
 minimal Linear RMSprop, and the CIFAR-10 repeated-Conv helper; the repeated-Conv
 smoke uses `official:cifar10:test_batch` when available and compares updated
 weights against NumPy reference.
+
+Full CIFAR-10 strict GPU training runbook:
+
+```bash
+PYTHONPATH=src python3 -m minicnn.cli validate-cuda-native-config \
+  --config configs/cifar10_cuda_native_gpu_stronger.yaml
+
+PYTHONPATH=src timeout 7200s python3 -m minicnn.cli train-native \
+  --config configs/cifar10_cuda_native_gpu_stronger.yaml
+```
+
+Representative real-data result: the stronger two-Conv helper model reached
+low-to-mid 60% validation accuracy in early epochs while train accuracy kept
+rising, confirming real GPU training/eval execution and showing that the next
+accuracy bottleneck is model capacity / regularization. See
+[cuda_native_gpu_cifar10_runbook.md](cuda_native_gpu_cifar10_runbook.md).
 
 Validate a config:
 

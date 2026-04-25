@@ -55,7 +55,7 @@ primitive sequence.
 | `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
-| `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_two_conv_relu_pool_linear_training_step` | Hermetic reference math | Real CIFAR-10 CUDA smoke passed |
+| `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_two_conv_relu_pool_linear_training_step` | Hermetic reference math, optional debug intermediate return, and fast training path that skips intermediate host copies | Real CIFAR-10 CUDA smoke passed; full CIFAR-10 strict GPU training reached low-to-mid 60% validation accuracy with `configs/cifar10_cuda_native_gpu_stronger.yaml` |
 
 ## Current real-hardware status
 
@@ -75,6 +75,10 @@ Representative real CUDA smoke now passes on this machine:
   and clips the combined Conv/Linear gradient norm to the requested threshold
 - CIFAR-10 repeated-Conv smoke uses `official:cifar10:test_batch` and matches
   NumPy reference updated weights with max absolute diffs around `1e-9`
+- full CIFAR-10 strict `gpu_native` training now runs through
+  `configs/cifar10_cuda_native_gpu_stronger.yaml`; a representative run loaded
+  all five CIFAR-10 training batches and reached low-to-mid 60% validation
+  accuracy in early epochs
 - ConvNeXt-style bridge CIFAR-10 smoke entrypoint exists; on the current host it
   stops at CUDA preflight with status 35 because the installed driver is older
   than the CUDA runtime selected by the native library
@@ -96,3 +100,13 @@ PYTHONPATH=src python3 examples/cuda_native_gpu_convnext_bridge_training_cifar10
 
 These scripts run representative `gpu_native` training helpers on CIFAR-10
 batches and compare updated weights against NumPy reference steps.
+
+For full-dataset training:
+
+```bash
+PYTHONPATH=src python3 -m minicnn.cli validate-cuda-native-config \
+  --config configs/cifar10_cuda_native_gpu_stronger.yaml
+
+PYTHONPATH=src timeout 7200s python3 -m minicnn.cli train-native \
+  --config configs/cifar10_cuda_native_gpu_stronger.yaml
+```

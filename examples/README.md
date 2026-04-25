@@ -116,3 +116,17 @@ PYTHONPATH=src python3 examples/cuda_native_gpu_linear_training_cifar10_demo.py 
 ```
 
 This demo flattens an official CIFAR-10 test batch and executes one `Linear + SoftmaxCE + dense backward + SGD` step through native GPU C ABI calls, then compares the updated parameters against NumPy reference math.
+
+Run the full CIFAR-10 strict `gpu_native` training config:
+
+```bash
+PYTHONPATH=src python3 -m minicnn.cli validate-cuda-native-config \
+  --config configs/cifar10_cuda_native_gpu_stronger.yaml
+
+PYTHONPATH=src timeout 7200s python3 -m minicnn.cli train-native \
+  --config configs/cifar10_cuda_native_gpu_stronger.yaml
+```
+
+This uses the current two-Conv native GPU helper subset on all five CIFAR-10
+training batches. See `docs/cuda_native_gpu_cifar10_runbook.md` for current
+observed accuracy and performance notes.

@@ -305,6 +305,37 @@ def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     assert runtime_summary['reserved_buffer_release_events'] >= 2
 
 
+def test_gpu_stub_executor_uses_runtime_batch_shape_for_native_lowerings():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Conv2d', 'out_channels': 2, 'kernel_size': 3, 'bias': False},
+                {'type': 'ReLU'},
+                {'type': 'MaxPool2d', 'kernel_size': 2, 'stride': 2},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 3},
+            ],
+        },
+        (1, 1, 4, 4),
+    )
+    params = _init_params(graph, seed=11)
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = (np.arange(3 * 1 * 4 * 4, dtype=np.float32).reshape(3, 1, 4, 4) / 10.0)
+
+    result = executor.run(graph, x, params=params)
+
+    assert result.output.shape == (3, 3)
+    assert fake_lib.dense_forward_calls[-1][4:] == (3, 2, 3)
+    assert runtime.summary()['execution_kinds']['gpu_native_kernel:conv2d_im2col_gemm'] == 1
+    assert runtime.summary()['execution_kinds']['gpu_native_kernel:apply_maxpool'] == 1
+
+
 def test_gpu_stub_executor_rejects_graph_outside_bootstrap_subset():
     graph = build_cuda_native_graph(
         {

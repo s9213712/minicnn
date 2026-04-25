@@ -123,6 +123,10 @@ Completed:
   training subsets
 - `train.grad_accum_steps >= 1` for supported `gpu_native` subsets via native
   accumulated-batch training steps
+- full CIFAR-10 strict `gpu_native` training config at
+  `configs/cifar10_cuda_native_gpu_stronger.yaml`
+- normal two-Conv helper training now skips intermediate activation/gradient
+  host copies unless debug parity output is explicitly requested
 
 ## Current `gpu_native` training subsets
 
@@ -212,6 +216,10 @@ Current real CUDA evidence:
 - CIFAR-10 repeated-Conv smoke used `official:cifar10:test_batch`; updated
   Conv/Linear weights matched NumPy reference with max absolute diffs around
   `1e-9`
+- full CIFAR-10 strict `gpu_native` training using
+  `configs/cifar10_cuda_native_gpu_stronger.yaml` loaded all five training
+  batches, ran native helper-backed GPU training/eval, and reached roughly
+  low-to-mid 60% validation accuracy in early epochs
 - ConvNeXt-style bridge CIFAR-10 smoke entrypoint exists for
   `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU ->
   PointwiseConv2d -> Flatten -> Linear`; the current host stops at CUDA runtime
@@ -223,6 +231,12 @@ Current real CUDA evidence:
   driver visibility/runtime initialization rather than missing native symbols or
   the CUDA 13.2 build alone
 
+Current throughput caveat: this tier is functional but not throughput-oriented.
+Per-batch execution still launches many small kernels, stages input/parameters
+from host, and lacks persistent device-resident weights / optimizer state.
+Normal two-Conv training no longer copies debug intermediates back to host, but
+higher GPU utilization still requires persistent state and fused helper work.
+
 If a future machine fails with `CUDA runtime preflight failed`, the repo still
 fails before allocation with a Python `RuntimeError` instead of aborting inside
 `cudaMalloc`.
@@ -232,6 +246,8 @@ fails before allocation with a Python `RuntimeError` instead of aborting inside
 Still not claimed as complete:
 
 - full graph-level GPU backward generalization
+- persistent device-resident training state across batches
+- fused or larger-grain helper kernels for the repeated-Conv CIFAR-10 subset
 - composite/block training lowering for residual and full ConvNeXt-style models
 - broader `BatchNorm2d` graph-level train-native coverage beyond the
   `BatchNorm2d -> Flatten -> Linear` helper subset

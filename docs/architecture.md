@@ -99,7 +99,7 @@ src/minicnn/
 ├── framework/             # healthcheck / diagnostics surface
 ├── compiler/              # tracer and optimizer passes
 ├── runtime/               # runtime graph, executor, memory, profiler
-├── cuda_native/           # primary native backend direction: graph/planner/numpy-executor
+├── cuda_native/           # primary native backend direction: graph/planner/reference+gpu-native executor
 ├── nn/                    # NumPy autograd modules and layers
 ├── ops/                   # differentiable NumPy ops
 ├── optim/                 # NumPy-side optimizers
@@ -248,7 +248,7 @@ src/minicnn/
 ├── framework/             # healthcheck / diagnostics surface
 ├── compiler/              # tracer 與 optimizer pass
 ├── runtime/               # runtime graph、executor、memory、profiler
-├── cuda_native/           # 主要 native backend 方向：graph/planner/numpy-executor
+├── cuda_native/           # 主要 native backend 方向：graph/planner/reference+gpu-native executor
 ├── nn/                    # NumPy autograd modules 與 layers
 ├── ops/                   # 可微分 NumPy ops
 ├── optim/                 # NumPy 端 optimizers
@@ -291,3 +291,7 @@ src/minicnn/
 ### 新的 cuda_native 能力
 
 限制在 `src/minicnn/cuda_native/` 內部。capability descriptor、validator、CLI surface 必須都一致，才能宣告支援。
+
+## CUDA Native source layout note
+
+`src/minicnn/cuda_native/gpu_training.py` remains the compatibility import surface for GPU training helpers. Large reusable pieces have started moving into focused modules: result dataclasses live in `gpu_training_types.py`, shared CUDA binding/loss/clip helpers live in `gpu_training_common.py`, and conv-family training helpers live in `gpu_training_conv.py`. The next production-code split candidates are `src/minicnn/unified/_cuda_native_runtime.py` and `src/minicnn/cuda_native/gpu_lowering.py`.
