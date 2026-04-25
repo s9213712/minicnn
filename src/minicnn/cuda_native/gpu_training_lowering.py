@@ -98,6 +98,7 @@ class GpuTrainingLoweringPlan:
             'subset_name': self.subset_name,
             'helper': self.helper,
             'fallback_policy': self.fallback_policy(),
+            'per_op_lowering_shim': self.per_op_lowering_manifest(),
             'required_symbols': self.required_symbols(),
             'required_symbols_by_phase': self.required_symbols_by_phase(),
             'training_launch_trace': [
@@ -108,6 +109,35 @@ class GpuTrainingLoweringPlan:
             'backward_steps': [step.summary() for step in self.backward_steps],
             'optimizer_steps': [step.summary() for step in self.optimizer_steps],
             'unsupported_reasons': list(self.unsupported_reasons),
+        }
+
+    def per_op_lowering_manifest(self) -> dict[str, Any]:
+        packets = build_gpu_training_launch_trace(self)
+        ready = self.ready and all(packet.supported for packet in packets)
+        return {
+            'schema_version': 1,
+            'manifest_kind': 'cuda_native_gpu_training_per_op_lowering_shim',
+            'execution_mode': self.execution_mode,
+            'ready': ready,
+            'subset_name': self.subset_name,
+            'helper_backed': self.helper is not None,
+            'helper': self.helper,
+            'fallback_policy': self.fallback_policy(),
+            'launch_count': len(packets),
+            'required_symbols': self.required_symbols(),
+            'required_symbols_by_phase': self.required_symbols_by_phase(),
+            'transition_policy': (
+                'helper_backed_until_runtime_per_op_executor'
+                if self.helper is not None
+                else 'runtime_per_op_executor'
+            ),
+            'packets': [
+                {
+                    **packet.summary(),
+                    'depends_on_ordinals': [] if packet.ordinal == 0 else [packet.ordinal - 1],
+                }
+                for packet in packets
+            ],
         }
 
 

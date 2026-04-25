@@ -87,9 +87,11 @@ Completed:
 - GPU training capability entries now publish the same fallback and helper
   constraint surface, so docs/CLI/diagnostics can distinguish GPU-first support
   from NumPy fallback without duplicating policy text
-- `training_lowering_plan.training_launch_trace` now emits ordered
-  forward/loss/backward/optimizer launch packets, which is the bridge from
-  helper-backed subsets toward real per-op training lowering shims
+- `training_lowering_plan.training_launch_trace` and
+  `training_lowering_plan.per_op_lowering_shim` now emit ordered
+  forward/loss/backward/optimizer launch packets plus manifest metadata, which
+  is the bridge from helper-backed subsets toward real per-op training lowering
+  shims
 - `engine.execution_mode=gpu_native_auto` is now the default GPU-first execution
   entry: it selects `gpu_native` only when lowering and CUDA runtime readiness
   both pass, otherwise it explicitly falls back to `reference_numpy`; strict
