@@ -83,6 +83,8 @@ Supported through native GPU helper paths:
 - `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`
+- `PointwiseConv2d(bias=false) -> Flatten -> Linear`
+- `PointwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
@@ -157,8 +159,8 @@ Still not claimed as complete:
   `BatchNorm2d -> Flatten -> Linear` helper subset
 - broader modern elementwise activation graph-level train-native coverage beyond
   the two-linear helper subsets
-- `PointwiseConv2d` train-native helper coverage; current work is forward
-  dispatch only
+- broader `PointwiseConv2d` graph-level train-native coverage beyond the
+  `PointwiseConv2d -> Flatten -> Linear` helper subsets
 - `DepthwiseConv2d` train-native helper coverage; current work is forward
   dispatch only
 - `GroupNorm` train-native helper coverage; current work is forward dispatch

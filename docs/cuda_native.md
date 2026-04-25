@@ -252,6 +252,8 @@ Current `train-native engine.execution_mode=gpu_native` training subsets:
 - `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`
+- `PointwiseConv2d(bias=false) -> Flatten -> Linear`
+- `PointwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`

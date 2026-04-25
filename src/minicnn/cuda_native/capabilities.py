@@ -136,6 +136,18 @@ GPU_NATIVE_TRAINING_SUBSETS = [
         'parity': 'hermetic_reference_math',
     },
     {
+        'name': 'pointwise_conv_linear',
+        'ops': ['PointwiseConv2d', 'Flatten', 'Linear'],
+        'helper': 'native_gpu_conv_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
+        'name': 'pointwise_conv_relu_linear',
+        'ops': ['PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        'helper': 'native_gpu_conv_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
         'name': 'conv_pool_linear',
         'ops': ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
         'helper': 'native_gpu_conv_linear_training_step',
@@ -332,7 +344,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'gpu_native train-native includes AvgPool2d(2x2 stride-2)+Flatten+Linear through native avgpool2d forward/backward C ABI shims.',
         'gpu_native forward dispatch now includes GELU, SiLU, Sigmoid, and Tanh elementwise activation C ABI shims; train-native helper coverage is still pending.',
         'gpu_native now exposes GELU, SiLU, Sigmoid, and Tanh activation backward C ABI shims as the prerequisite for modern activation train-native helpers.',
-        'gpu_native forward dispatch now includes PointwiseConv2d through the Conv2d im2col/GEMM lowering path; train-native helper coverage is still pending.',
+        'gpu_native train-native includes PointwiseConv2d(1x1,bias=false)+Flatten+Linear through the Conv2d helper path.',
         'gpu_native forward dispatch now includes DepthwiseConv2d through a native depthwise_conv2d C ABI shim; train-native helper coverage is still pending.',
         'gpu_native now exposes a native depthwise_conv2d_backward C ABI shim as the prerequisite for depthwise train-native helpers.',
         'gpu_native forward dispatch now includes LayerNorm2d through a native layernorm2d C ABI shim; train-native helper coverage is still pending.',

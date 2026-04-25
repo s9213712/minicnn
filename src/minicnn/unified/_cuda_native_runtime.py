@@ -439,6 +439,8 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
     if ops in (
         ['Conv2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['PointwiseConv2d', 'Flatten', 'Linear'],
+        ['PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
         ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],

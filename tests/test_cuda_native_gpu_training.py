@@ -1574,6 +1574,8 @@ def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
         ('AdaptiveAvgPool2d', 'Flatten', 'Linear'),
         ('Conv2d', 'Flatten', 'Linear'),
         ('Conv2d', 'ReLU', 'Flatten', 'Linear'),
+        ('PointwiseConv2d', 'Flatten', 'Linear'),
+        ('PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'),
         ('Conv2d', 'MaxPool2d', 'Flatten', 'Linear'),
         ('Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'),
         ('Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'),

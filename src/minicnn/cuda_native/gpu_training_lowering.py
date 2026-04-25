@@ -75,6 +75,8 @@ _TRAINING_SUBSETS: dict[tuple[str, ...], tuple[str, str]] = {
     ('AdaptiveAvgPool2d', 'Flatten', 'Linear'): ('adaptive_avgpool_linear', 'native_gpu_global_avgpool_linear_training_step'),
     ('Conv2d', 'Flatten', 'Linear'): ('conv_linear', 'native_gpu_conv_linear_training_step'),
     ('Conv2d', 'ReLU', 'Flatten', 'Linear'): ('conv_relu_linear', 'native_gpu_conv_linear_training_step'),
+    ('PointwiseConv2d', 'Flatten', 'Linear'): ('pointwise_conv_linear', 'native_gpu_conv_linear_training_step'),
+    ('PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'): ('pointwise_conv_relu_linear', 'native_gpu_conv_linear_training_step'),
     ('Conv2d', 'MaxPool2d', 'Flatten', 'Linear'): ('conv_pool_linear', 'native_gpu_conv_linear_training_step'),
     ('Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'): (
         'conv_relu_pool_linear',
@@ -104,7 +106,7 @@ def _linear_nodes(graph: NativeGraph) -> list[Any]:
 
 
 def _conv_nodes(graph: NativeGraph) -> list[Any]:
-    return [node for node in graph.topological_order() if node.op_type == 'Conv2d']
+    return [node for node in graph.topological_order() if node.op_type in {'Conv2d', 'PointwiseConv2d'}]
 
 
 def _loss_step(
@@ -225,7 +227,7 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
                 launch_family='normalization_backward',
             )
         )
-    if subset_name in {'conv_relu_linear', 'conv_relu_pool_linear', 'two_conv_relu_pool_linear'}:
+    if subset_name in {'conv_relu_linear', 'pointwise_conv_relu_linear', 'conv_relu_pool_linear', 'two_conv_relu_pool_linear'}:
         steps.append(
             GpuTrainingLoweringStep(
                 phase='backward',
@@ -269,7 +271,7 @@ def _optimizer_step(
     momentum = float(optim_cfg.get('momentum', 0.0))
     param_keys: list[str] = []
     for node in graph.topological_order():
-        if node.op_type in {'BatchNorm2d', 'Conv2d', 'Linear'}:
+        if node.op_type in {'BatchNorm2d', 'Conv2d', 'Linear', 'PointwiseConv2d'}:
             param_keys.append(f'_w_{node.name}')
             if node.op_type in {'BatchNorm2d', 'Linear'} or bool(node.attrs.get('bias', True)):
                 param_keys.append(f'_b_{node.name}')
