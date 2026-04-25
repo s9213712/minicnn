@@ -58,6 +58,9 @@ Completed:
 - native `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> Flatten ->
   Linear` training helper routing through depthwise, layernorm2d, and
   pointwise im2col/GEMM forward/backward C ABI shims
+- native `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU ->
+  PointwiseConv2d -> Flatten -> Linear` training helper routing through the
+  same depthwise/norm/pointwise C ABI shims plus native GELU forward/backward
 - native training helpers for the current narrow training subsets
 - native `GlobalAvgPool2d -> Flatten -> Linear` and
   `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` training helpers
@@ -109,6 +112,7 @@ Supported through native GPU helper paths:
 - `DepthwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> LayerNorm2d -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> GELU -> PointwiseConv2d(bias=false) -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`
@@ -188,8 +192,8 @@ Still not claimed as complete:
 - broader `PointwiseConv2d` graph-level train-native coverage beyond the
   `PointwiseConv2d -> Flatten -> Linear` helper subsets
 - full ConvNeXt block train-native coverage beyond the current
-  `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> Flatten -> Linear`
-  bridge subset
+  `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU ->
+  PointwiseConv2d -> Flatten -> Linear` bridge subset
 
 ## Validation evidence
 

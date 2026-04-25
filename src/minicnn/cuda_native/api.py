@@ -227,6 +227,7 @@ def _validate_gpu_native_training_subset(
         ['GroupNorm', 'Flatten', 'Linear'],
         ['DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'],
         ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear'],
         ['GlobalAvgPool2d', 'Flatten', 'Linear'],
         ['AdaptiveAvgPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'Flatten', 'Linear'],
@@ -252,6 +253,7 @@ def _validate_gpu_native_training_subset(
             '[GroupNorm, Flatten, Linear], '
             '[DepthwiseConv2d, LayerNorm2d, Flatten, Linear], '
             '[DepthwiseConv2d, LayerNorm2d, PointwiseConv2d, Flatten, Linear], '
+            '[DepthwiseConv2d, LayerNorm2d, PointwiseConv2d, GELU, PointwiseConv2d, Flatten, Linear], '
             '[GlobalAvgPool2d, Flatten, Linear], '
             '[AdaptiveAvgPool2d, Flatten, Linear], [Conv2d, Flatten, Linear], '
             '[Conv2d, ReLU, Flatten, Linear], [PointwiseConv2d, Flatten, Linear], '
@@ -273,6 +275,7 @@ def _validate_gpu_native_training_subset(
         ['DepthwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
         ['DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'],
         ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear'],
         ['DepthwiseConv2d', 'MaxPool2d', 'Flatten', 'Linear'],
         ['DepthwiseConv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
@@ -284,6 +287,8 @@ def _validate_gpu_native_training_subset(
             conv_attr_nodes.append(nodes[2])
         if ops == ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear']:
             conv_attr_nodes.append(nodes[2])
+        if ops == ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear']:
+            conv_attr_nodes.extend((nodes[2], nodes[4]))
 
         def _pair(value: Any, default: int) -> tuple[int, int]:
             if value is None:

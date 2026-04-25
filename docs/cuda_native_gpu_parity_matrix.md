@@ -21,6 +21,9 @@ conv-family helpers. `DepthwiseConv2d -> LayerNorm2d -> Flatten -> Linear` is
 covered as the first ConvNeXt-style bridge subset, and
 `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> Flatten -> Linear`
 extends that bridge through a native pointwise im2col/GEMM forward/backward.
+`DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU -> PointwiseConv2d
+-> Flatten -> Linear` is the deepest current ConvNeXt-style helper-backed
+training subset.
 
 | Subset | Helper | Evidence | Hardware status |
 |---|---|---|---|
@@ -45,6 +48,7 @@ extends that bridge through a native pointwise im2col/GEMM forward/backward.
 | `DepthwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> LayerNorm2d -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_pointwise_linear_training_step` | Hermetic reference math | Pending real GPU run |
+| `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> GELU -> PointwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |

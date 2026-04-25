@@ -136,6 +136,12 @@ GPU_NATIVE_TRAINING_SUBSETS = [
         'parity': 'hermetic_reference_math',
     },
     {
+        'name': 'depthwise_layernorm2d_pointwise_gelu_pointwise_linear',
+        'ops': ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear'],
+        'helper': 'native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
         'name': 'global_avgpool_linear',
         'ops': ['GlobalAvgPool2d', 'Flatten', 'Linear'],
         'helper': 'native_gpu_global_avgpool_linear_training_step',
@@ -401,6 +407,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'gpu_native train-native now covers DepthwiseConv2d -> optional ReLU/MaxPool2d -> Flatten -> Linear through depthwise forward/backward C ABI shims.',
         'gpu_native train-native now covers DepthwiseConv2d -> LayerNorm2d -> Flatten -> Linear as a ConvNeXt-style native GPU bridge subset.',
         'gpu_native train-native now covers DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> Flatten -> Linear as a deeper ConvNeXt-style native GPU bridge subset.',
+        'gpu_native train-native now covers DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU -> PointwiseConv2d -> Flatten -> Linear as the deepest current ConvNeXt-style native GPU bridge subset.',
         'gpu_native forward dispatch includes LayerNorm2d through a native layernorm2d C ABI shim.',
         'gpu_native train-native now covers LayerNorm2d -> Flatten -> Linear through layernorm2d forward/backward C ABI shims.',
         'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, and two-Conv ReLU+MaxPool+Linear subsets through native device-pointer helpers.',

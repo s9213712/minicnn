@@ -10,6 +10,7 @@ from minicnn.cuda_native.gpu_training import (
     native_gpu_batchnorm_linear_training_step,
     native_gpu_conv_linear_training_step,
     native_gpu_depthwise_layernorm2d_linear_training_step,
+    native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step,
     native_gpu_depthwise_layernorm2d_pointwise_linear_training_step,
     native_gpu_global_avgpool_linear_training_step,
     native_gpu_groupnorm_linear_training_step,
@@ -2078,6 +2079,184 @@ def test_native_gpu_depthwise_layernorm2d_pointwise_linear_training_step_matches
     assert result.runtime_summary['execution_kinds']['gpu_native_train:depthwise_conv2d_backward'] == 1
 
 
+def test_native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step_matches_reference_math():
+    x = (np.arange(36, dtype=np.float32).reshape(2, 2, 3, 3) - 12.0) / 10.0
+    labels = np.asarray([1, 0], dtype=np.int32)
+    depthwise_weight = np.asarray(
+        [
+            [[[0.2, -0.1], [0.05, 0.3]]],
+            [[[-0.2, 0.1], [0.25, -0.05]]],
+        ],
+        dtype=np.float32,
+    )
+    norm_weight = np.asarray([1.0, 1.25], dtype=np.float32)
+    norm_bias = np.asarray([0.0, -0.1], dtype=np.float32)
+    pointwise1_weight = np.asarray(
+        [
+            [[[0.1]], [[-0.2]]],
+            [[[0.25]], [[0.05]]],
+            [[[-0.15]], [[0.2]]],
+        ],
+        dtype=np.float32,
+    )
+    pointwise2_weight = np.asarray(
+        [
+            [[[0.12]], [[-0.18]], [[0.07]]],
+            [[[-0.05]], [[0.22]], [[-0.11]]],
+        ],
+        dtype=np.float32,
+    )
+    linear_weight = (np.arange(16, dtype=np.float32).reshape(2, 8) - 5.0) / 40.0
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+    eps = 1e-5
+    lr = 0.035
+
+    result = native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step(
+        x,
+        labels,
+        depthwise_weight,
+        norm_weight,
+        norm_bias,
+        pointwise1_weight,
+        pointwise2_weight,
+        linear_weight,
+        linear_bias,
+        lr=lr,
+        norm_eps=eps,
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    def gelu(values):
+        inner = np.sqrt(2.0 / np.pi) * (values + 0.044715 * values ** 3)
+        return 0.5 * values * (1.0 + np.tanh(inner))
+
+    def gelu_grad(values):
+        inner = np.sqrt(2.0 / np.pi) * (values + 0.044715 * values ** 3)
+        tanh_inner = np.tanh(inner)
+        left = 0.5 * (1.0 + tanh_inner)
+        right = 0.5 * values * (1.0 - tanh_inner ** 2) * np.sqrt(2.0 / np.pi) * (
+            1.0 + 3.0 * 0.044715 * values ** 2
+        )
+        return left + right
+
+    depthwise = np.zeros((2, 2, 2, 2), dtype=np.float32)
+    for ni in range(x.shape[0]):
+        for oc in range(depthwise_weight.shape[0]):
+            ic = oc
+            for oh in range(2):
+                for ow in range(2):
+                    depthwise[ni, oc, oh, ow] = np.sum(
+                        x[ni, ic, oh:oh + 2, ow:ow + 2] * depthwise_weight[oc, 0]
+                    )
+    mean = depthwise.mean(axis=1, keepdims=True).astype(np.float32)
+    var = depthwise.var(axis=1, keepdims=True).astype(np.float32)
+    inv_std = (1.0 / np.sqrt(var + eps)).astype(np.float32)
+    x_hat = ((depthwise - mean) * inv_std).astype(np.float32)
+    norm = x_hat * norm_weight.reshape(1, 2, 1, 1) + norm_bias.reshape(1, 2, 1, 1)
+    pointwise1 = np.zeros((2, 3, 2, 2), dtype=np.float32)
+    for ni in range(x.shape[0]):
+        for oc in range(pointwise1_weight.shape[0]):
+            for oh in range(2):
+                for ow in range(2):
+                    pointwise1[ni, oc, oh, ow] = np.sum(norm[ni, :, oh, ow] * pointwise1_weight[oc, :, 0, 0])
+    activation = gelu(pointwise1).astype(np.float32)
+    pointwise2 = np.zeros((2, 2, 2, 2), dtype=np.float32)
+    for ni in range(x.shape[0]):
+        for oc in range(pointwise2_weight.shape[0]):
+            for oh in range(2):
+                for ow in range(2):
+                    pointwise2[ni, oc, oh, ow] = np.sum(activation[ni, :, oh, ow] * pointwise2_weight[oc, :, 0, 0])
+    flat = pointwise2.reshape(2, -1)
+    logits = flat @ linear_weight.T + linear_bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_linear_weight = grad_logits.T @ flat
+    grad_linear_bias = grad_logits.sum(axis=0)
+    grad_pointwise2 = (grad_logits @ linear_weight).reshape(pointwise2.shape)
+    grad_pointwise2_weight = np.zeros_like(pointwise2_weight)
+    grad_activation = np.zeros_like(activation)
+    for ni in range(x.shape[0]):
+        for oc in range(pointwise2_weight.shape[0]):
+            for oh in range(2):
+                for ow in range(2):
+                    grad_val = grad_pointwise2[ni, oc, oh, ow]
+                    for ci in range(activation.shape[1]):
+                        grad_pointwise2_weight[oc, ci, 0, 0] += activation[ni, ci, oh, ow] * grad_val
+                        grad_activation[ni, ci, oh, ow] += pointwise2_weight[oc, ci, 0, 0] * grad_val
+    grad_pointwise1 = grad_activation * gelu_grad(pointwise1).astype(np.float32)
+    grad_pointwise1_weight = np.zeros_like(pointwise1_weight)
+    grad_norm = np.zeros_like(norm)
+    for ni in range(x.shape[0]):
+        for oc in range(pointwise1_weight.shape[0]):
+            for oh in range(2):
+                for ow in range(2):
+                    grad_val = grad_pointwise1[ni, oc, oh, ow]
+                    for ci in range(norm.shape[1]):
+                        grad_pointwise1_weight[oc, ci, 0, 0] += norm[ni, ci, oh, ow] * grad_val
+                        grad_norm[ni, ci, oh, ow] += pointwise1_weight[oc, ci, 0, 0] * grad_val
+    grad_norm_weight = (grad_norm * x_hat).sum(axis=(0, 2, 3)).astype(np.float32)
+    grad_norm_bias = grad_norm.sum(axis=(0, 2, 3)).astype(np.float32)
+    dxhat = grad_norm * norm_weight.reshape(1, 2, 1, 1)
+    sum_dxhat = dxhat.sum(axis=1, keepdims=True)
+    sum_dxhat_xhat = (dxhat * x_hat).sum(axis=1, keepdims=True)
+    grad_depthwise = (inv_std / 2.0) * (2.0 * dxhat - sum_dxhat - x_hat * sum_dxhat_xhat)
+    grad_depthwise_weight = np.zeros_like(depthwise_weight)
+    grad_input = np.zeros_like(x)
+    for ni in range(x.shape[0]):
+        for oc in range(depthwise_weight.shape[0]):
+            ic = oc
+            for oh in range(2):
+                for ow in range(2):
+                    grad_val = grad_depthwise[ni, oc, oh, ow]
+                    for r in range(2):
+                        for s in range(2):
+                            grad_depthwise_weight[oc, 0, r, s] += x[ni, ic, oh + r, ow + s] * grad_val
+                            grad_input[ni, ic, oh + r, ow + s] += depthwise_weight[oc, 0, r, s] * grad_val
+
+    np.testing.assert_allclose(result.depthwise_output, depthwise, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.norm_output, norm, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.pointwise1_output, pointwise1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.activation_output, activation, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.pointwise2_output, pointwise2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.logits, logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.probabilities, probs, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_pointwise2_output, grad_pointwise2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_activation_output, grad_activation, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_pointwise1_output, grad_pointwise1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_norm_output, grad_norm, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_depthwise_output, grad_depthwise, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_input, grad_input, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_depthwise_weight, grad_depthwise_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_norm_weight, grad_norm_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_norm_bias, grad_norm_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_pointwise1_weight, grad_pointwise1_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_pointwise2_weight, grad_pointwise2_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_linear_weight, grad_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_linear_bias, grad_linear_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_depthwise_weight, depthwise_weight - lr * grad_depthwise_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_norm_weight, norm_weight - lr * grad_norm_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_norm_bias, norm_bias - lr * grad_norm_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_pointwise1_weight, pointwise1_weight - lr * grad_pointwise1_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_pointwise2_weight, pointwise2_weight - lr * grad_pointwise2_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_linear_weight, linear_weight - lr * grad_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_linear_bias, linear_bias - lr * grad_linear_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:depthwise_conv2d_forward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:layernorm2d_forward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:pointwise1_conv2d_im2col_gemm'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:gelu_forward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:pointwise2_conv2d_im2col_gemm'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:pointwise2_conv2d_backward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:gelu_backward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:pointwise1_conv2d_backward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:layernorm2d_backward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:depthwise_conv2d_backward'] == 1
+
+
 def test_native_gpu_conv_relu_linear_training_step_matches_reference_math():
     x = np.asarray(
         [
@@ -2299,6 +2478,7 @@ def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
         ('DepthwiseConv2d', 'ReLU', 'Flatten', 'Linear'),
         ('DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'),
         ('DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear'),
+        ('DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear'),
         ('DepthwiseConv2d', 'MaxPool2d', 'Flatten', 'Linear'),
         ('DepthwiseConv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'),
         ('Conv2d', 'MaxPool2d', 'Flatten', 'Linear'),
