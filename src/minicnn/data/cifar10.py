@@ -125,7 +125,7 @@ def _load_training_batches(data_root, batch_ids):
     return np.concatenate(x_parts, axis=0), np.concatenate(y_parts, axis=0)
 
 
-def load_cifar10(data_root, n_train=8000, n_val=2000, seed=None, train_batch_ids=(1,), download=True):
+def load_cifar10(data_root, n_train=8000, n_val=2000, seed=None, train_batch_ids=(1, 2, 3, 4, 5), download=True):
     data_root = prepare_cifar10(data_root, download=download)
     print(f"Loading CIFAR-10 training batches: {train_batch_ids}")
     x_train_all, y_train_all = _load_training_batches(data_root, train_batch_ids)
