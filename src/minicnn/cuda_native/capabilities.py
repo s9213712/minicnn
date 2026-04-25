@@ -112,6 +112,12 @@ GPU_NATIVE_TRAINING_SUBSETS = [
         'parity': 'hermetic_reference_math',
     },
     {
+        'name': 'layernorm2d_linear',
+        'ops': ['LayerNorm2d', 'Flatten', 'Linear'],
+        'helper': 'native_gpu_layernorm2d_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
         'name': 'global_avgpool_linear',
         'ops': ['GlobalAvgPool2d', 'Flatten', 'Linear'],
         'helper': 'native_gpu_global_avgpool_linear_training_step',
@@ -376,7 +382,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'gpu_native forward dispatch includes DepthwiseConv2d through a native depthwise_conv2d C ABI shim.',
         'gpu_native train-native now covers DepthwiseConv2d -> optional ReLU/MaxPool2d -> Flatten -> Linear through depthwise forward/backward C ABI shims.',
         'gpu_native forward dispatch includes LayerNorm2d through a native layernorm2d C ABI shim.',
-        'gpu_native now exposes a native layernorm2d_backward C ABI shim as the prerequisite for LayerNorm2d train-native helpers.',
+        'gpu_native train-native now covers LayerNorm2d -> Flatten -> Linear through layernorm2d forward/backward C ABI shims.',
         'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, and two-Conv ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
         'gpu_native readiness diagnostics expose a training_lowering_plan that decomposes helper subsets into forward, loss, backward, and optimizer lowering steps.',
         'gpu_native Linear subsets support native CrossEntropyLoss with label_smoothing, MSELoss, and BCEWithLogitsLoss loss-gradient helpers; Conv-family subsets currently support CrossEntropyLoss with label_smoothing.',

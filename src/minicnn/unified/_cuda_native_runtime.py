@@ -19,6 +19,7 @@ from minicnn.cuda_native.gpu_training import (
     native_gpu_batchnorm_linear_training_step,
     native_gpu_conv_linear_training_step,
     native_gpu_global_avgpool_linear_training_step,
+    native_gpu_layernorm2d_linear_training_step,
     native_gpu_linear_training_step,
     native_gpu_pool_linear_training_step,
     native_gpu_two_conv_relu_pool_linear_training_step,
@@ -434,6 +435,8 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         return {'kind': 'avgpool_linear', 'pool_node': nodes[0], 'linear_nodes': [nodes[2]]}
     if ops == ['BatchNorm2d', 'Flatten', 'Linear']:
         return {'kind': 'batchnorm_linear', 'batchnorm_node': nodes[0], 'linear_nodes': [nodes[2]]}
+    if ops == ['LayerNorm2d', 'Flatten', 'Linear']:
+        return {'kind': 'layernorm2d_linear', 'layernorm2d_node': nodes[0], 'linear_nodes': [nodes[2]]}
     if ops in (['GlobalAvgPool2d', 'Flatten', 'Linear'], ['AdaptiveAvgPool2d', 'Flatten', 'Linear']):
         return {'kind': 'global_avgpool_linear', 'pool_node': nodes[0], 'linear_nodes': [nodes[2]]}
     if ops in (
@@ -865,6 +868,41 @@ def run_training_loop(
                         params[linear_bias_key] = step.updated_linear_bias
                         velocity_state[bn_weight_key] = step.updated_bn_weight_velocity
                         velocity_state[bn_bias_key] = step.updated_bn_bias_velocity
+                        velocity_state[linear_weight_key] = step.updated_linear_weight_velocity
+                        velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
+                    elif gpu_training_plan['kind'] == 'layernorm2d_linear':
+                        norm_node = gpu_training_plan['layernorm2d_node']
+                        gpu_linear_node = gpu_training_plan['linear_nodes'][0]
+                        norm_weight_key = f'_w_{norm_node.name}'
+                        norm_bias_key = f'_b_{norm_node.name}'
+                        linear_weight_key = f'_w_{gpu_linear_node.name}'
+                        linear_bias_key = f'_b_{gpu_linear_node.name}'
+                        step = native_gpu_layernorm2d_linear_training_step(
+                            xb,
+                            yb,
+                            params[norm_weight_key],
+                            params[norm_bias_key],
+                            params[linear_weight_key],
+                            params[linear_bias_key],
+                            lr=float(optimizer_view.lr),
+                            momentum=float(ctx.momentum),
+                            grad_clip_value=float(ctx.grad_clip_global),
+                            weight_decay=float(ctx.weight_decay),
+                            label_smoothing=float(ctx.loss_cfg.get('label_smoothing', 0.0)),
+                            norm_eps=float(norm_node.attrs.get('eps', 1e-6)),
+                            norm_weight_velocity=velocity_state.get(norm_weight_key),
+                            norm_bias_velocity=velocity_state.get(norm_bias_key),
+                            linear_weight_velocity=velocity_state.get(linear_weight_key),
+                            linear_bias_velocity=velocity_state.get(linear_bias_key),
+                            bound_lib=ctx.device_runtime.bound_lib,
+                        )
+                        params = dict(params)
+                        params[norm_weight_key] = step.updated_norm_weight
+                        params[norm_bias_key] = step.updated_norm_bias
+                        params[linear_weight_key] = step.updated_linear_weight
+                        params[linear_bias_key] = step.updated_linear_bias
+                        velocity_state[norm_weight_key] = step.updated_norm_weight_velocity
+                        velocity_state[norm_bias_key] = step.updated_norm_bias_velocity
                         velocity_state[linear_weight_key] = step.updated_linear_weight_velocity
                         velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
                     elif gpu_training_plan['kind'] == 'conv_linear':

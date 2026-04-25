@@ -223,6 +223,7 @@ def _validate_gpu_native_training_subset(
         ['MaxPool2d', 'Flatten', 'Linear'],
         ['AvgPool2d', 'Flatten', 'Linear'],
         ['BatchNorm2d', 'Flatten', 'Linear'],
+        ['LayerNorm2d', 'Flatten', 'Linear'],
         ['GlobalAvgPool2d', 'Flatten', 'Linear'],
         ['AdaptiveAvgPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'Flatten', 'Linear'],
@@ -244,7 +245,8 @@ def _validate_gpu_native_training_subset(
             '[Linear, GELU/SiLU/Sigmoid/Tanh, Linear], '
             '[Flatten, Linear, GELU/SiLU/Sigmoid/Tanh, Linear], '
             '[MaxPool2d, Flatten, Linear], [AvgPool2d, Flatten, Linear], '
-            '[BatchNorm2d, Flatten, Linear], [GlobalAvgPool2d, Flatten, Linear], '
+            '[BatchNorm2d, Flatten, Linear], [LayerNorm2d, Flatten, Linear], '
+            '[GlobalAvgPool2d, Flatten, Linear], '
             '[AdaptiveAvgPool2d, Flatten, Linear], [Conv2d, Flatten, Linear], '
             '[Conv2d, ReLU, Flatten, Linear], [PointwiseConv2d, Flatten, Linear], '
             '[PointwiseConv2d, ReLU, Flatten, Linear], [DepthwiseConv2d, Flatten, Linear], '

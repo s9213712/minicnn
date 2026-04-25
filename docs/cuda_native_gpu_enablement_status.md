@@ -47,6 +47,8 @@ Completed:
   shim
 - `LayerNorm2d` backward C ABI shim through `layernorm2d_backward` as the
   prerequisite for LayerNorm2d helper-backed training subsets
+- native `LayerNorm2d -> Flatten -> Linear` training helper routing through the
+  layernorm2d forward/backward C ABI shims
 - native training helpers for the current narrow training subsets
 - native `GlobalAvgPool2d -> Flatten -> Linear` and
   `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` training helpers
@@ -86,6 +88,7 @@ Supported through native GPU helper paths:
 - `MaxPool2d -> Flatten -> Linear`
 - `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear`
 - `BatchNorm2d -> Flatten -> Linear`
+- `LayerNorm2d -> Flatten -> Linear`
 - `GlobalAvgPool2d -> Flatten -> Linear`
 - `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
@@ -174,8 +177,6 @@ Still not claimed as complete:
   `PointwiseConv2d -> Flatten -> Linear` helper subsets
 - `GroupNorm` train-native helper coverage; current work is forward dispatch
   only
-- `LayerNorm2d` train-native helper coverage; current work has native
-  forward/backward C ABI shims but no helper-backed training subset yet
 
 ## Validation evidence
 
