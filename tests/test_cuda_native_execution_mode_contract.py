@@ -126,6 +126,9 @@ def test_validate_cuda_native_config_accepts_gpu_native_linear_training_subset(t
     assert payload['execution_readiness_assessment']['training_lowering_plan']['ready'] is True
     assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'flatten_linear'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['optimizer_steps'][0]['lowering_kind'] == 'apply_momentum_update'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['optimizer_steps'][0]['required_symbols'] == [
+        'apply_momentum_update'
+    ]
     assert 'gpu_composite_block_training_pending' in payload['execution_readiness_assessment']['remaining_blockers']
     assert payload['errors'] == []
 
@@ -320,7 +323,13 @@ def test_validate_cuda_native_config_accepts_gpu_native_depthwise_conv_linear_tr
     assert payload['selected_execution_mode'] == 'gpu_native'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'depthwise_conv_linear'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['helper'] == 'native_gpu_conv_linear_training_step'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['forward_steps'][0]['required_symbols'] == [
+        'depthwise_conv2d_forward'
+    ]
     assert payload['execution_readiness_assessment']['training_lowering_plan']['backward_steps'][-1]['lowering_kind'] == 'depthwise_conv2d_backward'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['backward_steps'][-1]['required_symbols'] == [
+        'depthwise_conv2d_backward'
+    ]
     assert payload['errors'] == []
 
 
@@ -351,7 +360,13 @@ def test_validate_cuda_native_config_accepts_gpu_native_layernorm2d_linear_train
     assert payload['selected_execution_mode'] == 'gpu_native'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'layernorm2d_linear'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['helper'] == 'native_gpu_layernorm2d_linear_training_step'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['forward_steps'][0]['required_symbols'] == [
+        'layernorm2d_forward'
+    ]
     assert payload['execution_readiness_assessment']['training_lowering_plan']['backward_steps'][-1]['lowering_kind'] == 'layernorm2d_backward'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['backward_steps'][-1]['required_symbols'] == [
+        'layernorm2d_backward'
+    ]
     assert payload['errors'] == []
 
 
@@ -382,7 +397,13 @@ def test_validate_cuda_native_config_accepts_gpu_native_groupnorm_linear_trainin
     assert payload['selected_execution_mode'] == 'gpu_native'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'groupnorm_linear'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['helper'] == 'native_gpu_groupnorm_linear_training_step'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['forward_steps'][0]['required_symbols'] == [
+        'groupnorm_forward'
+    ]
     assert payload['execution_readiness_assessment']['training_lowering_plan']['backward_steps'][-1]['lowering_kind'] == 'groupnorm_backward'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['backward_steps'][-1]['required_symbols'] == [
+        'groupnorm_backward'
+    ]
     assert payload['errors'] == []
 
 

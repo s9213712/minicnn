@@ -15,7 +15,16 @@ class GpuTrainingLoweringStep:
     launch_family: str
     node_name: str | None = None
     param_keys: tuple[str, ...] = tuple()
+    required_symbols: tuple[str, ...] = tuple()
     supported: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.required_symbols:
+            object.__setattr__(
+                self,
+                'required_symbols',
+                _required_symbols_for_lowering(self.lowering_kind),
+            )
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -25,6 +34,7 @@ class GpuTrainingLoweringStep:
             'launch_family': self.launch_family,
             'node_name': self.node_name,
             'param_keys': list(self.param_keys),
+            'required_symbols': list(self.required_symbols),
             'supported': self.supported,
         }
 
@@ -53,6 +63,72 @@ class GpuTrainingLoweringPlan:
             'optimizer_steps': [step.summary() for step in self.optimizer_steps],
             'unsupported_reasons': list(self.unsupported_reasons),
         }
+
+
+def _required_symbols_for_lowering(lowering_kind: str) -> tuple[str, ...]:
+    return {
+        'shape_flatten_shim': tuple(),
+        'shape_identity_alias_shim': tuple(),
+        'identity_alias_shim': tuple(),
+        'regularization_dropout_p0_alias_shim': tuple(),
+        'regularization_droppath_p0_alias_shim': tuple(),
+        'linear_affine_shim': ('dense_forward',),
+        'activation_relu_shim': ('apply_relu',),
+        'activation_leaky_relu_shim': ('leaky_relu_forward',),
+        'activation_sigmoid_shim': ('sigmoid_forward',),
+        'activation_tanh_shim': ('tanh_forward',),
+        'activation_silu_shim': ('silu_forward',),
+        'activation_gelu_shim': ('gelu_forward',),
+        'elementwise_relu_shim': ('apply_relu',),
+        'elementwise_leaky_relu_shim': ('leaky_relu_forward',),
+        'elementwise_sigmoid_shim': ('sigmoid_forward',),
+        'elementwise_tanh_shim': ('tanh_forward',),
+        'elementwise_silu_shim': ('silu_forward',),
+        'elementwise_gelu_shim': ('gelu_forward',),
+        'merge_add_shim': ('add_forward',),
+        'merge_concat_shim': ('concat_forward',),
+        'elementwise_add_shim': ('add_forward',),
+        'concat_shim': ('concat_forward',),
+        'pool_maxpool2d_shim': ('apply_maxpool',),
+        'pool_avgpool2d_shim': ('avgpool2d_forward',),
+        'pool_global_avgpool2d_shim': ('global_avgpool2d_forward',),
+        'pool2d_shim': ('apply_maxpool',),
+        'avgpool2d_shim': ('avgpool2d_forward',),
+        'global_avgpool2d_shim': ('global_avgpool2d_forward',),
+        'normalization_batchnorm2d_shim': ('bn_eval_forward',),
+        'normalization_layernorm2d_shim': ('layernorm2d_forward',),
+        'normalization_groupnorm_shim': ('groupnorm_forward',),
+        'batchnorm2d_shim': ('bn_eval_forward',),
+        'layernorm2d_shim': ('layernorm2d_forward',),
+        'groupnorm_shim': ('groupnorm_forward',),
+        'conv2d_reference_shim': ('im2col_forward', 'gemm_forward', 'cnhw_to_nchw'),
+        'conv2d_shim': ('im2col_forward', 'gemm_forward', 'cnhw_to_nchw'),
+        'depthwise_conv2d_shim': ('depthwise_conv2d_forward',),
+        'softmax_xent_grad_loss_acc': ('softmax_xent_grad_loss_acc',),
+        'softmax_xent_smooth_grad_loss_acc': ('softmax_xent_smooth_grad_loss_acc',),
+        'mse_fwd_grad_loss_acc': ('mse_fwd_grad_loss_acc',),
+        'bce_fwd_grad_loss_acc': ('bce_fwd_grad_loss_acc',),
+        'dense_backward_full': ('dense_backward_full',),
+        'apply_relu_backward': ('apply_relu_backward',),
+        'gelu_backward': ('gelu_backward',),
+        'silu_backward': ('silu_backward',),
+        'sigmoid_backward': ('sigmoid_backward',),
+        'tanh_backward': ('tanh_backward',),
+        'maxpool_backward_nchw': ('maxpool_backward_nchw',),
+        'avgpool2d_backward': ('avgpool2d_backward',),
+        'global_avgpool2d_backward': ('global_avgpool2d_backward',),
+        'bn_backward': ('bn_backward',),
+        'layernorm2d_backward': ('layernorm2d_backward',),
+        'groupnorm_backward': ('groupnorm_backward',),
+        'conv_backward': ('conv_backward',),
+        'depthwise_conv2d_backward': ('depthwise_conv2d_backward',),
+        'grad_l2_sumsq_scale': ('grad_l2_sumsq', 'scale_inplace'),
+        'apply_sgd_update': ('apply_sgd_update',),
+        'apply_momentum_update': ('apply_momentum_update',),
+        'sgd_update_fused': ('sgd_update_fused',),
+        'adam_update_fused': ('adam_update_fused',),
+        'rmsprop_update_fused': ('rmsprop_update_fused',),
+    }.get(str(lowering_kind), tuple())
 
 
 _TRAINING_SUBSETS: dict[tuple[str, ...], tuple[str, str]] = {
