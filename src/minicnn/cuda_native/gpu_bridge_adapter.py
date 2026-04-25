@@ -134,6 +134,13 @@ class GpuCAbiBridgeAdapter:
 
 @dataclass
 class GpuNativeLibraryBridgeAdapter:
+    """Symbol-availability probe for native C ABI dispatch.
+
+    Actual gpu_native execution is owned by DeviceRuntime paths that hold real
+    device pointers. This adapter reports whether the native symbols exist, but
+    it does not pack arguments or invoke kernels itself.
+    """
+
     bound_lib: Any | None = None
     abi_version: int = 1
     submitted_requests: list[GpuCAbiKernelCall] = field(default_factory=list)
@@ -158,6 +165,7 @@ class GpuNativeLibraryBridgeAdapter:
             len(symbols) == 0
             or bool(self.bound_lib is not None and all(hasattr(self.bound_lib, item) for item in symbols))
         )
+        executed = False
         return {
             'request_id': request.request_id,
             'dispatch_mode': 'gpu_native_library_bridge',
@@ -169,9 +177,9 @@ class GpuNativeLibraryBridgeAdapter:
             'native_library_loaded': self.bound_lib is not None,
             'symbol_available': symbol_available,
             'requires_device_pointers': True,
-            'executed': False,
+            'executed': executed,
             'load_error': self.load_error,
-            'accepted': symbol_available,
+            'accepted': bool(symbol_available and executed),
         }
 
     @staticmethod

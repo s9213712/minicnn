@@ -892,7 +892,7 @@ def run_training_loop(
                         velocity_state[conv_weight_key] = step.updated_conv_weight_velocity
                         velocity_state[linear_weight_key] = step.updated_linear_weight_velocity
                         velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
-                    else:
+                    elif gpu_training_plan['kind'] == 'two_conv_relu_pool_linear':
                         conv1_node, conv2_node = gpu_training_plan['conv_nodes']
                         gpu_linear_node = gpu_training_plan['linear_nodes'][0]
                         conv1_weight_key = f'_w_{conv1_node.name}'
@@ -926,6 +926,10 @@ def run_training_loop(
                         velocity_state[conv2_weight_key] = step.updated_conv2_weight_velocity
                         velocity_state[linear_weight_key] = step.updated_linear_weight_velocity
                         velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
+                    else:
+                        raise RuntimeError(
+                            f"unhandled gpu_native training plan kind: {gpu_training_plan['kind']!r}"
+                        )
                     loss_val = float(step.loss_mean)
                     _merge_gpu_native_step_runtime(ctx, step.runtime_summary)
                     optimizer_runtime = optimizer_state.setdefault('optimizer_runtime', {})

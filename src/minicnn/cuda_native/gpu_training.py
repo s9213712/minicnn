@@ -502,8 +502,13 @@ def native_gpu_linear_training_step(
                 input_name='grad_weight',
                 output_name='grad_weight',
                 node_count=1,
-            )
+        )
         if normalized_optimizer_type in {'adam', 'adamw'}:
+            if not hasattr(lib, 'adam_update_fused'):
+                raise ValueError(
+                    'native_gpu_linear_training_step: Adam/AdamW requires adam_update_fused '
+                    'in the bound CUDA library, but the symbol is absent.'
+                )
             bias_corr1 = 1.0 - float(beta1) ** int(step_index)
             bias_corr2 = 1.0 - float(beta2) ** int(step_index)
             adam_weight_decay = float(weight_decay) if normalized_optimizer_type == 'adamw' else 0.0
@@ -541,6 +546,11 @@ def native_gpu_linear_training_step(
             )
             update_kind = 'gpu_native_train:adam_update_fused'
         elif normalized_optimizer_type == 'rmsprop':
+            if not hasattr(lib, 'rmsprop_update_fused'):
+                raise ValueError(
+                    'native_gpu_linear_training_step: RMSprop requires rmsprop_update_fused '
+                    'in the bound CUDA library, but the symbol is absent.'
+                )
             lib.rmsprop_update_fused(
                 weight_t.device_ptr,
                 grad_weight_t.device_ptr,
@@ -595,6 +605,11 @@ def native_gpu_linear_training_step(
             )
             update_kind = 'gpu_native_train:sgd_update_fused'
         elif float(momentum) != 0.0:
+            if not hasattr(lib, 'apply_momentum_update'):
+                raise ValueError(
+                    'native_gpu_linear_training_step: momentum requires apply_momentum_update '
+                    'in the bound CUDA library, but the symbol is absent.'
+                )
             lib.apply_momentum_update(
                 weight_t.device_ptr,
                 grad_weight_t.device_ptr,

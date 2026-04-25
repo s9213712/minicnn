@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 
 import numpy as np
+import pytest
 
 from minicnn.cuda_native.gpu_training import (
     native_gpu_avgpool_linear_training_step,
@@ -472,6 +473,77 @@ class _RawFakeCudaLib:
             momentum_buffer[:int(size)] = float(momentum) * momentum_buffer[:int(size)] + step
             step = momentum_buffer[:int(size)]
         values[:int(size)] -= float(lr) * step
+
+
+class _MissingSymbolCudaLib:
+    def __init__(self, missing_symbol):
+        self._inner = _RawFakeCudaLib()
+        self._missing_symbol = str(missing_symbol)
+
+    def __getattr__(self, name):
+        if name == self._missing_symbol:
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+
+def _small_linear_training_case():
+    x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)
+    labels = np.asarray([2, 0], dtype=np.int32)
+    weight = np.asarray(
+        [
+            [0.2, -0.1, 0.05],
+            [-0.3, 0.4, 0.1],
+            [0.15, -0.2, 0.3],
+        ],
+        dtype=np.float32,
+    )
+    bias = np.asarray([0.01, -0.02, 0.03], dtype=np.float32)
+    return x, labels, weight, bias
+
+
+def test_native_gpu_linear_training_step_reports_missing_adam_symbol():
+    x, labels, weight, bias = _small_linear_training_case()
+
+    with pytest.raises(ValueError, match='adam_update_fused'):
+        native_gpu_linear_training_step(
+            x,
+            labels,
+            weight,
+            bias,
+            lr=0.1,
+            optimizer_type='adam',
+            bound_lib=_MissingSymbolCudaLib('adam_update_fused'),
+        )
+
+
+def test_native_gpu_linear_training_step_reports_missing_rmsprop_symbol():
+    x, labels, weight, bias = _small_linear_training_case()
+
+    with pytest.raises(ValueError, match='rmsprop_update_fused'):
+        native_gpu_linear_training_step(
+            x,
+            labels,
+            weight,
+            bias,
+            lr=0.1,
+            optimizer_type='rmsprop',
+            bound_lib=_MissingSymbolCudaLib('rmsprop_update_fused'),
+        )
+
+
+def test_native_gpu_linear_training_step_reports_missing_momentum_symbol():
+    x, labels, weight, bias = _small_linear_training_case()
+
+    with pytest.raises(ValueError, match='apply_momentum_update'):
+        native_gpu_linear_training_step(
+            x,
+            labels,
+            weight,
+            bias,
+            lr=0.1,
+            momentum=0.9,
+            bound_lib=_MissingSymbolCudaLib('apply_momentum_update'),
+        )
 
 
 def test_native_gpu_linear_training_step_matches_reference_math():
@@ -1583,6 +1655,24 @@ def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
 
     assert set(matrix) == expected_ops
     assert matrix[('Linear',)]['losses'] == ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss']
+
+
+def test_native_gpu_training_subset_capabilities_declare_loss_and_optimizer_contracts():
+    from minicnn.cuda_native.capabilities import GPU_NATIVE_TRAINING_SUBSETS
+
+    matrix = {tuple(item['ops']): item for item in GPU_NATIVE_TRAINING_SUBSETS}
+
+    for subset in GPU_NATIVE_TRAINING_SUBSETS:
+        assert subset['losses']
+        assert subset['optimizers']
+
+    full_optimizer_subsets = {'linear', 'flatten_linear'}
+    for subset in GPU_NATIVE_TRAINING_SUBSETS:
+        if subset['name'] in full_optimizer_subsets:
+            assert subset['optimizers'] == ['SGD', 'Adam', 'AdamW', 'RMSprop']
+        else:
+            assert subset['losses'] == ['CrossEntropyLoss']
+            assert subset['optimizers'] == ['SGD']
     assert matrix[('Flatten', 'Linear')]['losses'] == ['CrossEntropyLoss', 'MSELoss', 'BCEWithLogitsLoss']
     assert matrix[('Linear',)]['optimizers'] == ['SGD', 'Adam', 'AdamW', 'RMSprop']
     assert matrix[('Flatten', 'Linear')]['optimizers'] == ['SGD', 'Adam', 'AdamW', 'RMSprop']

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
@@ -14,13 +16,27 @@ class GpuLaunchDescriptor:
     input_bindings: tuple[str, ...]
     output_bindings: tuple[str, ...]
     param_bindings: tuple[str, ...]
-    attr_bindings: dict[str, Any]
+    attr_bindings: Mapping[str, Any]
     input_shapes: tuple[tuple[int, ...], ...]
     output_shapes: tuple[tuple[int, ...], ...]
     tensor_dtype: str
-    param_layouts: dict[str, str]
-    normalized_tensor_args: tuple[dict[str, Any], ...]
-    normalized_scalar_args: tuple[dict[str, Any], ...]
+    param_layouts: Mapping[str, str]
+    normalized_tensor_args: tuple[Mapping[str, Any], ...]
+    normalized_scalar_args: tuple[Mapping[str, Any], ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, 'attr_bindings', MappingProxyType(dict(self.attr_bindings)))
+        object.__setattr__(self, 'param_layouts', MappingProxyType(dict(self.param_layouts)))
+        object.__setattr__(
+            self,
+            'normalized_tensor_args',
+            tuple(MappingProxyType(dict(arg)) for arg in self.normalized_tensor_args),
+        )
+        object.__setattr__(
+            self,
+            'normalized_scalar_args',
+            tuple(MappingProxyType(dict(arg)) for arg in self.normalized_scalar_args),
+        )
 
 
 @dataclass(frozen=True)

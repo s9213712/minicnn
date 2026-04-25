@@ -453,6 +453,51 @@ def test_gpu_stub_executor_can_use_native_library_bridge_adapter():
     assert linear_result['symbol_available'] is True
     assert linear_result['requires_device_pointers'] is True
     assert linear_result['executed'] is False
+    assert linear_result['accepted'] is False
+
+
+def test_bootstrap_subset_ops_all_have_lowering_shims():
+    from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
+    from minicnn.cuda_native.gpu_lowering import make_default_gpu_lowering_registry
+
+    registry = make_default_gpu_lowering_registry()
+    missing = []
+    for spec in list_gpu_kernel_specs():
+        try:
+            registry.get(spec.op_name)
+        except KeyError:
+            missing.append(spec.op_name)
+
+    assert missing == []
+
+
+def test_gpu_launch_descriptor_mapping_fields_are_read_only():
+    import pytest
+
+    from minicnn.cuda_native.gpu_dispatch import GpuLaunchDescriptor
+
+    descriptor = GpuLaunchDescriptor(
+        launch_family='gemm_affine',
+        input_bindings=('input',),
+        output_bindings=('output',),
+        param_bindings=('_w_linear_0',),
+        attr_bindings={'stride': 1},
+        input_shapes=((1, 4),),
+        output_shapes=((1, 2),),
+        tensor_dtype='float32',
+        param_layouts={'_w_linear_0': 'OI'},
+        normalized_tensor_args=({'kind': 'input', 'binding': 'input'},),
+        normalized_scalar_args=({'name': 'stride', 'value': 1},),
+    )
+
+    with pytest.raises(TypeError):
+        descriptor.attr_bindings['stride'] = 2
+    with pytest.raises(TypeError):
+        descriptor.param_layouts['_w_linear_0'] = 'IO'
+    with pytest.raises(TypeError):
+        descriptor.normalized_tensor_args[0]['binding'] = 'mutated'
+    with pytest.raises(TypeError):
+        descriptor.normalized_scalar_args[0]['value'] = 2
 
 
 def test_make_native_gpu_forward_executor_wires_runtime_and_native_adapter():

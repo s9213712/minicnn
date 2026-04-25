@@ -167,6 +167,10 @@ GPU_NATIVE_TRAINING_SUBSETS = [
     },
 ]
 
+for _subset in GPU_NATIVE_TRAINING_SUBSETS:
+    _subset.setdefault('losses', ['CrossEntropyLoss'])
+    _subset.setdefault('optimizers', ['SGD'])
+
 CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
     'stable': {
         'ops': [
