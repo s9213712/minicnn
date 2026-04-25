@@ -25,12 +25,12 @@ Completed:
   `avgpool2d_backward` C ABI shims
 - `Identity`, `Dropout(p=0)`, and `DropPath(p=0)` forward dispatch as no-op
   GPU aliases
-- `GELU`, `SiLU`, `Sigmoid`, and `Tanh` forward dispatch through native
+- `LeakyReLU`, `GELU`, `SiLU`, `Sigmoid`, and `Tanh` forward dispatch through native
   elementwise activation C ABI shims
-- `GELU`, `SiLU`, `Sigmoid`, and `Tanh` backward C ABI shims for modern
+- `LeakyReLU`, `GELU`, `SiLU`, `Sigmoid`, and `Tanh` backward C ABI shims for modern
   activation train-native helpers
-- native `Linear -> GELU/SiLU/Sigmoid/Tanh -> Linear` and
-  `Flatten -> Linear -> GELU/SiLU/Sigmoid/Tanh -> Linear` training helpers
+- native `Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear` and
+  `Flatten -> Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear` training helpers
 - `PointwiseConv2d` forward dispatch through the native Conv2d im2col/GEMM
   lowering path
 - `DepthwiseConv2d` forward dispatch through the native
@@ -136,8 +136,8 @@ Supported through native GPU helper paths:
 - `Flatten -> Linear`
 - `Linear -> ReLU -> Linear`
 - `Flatten -> Linear -> ReLU -> Linear`
-- `Linear -> GELU/SiLU/Sigmoid/Tanh -> Linear`
-- `Flatten -> Linear -> GELU/SiLU/Sigmoid/Tanh -> Linear`
+- `Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear`
+- `Flatten -> Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear`
 - `MaxPool2d -> Flatten -> Linear`
 - `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear`
 - `BatchNorm2d -> Flatten -> Linear`

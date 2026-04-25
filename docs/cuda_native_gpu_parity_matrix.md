@@ -32,8 +32,8 @@ primitive sequence.
 | `Flatten -> Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE, label smoothing, SGD/Adam/AdamW/RMSprop, global grad clip, grad accumulation, and execution trace order | Covered by Linear helper smoke; full CLI smoke pending |
 | `Linear -> ReLU -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
 | `Flatten -> Linear -> ReLU -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
-| `Linear -> GELU/SiLU/Sigmoid/Tanh -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
-| `Flatten -> Linear -> GELU/SiLU/Sigmoid/Tanh -> Linear` | `native_gpu_two_linear_relu_training_step` | Covered by two-linear activation helper math | Pending real GPU run |
+| `Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
+| `Flatten -> Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear` | `native_gpu_two_linear_relu_training_step` | Covered by two-linear activation helper math | Pending real GPU run |
 | `MaxPool2d -> Flatten -> Linear` | `native_gpu_pool_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear` | `native_gpu_avgpool_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `BatchNorm2d -> Flatten -> Linear` | `native_gpu_batchnorm_linear_training_step` | Hermetic reference math | Pending real GPU run |

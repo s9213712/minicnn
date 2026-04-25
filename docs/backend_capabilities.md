@@ -79,11 +79,11 @@ but it is still not production-ready.
 | Dropout | ✓ | ✓ | ✗ | **✓** prototype |
 | **Activations** | | | | |
 | ReLU | ✓ | ✓ | ✓ | ✓ numpy ref + partial `gpu_native` |
-| LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
-| SiLU | ✓ | ✓ | ✗ | ✓ numpy ref |
-| Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref |
-| Tanh | ✓ | ✓ | ✗ | ✓ numpy ref |
-| GELU | ✓ | ✗ | ✗ | **✓** numpy ref |
+| LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref + partial `gpu_native` |
+| SiLU | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| Tanh | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| GELU | ✓ | ✗ | ✗ | **✓** numpy ref + partial `gpu_native` |
 | **Losses** | | | | |
 | CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy + partial `gpu_native` |
 | MSELoss | ✓ | ✓ | Experimental | **✓** numpy |
@@ -362,11 +362,11 @@ Debugging order:
 | Dropout | ✓ | ✓ | ✗ | **✓** prototype |
 | **激活函數** | | | | |
 | ReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
-| LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
-| SiLU | ✓ | ✓ | ✗ | ✓ numpy ref |
-| Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref |
-| Tanh | ✓ | ✓ | ✗ | ✓ numpy ref |
-| GELU | ✓ | ✗ | ✗ | **✓** numpy ref |
+| LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref + partial `gpu_native` |
+| SiLU | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| Tanh | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| GELU | ✓ | ✗ | ✗ | **✓** numpy ref + partial `gpu_native` |
 | **損失函數** | | | | |
 | CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
 | MSELoss | ✓ | ✓ | 實驗中 | **✓** numpy |

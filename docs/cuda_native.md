@@ -269,8 +269,10 @@ Execution-mode guidance:
 Current `train-native engine.execution_mode=gpu_native` training subsets:
 
 - `Flatten -> Linear`
+- `Linear -> ReLU -> Linear`
 - `Flatten -> Linear -> ReLU -> Linear`
-- `Flatten -> Linear -> GELU/SiLU/Sigmoid/Tanh -> Linear`
+- `Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear`
+- `Flatten -> Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear`
 - `MaxPool2d -> Flatten -> Linear`
 - `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear`
 - `BatchNorm2d -> Flatten -> Linear`
@@ -300,10 +302,10 @@ helper-backed train-native subset through `avgpool2d_forward` and
 dispatch/bootstrap primitive set as no-op GPU aliases. Stochastic
 `Dropout/DropPath` training remains outside the GPU-first path until native mask
 kernels and graph backward lowering land.
-`GELU`, `SiLU`, `Sigmoid`, and `Tanh` are part of the forward
+`LeakyReLU`, `GELU`, `SiLU`, `Sigmoid`, and `Tanh` are part of the forward
 dispatch/bootstrap primitive set through native elementwise activation shims,
-and `Linear -> activation -> Linear` train-native helper subsets now use their
-native backward C ABI shims.
+and `Linear -> activation -> Linear` train-native helper subsets, including
+`LeakyReLU`, now use their native backward C ABI shims.
 `PointwiseConv2d` is also part of the forward dispatch/bootstrap primitive set
 through the native Conv2d im2col/GEMM lowering path; train-native helper
 coverage is still pending.

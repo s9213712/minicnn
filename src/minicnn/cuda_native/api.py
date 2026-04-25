@@ -292,6 +292,8 @@ def _validate_gpu_native_training_subset(
         ['Flatten', 'Linear'],
         ['Linear', 'ReLU', 'Linear'],
         ['Flatten', 'Linear', 'ReLU', 'Linear'],
+        ['Linear', 'LeakyReLU', 'Linear'],
+        ['Flatten', 'Linear', 'LeakyReLU', 'Linear'],
         ['Linear', 'GELU', 'Linear'],
         ['Flatten', 'Linear', 'GELU', 'Linear'],
         ['Linear', 'SiLU', 'Linear'],
@@ -326,8 +328,8 @@ def _validate_gpu_native_training_subset(
             'cuda_native gpu_native train-native currently supports only the narrow '
             'Linear training subset ops=[Linear], [Flatten, Linear], '
             '[Linear, ReLU, Linear], [Flatten, Linear, ReLU, Linear], '
-            '[Linear, GELU/SiLU/Sigmoid/Tanh, Linear], '
-            '[Flatten, Linear, GELU/SiLU/Sigmoid/Tanh, Linear], '
+            '[Linear, LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Linear], '
+            '[Flatten, Linear, LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Linear], '
             '[MaxPool2d, Flatten, Linear], [AvgPool2d, Flatten, Linear], '
             '[BatchNorm2d, Flatten, Linear], [LayerNorm2d, Flatten, Linear], '
             '[GroupNorm, Flatten, Linear], '
