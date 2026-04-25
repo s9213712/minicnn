@@ -115,6 +115,50 @@ class _FakeCudaLib:
         x = self.memory[d_input].reshape(int(c), int(n), int(h), int(w))
         self.memory[d_output][...] = np.transpose(x, (1, 0, 2, 3)).reshape(-1)
 
+    def depthwise_conv2d_forward(
+        self,
+        d_input,
+        d_weight,
+        d_bias,
+        d_output,
+        n,
+        c,
+        h,
+        w,
+        out_c,
+        kh,
+        kw,
+        out_h,
+        out_w,
+        stride_h,
+        stride_w,
+        pad_h,
+        pad_w,
+        has_bias,
+    ):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        weight = self.memory[d_weight].reshape(int(out_c), 1, int(kh), int(kw))
+        bias = self.memory[d_bias].reshape(int(out_c))
+        out = np.zeros((int(n), int(out_c), int(out_h), int(out_w)), dtype=np.float32)
+        multiplier = int(out_c) // int(c)
+        for ni in range(int(n)):
+            for oc in range(int(out_c)):
+                ic = oc // multiplier
+                for oh in range(int(out_h)):
+                    for ow in range(int(out_w)):
+                        val = bias[oc] if int(has_bias) else 0.0
+                        for r in range(int(kh)):
+                            ih = oh * int(stride_h) + r - int(pad_h)
+                            if ih < 0 or ih >= int(h):
+                                continue
+                            for s in range(int(kw)):
+                                iw = ow * int(stride_w) + s - int(pad_w)
+                                if iw < 0 or iw >= int(w):
+                                    continue
+                                val += x[ni, ic, ih, iw] * weight[oc, 0, r, s]
+                        out[ni, oc, oh, ow] = val
+        self.memory[d_output][...] = out.reshape(-1)
+
 
 def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     graph = build_cuda_native_graph(
@@ -737,3 +781,48 @@ def test_gpu_stub_executor_uses_native_pointwise_conv_when_device_pointers_avail
 
     summary = runtime.summary()
     assert summary['execution_kinds']['gpu_native_kernel:conv2d_im2col_gemm'] == 1
+
+
+def test_gpu_stub_executor_uses_native_depthwise_conv_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'DepthwiseConv2d', 'out_channels': 2, 'kernel_size': 2, 'padding': 0, 'bias': False},
+            ],
+        },
+        (1, 2, 3, 3),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=8192, num_buffers=8)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.arange(18, dtype=np.float32).reshape(1, 2, 3, 3)
+    params = {
+        '_w_depthwiseconv2d_0': np.asarray(
+            [
+                [[[1.0, 0.0], [0.0, 1.0]]],
+                [[[0.5, 0.5], [0.5, 0.5]]],
+            ],
+            dtype=np.float32,
+        ),
+    }
+
+    result = executor.run(graph, x, params=params)
+
+    expected = np.asarray(
+        [
+            [
+                [[4.0, 6.0], [10.0, 12.0]],
+                [[22.0, 24.0], [28.0, 30.0]],
+            ]
+        ],
+        dtype=np.float32,
+    )
+    np.testing.assert_allclose(result.output, expected.astype(np.float32), rtol=1e-6, atol=1e-6)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:depthwise_conv2d_forward'] == 1

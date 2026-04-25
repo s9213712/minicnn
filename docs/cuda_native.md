@@ -268,6 +268,9 @@ train-native helper coverage is still pending.
 `PointwiseConv2d` is also part of the forward dispatch/bootstrap primitive set
 through the native Conv2d im2col/GEMM lowering path; train-native helper
 coverage is still pending.
+`DepthwiseConv2d` is part of the forward dispatch/bootstrap primitive set
+through `depthwise_conv2d_forward`; train-native helper coverage is still
+pending.
 
 `validate-cuda-native-config` now emits a `training_lowering_plan` for
 `gpu_native`. The plan decomposes each accepted helper subset into explicit

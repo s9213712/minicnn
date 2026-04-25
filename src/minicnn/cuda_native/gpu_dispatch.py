@@ -114,7 +114,7 @@ class GpuDispatchPlan:
 
 def _node_param_keys(node) -> tuple[str, ...]:
     keys: list[str] = []
-    if node.op_type in {'Conv2d', 'PointwiseConv2d', 'Linear'}:
+    if node.op_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d', 'Linear'}:
         keys.append(f'_w_{node.name}')
         if bool(node.attrs.get('bias', True)):
             keys.append(f'_b_{node.name}')
@@ -130,7 +130,7 @@ def _node_param_keys(node) -> tuple[str, ...]:
 
 def _node_attr_bindings(node) -> dict[str, Any]:
     bindings: dict[str, Any] = {}
-    if node.op_type in {'Conv2d', 'PointwiseConv2d'}:
+    if node.op_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d'}:
         bindings['stride'] = node.attrs.get('stride', 1)
         bindings['padding'] = node.attrs.get('padding', 0)
         bindings['groups'] = int(node.attrs.get('groups', 1))
@@ -152,7 +152,7 @@ def _node_attr_bindings(node) -> dict[str, Any]:
 
 def _node_param_layouts(node, param_keys: tuple[str, ...]) -> dict[str, str]:
     layouts: dict[str, str] = {}
-    if node.op_type in {'Conv2d', 'PointwiseConv2d'}:
+    if node.op_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d'}:
         for key in param_keys:
             layouts[key] = 'OIHW' if key.startswith('_w_') else 'O'
     elif node.op_type == 'Linear':

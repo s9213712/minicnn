@@ -23,6 +23,8 @@ Completed:
   elementwise activation C ABI shims
 - `PointwiseConv2d` forward dispatch through the native Conv2d im2col/GEMM
   lowering path
+- `DepthwiseConv2d` forward dispatch through the native
+  `depthwise_conv2d_forward` C ABI shim
 - native training helpers for the current narrow training subsets
 - native `GlobalAvgPool2d -> Flatten -> Linear` and
   `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` training helpers
@@ -134,13 +136,15 @@ Still not claimed as complete:
   forward dispatch only
 - `PointwiseConv2d` train-native helper coverage; current work is forward
   dispatch only
+- `DepthwiseConv2d` train-native helper coverage; current work is forward
+  dispatch only
 
 ## Validation evidence
 
 Current repo-side validation:
 
 ```text
-144 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+146 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:

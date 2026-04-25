@@ -488,6 +488,60 @@ def _lower_conv2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     stride = _attr_pair(node.attrs.get('stride', 1), label='stride', node=node)
     padding = _attr_pair(node.attrs.get('padding', 0), label='padding', node=node)
     if (
+        node.op_type == 'DepthwiseConv2d'
+        and ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and groups == x.shape[1]
+        and hasattr(ctx.runtime.bound_lib, 'depthwise_conv2d_forward')
+    ):
+        n, c_in, h_in, w_in = [int(v) for v in x.shape]
+        c_out, _w_c, kh, kw = [int(v) for v in w.shape]
+        out_h = int(node.output_specs[0].shape[2])
+        out_w = int(node.output_specs[0].shape[3])
+        output = ctx.runtime.allocate_staging_buffer(
+            tuple(node.output_specs[0].shape),
+            dtype='float32',
+            name=node.outputs[0],
+        )
+        weight_tensor = ctx.runtime.stage_to_device(w, name=f'_w_{node.name}')
+        bias = np.asarray(
+            np.zeros(c_out, dtype=np.float32) if b is None else b,
+            dtype=np.float32,
+        )
+        bias_tensor = ctx.runtime.stage_to_device(bias, name=f'_b_{node.name}')
+        try:
+            ctx.runtime.bound_lib.depthwise_conv2d_forward(
+                input_tensor.device_ptr,
+                weight_tensor.device_ptr,
+                bias_tensor.device_ptr,
+                output.device_ptr,
+                n,
+                c_in,
+                h_in,
+                w_in,
+                c_out,
+                kh,
+                kw,
+                out_h,
+                out_w,
+                int(stride[0]),
+                int(stride[1]),
+                int(padding[0]),
+                int(padding[1]),
+                1 if b is not None else 0,
+            )
+            ctx.runtime.record_execution(
+                'gpu_native_kernel:depthwise_conv2d_forward',
+                input_name=node.inputs[0],
+                output_name=node.outputs[0],
+                node_count=1,
+            )
+            ctx.runtime.sync_tensor_to_host(output)
+        finally:
+            ctx.runtime.release_buffer(weight_tensor)
+            ctx.runtime.release_buffer(bias_tensor)
+        return output
+    if (
         ctx.runtime.native_device_pointers_enabled
         and input_tensor.device_ptr is not None
         and b is None
@@ -668,6 +722,12 @@ def make_default_gpu_lowering_registry() -> GpuLoweringRegistry:
         'Conv2d',
         lowering_kind='conv2d_reference_shim',
         kernel_category=kernel_categories['Conv2d'],
+        fn=_lower_conv2d,
+    )
+    registry.register(
+        'DepthwiseConv2d',
+        lowering_kind='depthwise_conv2d_shim',
+        kernel_category=kernel_categories['DepthwiseConv2d'],
         fn=_lower_conv2d,
     )
     registry.register(

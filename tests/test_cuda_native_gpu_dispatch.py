@@ -258,6 +258,28 @@ def test_gpu_dispatch_plan_supports_pointwise_conv_forward_shim():
     assert summary['steps'][0]['param_keys'] == ['_w_pointwiseconv2d_0']
 
 
+def test_gpu_dispatch_plan_supports_depthwise_conv_forward_shim():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'DepthwiseConv2d', 'out_channels': 3, 'kernel_size': 3, 'padding': 1, 'bias': False},
+                {'type': 'GELU'},
+                {'type': 'PointwiseConv2d', 'out_channels': 2, 'bias': False},
+            ],
+        },
+        (1, 3, 4, 4),
+    )
+
+    summary = build_gpu_dispatch_plan(graph).summary()
+
+    assert summary['ready'] is True
+    assert summary['unsupported_ops'] == []
+    assert summary['steps'][0]['op_name'] == 'DepthwiseConv2d'
+    assert summary['steps'][0]['launch_family'] == 'depthwise_conv2d_nchw'
+    assert summary['steps'][0]['lowering_kind'] == 'depthwise_conv2d_shim'
+    assert summary['steps'][0]['param_keys'] == ['_w_depthwiseconv2d_0']
+
+
 def test_gpu_training_lowering_plan_records_linear_rmsprop_manifest():
     graph = build_cuda_native_graph(
         {
