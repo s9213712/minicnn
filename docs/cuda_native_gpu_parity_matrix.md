@@ -31,6 +31,7 @@ conv-family helpers.
 | `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear` | `native_gpu_avgpool_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `BatchNorm2d -> Flatten -> Linear` | `native_gpu_batchnorm_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `LayerNorm2d -> Flatten -> Linear` | `native_gpu_layernorm2d_linear_training_step` | Hermetic reference math | Pending real GPU run |
+| `GroupNorm -> Flatten -> Linear` | `native_gpu_groupnorm_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `GlobalAvgPool2d -> Flatten -> Linear` | `native_gpu_global_avgpool_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` | `native_gpu_global_avgpool_linear_training_step` | Covered by GlobalAvgPool helper math | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |

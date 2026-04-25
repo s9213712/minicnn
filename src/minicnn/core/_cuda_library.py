@@ -283,6 +283,11 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
             c_void_p, c_void_p, c_void_p, c_void_p,
             c_int, c_int, c_int, c_int, c_int, c_float,
         ]
+    if hasattr(bound_lib, 'groupnorm_backward'):
+        bound_lib.groupnorm_backward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_int, c_float,
+        ]
     bound_lib.conv_backward.argtypes = [
         c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
         c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,

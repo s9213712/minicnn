@@ -118,6 +118,12 @@ GPU_NATIVE_TRAINING_SUBSETS = [
         'parity': 'hermetic_reference_math',
     },
     {
+        'name': 'groupnorm_linear',
+        'ops': ['GroupNorm', 'Flatten', 'Linear'],
+        'helper': 'native_gpu_groupnorm_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
         'name': 'global_avgpool_linear',
         'ops': ['GlobalAvgPool2d', 'Flatten', 'Linear'],
         'helper': 'native_gpu_global_avgpool_linear_training_step',
@@ -367,7 +373,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     'notes': [
         'Backward and training now meet the current beta graduation gate, but the backend is not yet production-ready.',
         'BatchNorm2d forward/backward exist within the beta training surface; gpu_native train-native covers BatchNorm2d+Flatten+Linear.',
-        'LayerNorm uses numpy reference kernels; GroupNorm forward dispatch now uses a native groupnorm_forward C ABI shim.',
+        'LayerNorm uses numpy reference kernels; GroupNorm train-native now covers GroupNorm -> Flatten -> Linear through groupnorm forward/backward C ABI shims.',
         'cuda_native is GPU-first for the active enablement path; numpy kernels are retained as historical fallback and hermetic parity baselines.',
         'ResidualBlock and ConvNeXtBlock still run through composite/reference numpy kernels; support tier is published separately.',
         'Identity plus Dropout/DropPath with p=0 are gpu_native no-op aliases; stochastic Dropout/DropPath training still requires native mask kernels.',

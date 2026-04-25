@@ -418,6 +418,73 @@ __global__ void groupnorm_forward_kernel(
     output[idx] = ((input[idx] - mean) * inv_std) * gamma[ch] + beta[ch];
 }
 
+__global__ void groupnorm_backward_kernel(
+    const float* grad_output,
+    const float* input,
+    const float* gamma,
+    float* grad_input,
+    float* grad_gamma,
+    float* grad_beta,
+    int n,
+    int c,
+    int h,
+    int w,
+    int num_groups,
+    float eps
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int spatial = h * w;
+    int total = n * c * spatial;
+    if (idx >= total) return;
+    int ch = (idx / spatial) % c;
+    int batch = idx / (c * spatial);
+    int channels_per_group = c / num_groups;
+    int group = ch / channels_per_group;
+    int channel_start = group * channels_per_group;
+    int group_elements = channels_per_group * spatial;
+    int sample_offset = batch * c * spatial;
+
+    float mean = 0.0f;
+    for (int gc = 0; gc < channels_per_group; ++gc) {
+        int cc = channel_start + gc;
+        for (int s = 0; s < spatial; ++s) {
+            mean += input[sample_offset + cc * spatial + s];
+        }
+    }
+    mean /= static_cast<float>(group_elements);
+
+    float var = 0.0f;
+    for (int gc = 0; gc < channels_per_group; ++gc) {
+        int cc = channel_start + gc;
+        for (int s = 0; s < spatial; ++s) {
+            float diff = input[sample_offset + cc * spatial + s] - mean;
+            var += diff * diff;
+        }
+    }
+    float inv_std = rsqrtf(var / static_cast<float>(group_elements) + eps);
+
+    float sum_dxhat = 0.0f;
+    float sum_dxhat_xhat = 0.0f;
+    for (int gc = 0; gc < channels_per_group; ++gc) {
+        int cc = channel_start + gc;
+        for (int s = 0; s < spatial; ++s) {
+            int offset = sample_offset + cc * spatial + s;
+            float x_hat = (input[offset] - mean) * inv_std;
+            float dxhat = grad_output[offset] * gamma[cc];
+            sum_dxhat += dxhat;
+            sum_dxhat_xhat += dxhat * x_hat;
+        }
+    }
+
+    float x_hat_ch = (input[idx] - mean) * inv_std;
+    float dxhat_ch = grad_output[idx] * gamma[ch];
+    grad_input[idx] = (inv_std / static_cast<float>(group_elements)) * (
+        static_cast<float>(group_elements) * dxhat_ch - sum_dxhat - x_hat_ch * sum_dxhat_xhat
+    );
+    atomicAdd(&grad_gamma[ch], grad_output[idx] * x_hat_ch);
+    atomicAdd(&grad_beta[ch], grad_output[idx]);
+}
+
 __global__ void im2col_kernel(const float* input, float* output, int N, int C, int H, int W, int KH, int KW, int outH, int outW) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total_elements = (C * KH * KW) * (N * outH * outW);
@@ -732,6 +799,33 @@ extern "C" {
         int tpb = 256;
         groupnorm_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(
             d_input, d_gamma, d_beta, d_output, n, c, h, w, num_groups, eps
+        );
+        CUDA_KERNEL_CHECK();
+    }
+
+    void groupnorm_backward(
+        float* d_grad_output,
+        float* d_input,
+        float* d_gamma,
+        float* d_grad_input,
+        float* d_grad_gamma,
+        float* d_grad_beta,
+        int n,
+        int c,
+        int h,
+        int w,
+        int num_groups,
+        float eps
+    ) {
+        int total = n * c * h * w;
+        int tpb = 256;
+        cudaMemset(d_grad_gamma, 0, c * sizeof(float));
+        CUDA_KERNEL_CHECK();
+        cudaMemset(d_grad_beta, 0, c * sizeof(float));
+        CUDA_KERNEL_CHECK();
+        groupnorm_backward_kernel<<<(total + tpb - 1) / tpb, tpb>>>(
+            d_grad_output, d_input, d_gamma, d_grad_input, d_grad_gamma, d_grad_beta,
+            n, c, h, w, num_groups, eps
         );
         CUDA_KERNEL_CHECK();
     }

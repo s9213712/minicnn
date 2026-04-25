@@ -72,6 +72,7 @@ _TRAINING_SUBSETS: dict[tuple[str, ...], tuple[str, str]] = {
     ('AvgPool2d', 'Flatten', 'Linear'): ('avgpool_linear', 'native_gpu_avgpool_linear_training_step'),
     ('BatchNorm2d', 'Flatten', 'Linear'): ('batchnorm_linear', 'native_gpu_batchnorm_linear_training_step'),
     ('LayerNorm2d', 'Flatten', 'Linear'): ('layernorm2d_linear', 'native_gpu_layernorm2d_linear_training_step'),
+    ('GroupNorm', 'Flatten', 'Linear'): ('groupnorm_linear', 'native_gpu_groupnorm_linear_training_step'),
     ('GlobalAvgPool2d', 'Flatten', 'Linear'): ('global_avgpool_linear', 'native_gpu_global_avgpool_linear_training_step'),
     ('AdaptiveAvgPool2d', 'Flatten', 'Linear'): ('adaptive_avgpool_linear', 'native_gpu_global_avgpool_linear_training_step'),
     ('Conv2d', 'Flatten', 'Linear'): ('conv_linear', 'native_gpu_conv_linear_training_step'),
@@ -244,6 +245,15 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
                 launch_family='normalization_backward',
             )
         )
+    if subset_name == 'groupnorm_linear':
+        steps.append(
+            GpuTrainingLoweringStep(
+                phase='backward',
+                op_name='GroupNorm',
+                lowering_kind='groupnorm_backward',
+                launch_family='normalization_backward',
+            )
+        )
     if subset_name in {'conv_relu_linear', 'pointwise_conv_relu_linear', 'depthwise_conv_relu_linear', 'conv_relu_pool_linear', 'depthwise_conv_relu_pool_linear', 'two_conv_relu_pool_linear'}:
         steps.append(
             GpuTrainingLoweringStep(
@@ -289,9 +299,9 @@ def _optimizer_step(
     momentum = float(optim_cfg.get('momentum', 0.0))
     param_keys: list[str] = []
     for node in graph.topological_order():
-        if node.op_type in {'BatchNorm2d', 'Conv2d', 'DepthwiseConv2d', 'LayerNorm2d', 'Linear', 'PointwiseConv2d'}:
+        if node.op_type in {'BatchNorm2d', 'Conv2d', 'DepthwiseConv2d', 'GroupNorm', 'LayerNorm2d', 'Linear', 'PointwiseConv2d'}:
             param_keys.append(f'_w_{node.name}')
-            if node.op_type in {'BatchNorm2d', 'LayerNorm2d', 'Linear'} or bool(node.attrs.get('bias', True)):
+            if node.op_type in {'BatchNorm2d', 'GroupNorm', 'LayerNorm2d', 'Linear'} or bool(node.attrs.get('bias', True)):
                 param_keys.append(f'_b_{node.name}')
 
     if subset_name not in {'linear', 'flatten_linear'} and optimizer_key != 'sgd':

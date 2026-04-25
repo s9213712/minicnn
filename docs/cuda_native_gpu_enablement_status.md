@@ -43,6 +43,9 @@ Completed:
   `DepthwiseConv2d -> ReLU -> MaxPool2d -> Flatten -> Linear` training helper
   routing through the depthwise forward/backward C ABI shims
 - `GroupNorm` forward dispatch through the native `groupnorm_forward` C ABI shim
+- `GroupNorm` backward C ABI shim through `groupnorm_backward`
+- native `GroupNorm -> Flatten -> Linear` training helper routing through the
+  groupnorm forward/backward C ABI shims
 - `LayerNorm2d` forward dispatch through the native `layernorm2d_forward` C ABI
   shim
 - `LayerNorm2d` backward C ABI shim through `layernorm2d_backward` as the
@@ -89,6 +92,7 @@ Supported through native GPU helper paths:
 - `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear`
 - `BatchNorm2d -> Flatten -> Linear`
 - `LayerNorm2d -> Flatten -> Linear`
+- `GroupNorm -> Flatten -> Linear`
 - `GlobalAvgPool2d -> Flatten -> Linear`
 - `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
@@ -175,8 +179,6 @@ Still not claimed as complete:
   the two-linear helper subsets
 - broader `PointwiseConv2d` graph-level train-native coverage beyond the
   `PointwiseConv2d -> Flatten -> Linear` helper subsets
-- `GroupNorm` train-native helper coverage; current work is forward dispatch
-  only
 
 ## Validation evidence
 
