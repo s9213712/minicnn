@@ -671,6 +671,12 @@ def make_default_gpu_lowering_registry() -> GpuLoweringRegistry:
         fn=_lower_conv2d,
     )
     registry.register(
+        'PointwiseConv2d',
+        lowering_kind='conv2d_reference_shim',
+        kernel_category=kernel_categories['PointwiseConv2d'],
+        fn=_lower_conv2d,
+    )
+    registry.register(
         'Flatten',
         lowering_kind='shape_flatten_shim',
         kernel_category=kernel_categories['Flatten'],

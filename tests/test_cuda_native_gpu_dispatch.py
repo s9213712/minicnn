@@ -235,6 +235,29 @@ def test_gpu_dispatch_plan_supports_modern_elementwise_activation_shims():
     ]
 
 
+def test_gpu_dispatch_plan_supports_pointwise_conv_forward_shim():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'PointwiseConv2d', 'out_channels': 2, 'bias': False},
+                {'type': 'GELU'},
+                {'type': 'GlobalAvgPool2d'},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 3, 4, 4),
+    )
+
+    summary = build_gpu_dispatch_plan(graph).summary()
+
+    assert summary['ready'] is True
+    assert summary['unsupported_ops'] == []
+    assert summary['steps'][0]['op_name'] == 'PointwiseConv2d'
+    assert summary['steps'][0]['launch_family'] == 'conv2d_nchw'
+    assert summary['steps'][0]['param_keys'] == ['_w_pointwiseconv2d_0']
+
+
 def test_gpu_training_lowering_plan_records_linear_rmsprop_manifest():
     graph = build_cuda_native_graph(
         {

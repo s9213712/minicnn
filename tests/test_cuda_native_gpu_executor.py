@@ -706,3 +706,34 @@ def test_gpu_stub_executor_uses_native_conv2d_when_device_pointers_available():
     assert conv_bridge_result['kernel_symbol'] == 'conv2d_im2col_gemm'
     assert conv_bridge_result['required_symbols'] == ['im2col_forward', 'gemm_forward', 'cnhw_to_nchw']
     assert conv_bridge_result['symbol_available'] is True
+
+
+def test_gpu_stub_executor_uses_native_pointwise_conv_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'PointwiseConv2d', 'out_channels': 2, 'bias': False},
+            ],
+        },
+        (1, 1, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.asarray([[[[1.0, 2.0], [3.0, 4.0]]]], dtype=np.float32)
+    params = {
+        '_w_pointwiseconv2d_0': np.asarray([[[[2.0]]], [[[3.0]]]], dtype=np.float32),
+    }
+
+    result = executor.run(graph, x, params=params)
+
+    expected = np.concatenate([x * 2.0, x * 3.0], axis=1)
+    np.testing.assert_allclose(result.output, expected.astype(np.float32), rtol=1e-6, atol=1e-6)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:conv2d_im2col_gemm'] == 1

@@ -21,6 +21,8 @@ Completed:
   through the `global_avgpool2d_forward` C ABI shim
 - `GELU`, `SiLU`, `Sigmoid`, and `Tanh` forward dispatch through native
   elementwise activation C ABI shims
+- `PointwiseConv2d` forward dispatch through the native Conv2d im2col/GEMM
+  lowering path
 - native training helpers for the current narrow training subsets
 - native `GlobalAvgPool2d -> Flatten -> Linear` and
   `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` training helpers
@@ -130,13 +132,15 @@ Still not claimed as complete:
   only
 - modern elementwise activation train-native helper coverage; current work is
   forward dispatch only
+- `PointwiseConv2d` train-native helper coverage; current work is forward
+  dispatch only
 
 ## Validation evidence
 
 Current repo-side validation:
 
 ```text
-142 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+144 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:

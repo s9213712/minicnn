@@ -22,6 +22,7 @@ GPU_OP_CODES = {
     'Sigmoid': 13,
     'SiLU': 14,
     'Tanh': 15,
+    'PointwiseConv2d': 16,
 }
 
 GPU_LAUNCH_FAMILY_CODES = {

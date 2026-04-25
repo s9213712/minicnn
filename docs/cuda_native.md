@@ -265,6 +265,9 @@ helper-backed train-native subsets through `global_avgpool2d_forward` and
 `GELU`, `SiLU`, `Sigmoid`, and `Tanh` are part of the forward
 dispatch/bootstrap primitive set through native elementwise activation shims;
 train-native helper coverage is still pending.
+`PointwiseConv2d` is also part of the forward dispatch/bootstrap primitive set
+through the native Conv2d im2col/GEMM lowering path; train-native helper
+coverage is still pending.
 
 `validate-cuda-native-config` now emits a `training_lowering_plan` for
 `gpu_native`. The plan decomposes each accepted helper subset into explicit
