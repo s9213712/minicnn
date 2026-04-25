@@ -50,6 +50,23 @@ class _FakeCudaLib:
         data = self.memory[d_data][:int(size)]
         self.memory[d_data][:int(size)] = np.where(data >= 0.0, data, float(alpha) * data)
 
+    def sigmoid_forward(self, d_data, size):
+        data = self.memory[d_data][:int(size)]
+        self.memory[d_data][:int(size)] = 1.0 / (1.0 + np.exp(-data))
+
+    def tanh_forward(self, d_data, size):
+        self.memory[d_data][:int(size)] = np.tanh(self.memory[d_data][:int(size)])
+
+    def silu_forward(self, d_data, size):
+        data = self.memory[d_data][:int(size)]
+        self.memory[d_data][:int(size)] = data / (1.0 + np.exp(-data))
+
+    def gelu_forward(self, d_data, size):
+        data = self.memory[d_data][:int(size)]
+        self.memory[d_data][:int(size)] = 0.5 * data * (
+            1.0 + np.tanh(np.sqrt(2.0 / np.pi) * (data + 0.044715 * data ** 3))
+        )
+
     def add_forward(self, d_a, d_b, d_output, size):
         self.memory[d_output][:int(size)] = self.memory[d_a][:int(size)] + self.memory[d_b][:int(size)]
 
@@ -609,6 +626,34 @@ def test_gpu_stub_executor_uses_native_global_avgpool_when_device_pointers_avail
 
     summary = runtime.summary()
     assert summary['execution_kinds']['gpu_native_kernel:global_avgpool2d_forward'] == 1
+
+
+def test_gpu_stub_executor_uses_native_gelu_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'GELU'},
+            ],
+        },
+        (1, 1, 1, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.asarray([[[[-1.0, 0.0, 1.0, 2.0]]]], dtype=np.float32)
+    result = executor.run(graph, x)
+
+    expected = 0.5 * x * (1.0 + np.tanh(np.sqrt(2.0 / np.pi) * (x + 0.044715 * x ** 3)))
+    np.testing.assert_allclose(result.output, expected.astype(np.float32), rtol=1e-6, atol=1e-6)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:gelu_forward'] == 1
 
 
 def test_gpu_stub_executor_uses_native_conv2d_when_device_pointers_available():

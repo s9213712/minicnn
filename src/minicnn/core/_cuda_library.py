@@ -123,6 +123,14 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
     if hasattr(bound_lib, 'apply_relu_backward'):
         bound_lib.apply_relu_backward.argtypes = [c_void_p, c_void_p, c_int]
     bound_lib.apply_maxpool.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int]
+    if hasattr(bound_lib, 'sigmoid_forward'):
+        bound_lib.sigmoid_forward.argtypes = [c_void_p, c_int]
+    if hasattr(bound_lib, 'tanh_forward'):
+        bound_lib.tanh_forward.argtypes = [c_void_p, c_int]
+    if hasattr(bound_lib, 'silu_forward'):
+        bound_lib.silu_forward.argtypes = [c_void_p, c_int]
+    if hasattr(bound_lib, 'gelu_forward'):
+        bound_lib.gelu_forward.argtypes = [c_void_p, c_int]
     if hasattr(bound_lib, 'add_forward'):
         bound_lib.add_forward.argtypes = [c_void_p, c_void_p, c_void_p, c_int]
     if hasattr(bound_lib, 'concat_forward'):

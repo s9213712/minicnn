@@ -18,6 +18,10 @@ GPU_OP_CODES = {
     'BatchNorm2d': 9,
     'AdaptiveAvgPool2d': 10,
     'GlobalAvgPool2d': 11,
+    'GELU': 12,
+    'Sigmoid': 13,
+    'SiLU': 14,
+    'Tanh': 15,
 }
 
 GPU_LAUNCH_FAMILY_CODES = {

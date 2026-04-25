@@ -22,6 +22,33 @@ __global__ void relu_forward_kernel(float* data, int size) {
     if (idx < size) data[idx] = fmaxf(0.0f, data[idx]);
 }
 
+__global__ void sigmoid_forward_kernel(float* data, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) data[idx] = 1.0f / (1.0f + expf(-data[idx]));
+}
+
+__global__ void tanh_forward_kernel(float* data, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) data[idx] = tanhf(data[idx]);
+}
+
+__global__ void silu_forward_kernel(float* data, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        float x = data[idx];
+        data[idx] = x / (1.0f + expf(-x));
+    }
+}
+
+__global__ void gelu_forward_kernel(float* data, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        float x = data[idx];
+        float inner = 0.7978845608028654f * (x + 0.044715f * x * x * x);
+        data[idx] = 0.5f * x * (1.0f + tanhf(inner));
+    }
+}
+
 __global__ void add_forward_kernel(const float* a, const float* b, float* output, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) output[idx] = a[idx] + b[idx];
@@ -174,6 +201,30 @@ extern "C" {
     void apply_relu(float* d_data, int size) {
         int tpb = 256;
         relu_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_data, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void sigmoid_forward(float* d_data, int size) {
+        int tpb = 256;
+        sigmoid_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_data, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void tanh_forward(float* d_data, int size) {
+        int tpb = 256;
+        tanh_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_data, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void silu_forward(float* d_data, int size) {
+        int tpb = 256;
+        silu_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_data, size);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void gelu_forward(float* d_data, int size) {
+        int tpb = 256;
+        gelu_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_data, size);
         CUDA_KERNEL_CHECK();
     }
 

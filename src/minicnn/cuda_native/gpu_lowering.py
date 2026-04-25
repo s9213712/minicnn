@@ -223,6 +223,85 @@ def _lower_leaky_relu(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     return _allocate_output(node, ctx, output)
 
 
+def _lower_elementwise_unary(
+    node: Node,
+    ctx: GpuLoweringContext,
+    *,
+    native_symbol: str,
+    native_kind: str,
+    transform: Callable[[np.ndarray], np.ndarray],
+) -> DeviceTensor:
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
+    if (
+        ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and hasattr(ctx.runtime.bound_lib, native_symbol)
+    ):
+        output = ctx.runtime.allocate_staging_buffer(
+            tuple(node.output_specs[0].shape),
+            dtype='float32',
+            name=node.outputs[0],
+        )
+        np.copyto(output.data, x)
+        ctx.runtime.sync_tensor_to_device(output)
+        getattr(ctx.runtime.bound_lib, native_symbol)(output.device_ptr, int(output.data.size))
+        ctx.runtime.record_execution(
+            native_kind,
+            input_name=node.inputs[0],
+            output_name=node.outputs[0],
+            node_count=1,
+        )
+        ctx.runtime.sync_tensor_to_host(output)
+        return output
+    return _allocate_output(node, ctx, transform(x).astype(np.float32))
+
+
+def _lower_sigmoid(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
+    return _lower_elementwise_unary(
+        node,
+        ctx,
+        native_symbol='sigmoid_forward',
+        native_kind='gpu_native_kernel:sigmoid_forward',
+        transform=lambda x: 1.0 / (1.0 + np.exp(-x)),
+    )
+
+
+def _lower_tanh(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
+    return _lower_elementwise_unary(
+        node,
+        ctx,
+        native_symbol='tanh_forward',
+        native_kind='gpu_native_kernel:tanh_forward',
+        transform=np.tanh,
+    )
+
+
+def _lower_silu(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
+    return _lower_elementwise_unary(
+        node,
+        ctx,
+        native_symbol='silu_forward',
+        native_kind='gpu_native_kernel:silu_forward',
+        transform=lambda x: x / (1.0 + np.exp(-x)),
+    )
+
+
+def _lower_gelu(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
+    return _lower_elementwise_unary(
+        node,
+        ctx,
+        native_symbol='gelu_forward',
+        native_kind='gpu_native_kernel:gelu_forward',
+        transform=lambda x: 0.5 * x * (
+            1.0
+            + np.tanh(
+                np.sqrt(2.0 / np.pi) * (x + 0.044715 * np.power(x, 3))
+            )
+        ),
+    )
+
+
 def _lower_add(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     input_tensors = [ctx.tensors[name] for name in node.inputs]
     arrays = [np.asarray(tensor.data, dtype=np.float32) for tensor in input_tensors]
@@ -598,6 +677,12 @@ def make_default_gpu_lowering_registry() -> GpuLoweringRegistry:
         fn=_lower_flatten,
     )
     registry.register(
+        'GELU',
+        lowering_kind='activation_gelu_shim',
+        kernel_category=kernel_categories['GELU'],
+        fn=_lower_gelu,
+    )
+    registry.register(
         'AdaptiveAvgPool2d',
         lowering_kind='pool_global_avgpool2d_shim',
         kernel_category=kernel_categories['AdaptiveAvgPool2d'],
@@ -632,6 +717,24 @@ def make_default_gpu_lowering_registry() -> GpuLoweringRegistry:
         lowering_kind='activation_relu_shim',
         kernel_category=kernel_categories['ReLU'],
         fn=_lower_relu,
+    )
+    registry.register(
+        'Sigmoid',
+        lowering_kind='activation_sigmoid_shim',
+        kernel_category=kernel_categories['Sigmoid'],
+        fn=_lower_sigmoid,
+    )
+    registry.register(
+        'SiLU',
+        lowering_kind='activation_silu_shim',
+        kernel_category=kernel_categories['SiLU'],
+        fn=_lower_silu,
+    )
+    registry.register(
+        'Tanh',
+        lowering_kind='activation_tanh_shim',
+        kernel_category=kernel_categories['Tanh'],
+        fn=_lower_tanh,
     )
     return registry
 

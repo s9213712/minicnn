@@ -209,6 +209,32 @@ def test_gpu_dispatch_plan_supports_adaptive_avgpool_output_size_one_forward_shi
     assert summary['steps'][0]['launch_descriptor']['attr_bindings'] == {'output_size': 1}
 
 
+def test_gpu_dispatch_plan_supports_modern_elementwise_activation_shims():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'GELU'},
+                {'type': 'SiLU'},
+                {'type': 'Sigmoid'},
+                {'type': 'Tanh'},
+            ],
+        },
+        (1, 3, 4, 4),
+    )
+
+    summary = build_gpu_dispatch_plan(graph).summary()
+
+    assert summary['ready'] is True
+    assert summary['unsupported_ops'] == []
+    assert [step['op_name'] for step in summary['steps']] == ['GELU', 'SiLU', 'Sigmoid', 'Tanh']
+    assert [step['lowering_kind'] for step in summary['steps']] == [
+        'activation_gelu_shim',
+        'activation_silu_shim',
+        'activation_sigmoid_shim',
+        'activation_tanh_shim',
+    ]
+
+
 def test_gpu_training_lowering_plan_records_linear_rmsprop_manifest():
     graph = build_cuda_native_graph(
         {
