@@ -72,6 +72,21 @@ __global__ void maxpool_forward_kernel(const float* input, float* output, int n,
     output[idx] = max_val;
 }
 
+__global__ void global_avgpool2d_forward_kernel(const float* input, float* output, int n, int c, int h, int w) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n * c;
+    if (idx >= total) return;
+    int channel = idx % c;
+    int batch = idx / c;
+    int hw = h * w;
+    int base = ((batch * c + channel) * h) * w;
+    float sum = 0.0f;
+    for (int i = 0; i < hw; ++i) {
+        sum += input[base + i];
+    }
+    output[idx] = sum / static_cast<float>(hw);
+}
+
 __global__ void im2col_kernel(const float* input, float* output, int N, int C, int H, int W, int KH, int KW, int outH, int outW) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total_elements = (C * KH * KW) * (N * outH * outW);
@@ -180,6 +195,13 @@ extern "C" {
         int size = n * c * out_h * out_w;
         int tpb = 256;
         maxpool_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_input, d_output, n, c, h, w);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void global_avgpool2d_forward(float* d_input, float* d_output, int n, int c, int h, int w) {
+        int size = n * c;
+        int tpb = 256;
+        global_avgpool2d_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_input, d_output, n, c, h, w);
         CUDA_KERNEL_CHECK();
     }
 

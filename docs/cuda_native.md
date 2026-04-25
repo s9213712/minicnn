@@ -257,6 +257,9 @@ GPU backward lowering is still pending.
 `BatchNorm2d` is now part of the `gpu_native` forward dispatch/bootstrap
 primitive set, but it is not yet accepted by `gpu_native` train-native helper
 subsets.
+`GlobalAvgPool2d` and `AdaptiveAvgPool2d(output_size=1)` are also part of the
+forward dispatch/bootstrap primitive set through `global_avgpool2d_forward`;
+train-native helper coverage is still pending.
 
 `validate-cuda-native-config` now emits a `training_lowering_plan` for
 `gpu_native`. The plan decomposes each accepted helper subset into explicit

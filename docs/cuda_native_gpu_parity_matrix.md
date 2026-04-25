@@ -11,8 +11,9 @@ For the closure/status summary, see
 
 ## Current training subset matrix
 
-`BatchNorm2d` is covered as a `gpu_native` forward dispatch primitive, but it is
-not yet part of the helper-backed train-native subset matrix.
+`BatchNorm2d`, `GlobalAvgPool2d`, and `AdaptiveAvgPool2d(output_size=1)` are
+covered as `gpu_native` forward dispatch primitives, but they are not yet part
+of the helper-backed train-native subset matrix.
 
 | Subset | Helper | Evidence | Hardware status |
 |---|---|---|---|

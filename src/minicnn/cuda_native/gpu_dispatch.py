@@ -145,6 +145,8 @@ def _node_attr_bindings(node) -> dict[str, Any]:
     elif node.op_type == 'BatchNorm2d':
         bindings['eps'] = float(node.attrs.get('eps', 1e-5))
         bindings['momentum'] = float(node.attrs.get('momentum', 0.1))
+    elif node.op_type == 'AdaptiveAvgPool2d':
+        bindings['output_size'] = node.attrs.get('output_size', 1)
     return bindings
 
 

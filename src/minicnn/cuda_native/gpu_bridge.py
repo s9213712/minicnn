@@ -15,6 +15,9 @@ GPU_OP_CODES = {
     'Concat': 6,
     'Conv2d': 7,
     'MaxPool2d': 8,
+    'BatchNorm2d': 9,
+    'AdaptiveAvgPool2d': 10,
+    'GlobalAvgPool2d': 11,
 }
 
 GPU_LAUNCH_FAMILY_CODES = {
@@ -25,6 +28,8 @@ GPU_LAUNCH_FAMILY_CODES = {
     'concat_merge': 5,
     'conv2d_nchw': 6,
     'pool2d_nchw': 7,
+    'batchnorm2d_nchw': 8,
+    'global_avgpool2d_nchw': 9,
 }
 
 GPU_LAYOUT_CODES = {

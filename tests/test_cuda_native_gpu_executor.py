@@ -71,6 +71,10 @@ class _FakeCudaLib:
                         out[ni, ci, oh, ow] = np.max(window)
         self.memory[d_output][...] = out.reshape(-1)
 
+    def global_avgpool2d_forward(self, d_input, d_output, n, c, h, w):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        self.memory[d_output][...] = x.mean(axis=(2, 3), keepdims=True).reshape(-1)
+
     def im2col_forward(self, d_input, d_output, n, c, h, w, kh, kw, out_h, out_w):
         x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
         col = np.zeros((int(c) * int(kh) * int(kw), int(n) * int(out_h) * int(out_w)), dtype=np.float32)
@@ -577,6 +581,34 @@ def test_gpu_stub_executor_uses_native_maxpool_when_device_pointers_available():
 
     summary = runtime.summary()
     assert summary['execution_kinds']['gpu_native_kernel:apply_maxpool'] == 1
+
+
+def test_gpu_stub_executor_uses_native_global_avgpool_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'GlobalAvgPool2d'},
+            ],
+        },
+        (1, 2, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.asarray([[[[1.0, 3.0], [5.0, 7.0]], [[2.0, 4.0], [6.0, 8.0]]]], dtype=np.float32)
+    result = executor.run(graph, x)
+
+    expected = np.asarray([[[[4.0]], [[5.0]]]], dtype=np.float32)
+    np.testing.assert_allclose(result.output, expected)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:global_avgpool2d_forward'] == 1
 
 
 def test_gpu_stub_executor_uses_native_conv2d_when_device_pointers_available():

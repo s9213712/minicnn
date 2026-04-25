@@ -17,6 +17,8 @@ Completed:
 - native forward lowering for the bootstrap op set
 - `BatchNorm2d` forward dispatch/lowering shim in the `gpu_native` bootstrap
   primitive set
+- `GlobalAvgPool2d` and `AdaptiveAvgPool2d(output_size=1)` forward dispatch
+  through the `global_avgpool2d_forward` C ABI shim
 - native training helpers for the current narrow training subsets
 - CLI validation/runtime routing for supported `gpu_native` subsets
 - hermetic reference-math parity matrix
@@ -120,13 +122,15 @@ Still not claimed as complete:
 - composite/block training lowering for residual and ConvNeXt-style models
 - `BatchNorm2d` train-native helper coverage; current work is forward dispatch
   only
+- global/adaptive average pooling train-native helper coverage; current work is
+  forward dispatch only
 
 ## Validation evidence
 
 Current repo-side validation:
 
 ```text
-135 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+138 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:

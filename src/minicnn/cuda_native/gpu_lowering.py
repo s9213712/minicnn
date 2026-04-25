@@ -520,6 +520,47 @@ def _lower_maxpool2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     return _allocate_output(node, ctx, output)
 
 
+def _lower_global_avgpool2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
+    if x.ndim != 4:
+        raise ValueError(f'{node.op_type} node={node.name}: expected 4-D NCHW input, got {x.shape}')
+    if node.op_type == 'AdaptiveAvgPool2d':
+        output_size = node.attrs.get('output_size', 1)
+        if output_size not in (1, (1, 1), [1, 1]):
+            raise ValueError(
+                f'AdaptiveAvgPool2d node={node.name}: gpu lowering supports only output_size=1 or (1, 1), got {output_size!r}'
+            )
+    if (
+        ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and hasattr(ctx.runtime.bound_lib, 'global_avgpool2d_forward')
+    ):
+        output = ctx.runtime.allocate_staging_buffer(
+            tuple(node.output_specs[0].shape),
+            dtype='float32',
+            name=node.outputs[0],
+        )
+        ctx.runtime.bound_lib.global_avgpool2d_forward(
+            input_tensor.device_ptr,
+            output.device_ptr,
+            int(x.shape[0]),
+            int(x.shape[1]),
+            int(x.shape[2]),
+            int(x.shape[3]),
+        )
+        ctx.runtime.record_execution(
+            'gpu_native_kernel:global_avgpool2d_forward',
+            input_name=node.inputs[0],
+            output_name=node.outputs[0],
+            node_count=1,
+        )
+        ctx.runtime.sync_tensor_to_host(output)
+        return output
+    output = x.mean(axis=(2, 3), keepdims=True).astype(np.float32)
+    return _allocate_output(node, ctx, output)
+
+
 def make_default_gpu_lowering_registry() -> GpuLoweringRegistry:
     registry = GpuLoweringRegistry()
     kernel_categories = {
@@ -555,6 +596,18 @@ def make_default_gpu_lowering_registry() -> GpuLoweringRegistry:
         lowering_kind='shape_flatten_shim',
         kernel_category=kernel_categories['Flatten'],
         fn=_lower_flatten,
+    )
+    registry.register(
+        'AdaptiveAvgPool2d',
+        lowering_kind='pool_global_avgpool2d_shim',
+        kernel_category=kernel_categories['AdaptiveAvgPool2d'],
+        fn=_lower_global_avgpool2d,
+    )
+    registry.register(
+        'GlobalAvgPool2d',
+        lowering_kind='pool_global_avgpool2d_shim',
+        kernel_category=kernel_categories['GlobalAvgPool2d'],
+        fn=_lower_global_avgpool2d,
     )
     registry.register(
         'LeakyReLU',
