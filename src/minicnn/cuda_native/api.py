@@ -95,7 +95,7 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
                 train_cfg=train_cfg,
             )
             training_lowering_plan_summary = training_lowering_plan.summary()
-            if selected_mode == 'gpu_native':
+            if selected_mode in {'gpu_native', 'gpu_native_auto'}:
                 supported_from_plan = {
                     str(step.get('op_name'))
                     for step in dispatch_plan_summary.get('steps', [])
