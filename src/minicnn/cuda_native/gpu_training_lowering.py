@@ -100,12 +100,63 @@ class GpuTrainingLoweringPlan:
             'fallback_policy': self.fallback_policy(),
             'required_symbols': self.required_symbols(),
             'required_symbols_by_phase': self.required_symbols_by_phase(),
+            'training_launch_trace': [
+                packet.summary() for packet in build_gpu_training_launch_trace(self)
+            ],
             'forward_steps': [step.summary() for step in self.forward_steps],
             'loss_step': None if self.loss_step is None else self.loss_step.summary(),
             'backward_steps': [step.summary() for step in self.backward_steps],
             'optimizer_steps': [step.summary() for step in self.optimizer_steps],
             'unsupported_reasons': list(self.unsupported_reasons),
         }
+
+
+@dataclass(frozen=True)
+class GpuTrainingLaunchPacket:
+    ordinal: int
+    phase: str
+    op_name: str
+    lowering_kind: str
+    launch_family: str
+    node_name: str | None
+    param_keys: tuple[str, ...]
+    required_symbols: tuple[str, ...]
+    supported: bool
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            'ordinal': self.ordinal,
+            'phase': self.phase,
+            'op_name': self.op_name,
+            'lowering_kind': self.lowering_kind,
+            'launch_family': self.launch_family,
+            'node_name': self.node_name,
+            'param_keys': list(self.param_keys),
+            'required_symbols': list(self.required_symbols),
+            'supported': self.supported,
+        }
+
+
+def build_gpu_training_launch_trace(plan: GpuTrainingLoweringPlan) -> tuple[GpuTrainingLaunchPacket, ...]:
+    steps: list[GpuTrainingLoweringStep] = list(plan.forward_steps)
+    if plan.loss_step is not None:
+        steps.append(plan.loss_step)
+    steps.extend(plan.backward_steps)
+    steps.extend(plan.optimizer_steps)
+    return tuple(
+        GpuTrainingLaunchPacket(
+            ordinal=index,
+            phase=step.phase,
+            op_name=step.op_name,
+            lowering_kind=step.lowering_kind,
+            launch_family=step.launch_family,
+            node_name=step.node_name,
+            param_keys=step.param_keys,
+            required_symbols=step.required_symbols,
+            supported=step.supported,
+        )
+        for index, step in enumerate(steps)
+    )
 
 
 def _required_symbols_for_lowering(lowering_kind: str) -> tuple[str, ...]:

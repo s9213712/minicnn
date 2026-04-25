@@ -87,6 +87,9 @@ Completed:
 - GPU training capability entries now publish the same fallback and helper
   constraint surface, so docs/CLI/diagnostics can distinguish GPU-first support
   from NumPy fallback without duplicating policy text
+- `training_lowering_plan.training_launch_trace` now emits ordered
+  forward/loss/backward/optimizer launch packets, which is the bridge from
+  helper-backed subsets toward real per-op training lowering shims
 - runtime `execution_trace` telemetry that records the actual native
   forward/loss/backward/optimizer calls emitted by helper-backed training steps
 - `check_cuda_ready()` now reports `runtime_preflight` and overall `ready`, so
