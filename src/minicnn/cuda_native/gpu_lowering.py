@@ -174,7 +174,7 @@ def _lower_leaky_relu(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
         and input_tensor.device_ptr is not None
         and hasattr(ctx.runtime.bound_lib, 'leaky_relu_forward')
     ):
-        output_shape = (n, c_out, out_h, out_w)
+        output_shape = tuple(int(v) for v in x.shape)
         output = ctx.runtime.allocate_staging_buffer(output_shape, dtype='float32', name=node.outputs[0])
         np.copyto(output.data, x)
         ctx.runtime.sync_tensor_to_device(output)
