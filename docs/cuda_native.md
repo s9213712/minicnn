@@ -246,6 +246,7 @@ Current `train-native engine.execution_mode=gpu_native` training subsets:
 - `Flatten -> Linear -> ReLU -> Linear`
 - `MaxPool2d -> Flatten -> Linear`
 - `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear`
+- `BatchNorm2d -> Flatten -> Linear`
 - `GlobalAvgPool2d -> Flatten -> Linear`
 - `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
@@ -257,9 +258,9 @@ Current `train-native engine.execution_mode=gpu_native` training subsets:
 These subsets execute through native GPU helper paths for forward, loss-gradient,
 covered backward kernels, and supported optimizer updates. General graph-level
 GPU backward lowering is still pending.
-`BatchNorm2d` is now part of the `gpu_native` forward dispatch/bootstrap
-primitive set, but it is not yet accepted by `gpu_native` train-native helper
-subsets.
+`BatchNorm2d` is now part of the `gpu_native` train-native helper subset for
+`BatchNorm2d -> Flatten -> Linear` through `bn_train_forward` and
+`bn_backward`.
 `GlobalAvgPool2d` and `AdaptiveAvgPool2d(output_size=1)` are also covered by
 helper-backed train-native subsets through `global_avgpool2d_forward` and
 `global_avgpool2d_backward`.

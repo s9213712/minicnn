@@ -17,6 +17,8 @@ Completed:
 - native forward lowering for the bootstrap op set
 - `BatchNorm2d` forward dispatch/lowering shim in the `gpu_native` bootstrap
   primitive set
+- native `BatchNorm2d -> Flatten -> Linear` training helper through
+  `bn_train_forward` and `bn_backward`
 - `GlobalAvgPool2d` and `AdaptiveAvgPool2d(output_size=1)` forward dispatch
   through the `global_avgpool2d_forward` C ABI shim
 - `AvgPool2d` forward/backward dispatch through the `avgpool2d_forward` and
@@ -68,6 +70,7 @@ Supported through native GPU helper paths:
 - `Flatten -> Linear -> ReLU -> Linear`
 - `MaxPool2d -> Flatten -> Linear`
 - `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear`
+- `BatchNorm2d -> Flatten -> Linear`
 - `GlobalAvgPool2d -> Flatten -> Linear`
 - `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
@@ -142,8 +145,8 @@ Still not claimed as complete:
 
 - full graph-level GPU backward generalization
 - composite/block training lowering for residual and ConvNeXt-style models
-- `BatchNorm2d` train-native helper coverage; current work is forward dispatch
-  only
+- broader `BatchNorm2d` graph-level train-native coverage beyond the
+  `BatchNorm2d -> Flatten -> Linear` helper subset
 - modern elementwise activation train-native helper coverage; current work is
   forward dispatch only
 - `PointwiseConv2d` train-native helper coverage; current work is forward
@@ -160,7 +163,7 @@ Still not claimed as complete:
 Current repo-side validation:
 
 ```text
-155 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+156 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:

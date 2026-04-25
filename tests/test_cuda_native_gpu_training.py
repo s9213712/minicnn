@@ -6,6 +6,7 @@ import numpy as np
 
 from minicnn.cuda_native.gpu_training import (
     native_gpu_avgpool_linear_training_step,
+    native_gpu_batchnorm_linear_training_step,
     native_gpu_conv_linear_training_step,
     native_gpu_global_avgpool_linear_training_step,
     native_gpu_linear_training_step,
@@ -204,6 +205,57 @@ class _RawFakeCudaLib:
                         iw = ow * 2 + flat_idx % 2
                         grad_input[ni, ci, ih, iw] += grad_out[ni, ci, oh, ow]
         self._float(d_grad_input)[:] = grad_input.reshape(-1)
+
+    def bn_train_forward(
+        self,
+        d_y,
+        d_x,
+        d_x_hat,
+        d_batch_mean,
+        d_batch_inv_std,
+        d_running_mean,
+        d_running_var,
+        d_gamma,
+        d_beta,
+        n,
+        c,
+        h,
+        w,
+        eps,
+        momentum,
+    ):
+        x = self._float(d_x).reshape(int(n), int(c), int(h), int(w))
+        gamma = self._float(d_gamma).reshape(int(c))
+        beta = self._float(d_beta).reshape(int(c))
+        mean = x.mean(axis=(0, 2, 3)).astype(np.float32)
+        var = x.var(axis=(0, 2, 3)).astype(np.float32)
+        inv_std = (1.0 / np.sqrt(var + float(eps))).astype(np.float32)
+        x_hat = ((x - mean.reshape(1, int(c), 1, 1)) * inv_std.reshape(1, int(c), 1, 1)).astype(np.float32)
+        y = x_hat * gamma.reshape(1, int(c), 1, 1) + beta.reshape(1, int(c), 1, 1)
+        self._float(d_y)[:] = y.astype(np.float32).reshape(-1)
+        self._float(d_x_hat)[:] = x_hat.reshape(-1)
+        self._float(d_batch_mean)[:] = mean
+        self._float(d_batch_inv_std)[:] = inv_std
+        self._float(d_running_mean)[:] = (1.0 - float(momentum)) * self._float(d_running_mean)[:int(c)] + float(momentum) * mean
+        self._float(d_running_var)[:] = (1.0 - float(momentum)) * self._float(d_running_var)[:int(c)] + float(momentum) * var
+
+    def bn_backward(self, d_dx, d_dgamma, d_dbeta, d_dy, d_x_hat, d_gamma, d_inv_std, n, c, h, w):
+        grad_out = self._float(d_dy).reshape(int(n), int(c), int(h), int(w))
+        x_hat = self._float(d_x_hat).reshape(int(n), int(c), int(h), int(w))
+        gamma = self._float(d_gamma).reshape(int(c))
+        inv_std = self._float(d_inv_std).reshape(1, int(c), 1, 1)
+        grad_gamma = (grad_out * x_hat).sum(axis=(0, 2, 3)).astype(np.float32)
+        grad_beta = grad_out.sum(axis=(0, 2, 3)).astype(np.float32)
+        elems = float(int(n) * int(h) * int(w))
+        sum_grad = grad_out.sum(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+        sum_grad_xhat = (grad_out * x_hat).sum(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+        grad_input = (
+            (gamma.reshape(1, int(c), 1, 1) * inv_std / elems)
+            * (elems * grad_out - sum_grad - x_hat * sum_grad_xhat)
+        )
+        self._float(d_dx)[:] = grad_input.astype(np.float32).reshape(-1)
+        self._float(d_dgamma)[:] = grad_gamma
+        self._float(d_dbeta)[:] = grad_beta
 
     def softmax_xent_grad_loss_acc(
         self,
@@ -1013,6 +1065,91 @@ def test_native_gpu_avgpool_linear_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:avgpool2d_backward'] == 1
 
 
+def test_native_gpu_batchnorm_linear_training_step_matches_reference_math():
+    x = (np.arange(16, dtype=np.float32).reshape(2, 2, 2, 2) - 6.0) / 5.0
+    labels = np.asarray([1, 0], dtype=np.int32)
+    bn_weight = np.asarray([1.0, 1.5], dtype=np.float32)
+    bn_bias = np.asarray([-0.25, 0.5], dtype=np.float32)
+    running_mean = np.asarray([0.1, -0.2], dtype=np.float32)
+    running_var = np.asarray([1.2, 0.8], dtype=np.float32)
+    linear_weight = np.asarray(
+        [
+            [0.1, -0.2, 0.05, 0.3, -0.1, 0.2, 0.15, -0.05],
+            [-0.05, 0.25, -0.15, 0.2, 0.12, -0.18, 0.08, 0.04],
+        ],
+        dtype=np.float32,
+    )
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.05
+    eps = 1e-5
+    bn_momentum = 0.2
+
+    result = native_gpu_batchnorm_linear_training_step(
+        x,
+        labels,
+        bn_weight,
+        bn_bias,
+        running_mean,
+        running_var,
+        linear_weight,
+        linear_bias,
+        lr=lr,
+        bn_eps=eps,
+        bn_momentum=bn_momentum,
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    mean = x.mean(axis=(0, 2, 3)).astype(np.float32)
+    var = x.var(axis=(0, 2, 3)).astype(np.float32)
+    inv_std = (1.0 / np.sqrt(var + eps)).astype(np.float32)
+    x_hat = ((x - mean.reshape(1, 2, 1, 1)) * inv_std.reshape(1, 2, 1, 1)).astype(np.float32)
+    bn_output = x_hat * bn_weight.reshape(1, 2, 1, 1) + bn_bias.reshape(1, 2, 1, 1)
+    flat = bn_output.reshape(2, -1)
+    logits = flat @ linear_weight.T + linear_bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_linear_weight = grad_logits.T @ flat
+    grad_linear_bias = grad_logits.sum(axis=0)
+    grad_bn_output = (grad_logits @ linear_weight).reshape(bn_output.shape)
+    grad_bn_weight = (grad_bn_output * x_hat).sum(axis=(0, 2, 3)).astype(np.float32)
+    grad_bn_bias = grad_bn_output.sum(axis=(0, 2, 3)).astype(np.float32)
+    elems = float(x.shape[0] * x.shape[2] * x.shape[3])
+    sum_grad = grad_bn_output.sum(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+    sum_grad_xhat = (grad_bn_output * x_hat).sum(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+    grad_input = (
+        (bn_weight.reshape(1, 2, 1, 1) * inv_std.reshape(1, 2, 1, 1) / elems)
+        * (elems * grad_bn_output - sum_grad - x_hat * sum_grad_xhat)
+    )
+    next_running_mean = (1.0 - bn_momentum) * running_mean + bn_momentum * mean
+    next_running_var = (1.0 - bn_momentum) * running_var + bn_momentum * var
+
+    np.testing.assert_allclose(result.bn_output, bn_output, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.x_hat, x_hat, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.batch_mean, mean, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.batch_inv_std, inv_std, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.logits, logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.probabilities, probs, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_bn_output, grad_bn_output, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_input, grad_input, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_bn_weight, grad_bn_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_bn_bias, grad_bn_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_linear_weight, grad_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_linear_bias, grad_linear_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bn_weight, bn_weight - lr * grad_bn_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bn_bias, bn_bias - lr * grad_bn_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_running_mean, next_running_mean, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_running_var, next_running_var, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_linear_weight, linear_weight - lr * grad_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_linear_bias, linear_bias - lr * grad_linear_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:bn_train_forward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:bn_backward'] == 1
+
+
 def test_native_gpu_conv_linear_training_step_matches_reference_math():
     x = np.asarray(
         [
@@ -1296,6 +1433,7 @@ def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
         ('Flatten', 'Linear', 'ReLU', 'Linear'),
         ('MaxPool2d', 'Flatten', 'Linear'),
         ('AvgPool2d', 'Flatten', 'Linear'),
+        ('BatchNorm2d', 'Flatten', 'Linear'),
         ('GlobalAvgPool2d', 'Flatten', 'Linear'),
         ('AdaptiveAvgPool2d', 'Flatten', 'Linear'),
         ('Conv2d', 'Flatten', 'Linear'),
