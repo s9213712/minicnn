@@ -63,3 +63,56 @@ def test_gpu_native_auto_falls_back_to_numpy_when_runtime_is_not_ready(monkeypat
     assert payload['gpu_native_runtime_ready'] is False
     assert payload['fallback_active'] is True
     assert payload['fallback_reason'] == 'cuda_runtime_not_ready'
+
+
+def test_train_native_gpu_native_auto_runtime_fallback_preamble(tmp_path, capsys, monkeypatch):
+    import json
+
+    import minicnn.cuda_native.api as api
+    from minicnn.cli import main
+
+    monkeypatch.setattr(api, '_cuda_runtime_ready_for_gpu_native', lambda: (False, 'cuda_runtime_not_ready'))
+    config_path = tmp_path / 'cfg.yaml'
+    config_path.write_text(
+        """engine:
+  backend: cuda_native
+  execution_mode: gpu_native_auto
+dataset:
+  type: random
+  input_shape: [1, 4, 4]
+  num_classes: 2
+  num_samples: 8
+  val_samples: 4
+  seed: 11
+model:
+  layers:
+    - type: Flatten
+    - type: Linear
+      out_features: 2
+train:
+  batch_size: 2
+  epochs: 1
+  init_seed: 11
+optimizer:
+  type: SGD
+  lr: 0.01
+loss:
+  type: CrossEntropyLoss
+project:
+  artifacts_root: REPLACE_ARTIFACTS
+""".replace('REPLACE_ARTIFACTS', str(tmp_path / 'artifacts')),
+        encoding='utf-8',
+    )
+
+    rc = main(['train-native', '--config', str(config_path)])
+    stdout = capsys.readouterr().out
+    json_text = stdout.split('Artifacts written to:')[0].strip()
+    payload, _ = json.JSONDecoder().raw_decode(json_text)
+
+    assert rc == 0
+    assert payload['selected_execution_mode'] == 'gpu_native_auto'
+    assert payload['effective_execution_mode'] == 'reference_numpy'
+    assert payload['tensor_execution_device'] == 'cpu'
+    assert payload['gpu_execution'] is False
+    assert payload['fallback_active'] is True
+    assert payload['fallback_reason'] == 'cuda_runtime_not_ready'
