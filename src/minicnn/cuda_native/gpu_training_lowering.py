@@ -249,6 +249,54 @@ def _conv_nodes(graph: NativeGraph) -> list[Any]:
     return [node for node in graph.topological_order() if node.op_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d'}]
 
 
+def _pair(value: Any, default: int) -> tuple[int, int]:
+    if value is None:
+        return (default, default)
+    if isinstance(value, (list, tuple)):
+        if len(value) == 1:
+            return (int(value[0]), int(value[0]))
+        return (int(value[0]), int(value[1]))
+    return (int(value), int(value))
+
+
+def _is_output_size_one(value: Any) -> bool:
+    if isinstance(value, (list, tuple)):
+        return all(int(item) == 1 for item in value)
+    return int(value) == 1
+
+
+def _training_subset_constraint_reasons(graph: NativeGraph, subset_name: str | None) -> list[str]:
+    if subset_name is None:
+        return []
+    reasons: list[str] = []
+    for node in graph.topological_order():
+        op_name = str(node.op_type)
+        attrs = dict(getattr(node, 'attrs', {}) or {})
+        if op_name in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d'}:
+            if bool(attrs.get('bias', True)):
+                reasons.append(f'gpu_native training subset {subset_name} requires {op_name} node={node.name} bias=false')
+            if _pair(attrs.get('stride', 1), 1) != (1, 1):
+                reasons.append(f'gpu_native training subset {subset_name} requires {op_name} node={node.name} stride=1')
+            if _pair(attrs.get('padding', 0), 0) != (0, 0):
+                reasons.append(f'gpu_native training subset {subset_name} requires {op_name} node={node.name} padding=0')
+            if _pair(attrs.get('dilation', 1), 1) != (1, 1):
+                reasons.append(f'gpu_native training subset {subset_name} requires {op_name} node={node.name} dilation=1')
+            if op_name == 'PointwiseConv2d' and _pair(attrs.get('kernel_size', 1), 1) != (1, 1):
+                reasons.append(f'gpu_native training subset {subset_name} requires PointwiseConv2d node={node.name} kernel_size=1')
+        elif op_name in {'AvgPool2d', 'MaxPool2d'}:
+            if _pair(attrs.get('kernel_size', 2), 2) != (2, 2):
+                reasons.append(f'gpu_native training subset {subset_name} requires {op_name} node={node.name} kernel_size=2')
+            if _pair(attrs.get('stride', attrs.get('kernel_size', 2)), 2) != (2, 2):
+                reasons.append(f'gpu_native training subset {subset_name} requires {op_name} node={node.name} stride=2')
+            if _pair(attrs.get('padding', 0), 0) != (0, 0):
+                reasons.append(f'gpu_native training subset {subset_name} requires {op_name} node={node.name} padding=0')
+        elif op_name == 'AdaptiveAvgPool2d' and not _is_output_size_one(attrs.get('output_size', 1)):
+            reasons.append(
+                f'gpu_native training subset {subset_name} requires AdaptiveAvgPool2d node={node.name} output_size=1'
+            )
+    return reasons
+
+
 def _loss_step(
     loss_type: str,
     subset_name: str | None,
@@ -591,6 +639,7 @@ def build_gpu_training_lowering_plan(
         unsupported_reasons.append(f'unsupported gpu_native training subset: {list(ops)}')
     if not dispatch_plan.ready:
         unsupported_reasons.append(f'unsupported gpu dispatch ops: {list(dispatch_plan.unsupported_ops)}')
+    unsupported_reasons.extend(_training_subset_constraint_reasons(graph, subset_name))
 
     loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
     loss_step, loss_reasons = _loss_step(

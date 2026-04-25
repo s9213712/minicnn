@@ -80,6 +80,10 @@ Completed:
   subsets into forward/loss/backward/optimizer lowering steps
 - `training_lowering_plan.fallback_policy`, which keeps `reference_numpy` as an
   explicit backup path without counting fallback execution as GPU success
+- training lowering now checks helper-specific Conv/Pool preconditions early
+  (`bias=false`, valid Conv padding/stride/dilation, 2x2 pool constraints, and
+  adaptive/global average pool shape limits), so unsupported GPU requests expose
+  an active NumPy fallback before runtime helper dispatch
 - runtime `execution_trace` telemetry that records the actual native
   forward/loss/backward/optimizer calls emitted by helper-backed training steps
 - `check_cuda_ready()` now reports `runtime_preflight` and overall `ready`, so
