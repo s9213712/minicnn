@@ -273,6 +273,11 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
             c_void_p, c_void_p, c_void_p, c_void_p,
             c_int, c_int, c_int, c_int, c_float,
         ]
+    if hasattr(bound_lib, 'layernorm2d_backward'):
+        bound_lib.layernorm2d_backward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_float,
+        ]
     if hasattr(bound_lib, 'groupnorm_forward'):
         bound_lib.groupnorm_forward.argtypes = [
             c_void_p, c_void_p, c_void_p, c_void_p,

@@ -322,6 +322,60 @@ __global__ void layernorm2d_forward_kernel(
     }
 }
 
+__global__ void layernorm2d_backward_kernel(
+    const float* grad_output,
+    const float* input,
+    const float* gamma,
+    float* grad_input,
+    float* grad_gamma,
+    float* grad_beta,
+    int n,
+    int c,
+    int h,
+    int w,
+    float eps
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int spatial = h * w;
+    int total = n * c * spatial;
+    if (idx >= total) return;
+    int hw = idx % spatial;
+    int ch = (idx / spatial) % c;
+    int batch = idx / (c * spatial);
+    int sample_offset = batch * c * spatial;
+
+    float mean = 0.0f;
+    for (int cc = 0; cc < c; ++cc) {
+        mean += input[sample_offset + cc * spatial + hw];
+    }
+    mean /= static_cast<float>(c);
+
+    float var = 0.0f;
+    for (int cc = 0; cc < c; ++cc) {
+        float diff = input[sample_offset + cc * spatial + hw] - mean;
+        var += diff * diff;
+    }
+    float inv_std = rsqrtf(var / static_cast<float>(c) + eps);
+
+    float sum_dxhat = 0.0f;
+    float sum_dxhat_xhat = 0.0f;
+    for (int cc = 0; cc < c; ++cc) {
+        int offset = sample_offset + cc * spatial + hw;
+        float x_hat = (input[offset] - mean) * inv_std;
+        float dxhat = grad_output[offset] * gamma[cc];
+        sum_dxhat += dxhat;
+        sum_dxhat_xhat += dxhat * x_hat;
+    }
+
+    float x_hat_ch = (input[idx] - mean) * inv_std;
+    float dxhat_ch = grad_output[idx] * gamma[ch];
+    grad_input[idx] = (inv_std / static_cast<float>(c)) * (
+        static_cast<float>(c) * dxhat_ch - sum_dxhat - x_hat_ch * sum_dxhat_xhat
+    );
+    atomicAdd(&grad_gamma[ch], grad_output[idx] * x_hat_ch);
+    atomicAdd(&grad_beta[ch], grad_output[idx]);
+}
+
 __global__ void groupnorm_forward_kernel(
     const float* input,
     const float* gamma,
@@ -643,6 +697,32 @@ extern "C" {
         int tpb = 256;
         layernorm2d_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(
             d_input, d_gamma, d_beta, d_output, n, c, h, w, eps
+        );
+        CUDA_KERNEL_CHECK();
+    }
+
+    void layernorm2d_backward(
+        float* d_grad_output,
+        float* d_input,
+        float* d_gamma,
+        float* d_grad_input,
+        float* d_grad_gamma,
+        float* d_grad_beta,
+        int n,
+        int c,
+        int h,
+        int w,
+        float eps
+    ) {
+        int total = n * c * h * w;
+        int tpb = 256;
+        cudaMemset(d_grad_gamma, 0, c * sizeof(float));
+        CUDA_KERNEL_CHECK();
+        cudaMemset(d_grad_beta, 0, c * sizeof(float));
+        CUDA_KERNEL_CHECK();
+        layernorm2d_backward_kernel<<<(total + tpb - 1) / tpb, tpb>>>(
+            d_grad_output, d_input, d_gamma, d_grad_input, d_grad_gamma, d_grad_beta,
+            n, c, h, w, eps
         );
         CUDA_KERNEL_CHECK();
     }

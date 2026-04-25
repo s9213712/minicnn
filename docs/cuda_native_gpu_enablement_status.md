@@ -45,6 +45,8 @@ Completed:
 - `GroupNorm` forward dispatch through the native `groupnorm_forward` C ABI shim
 - `LayerNorm2d` forward dispatch through the native `layernorm2d_forward` C ABI
   shim
+- `LayerNorm2d` backward C ABI shim through `layernorm2d_backward` as the
+  prerequisite for LayerNorm2d helper-backed training subsets
 - native training helpers for the current narrow training subsets
 - native `GlobalAvgPool2d -> Flatten -> Linear` and
   `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` training helpers
@@ -172,8 +174,8 @@ Still not claimed as complete:
   `PointwiseConv2d -> Flatten -> Linear` helper subsets
 - `GroupNorm` train-native helper coverage; current work is forward dispatch
   only
-- `LayerNorm2d` train-native helper coverage; current work is forward dispatch
-  only
+- `LayerNorm2d` train-native helper coverage; current work has native
+  forward/backward C ABI shims but no helper-backed training subset yet
 
 ## Validation evidence
 
