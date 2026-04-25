@@ -57,6 +57,10 @@ That means:
 - `engine.backend=cuda_native` without `execution_mode=gpu_native` still uses
   the reference NumPy execution mode
 - `execution_mode=gpu_native` is the GPU-first path for the supported subset
+- GPU-first diagnostics now expose a machine-readable fallback policy: supported
+  subsets keep `reference_numpy` available as a non-active backup, while
+  unsupported GPU subsets mark the NumPy fallback as active instead of pretending
+  that GPU lowering succeeded
 - support for broader composite blocks is still about semantics/correctness
   until those blocks are lowered into native GPU training composition
 
@@ -159,6 +163,9 @@ Current status:
 - bridge telemetry now tracks the required CUDA symbols for the current native
   forward surface, including activation, pool, normalization, convolution, and
   alias ops, so diagnostics no longer under-report native kernel requirements
+- training lowering summaries now expose `fallback_policy`, making the intended
+  `gpu_native` first / `reference_numpy` backup contract explicit for every
+  validation surface that includes the lowering plan
 
 Goal:
 

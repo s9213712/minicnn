@@ -75,6 +75,8 @@ Completed:
 - hermetic reference-math parity matrix
 - readiness diagnostics with a `training_lowering_plan` that breaks helper
   subsets into forward/loss/backward/optimizer lowering steps
+- `training_lowering_plan.fallback_policy`, which keeps `reference_numpy` as an
+  explicit backup path without counting fallback execution as GPU success
 - runtime `execution_trace` telemetry that records the actual native
   forward/loss/backward/optimizer calls emitted by helper-backed training steps
 - `check_cuda_ready()` now reports `runtime_preflight` and overall `ready`, so

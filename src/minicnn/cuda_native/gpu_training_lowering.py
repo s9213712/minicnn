@@ -75,12 +75,29 @@ class GpuTrainingLoweringPlan:
             symbols.update(phase_symbols)
         return sorted(symbols)
 
+    def fallback_policy(self) -> dict[str, Any]:
+        if self.ready:
+            reason = 'not_needed'
+        elif self.unsupported_reasons:
+            reason = '; '.join(self.unsupported_reasons)
+        else:
+            reason = 'gpu_native_training_lowering_not_ready'
+        return {
+            'selected_execution_mode': self.execution_mode,
+            'gpu_native_ready': self.ready,
+            'fallback_execution_mode': 'reference_numpy',
+            'fallback_available': True,
+            'fallback_active': not self.ready,
+            'fallback_reason': reason,
+        }
+
     def summary(self) -> dict[str, Any]:
         return {
             'execution_mode': self.execution_mode,
             'ready': self.ready,
             'subset_name': self.subset_name,
             'helper': self.helper,
+            'fallback_policy': self.fallback_policy(),
             'required_symbols': self.required_symbols(),
             'required_symbols_by_phase': self.required_symbols_by_phase(),
             'forward_steps': [step.summary() for step in self.forward_steps],
