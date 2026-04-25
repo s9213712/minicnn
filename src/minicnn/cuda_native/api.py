@@ -213,6 +213,7 @@ def _validate_gpu_native_training_subset(
         ['Linear', 'ReLU', 'Linear'],
         ['Flatten', 'Linear', 'ReLU', 'Linear'],
         ['MaxPool2d', 'Flatten', 'Linear'],
+        ['AvgPool2d', 'Flatten', 'Linear'],
         ['GlobalAvgPool2d', 'Flatten', 'Linear'],
         ['AdaptiveAvgPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'Flatten', 'Linear'],
@@ -225,7 +226,8 @@ def _validate_gpu_native_training_subset(
             'cuda_native gpu_native train-native currently supports only the narrow '
             'Linear training subset ops=[Linear], [Flatten, Linear], '
             '[Linear, ReLU, Linear], [Flatten, Linear, ReLU, Linear], '
-            '[MaxPool2d, Flatten, Linear], [GlobalAvgPool2d, Flatten, Linear], '
+            '[MaxPool2d, Flatten, Linear], [AvgPool2d, Flatten, Linear], '
+            '[GlobalAvgPool2d, Flatten, Linear], '
             '[AdaptiveAvgPool2d, Flatten, Linear], [Conv2d, Flatten, Linear], '
             '[Conv2d, ReLU, Flatten, Linear], [Conv2d, MaxPool2d, Flatten, Linear], '
             '[Conv2d, ReLU, MaxPool2d, Flatten, Linear], or '
@@ -264,6 +266,24 @@ def _validate_gpu_native_training_subset(
                 errors.append('cuda_native gpu_native Conv2d train-native subset currently requires padding=0.')
             if _pair(conv_attrs.get('dilation', 1), 1) != (1, 1):
                 errors.append('cuda_native gpu_native Conv2d train-native subset currently requires dilation=1.')
+    if ops == ['AvgPool2d', 'Flatten', 'Linear']:
+        pool_attrs = dict(getattr(nodes[0], 'attrs', {}) or {})
+
+        def _pool_pair(value: Any, default: int) -> tuple[int, int]:
+            if value is None:
+                return (default, default)
+            if isinstance(value, (list, tuple)):
+                if len(value) == 1:
+                    return (int(value[0]), int(value[0]))
+                return (int(value[0]), int(value[1]))
+            return (int(value), int(value))
+
+        if _pool_pair(pool_attrs.get('kernel_size', 2), 2) != (2, 2):
+            errors.append('cuda_native gpu_native AvgPool2d train-native subset currently requires kernel_size=2.')
+        if _pool_pair(pool_attrs.get('stride', pool_attrs.get('kernel_size', 2)), 2) != (2, 2):
+            errors.append('cuda_native gpu_native AvgPool2d train-native subset currently requires stride=2.')
+        if _pool_pair(pool_attrs.get('padding', 0), 0) != (0, 0):
+            errors.append('cuda_native gpu_native AvgPool2d train-native subset currently requires padding=0.')
     loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
     if loss_type != 'CrossEntropyLoss' and ops not in (['Linear'], ['Flatten', 'Linear']):
         errors.append('cuda_native gpu_native train-native currently supports MSELoss/BCEWithLogitsLoss only for the Linear subset.')

@@ -19,7 +19,8 @@ Completed:
   primitive set
 - `GlobalAvgPool2d` and `AdaptiveAvgPool2d(output_size=1)` forward dispatch
   through the `global_avgpool2d_forward` C ABI shim
-- `AvgPool2d` forward dispatch through the `avgpool2d_forward` C ABI shim
+- `AvgPool2d` forward/backward dispatch through the `avgpool2d_forward` and
+  `avgpool2d_backward` C ABI shims
 - `Identity`, `Dropout(p=0)`, and `DropPath(p=0)` forward dispatch as no-op
   GPU aliases
 - `GELU`, `SiLU`, `Sigmoid`, and `Tanh` forward dispatch through native
@@ -34,8 +35,8 @@ Completed:
 - native training helpers for the current narrow training subsets
 - native `GlobalAvgPool2d -> Flatten -> Linear` and
   `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` training helpers
-- `AvgPool2d` train-native helper coverage; current work is forward dispatch
-  only
+- native `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear`
+  training helper
 - stochastic `Dropout/DropPath` native mask kernels and graph-backward coverage;
   only `p=0` no-op aliases are currently part of the GPU-first dispatch path
 - CLI validation/runtime routing for supported `gpu_native` subsets
@@ -66,6 +67,7 @@ Supported through native GPU helper paths:
 - `Linear -> ReLU -> Linear`
 - `Flatten -> Linear -> ReLU -> Linear`
 - `MaxPool2d -> Flatten -> Linear`
+- `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear`
 - `GlobalAvgPool2d -> Flatten -> Linear`
 - `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
@@ -158,7 +160,7 @@ Still not claimed as complete:
 Current repo-side validation:
 
 ```text
-154 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+155 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:

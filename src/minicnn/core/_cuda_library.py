@@ -240,6 +240,12 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
             c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
             c_int, c_int, c_int, c_int,
         ]
+    if hasattr(bound_lib, 'avgpool2d_backward'):
+        bound_lib.avgpool2d_backward.argtypes = [
+            c_void_p, c_void_p,
+            c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int,
+            c_int, c_int, c_int, c_int,
+        ]
     if hasattr(bound_lib, 'depthwise_conv2d_forward'):
         bound_lib.depthwise_conv2d_forward.argtypes = [
             c_void_p, c_void_p, c_void_p, c_void_p,
