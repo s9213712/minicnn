@@ -239,6 +239,55 @@ __global__ void depthwise_conv2d_forward_kernel(
     output[idx] = sum;
 }
 
+__global__ void depthwise_conv2d_backward_kernel(
+    const float* grad_output,
+    const float* input,
+    const float* weight,
+    float* grad_input,
+    float* grad_weight,
+    float* grad_bias,
+    int n,
+    int c,
+    int h,
+    int w,
+    int out_c,
+    int kh,
+    int kw,
+    int out_h,
+    int out_w,
+    int stride_h,
+    int stride_w,
+    int pad_h,
+    int pad_w,
+    int has_bias
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n * out_c * out_h * out_w;
+    if (idx >= total) return;
+    int ow = idx % out_w;
+    int oh = (idx / out_w) % out_h;
+    int oc = (idx / (out_w * out_h)) % out_c;
+    int batch = idx / (out_w * out_h * out_c);
+    int multiplier = out_c / c;
+    int ic = oc / multiplier;
+    float grad = grad_output[idx];
+    if (has_bias) {
+        atomicAdd(&grad_bias[oc], grad);
+    }
+    for (int r = 0; r < kh; ++r) {
+        int ih = oh * stride_h + r - pad_h;
+        if (ih < 0 || ih >= h) continue;
+        for (int s = 0; s < kw; ++s) {
+            int iw = ow * stride_w + s - pad_w;
+            if (iw < 0 || iw >= w) continue;
+            int in_idx = ((batch * c + ic) * h + ih) * w + iw;
+            int weight_idx = ((oc * 1) * kh + r) * kw + s;
+            atomicAdd(&grad_input[in_idx], weight[weight_idx] * grad);
+            atomicAdd(&grad_weight[weight_idx], input[in_idx] * grad);
+        }
+    }
+}
+
 __global__ void layernorm2d_forward_kernel(
     const float* input,
     const float* gamma,
@@ -543,6 +592,48 @@ extern "C" {
             d_input, d_weight, d_bias, d_output,
             n, c, h, w, out_c, kh, kw, out_h, out_w,
             stride_h, stride_w, pad_h, pad_w, has_bias
+        );
+        CUDA_KERNEL_CHECK();
+    }
+
+    void depthwise_conv2d_backward(
+        float* d_grad_output,
+        float* d_input,
+        float* d_weight,
+        float* d_grad_input,
+        float* d_grad_weight,
+        float* d_grad_bias,
+        int n,
+        int c,
+        int h,
+        int w,
+        int out_c,
+        int kh,
+        int kw,
+        int out_h,
+        int out_w,
+        int stride_h,
+        int stride_w,
+        int pad_h,
+        int pad_w,
+        int has_bias
+    ) {
+        int input_size = n * c * h * w;
+        int weight_size = out_c * kh * kw;
+        int bias_size = out_c;
+        int output_size = n * out_c * out_h * out_w;
+        int tpb = 256;
+        cudaMemset(d_grad_input, 0, input_size * sizeof(float));
+        CUDA_KERNEL_CHECK();
+        cudaMemset(d_grad_weight, 0, weight_size * sizeof(float));
+        CUDA_KERNEL_CHECK();
+        if (has_bias) {
+            cudaMemset(d_grad_bias, 0, bias_size * sizeof(float));
+            CUDA_KERNEL_CHECK();
+        }
+        depthwise_conv2d_backward_kernel<<<(output_size + tpb - 1) / tpb, tpb>>>(
+            d_grad_output, d_input, d_weight, d_grad_input, d_grad_weight, d_grad_bias,
+            n, c, h, w, out_c, kh, kw, out_h, out_w, stride_h, stride_w, pad_h, pad_w, has_bias
         );
         CUDA_KERNEL_CHECK();
     }

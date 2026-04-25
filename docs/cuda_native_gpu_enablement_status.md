@@ -35,6 +35,8 @@ Completed:
   lowering path
 - `DepthwiseConv2d` forward dispatch through the native
   `depthwise_conv2d_forward` C ABI shim
+- `DepthwiseConv2d` backward C ABI shim through
+  `depthwise_conv2d_backward`
 - `GroupNorm` forward dispatch through the native `groupnorm_forward` C ABI shim
 - `LayerNorm2d` forward dispatch through the native `layernorm2d_forward` C ABI
   shim

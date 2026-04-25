@@ -334,6 +334,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'gpu_native now exposes GELU, SiLU, Sigmoid, and Tanh activation backward C ABI shims as the prerequisite for modern activation train-native helpers.',
         'gpu_native forward dispatch now includes PointwiseConv2d through the Conv2d im2col/GEMM lowering path; train-native helper coverage is still pending.',
         'gpu_native forward dispatch now includes DepthwiseConv2d through a native depthwise_conv2d C ABI shim; train-native helper coverage is still pending.',
+        'gpu_native now exposes a native depthwise_conv2d_backward C ABI shim as the prerequisite for depthwise train-native helpers.',
         'gpu_native forward dispatch now includes LayerNorm2d through a native layernorm2d C ABI shim; train-native helper coverage is still pending.',
         'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, and two-Conv ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
         'gpu_native readiness diagnostics expose a training_lowering_plan that decomposes helper subsets into forward, loss, backward, and optimizer lowering steps.',
