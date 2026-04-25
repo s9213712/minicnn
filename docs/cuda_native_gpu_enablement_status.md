@@ -61,6 +61,9 @@ Completed:
 - native `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU ->
   PointwiseConv2d -> Flatten -> Linear` training helper routing through the
   same depthwise/norm/pointwise C ABI shims plus native GELU forward/backward
+- named model spec `convnext_bridge_tiny`, which expands directly to the
+  deepest current ConvNeXt-style native GPU bridge subset instead of requiring
+  users to hand-write the primitive layer sequence
 - native training helpers for the current narrow training subsets
 - native `GlobalAvgPool2d -> Flatten -> Linear` and
   `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` training helpers
@@ -116,6 +119,7 @@ Supported through native GPU helper paths:
 - `DepthwiseConv2d(bias=false) -> LayerNorm2d -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> GELU -> PointwiseConv2d(bias=false) -> Flatten -> Linear`
+- `model.name=convnext_bridge_tiny` resolves to the same deepest bridge subset
 - `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`

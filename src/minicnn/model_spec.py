@@ -41,7 +41,52 @@ def _convnext_tiny_spec(model_cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _convnext_bridge_tiny_spec(model_cfg: dict[str, Any]) -> dict[str, Any]:
+    channels = int(model_cfg.get('channels', model_cfg.get('input_channels', 3)))
+    hidden_channels = int(model_cfg.get('hidden_channels', channels * 4))
+    num_classes = int(model_cfg.get('num_classes', 10))
+    kernel_size = int(model_cfg.get('kernel_size', 3))
+    if channels <= 0:
+        raise ValueError('convnext_bridge_tiny requires a positive channels value')
+    if hidden_channels <= 0:
+        raise ValueError('convnext_bridge_tiny requires a positive hidden_channels value')
+    if num_classes <= 0:
+        raise ValueError('convnext_bridge_tiny requires a positive num_classes value')
+    if kernel_size <= 0 or kernel_size % 2 == 0:
+        raise ValueError('convnext_bridge_tiny requires a positive odd kernel_size value')
+    return {
+        'type': 'convnext_bridge_tiny',
+        'layers': [
+            {
+                'type': 'DepthwiseConv2d',
+                'kernel_size': kernel_size,
+                'stride': 1,
+                'padding': 0,
+                'bias': False,
+            },
+            {
+                'type': 'LayerNorm2d',
+                'eps': float(model_cfg.get('layer_norm_eps', 1e-5)),
+            },
+            {
+                'type': 'PointwiseConv2d',
+                'out_channels': hidden_channels,
+                'bias': False,
+            },
+            {'type': 'GELU'},
+            {
+                'type': 'PointwiseConv2d',
+                'out_channels': channels,
+                'bias': False,
+            },
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': num_classes},
+        ],
+    }
+
+
 _MODEL_SPECS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    'convnext_bridge_tiny': _convnext_bridge_tiny_spec,
     'convnext_tiny': _convnext_tiny_spec,
 }
 

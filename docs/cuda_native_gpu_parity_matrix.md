@@ -23,7 +23,8 @@ covered as the first ConvNeXt-style bridge subset, and
 extends that bridge through a native pointwise im2col/GEMM forward/backward.
 `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU -> PointwiseConv2d
 -> Flatten -> Linear` is the deepest current ConvNeXt-style helper-backed
-training subset.
+training subset. `model.name=convnext_bridge_tiny` resolves directly to this
+primitive sequence.
 
 | Subset | Helper | Evidence | Hardware status |
 |---|---|---|---|
@@ -49,6 +50,7 @@ training subset.
 | `DepthwiseConv2d(bias=false) -> LayerNorm2d -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_pointwise_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> GELU -> PointwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step` | Hermetic reference math | Pending real GPU run |
+| `model.name=convnext_bridge_tiny` | `native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step` | CLI validation resolves to the deepest bridge subset | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |

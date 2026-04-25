@@ -616,6 +616,38 @@ def test_validate_cuda_native_config_accepts_gpu_native_convnext_bridge_training
     assert payload['errors'] == []
 
 
+def test_validate_cuda_native_config_accepts_named_gpu_native_convnext_bridge_model(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding='utf-8')
+        .replace('  input_shape: [1, 8, 8]\n', '  input_shape: [3, 8, 8]\n')
+        .replace(
+            "model:\n  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "model:\n  name: convnext_bridge_tiny\n  channels: 3\n  hidden_channels: 4\n  num_classes: 2\n",
+        ),
+        encoding='utf-8',
+    )
+
+    rc = main([
+        'validate-cuda-native-config',
+        '--config',
+        str(config_path),
+        '--format',
+        'json',
+        'engine.execution_mode=gpu_native',
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['selected_execution_mode'] == 'gpu_native'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'depthwise_layernorm2d_pointwise_gelu_pointwise_linear'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['helper'] == 'native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step'
+    assert payload['errors'] == []
+
+
 def test_validate_cuda_native_config_accepts_gpu_native_groupnorm_linear_training_subset(tmp_path, capsys):
     from minicnn.cli import main
 
