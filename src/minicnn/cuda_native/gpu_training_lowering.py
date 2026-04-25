@@ -60,6 +60,14 @@ _TRAINING_SUBSETS: dict[tuple[str, ...], tuple[str, str]] = {
     ('Flatten', 'Linear'): ('flatten_linear', 'native_gpu_linear_training_step'),
     ('Linear', 'ReLU', 'Linear'): ('linear_relu_linear', 'native_gpu_two_linear_relu_training_step'),
     ('Flatten', 'Linear', 'ReLU', 'Linear'): ('flatten_linear_relu_linear', 'native_gpu_two_linear_relu_training_step'),
+    ('Linear', 'GELU', 'Linear'): ('linear_gelu_linear', 'native_gpu_two_linear_relu_training_step'),
+    ('Flatten', 'Linear', 'GELU', 'Linear'): ('flatten_linear_gelu_linear', 'native_gpu_two_linear_relu_training_step'),
+    ('Linear', 'SiLU', 'Linear'): ('linear_silu_linear', 'native_gpu_two_linear_relu_training_step'),
+    ('Flatten', 'Linear', 'SiLU', 'Linear'): ('flatten_linear_silu_linear', 'native_gpu_two_linear_relu_training_step'),
+    ('Linear', 'Sigmoid', 'Linear'): ('linear_sigmoid_linear', 'native_gpu_two_linear_relu_training_step'),
+    ('Flatten', 'Linear', 'Sigmoid', 'Linear'): ('flatten_linear_sigmoid_linear', 'native_gpu_two_linear_relu_training_step'),
+    ('Linear', 'Tanh', 'Linear'): ('linear_tanh_linear', 'native_gpu_two_linear_relu_training_step'),
+    ('Flatten', 'Linear', 'Tanh', 'Linear'): ('flatten_linear_tanh_linear', 'native_gpu_two_linear_relu_training_step'),
     ('MaxPool2d', 'Flatten', 'Linear'): ('maxpool_linear', 'native_gpu_pool_linear_training_step'),
     ('AvgPool2d', 'Flatten', 'Linear'): ('avgpool_linear', 'native_gpu_avgpool_linear_training_step'),
     ('BatchNorm2d', 'Flatten', 'Linear'): ('batchnorm_linear', 'native_gpu_batchnorm_linear_training_step'),
@@ -154,13 +162,30 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
                 param_keys=(f'_w_{node.name}', f'_b_{node.name}'),
             )
         )
-    if subset_name in {'linear_relu_linear', 'flatten_linear_relu_linear'}:
+    activation_nodes = [
+        node for node in graph.topological_order()
+        if node.op_type in {'GELU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'}
+    ]
+    if subset_name in {
+        'linear_relu_linear',
+        'flatten_linear_relu_linear',
+        'linear_gelu_linear',
+        'flatten_linear_gelu_linear',
+        'linear_silu_linear',
+        'flatten_linear_silu_linear',
+        'linear_sigmoid_linear',
+        'flatten_linear_sigmoid_linear',
+        'linear_tanh_linear',
+        'flatten_linear_tanh_linear',
+    } and activation_nodes:
+        activation_op = str(activation_nodes[0].op_type)
+        activation_lowering = 'apply_relu_backward' if activation_op == 'ReLU' else f'{activation_op.lower()}_backward'
         steps.insert(
             1,
             GpuTrainingLoweringStep(
                 phase='backward',
-                op_name='ReLU',
-                lowering_kind='apply_relu_backward',
+                op_name=activation_op,
+                lowering_kind=activation_lowering,
                 launch_family='activation_backward',
             ),
         )

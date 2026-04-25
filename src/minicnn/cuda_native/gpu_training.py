@@ -714,11 +714,12 @@ def native_gpu_two_linear_relu_training_step(
     bias1_velocity: np.ndarray | None = None,
     weight2_velocity: np.ndarray | None = None,
     bias2_velocity: np.ndarray | None = None,
+    activation: str = 'ReLU',
     bound_lib: Any | None = None,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuTwoLinearReluTrainingStepResult:
-    """Run one native GPU Linear + ReLU + Linear + SoftmaxCE + SGD step."""
+    """Run one native GPU Linear + activation + Linear + SoftmaxCE + SGD step."""
 
     x_f32 = np.ascontiguousarray(x, dtype=np.float32)
     labels_i32 = np.ascontiguousarray(labels, dtype=np.int32)
@@ -759,6 +760,24 @@ def native_gpu_two_linear_relu_training_step(
         )
     if np.any(labels_i32 < 0) or np.any(labels_i32 >= w2_f32.shape[0]):
         raise ValueError('native_gpu_two_linear_relu_training_step labels must be in [0, out_f)')
+    activation_name = str(activation)
+    activation_key = activation_name.lower()
+    activation_forward = {
+        'relu': ('apply_relu', 'apply_relu'),
+        'gelu': ('gelu_forward', 'gelu_forward'),
+        'silu': ('silu_forward', 'silu_forward'),
+        'sigmoid': ('sigmoid_forward', 'sigmoid_forward'),
+        'tanh': ('tanh_forward', 'tanh_forward'),
+    }
+    activation_backward = {
+        'relu': ('apply_relu_backward', 'apply_relu_backward'),
+        'gelu': ('gelu_backward', 'gelu_backward'),
+        'silu': ('silu_backward', 'silu_backward'),
+        'sigmoid': ('sigmoid_backward', 'sigmoid_backward'),
+        'tanh': ('tanh_backward', 'tanh_backward'),
+    }
+    if activation_key not in activation_forward:
+        raise ValueError(f'native_gpu_two_linear_relu_training_step does not support activation={activation_name!r}')
 
     lib = _load_bound_lib(bound_lib)
     runtime = DeviceRuntime(
@@ -794,6 +813,7 @@ def native_gpu_two_linear_relu_training_step(
     b1v_t = stage(b1v_f32, 'bias1_velocity')
     w2v_t = stage(w2v_f32, 'weight2_velocity')
     b2v_t = stage(b2v_f32, 'bias2_velocity')
+    hidden_pre_t = alloc((n, hidden_f), 'hidden_pre')
     hidden_t = alloc((n, hidden_f), 'hidden')
     logits_t = alloc((n, out_f), 'logits')
     probs_t = alloc((n, out_f), 'probs')
@@ -810,10 +830,12 @@ def native_gpu_two_linear_relu_training_step(
     try:
         lib.gpu_memset(loss_sum_t.device_ptr, 0, loss_sum_t.nbytes)
         lib.gpu_memset(correct_t.device_ptr, 0, correct_t.nbytes)
-        lib.dense_forward(input_t.device_ptr, w1_t.device_ptr, b1_t.device_ptr, hidden_t.device_ptr, n, in_f, hidden_f)
-        runtime.record_execution('gpu_native_train:dense_forward_1', input_name='input', output_name='hidden', node_count=1)
-        lib.apply_relu(hidden_t.device_ptr, int(n * hidden_f))
-        runtime.record_execution('gpu_native_train:apply_relu', input_name='hidden', output_name='hidden', node_count=1)
+        lib.dense_forward(input_t.device_ptr, w1_t.device_ptr, b1_t.device_ptr, hidden_pre_t.device_ptr, n, in_f, hidden_f)
+        runtime.record_execution('gpu_native_train:dense_forward_1', input_name='input', output_name='hidden_pre', node_count=1)
+        lib.gpu_memcpy_d2d(hidden_t.device_ptr, hidden_pre_t.device_ptr, hidden_pre_t.nbytes)
+        forward_symbol, forward_kind = activation_forward[activation_key]
+        getattr(lib, forward_symbol)(hidden_t.device_ptr, int(n * hidden_f))
+        runtime.record_execution(f'gpu_native_train:{forward_kind}', input_name='hidden_pre', output_name='hidden', node_count=1)
         lib.dense_forward(hidden_t.device_ptr, w2_t.device_ptr, b2_t.device_ptr, logits_t.device_ptr, n, hidden_f, out_f)
         runtime.record_execution('gpu_native_train:dense_forward_2', input_name='hidden', output_name='logits', node_count=1)
         loss_kind = _run_softmax_xent_loss(
@@ -847,8 +869,9 @@ def native_gpu_two_linear_relu_training_step(
             out_f,
         )
         runtime.record_execution('gpu_native_train:dense_backward_full_2', input_name='grad_logits', output_name='grad_weight2', node_count=1)
-        lib.apply_relu_backward(hidden_t.device_ptr, grad_hidden_t.device_ptr, int(n * hidden_f))
-        runtime.record_execution('gpu_native_train:apply_relu_backward', input_name='hidden', output_name='grad_hidden', node_count=1)
+        backward_symbol, backward_kind = activation_backward[activation_key]
+        getattr(lib, backward_symbol)(hidden_pre_t.device_ptr, grad_hidden_t.device_ptr, int(n * hidden_f))
+        runtime.record_execution(f'gpu_native_train:{backward_kind}', input_name='hidden_pre', output_name='grad_hidden', node_count=1)
         lib.dense_backward_full(
             grad_hidden_t.device_ptr,
             input_t.device_ptr,

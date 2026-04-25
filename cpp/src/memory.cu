@@ -56,6 +56,10 @@ extern "C" {
         CUDA_CHECK(cudaMemcpy(dst, src, size, cudaMemcpyDeviceToHost));
     }
 
+    void gpu_memcpy_d2d(void* dst, const void* src, size_t size) {
+        CUDA_CHECK(cudaMemcpy(dst, src, size, cudaMemcpyDeviceToDevice));
+    }
+
     void gpu_memset(void* dst, int value, size_t size) {
         CUDA_CHECK(cudaMemset(dst, value, size));
     }

@@ -424,10 +424,10 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         return {'kind': 'linear', 'linear_nodes': [nodes[0]]}
     if ops == ['Flatten', 'Linear']:
         return {'kind': 'linear', 'linear_nodes': [nodes[1]]}
-    if ops == ['Linear', 'ReLU', 'Linear']:
-        return {'kind': 'two_linear_relu', 'linear_nodes': [nodes[0], nodes[2]], 'relu_node': nodes[1]}
-    if ops == ['Flatten', 'Linear', 'ReLU', 'Linear']:
-        return {'kind': 'two_linear_relu', 'linear_nodes': [nodes[1], nodes[3]], 'relu_node': nodes[2]}
+    if len(ops) == 3 and ops[0] == 'Linear' and ops[1] in {'GELU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'} and ops[2] == 'Linear':
+        return {'kind': 'two_linear_activation', 'linear_nodes': [nodes[0], nodes[2]], 'activation_node': nodes[1]}
+    if len(ops) == 4 and ops[0] == 'Flatten' and ops[1] == 'Linear' and ops[2] in {'GELU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'} and ops[3] == 'Linear':
+        return {'kind': 'two_linear_activation', 'linear_nodes': [nodes[1], nodes[3]], 'activation_node': nodes[2]}
     if ops == ['MaxPool2d', 'Flatten', 'Linear']:
         return {'kind': 'pool_linear', 'pool_node': nodes[0], 'linear_nodes': [nodes[2]]}
     if ops == ['AvgPool2d', 'Flatten', 'Linear']:
@@ -713,8 +713,9 @@ def run_training_loop(
                             buf_bucket[weight_key] = step.updated_weight_rmsprop_buf
                             v_bucket[bias_key] = step.updated_bias_rmsprop_v
                             buf_bucket[bias_key] = step.updated_bias_rmsprop_buf
-                    elif gpu_training_plan['kind'] == 'two_linear_relu':
+                    elif gpu_training_plan['kind'] == 'two_linear_activation':
                         first_linear, second_linear = gpu_training_plan['linear_nodes']
+                        activation_node = gpu_training_plan['activation_node']
                         w1_key = f'_w_{first_linear.name}'
                         b1_key = f'_b_{first_linear.name}'
                         w2_key = f'_w_{second_linear.name}'
@@ -735,6 +736,7 @@ def run_training_loop(
                             bias1_velocity=velocity_state.get(b1_key),
                             weight2_velocity=velocity_state.get(w2_key),
                             bias2_velocity=velocity_state.get(b2_key),
+                            activation=str(activation_node.op_type),
                             bound_lib=ctx.device_runtime.bound_lib,
                         )
                         params = dict(params)

@@ -42,6 +42,9 @@ class _RawFakeCudaLib:
     def gpu_memcpy_d2h(self, host_ptr, ptr, nbytes):
         ctypes.memmove(int(host_ptr), bytes(self.memory[int(ptr)][:int(nbytes)]), int(nbytes))
 
+    def gpu_memcpy_d2d(self, dst, src, nbytes):
+        self.memory[int(dst)][:int(nbytes)] = bytes(self.memory[int(src)][:int(nbytes)])
+
     def gpu_memset(self, ptr, value, nbytes):
         self.memory[int(ptr)][:int(nbytes)] = bytes([int(value) & 0xFF]) * int(nbytes)
 
@@ -126,10 +129,60 @@ class _RawFakeCudaLib:
         data = self._float(d_data)
         data[:int(size)] = np.maximum(data[:int(size)], 0.0)
 
+    def sigmoid_forward(self, d_data, size):
+        data = self._float(d_data)
+        data[:int(size)] = 1.0 / (1.0 + np.exp(-data[:int(size)]))
+
+    def tanh_forward(self, d_data, size):
+        data = self._float(d_data)
+        data[:int(size)] = np.tanh(data[:int(size)])
+
+    def silu_forward(self, d_data, size):
+        data = self._float(d_data)
+        values = data[:int(size)]
+        data[:int(size)] = values / (1.0 + np.exp(-values))
+
+    def gelu_forward(self, d_data, size):
+        data = self._float(d_data)
+        values = data[:int(size)]
+        data[:int(size)] = 0.5 * values * (
+            1.0 + np.tanh(np.sqrt(2.0 / np.pi) * (values + 0.044715 * values ** 3))
+        )
+
     def apply_relu_backward(self, d_data, d_grad, size):
         data = self._float(d_data)
         grad = self._float(d_grad)
         grad[:int(size)] = np.where(data[:int(size)] > 0.0, grad[:int(size)], 0.0)
+
+    def sigmoid_backward(self, d_data, d_grad, size):
+        data = self._float(d_data)
+        grad = self._float(d_grad)
+        sig = 1.0 / (1.0 + np.exp(-data[:int(size)]))
+        grad[:int(size)] *= sig * (1.0 - sig)
+
+    def tanh_backward(self, d_data, d_grad, size):
+        data = self._float(d_data)
+        grad = self._float(d_grad)
+        t = np.tanh(data[:int(size)])
+        grad[:int(size)] *= 1.0 - t * t
+
+    def silu_backward(self, d_data, d_grad, size):
+        data = self._float(d_data)
+        grad = self._float(d_grad)
+        x = data[:int(size)]
+        sig = 1.0 / (1.0 + np.exp(-x))
+        grad[:int(size)] *= sig + x * sig * (1.0 - sig)
+
+    def gelu_backward(self, d_data, d_grad, size):
+        data = self._float(d_data)
+        grad = self._float(d_grad)
+        x = data[:int(size)]
+        inner = np.sqrt(2.0 / np.pi) * (x + 0.044715 * x ** 3)
+        tanh_inner = np.tanh(inner)
+        sech2_inner = 1.0 - tanh_inner * tanh_inner
+        inner_grad = np.sqrt(2.0 / np.pi) * (1.0 + 3.0 * 0.044715 * x ** 2)
+        deriv = 0.5 * (1.0 + tanh_inner) + 0.5 * x * sech2_inner * inner_grad
+        grad[:int(size)] *= deriv
 
     def apply_maxpool(self, d_input, d_output, n, c, h, w):
         x = self._float(d_input).reshape(int(n), int(c), int(h), int(w))
@@ -898,6 +951,81 @@ def test_native_gpu_two_linear_relu_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full_2'] == 1
 
 
+def test_native_gpu_two_linear_modern_activation_training_step_matches_reference_math():
+    x = np.asarray([[0.2, -0.4, 0.6], [-0.1, 0.3, -0.5]], dtype=np.float32)
+    labels = np.asarray([1, 0], dtype=np.int32)
+    w1 = np.asarray([[0.2, -0.1, 0.05], [-0.3, 0.25, 0.15]], dtype=np.float32)
+    b1 = np.asarray([0.01, -0.02], dtype=np.float32)
+    w2 = np.asarray([[0.1, -0.2], [-0.05, 0.3]], dtype=np.float32)
+    b2 = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.03
+
+    def activate(values: np.ndarray, activation: str) -> tuple[np.ndarray, np.ndarray]:
+        if activation == 'Sigmoid':
+            y = 1.0 / (1.0 + np.exp(-values))
+            return y.astype(np.float32), (y * (1.0 - y)).astype(np.float32)
+        if activation == 'Tanh':
+            y = np.tanh(values)
+            return y.astype(np.float32), (1.0 - y * y).astype(np.float32)
+        if activation == 'SiLU':
+            sig = 1.0 / (1.0 + np.exp(-values))
+            y = values * sig
+            return y.astype(np.float32), (sig + values * sig * (1.0 - sig)).astype(np.float32)
+        if activation == 'GELU':
+            inner = np.sqrt(2.0 / np.pi) * (values + 0.044715 * values ** 3)
+            tanh_inner = np.tanh(inner)
+            y = 0.5 * values * (1.0 + tanh_inner)
+            sech2_inner = 1.0 - tanh_inner * tanh_inner
+            inner_grad = np.sqrt(2.0 / np.pi) * (1.0 + 3.0 * 0.044715 * values ** 2)
+            deriv = 0.5 * (1.0 + tanh_inner) + 0.5 * values * sech2_inner * inner_grad
+            return y.astype(np.float32), deriv.astype(np.float32)
+        raise AssertionError(activation)
+
+    for activation in ('Sigmoid', 'Tanh', 'SiLU', 'GELU'):
+        result = native_gpu_two_linear_relu_training_step(
+            x,
+            labels,
+            w1,
+            b1,
+            w2,
+            b2,
+            lr=lr,
+            activation=activation,
+            bound_lib=_RawFakeCudaLib(),
+        )
+
+        hidden_pre = x @ w1.T + b1
+        hidden, activation_grad = activate(hidden_pre, activation)
+        logits = hidden @ w2.T + b2
+        shifted = logits - logits.max(axis=1, keepdims=True)
+        probs = np.exp(shifted)
+        probs /= probs.sum(axis=1, keepdims=True)
+        grad_logits = probs.copy()
+        grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+        grad_logits /= float(labels.shape[0])
+        grad_w2 = grad_logits.T @ hidden
+        grad_b2 = grad_logits.sum(axis=0)
+        grad_hidden = (grad_logits @ w2) * activation_grad
+        grad_w1 = grad_hidden.T @ x
+        grad_b1 = grad_hidden.sum(axis=0)
+
+        np.testing.assert_allclose(result.logits, logits, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.probabilities, probs, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.grad_hidden, grad_hidden, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.grad_input, grad_hidden @ w1, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.grad_weight1, grad_w1, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.grad_bias1, grad_b1, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.grad_weight2, grad_w2, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.grad_bias2, grad_b2, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.updated_weight1, w1 - lr * grad_w1, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.updated_bias1, b1 - lr * grad_b1, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.updated_weight2, w2 - lr * grad_w2, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(result.updated_bias2, b2 - lr * grad_b2, rtol=1e-6, atol=1e-6)
+        assert result.runtime_summary['execution_kinds'][f'gpu_native_train:{activation.lower()}_forward'] == 1
+        assert result.runtime_summary['execution_kinds'][f'gpu_native_train:{activation.lower()}_backward'] == 1
+
+
 def test_native_gpu_pool_linear_training_step_matches_reference_math():
     x = np.asarray(
         [
@@ -1431,6 +1559,14 @@ def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
         ('Flatten', 'Linear'),
         ('Linear', 'ReLU', 'Linear'),
         ('Flatten', 'Linear', 'ReLU', 'Linear'),
+        ('Linear', 'GELU', 'Linear'),
+        ('Flatten', 'Linear', 'GELU', 'Linear'),
+        ('Linear', 'SiLU', 'Linear'),
+        ('Flatten', 'Linear', 'SiLU', 'Linear'),
+        ('Linear', 'Sigmoid', 'Linear'),
+        ('Flatten', 'Linear', 'Sigmoid', 'Linear'),
+        ('Linear', 'Tanh', 'Linear'),
+        ('Flatten', 'Linear', 'Tanh', 'Linear'),
         ('MaxPool2d', 'Flatten', 'Linear'),
         ('AvgPool2d', 'Flatten', 'Linear'),
         ('BatchNorm2d', 'Flatten', 'Linear'),

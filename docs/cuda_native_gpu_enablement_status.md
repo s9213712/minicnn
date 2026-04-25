@@ -27,8 +27,10 @@ Completed:
   GPU aliases
 - `GELU`, `SiLU`, `Sigmoid`, and `Tanh` forward dispatch through native
   elementwise activation C ABI shims
-- `GELU`, `SiLU`, `Sigmoid`, and `Tanh` backward C ABI shims for upcoming
-  modern activation train-native helpers
+- `GELU`, `SiLU`, `Sigmoid`, and `Tanh` backward C ABI shims for modern
+  activation train-native helpers
+- native `Linear -> GELU/SiLU/Sigmoid/Tanh -> Linear` and
+  `Flatten -> Linear -> GELU/SiLU/Sigmoid/Tanh -> Linear` training helpers
 - `PointwiseConv2d` forward dispatch through the native Conv2d im2col/GEMM
   lowering path
 - `DepthwiseConv2d` forward dispatch through the native
@@ -70,6 +72,8 @@ Supported through native GPU helper paths:
 - `Flatten -> Linear`
 - `Linear -> ReLU -> Linear`
 - `Flatten -> Linear -> ReLU -> Linear`
+- `Linear -> GELU/SiLU/Sigmoid/Tanh -> Linear`
+- `Flatten -> Linear -> GELU/SiLU/Sigmoid/Tanh -> Linear`
 - `MaxPool2d -> Flatten -> Linear`
 - `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear`
 - `BatchNorm2d -> Flatten -> Linear`
@@ -149,8 +153,8 @@ Still not claimed as complete:
 - composite/block training lowering for residual and ConvNeXt-style models
 - broader `BatchNorm2d` graph-level train-native coverage beyond the
   `BatchNorm2d -> Flatten -> Linear` helper subset
-- modern elementwise activation train-native helper coverage; current work is
-  forward dispatch only
+- broader modern elementwise activation graph-level train-native coverage beyond
+  the two-linear helper subsets
 - `PointwiseConv2d` train-native helper coverage; current work is forward
   dispatch only
 - `DepthwiseConv2d` train-native helper coverage; current work is forward
@@ -165,7 +169,7 @@ Still not claimed as complete:
 Current repo-side validation:
 
 ```text
-156 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+157 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:
