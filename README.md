@@ -167,7 +167,7 @@ Current validated support boundary:
 - `summary.json` reports `amp_runtime`, `optimizer_runtime`, `planner`, and `performance_report`
 - `metrics.jsonl` rows report per-epoch AMP, optimizer, and planner telemetry
 
-`cuda_native` is now a beta-grade backend with stable artifact/validation contracts, `training_stable=true`, and `backward_stable=true`, but it is still not production-ready and still uses NumPy reference execution rather than real CUDA kernels. It supports ordered DAG execution with explicit tensor wiring plus `Add` merge semantics; `cuda_legacy` remains a narrow maintenance path.
+`cuda_native` is now a beta-grade backend with stable artifact/validation contracts, `training_stable=true`, and `backward_stable=true`. The broad default path is still `reference_numpy`, while `engine.execution_mode=gpu_native` is the strict partial real-CUDA path for supported helper subsets. Use `engine.execution_mode=gpu_native_auto` when you want GPU-first execution with explicit `reference_numpy` fallback. It supports ordered DAG execution with explicit tensor wiring plus `Add` merge semantics; `cuda_legacy` remains a narrow maintenance path.
 
 Hermetic native smoke examples now exist for:
 
@@ -189,6 +189,11 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
   dataset.type=random dataset.num_samples=128 dataset.val_samples=32 \
   optimizer.momentum=0.9 optimizer.grad_clip_global=1.0 \
   scheduler.enabled=true scheduler.type=StepLR scheduler.step_size=5
+
+# GPU-first with NumPy fallback
+minicnn train-native --config configs/dual_backend_cnn.yaml \
+  engine.execution_mode=gpu_native_auto \
+  dataset.type=random dataset.num_samples=128 dataset.val_samples=32
 ```
 
 See [docs/cuda_native.md](docs/cuda_native.md) for the full guide.

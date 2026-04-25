@@ -240,6 +240,16 @@ Validation payloads and the `train-native` preamble now also include
 - which requested ops are already inside the GPU bootstrap subset
 - which requested ops still fall outside that subset
 
+Execution-mode guidance:
+
+- default `engine.execution_mode=reference_numpy` remains the broad, stable
+  fallback path
+- `engine.execution_mode=gpu_native` is strict GPU mode for the supported native
+  helper subsets and fails when the graph/runtime is outside that boundary
+- `engine.execution_mode=gpu_native_auto` is the GPU-first path: it selects
+  `gpu_native` only when the training lowering plan and CUDA runtime readiness
+  both pass, otherwise it explicitly falls back to `reference_numpy`
+
 Current `train-native engine.execution_mode=gpu_native` training subsets:
 
 - `Flatten -> Linear`
