@@ -259,6 +259,72 @@ for _subset in GPU_NATIVE_TRAINING_SUBSETS:
     })
     _subset.setdefault('constraints', _training_subset_constraints(list(_subset.get('ops', []))))
 
+for _conv_prefix, _subset_prefix in (
+    ('Conv2d', 'conv'),
+    ('PointwiseConv2d', 'pointwise_conv'),
+    ('DepthwiseConv2d', 'depthwise_conv'),
+):
+    for _activation in ('LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
+        _activation_key = _activation.replace('ReLU', '_relu').lower()
+        GPU_NATIVE_TRAINING_SUBSETS.append(
+            {
+                'name': f'{_subset_prefix}_{_activation_key}_linear',
+                'ops': [_conv_prefix, _activation, 'Flatten', 'Linear'],
+                'helper': 'native_gpu_conv_linear_training_step',
+                'parity': 'hermetic_reference_math',
+                'losses': ['CrossEntropyLoss'],
+                'optimizers': ['SGD'],
+                'execution_mode': 'gpu_native',
+                'fallback_execution_mode': 'reference_numpy',
+                'fallback_policy': {
+                    'fallback_execution_mode': 'reference_numpy',
+                    'fallback_available': True,
+                    'fallback_active_when': 'gpu_native_lowering_not_ready',
+                },
+                'constraints': _training_subset_constraints([_conv_prefix, _activation, 'Flatten', 'Linear']),
+            }
+        )
+        if _conv_prefix != 'PointwiseConv2d':
+            GPU_NATIVE_TRAINING_SUBSETS.append(
+                {
+                    'name': f'{_subset_prefix}_{_activation_key}_pool_linear',
+                    'ops': [_conv_prefix, _activation, 'MaxPool2d', 'Flatten', 'Linear'],
+                    'helper': 'native_gpu_conv_linear_training_step',
+                    'parity': 'hermetic_reference_math',
+                    'losses': ['CrossEntropyLoss'],
+                    'optimizers': ['SGD'],
+                    'execution_mode': 'gpu_native',
+                    'fallback_execution_mode': 'reference_numpy',
+                    'fallback_policy': {
+                        'fallback_execution_mode': 'reference_numpy',
+                        'fallback_available': True,
+                        'fallback_active_when': 'gpu_native_lowering_not_ready',
+                    },
+                    'constraints': _training_subset_constraints([_conv_prefix, _activation, 'MaxPool2d', 'Flatten', 'Linear']),
+                }
+            )
+
+for _activation in ('LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
+    _activation_key = _activation.replace('ReLU', '_relu').lower()
+    GPU_NATIVE_TRAINING_SUBSETS.append(
+        {
+            'name': f'two_conv_{_activation_key}_pool_linear',
+            'ops': ['Conv2d', _activation, 'Conv2d', _activation, 'MaxPool2d', 'Flatten', 'Linear'],
+            'helper': 'native_gpu_two_conv_relu_pool_linear_training_step',
+            'parity': 'hermetic_reference_math',
+            'losses': ['CrossEntropyLoss'],
+            'optimizers': ['SGD'],
+            'execution_mode': 'gpu_native',
+            'fallback_execution_mode': 'reference_numpy',
+            'fallback_policy': {
+                'fallback_execution_mode': 'reference_numpy',
+                'fallback_available': True,
+                'fallback_active_when': 'gpu_native_lowering_not_ready',
+            },
+            'constraints': _training_subset_constraints(['Conv2d', _activation, 'Conv2d', _activation, 'MaxPool2d', 'Flatten', 'Linear']),
+        }
+    )
+
 CUDA_NATIVE_SUPPORT_TIERS: dict[str, dict[str, list[str]]] = {
     'stable': {
         'ops': [
@@ -427,6 +493,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'BatchNorm2d forward/backward exist within the beta training surface; gpu_native train-native covers BatchNorm2d+Flatten+Linear.',
         'LayerNorm uses numpy reference kernels; GroupNorm train-native now covers GroupNorm -> Flatten -> Linear through groupnorm forward/backward C ABI shims.',
         'cuda_native is GPU-first for the active enablement path; numpy kernels are retained as historical fallback and hermetic parity baselines.',
+        'gpu_native two-Conv helper now also covers same-activation modern variants for LeakyReLU, GELU, SiLU, Sigmoid, and Tanh in addition to the original ReLU/ReLU path.',
         'ResidualBlock and ConvNeXtBlock still run through composite/reference numpy kernels; support tier is published separately.',
         'Identity plus Dropout/DropPath with p=0 are gpu_native no-op aliases; stochastic Dropout/DropPath training still requires native mask kernels.',
         'Explicit ordered DAG wiring is supported through named tensor outputs plus Add/Concat multi-input nodes.',
@@ -438,13 +505,13 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'gpu_native now exposes GELU, LeakyReLU, SiLU, Sigmoid, and Tanh activation backward C ABI shims as the prerequisite for modern activation train-native helpers.',
         'gpu_native train-native includes PointwiseConv2d(1x1,bias=false)+Flatten+Linear through the Conv2d helper path.',
         'gpu_native forward dispatch includes DepthwiseConv2d through a native depthwise_conv2d C ABI shim.',
-        'gpu_native train-native now covers DepthwiseConv2d -> optional ReLU/MaxPool2d -> Flatten -> Linear through depthwise forward/backward C ABI shims.',
+        'gpu_native train-native now covers DepthwiseConv2d -> optional ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> optional MaxPool2d -> Flatten -> Linear through depthwise forward/backward C ABI shims.',
         'gpu_native train-native now covers DepthwiseConv2d -> LayerNorm2d -> Flatten -> Linear as a ConvNeXt-style native GPU bridge subset.',
         'gpu_native train-native now covers DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> Flatten -> Linear as a deeper ConvNeXt-style native GPU bridge subset.',
         'gpu_native train-native now covers DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU -> PointwiseConv2d -> Flatten -> Linear as the deepest current ConvNeXt-style native GPU bridge subset.',
         'gpu_native forward dispatch includes LayerNorm2d through a native layernorm2d C ABI shim.',
         'gpu_native train-native now covers LayerNorm2d -> Flatten -> Linear through layernorm2d forward/backward C ABI shims.',
-        'gpu_native train-native currently covers narrow Linear, Linear+ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, and two-Conv ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
+        'gpu_native train-native currently covers narrow Linear, Linear+ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, MaxPool+Linear, Conv2d/PointwiseConv2d/DepthwiseConv2d(valid,bias=false)+optional ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh+optional MaxPool+Linear, and two-Conv ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
         'gpu_native readiness diagnostics expose a training_lowering_plan that decomposes helper subsets into forward, loss, backward, and optimizer lowering steps.',
         'gpu_native Linear subsets support native CrossEntropyLoss with label_smoothing, MSELoss, and BCEWithLogitsLoss loss-gradient helpers; Conv-family subsets currently support CrossEntropyLoss with label_smoothing.',
         'gpu_native Linear subsets support native SGD, Adam, AdamW, and RMSprop update helpers; Conv-family subsets currently support SGD.',

@@ -5,6 +5,8 @@ from typing import Any
 from minicnn.cuda_native.graph import NativeGraph
 from minicnn.unified._cuda_native_context import NativeTrainingContext
 
+_SINGLE_STAGE_ACTIVATIONS = {'GELU', 'LeakyReLU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'}
+
 
 def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
     nodes = list(graph.topological_order())
@@ -133,14 +135,39 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
     if ops in (
         ['Conv2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['Conv2d', 'LeakyReLU', 'Flatten', 'Linear'],
+        ['Conv2d', 'GELU', 'Flatten', 'Linear'],
+        ['Conv2d', 'SiLU', 'Flatten', 'Linear'],
+        ['Conv2d', 'Sigmoid', 'Flatten', 'Linear'],
+        ['Conv2d', 'Tanh', 'Flatten', 'Linear'],
         ['PointwiseConv2d', 'Flatten', 'Linear'],
         ['PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['PointwiseConv2d', 'LeakyReLU', 'Flatten', 'Linear'],
+        ['PointwiseConv2d', 'GELU', 'Flatten', 'Linear'],
+        ['PointwiseConv2d', 'SiLU', 'Flatten', 'Linear'],
+        ['PointwiseConv2d', 'Sigmoid', 'Flatten', 'Linear'],
+        ['PointwiseConv2d', 'Tanh', 'Flatten', 'Linear'],
         ['DepthwiseConv2d', 'Flatten', 'Linear'],
         ['DepthwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'LeakyReLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'GELU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'SiLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'Sigmoid', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'Tanh', 'Flatten', 'Linear'],
         ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'LeakyReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'GELU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'SiLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'Sigmoid', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['Conv2d', 'Tanh', 'MaxPool2d', 'Flatten', 'Linear'],
         ['DepthwiseConv2d', 'MaxPool2d', 'Flatten', 'Linear'],
         ['DepthwiseConv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'LeakyReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'GELU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'SiLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'Sigmoid', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'Tanh', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
     ):
         conv_attrs = dict(getattr(nodes[0], 'attrs', {}) or {})
@@ -165,7 +192,14 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
             raise ValueError(f'cuda_native gpu_native {conv_op} train-native subset currently requires padding=0.')
         if _pair(conv_attrs.get('dilation', 1), 1) != (1, 1):
             raise ValueError(f'cuda_native gpu_native {conv_op} train-native subset currently requires dilation=1.')
-        if ops == ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear']:
+        if (
+            len(ops) == 7
+            and ops[0] == 'Conv2d'
+            and ops[1] in _SINGLE_STAGE_ACTIVATIONS
+            and ops[2] == 'Conv2d'
+            and ops[3] == ops[1]
+            and ops[4:] == ['MaxPool2d', 'Flatten', 'Linear']
+        ):
             conv2_attrs = dict(getattr(nodes[2], 'attrs', {}) or {})
             if bool(conv2_attrs.get('bias', False)):
                 raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires bias=false.')
@@ -181,15 +215,28 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
                 'kind': 'two_conv_relu_pool_linear',
                 'conv_nodes': [nodes[0], nodes[2]],
                 'linear_nodes': [nodes[-1]],
+                'activation_kind': str(nodes[1].op_type),
+                'activation_alpha': (
+                    float(getattr(nodes[1], 'attrs', {}).get('negative_slope', 0.01))
+                    if str(nodes[1].op_type) == 'LeakyReLU'
+                    else 0.01
+                ),
             }
-        has_relu = 'ReLU' in ops
+        activation_node = next((node for node in nodes if node.op_type in _SINGLE_STAGE_ACTIVATIONS), None)
+        activation_kind = None if activation_node is None else str(activation_node.op_type)
         has_pool = 'MaxPool2d' in ops
         linear_node = nodes[-1]
         return {
             'kind': 'conv_linear',
             'conv_node': nodes[0],
             'linear_nodes': [linear_node],
-            'apply_relu_activation': has_relu,
+            'apply_relu_activation': activation_kind == 'ReLU',
+            'activation_kind': activation_kind,
+            'activation_alpha': (
+                float(getattr(activation_node, 'attrs', {}).get('negative_slope', 0.01))
+                if activation_kind == 'LeakyReLU' and activation_node is not None
+                else 0.01
+            ),
             'apply_maxpool': has_pool,
             'conv_kind': 'depthwise' if conv_op == 'DepthwiseConv2d' else 'conv2d',
         }
@@ -202,10 +249,11 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         'ops=[MaxPool2d, Flatten, Linear], '
         'ops=[GlobalAvgPool2d, Flatten, Linear], ops=[AdaptiveAvgPool2d, Flatten, Linear], '
         'ops=[DepthwiseConv2d, LayerNorm2d, Flatten, Linear], '
-        'ops=[Conv2d, Flatten, Linear], ops=[Conv2d, ReLU, Flatten, Linear], '
+        'ops=[Conv2d, Flatten, Linear], '
+        'ops=[Conv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Flatten, Linear], '
         'ops=[Conv2d, MaxPool2d, Flatten, Linear], or '
-        'ops=[Conv2d, ReLU, MaxPool2d, Flatten, Linear], or '
-        'ops=[Conv2d, ReLU, Conv2d, ReLU, MaxPool2d, Flatten, Linear], '
+        'ops=[Conv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, MaxPool2d, Flatten, Linear], or '
+        'ops=[Conv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Conv2d, same activation, MaxPool2d, Flatten, Linear], '
         f'got {ops}.'
     )
 

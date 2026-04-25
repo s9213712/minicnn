@@ -15,6 +15,8 @@ from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.validators import validate_cuda_native_model_config
 from minicnn.model_spec import resolve_model_config
 
+_GPU_NATIVE_SINGLE_CONV_ACTIVATIONS = ('ReLU', 'LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh')
+
 
 _SUPPORTED_DATASET_TYPES = frozenset(
     str(item) for item in CUDA_NATIVE_CAPABILITIES['supported_datasets']
@@ -287,43 +289,44 @@ def _validate_gpu_native_training_subset(
     errors: list[str] = []
     nodes = list(graph.topological_order())
     ops = [node.op_type for node in nodes]
-    if ops not in (
-        ['Linear'],
-        ['Flatten', 'Linear'],
-        ['Linear', 'ReLU', 'Linear'],
-        ['Flatten', 'Linear', 'ReLU', 'Linear'],
-        ['Linear', 'LeakyReLU', 'Linear'],
-        ['Flatten', 'Linear', 'LeakyReLU', 'Linear'],
-        ['Linear', 'GELU', 'Linear'],
-        ['Flatten', 'Linear', 'GELU', 'Linear'],
-        ['Linear', 'SiLU', 'Linear'],
-        ['Flatten', 'Linear', 'SiLU', 'Linear'],
-        ['Linear', 'Sigmoid', 'Linear'],
-        ['Flatten', 'Linear', 'Sigmoid', 'Linear'],
-        ['Linear', 'Tanh', 'Linear'],
-        ['Flatten', 'Linear', 'Tanh', 'Linear'],
-        ['MaxPool2d', 'Flatten', 'Linear'],
-        ['AvgPool2d', 'Flatten', 'Linear'],
-        ['BatchNorm2d', 'Flatten', 'Linear'],
-        ['LayerNorm2d', 'Flatten', 'Linear'],
-        ['GroupNorm', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear'],
-        ['GlobalAvgPool2d', 'Flatten', 'Linear'],
-        ['AdaptiveAvgPool2d', 'Flatten', 'Linear'],
-        ['Conv2d', 'Flatten', 'Linear'],
-        ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
-        ['PointwiseConv2d', 'Flatten', 'Linear'],
-        ['PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'MaxPool2d', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
-        ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
-        ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
-        ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
-    ):
+    allowed_ops = {
+        ('Linear',),
+        ('Flatten', 'Linear'),
+        ('Linear', 'ReLU', 'Linear'),
+        ('Flatten', 'Linear', 'ReLU', 'Linear'),
+        ('Linear', 'LeakyReLU', 'Linear'),
+        ('Flatten', 'Linear', 'LeakyReLU', 'Linear'),
+        ('Linear', 'GELU', 'Linear'),
+        ('Flatten', 'Linear', 'GELU', 'Linear'),
+        ('Linear', 'SiLU', 'Linear'),
+        ('Flatten', 'Linear', 'SiLU', 'Linear'),
+        ('Linear', 'Sigmoid', 'Linear'),
+        ('Flatten', 'Linear', 'Sigmoid', 'Linear'),
+        ('Linear', 'Tanh', 'Linear'),
+        ('Flatten', 'Linear', 'Tanh', 'Linear'),
+        ('MaxPool2d', 'Flatten', 'Linear'),
+        ('AvgPool2d', 'Flatten', 'Linear'),
+        ('BatchNorm2d', 'Flatten', 'Linear'),
+        ('LayerNorm2d', 'Flatten', 'Linear'),
+        ('GroupNorm', 'Flatten', 'Linear'),
+        ('DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'),
+        ('DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear'),
+        ('DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear'),
+        ('GlobalAvgPool2d', 'Flatten', 'Linear'),
+        ('AdaptiveAvgPool2d', 'Flatten', 'Linear'),
+        ('Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'),
+    }
+    for _conv_op in ('Conv2d', 'PointwiseConv2d', 'DepthwiseConv2d'):
+        allowed_ops.add((_conv_op, 'Flatten', 'Linear'))
+        for _activation in _GPU_NATIVE_SINGLE_CONV_ACTIVATIONS:
+            allowed_ops.add((_conv_op, _activation, 'Flatten', 'Linear'))
+            if _conv_op != 'PointwiseConv2d':
+                allowed_ops.add((_conv_op, _activation, 'MaxPool2d', 'Flatten', 'Linear'))
+        if _conv_op != 'PointwiseConv2d':
+            allowed_ops.add((_conv_op, 'MaxPool2d', 'Flatten', 'Linear'))
+    for _activation in _GPU_NATIVE_SINGLE_CONV_ACTIVATIONS:
+        allowed_ops.add(('Conv2d', _activation, 'Conv2d', _activation, 'MaxPool2d', 'Flatten', 'Linear'))
+    if tuple(ops) not in allowed_ops:
         errors.append(
             'cuda_native gpu_native train-native currently supports only the narrow '
             'Linear training subset ops=[Linear], [Flatten, Linear], '
@@ -338,34 +341,44 @@ def _validate_gpu_native_training_subset(
             '[DepthwiseConv2d, LayerNorm2d, PointwiseConv2d, GELU, PointwiseConv2d, Flatten, Linear], '
             '[GlobalAvgPool2d, Flatten, Linear], '
             '[AdaptiveAvgPool2d, Flatten, Linear], [Conv2d, Flatten, Linear], '
-            '[Conv2d, ReLU, Flatten, Linear], [PointwiseConv2d, Flatten, Linear], '
-            '[PointwiseConv2d, ReLU, Flatten, Linear], [DepthwiseConv2d, Flatten, Linear], '
-            '[DepthwiseConv2d, ReLU, Flatten, Linear], '
+            '[Conv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Flatten, Linear], '
+            '[PointwiseConv2d, Flatten, Linear], '
+            '[PointwiseConv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Flatten, Linear], '
+            '[DepthwiseConv2d, Flatten, Linear], '
+            '[DepthwiseConv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Flatten, Linear], '
             '[DepthwiseConv2d, MaxPool2d, Flatten, Linear], '
-            '[DepthwiseConv2d, ReLU, MaxPool2d, Flatten, Linear], '
+            '[DepthwiseConv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, MaxPool2d, Flatten, Linear], '
             '[Conv2d, MaxPool2d, Flatten, Linear], '
-            '[Conv2d, ReLU, MaxPool2d, Flatten, Linear], or '
-            '[Conv2d, ReLU, Conv2d, ReLU, MaxPool2d, Flatten, Linear], '
+            '[Conv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, MaxPool2d, Flatten, Linear], or '
+            '[Conv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Conv2d, same activation, MaxPool2d, Flatten, Linear], '
             f'got {ops}.'
         )
-    if ops in (
-        ['Conv2d', 'Flatten', 'Linear'],
-        ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
-        ['PointwiseConv2d', 'Flatten', 'Linear'],
-        ['PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'MaxPool2d', 'Flatten', 'Linear'],
-        ['DepthwiseConv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
-        ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
-        ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
-        ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
-    ):
+    conv_constraint_ops = {
+        ('DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'),
+        ('DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear'),
+        ('DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear'),
+        ('Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'),
+    }
+    for _conv_op in ('Conv2d', 'PointwiseConv2d', 'DepthwiseConv2d'):
+        conv_constraint_ops.add((_conv_op, 'Flatten', 'Linear'))
+        for _activation in _GPU_NATIVE_SINGLE_CONV_ACTIVATIONS:
+            conv_constraint_ops.add((_conv_op, _activation, 'Flatten', 'Linear'))
+            if _conv_op != 'PointwiseConv2d':
+                conv_constraint_ops.add((_conv_op, _activation, 'MaxPool2d', 'Flatten', 'Linear'))
+        if _conv_op != 'PointwiseConv2d':
+            conv_constraint_ops.add((_conv_op, 'MaxPool2d', 'Flatten', 'Linear'))
+    for _activation in _GPU_NATIVE_SINGLE_CONV_ACTIVATIONS:
+        conv_constraint_ops.add(('Conv2d', _activation, 'Conv2d', _activation, 'MaxPool2d', 'Flatten', 'Linear'))
+    if tuple(ops) in conv_constraint_ops:
         conv_attr_nodes = [nodes[0]]
-        if ops == ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear']:
+        if (
+            len(ops) == 7
+            and ops[0] == 'Conv2d'
+            and ops[1] in _GPU_NATIVE_SINGLE_CONV_ACTIVATIONS
+            and ops[2] == 'Conv2d'
+            and ops[3] == ops[1]
+            and ops[4:] == ['MaxPool2d', 'Flatten', 'Linear']
+        ):
             conv_attr_nodes.append(nodes[2])
         if ops == ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear']:
             conv_attr_nodes.append(nodes[2])

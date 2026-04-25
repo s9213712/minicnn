@@ -385,6 +385,37 @@ def test_validate_cuda_native_config_accepts_gpu_native_conv_relu_linear_trainin
     assert payload['errors'] == []
 
 
+def test_validate_cuda_native_config_accepts_gpu_native_conv_leaky_relu_pool_linear_training_subset(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding='utf-8').replace(
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: Conv2d\n      out_channels: 2\n      kernel_size: 3\n      stride: 1\n      padding: 0\n      bias: false\n    - type: LeakyReLU\n      negative_slope: 0.2\n    - type: MaxPool2d\n      kernel_size: 2\n      stride: 2\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+        ),
+        encoding='utf-8',
+    )
+
+    rc = main([
+        'validate-cuda-native-config',
+        '--config',
+        str(config_path),
+        '--format',
+        'json',
+        'engine.execution_mode=gpu_native',
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['selected_execution_mode'] == 'gpu_native'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'conv_leaky_relu_pool_linear'
+    assert 'leaky_relu_forward' in payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols']
+    assert 'leaky_relu_backward' in payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols']
+    assert payload['errors'] == []
+
+
 def test_validate_cuda_native_config_accepts_gpu_native_global_avgpool_linear_training_subset(tmp_path, capsys):
     from minicnn.cli import main
 
@@ -724,6 +755,37 @@ def test_validate_cuda_native_config_accepts_gpu_native_two_conv_relu_pool_linea
     assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Conv2d', 'Flatten', 'Linear', 'MaxPool2d', 'ReLU']
     assert payload['execution_readiness_assessment']['dispatch_plan']['ready'] is True
     assert payload['execution_readiness_assessment']['dispatch_plan']['num_steps'] == 7
+    assert payload['errors'] == []
+
+
+def test_validate_cuda_native_config_accepts_gpu_native_two_conv_leaky_relu_pool_linear_training_subset(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding='utf-8').replace(
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: Conv2d\n      out_channels: 2\n      kernel_size: 2\n      stride: 1\n      padding: 0\n      bias: false\n    - type: LeakyReLU\n      negative_slope: 0.2\n    - type: Conv2d\n      out_channels: 2\n      kernel_size: 2\n      stride: 1\n      padding: 0\n      bias: false\n    - type: LeakyReLU\n      negative_slope: 0.2\n    - type: MaxPool2d\n      kernel_size: 2\n      stride: 2\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+        ),
+        encoding='utf-8',
+    )
+
+    rc = main([
+        'validate-cuda-native-config',
+        '--config',
+        str(config_path),
+        '--format',
+        'json',
+        'engine.execution_mode=gpu_native',
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['selected_execution_mode'] == 'gpu_native'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'two_conv_leaky_relu_pool_linear'
+    assert payload['execution_readiness_assessment']['dispatch_plan']['ready'] is True
+    assert 'leaky_relu_backward' in payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols']
     assert payload['errors'] == []
 
 

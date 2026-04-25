@@ -31,6 +31,10 @@ Completed:
   activation train-native helpers
 - native `Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear` and
   `Flatten -> Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear` training helpers
+- native `Conv2d -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`,
+  `PointwiseConv2d -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`,
+  and `DepthwiseConv2d -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`
+  training helpers
 - `PointwiseConv2d` forward dispatch through the native Conv2d im2col/GEMM
   lowering path
 - `DepthwiseConv2d` forward dispatch through the native
@@ -38,9 +42,9 @@ Completed:
 - `DepthwiseConv2d` backward C ABI shim through
   `depthwise_conv2d_backward`
 - native `DepthwiseConv2d -> Flatten -> Linear`,
-  `DepthwiseConv2d -> ReLU -> Flatten -> Linear`,
+  `DepthwiseConv2d -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`,
   `DepthwiseConv2d -> MaxPool2d -> Flatten -> Linear`, and
-  `DepthwiseConv2d -> ReLU -> MaxPool2d -> Flatten -> Linear` training helper
+  `DepthwiseConv2d -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> MaxPool2d -> Flatten -> Linear` training helper
   routing through the depthwise forward/backward C ABI shims
 - `GroupNorm` forward dispatch through the native `groupnorm_forward` C ABI shim
 - `GroupNorm` backward C ABI shim through `groupnorm_backward`
@@ -145,9 +149,15 @@ Supported through native GPU helper paths:
 - `GroupNorm -> Flatten -> Linear`
 - `GlobalAvgPool2d -> Flatten -> Linear`
 - `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Conv2d(valid, bias=false) -> same activation -> MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
-- `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`
 - `PointwiseConv2d(bias=false) -> Flatten -> Linear`
+- `PointwiseConv2d(bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> MaxPool2d -> Flatten -> Linear`
 - `PointwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear`

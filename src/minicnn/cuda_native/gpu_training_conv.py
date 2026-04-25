@@ -32,13 +32,15 @@ def native_gpu_conv_linear_training_step(
     linear_weight_velocity: np.ndarray | None = None,
     linear_bias_velocity: np.ndarray | None = None,
     apply_relu_activation: bool = False,
+    activation_kind: str | None = None,
+    activation_alpha: float = 0.01,
     apply_maxpool: bool = False,
     conv_kind: str = 'conv2d',
     bound_lib: Any | None = None,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuConvLinearTrainingStepResult:
-    """Run one native GPU Conv2d/DepthwiseConv2d(valid, no bias) + optional ReLU/MaxPool + Linear + SoftmaxCE + SGD step."""
+    """Run one native GPU conv-family + optional activation/pool + Linear + SoftmaxCE + SGD step."""
 
     x_f32 = np.ascontiguousarray(x, dtype=np.float32)
     labels_i32 = np.ascontiguousarray(labels, dtype=np.int32)
@@ -70,8 +72,18 @@ def native_gpu_conv_linear_training_step(
     n, in_c, height, width = [int(v) for v in x_f32.shape]
     out_c, conv_in_c, kh, kw = [int(v) for v in conv_w_f32.shape]
     normalized_conv_kind = str(conv_kind).lower()
+    normalized_activation_kind = (
+        str(activation_kind).strip().lower().replace('_', '')
+        if activation_kind is not None
+        else ('relu' if bool(apply_relu_activation) else None)
+    )
     if normalized_conv_kind not in {'conv2d', 'depthwise'}:
         raise ValueError(f'native_gpu_conv_linear_training_step got unsupported conv_kind={conv_kind!r}')
+    if normalized_activation_kind not in {None, 'relu', 'leakyrelu', 'sigmoid', 'tanh', 'silu', 'gelu'}:
+        raise ValueError(
+            'native_gpu_conv_linear_training_step got unsupported '
+            f'activation_kind={activation_kind!r}'
+        )
     if normalized_conv_kind == 'depthwise':
         if conv_in_c != 1:
             raise ValueError('native_gpu_conv_linear_training_step depthwise mode expects conv_weight shape (out_c, 1, kh, kw).')
@@ -148,6 +160,7 @@ def native_gpu_conv_linear_training_step(
     col_t = alloc((patch_size, spatial_size), 'conv_col') if normalized_conv_kind == 'conv2d' else None
     conv_raw_t = alloc((out_c, n, out_h, out_w), 'conv_raw_cnhw') if normalized_conv_kind == 'conv2d' else None
     conv_t = alloc((n, out_c, out_h, out_w), 'conv_output')
+    activation_input_t = alloc((n, out_c, out_h, out_w), 'conv_activation_input') if normalized_activation_kind is not None else None
     pooled_t = alloc((n, out_c, pool_h, pool_w), 'pooled') if bool(apply_maxpool) else None
     logits_t = alloc((n, classes), 'logits')
     probs_t = alloc((n, classes), 'probs')
@@ -196,9 +209,27 @@ def native_gpu_conv_linear_training_step(
             lib.gemm_forward(conv_w_t.device_ptr, col_t.device_ptr, conv_raw_t.device_ptr, out_c, spatial_size, patch_size)
             lib.cnhw_to_nchw(conv_raw_t.device_ptr, conv_t.device_ptr, n, out_c, out_h, out_w)
             runtime.record_execution('gpu_native_train:conv2d_im2col_gemm', input_name='input', output_name='conv_output', node_count=1)
-        if bool(apply_relu_activation):
-            lib.apply_relu(conv_t.device_ptr, int(n * conv_features))
+        activation_elements = int(n * conv_features)
+        if activation_input_t is not None:
+            lib.gpu_memcpy_d2d(activation_input_t.device_ptr, conv_t.device_ptr, conv_t.nbytes)
+        if normalized_activation_kind == 'relu':
+            lib.apply_relu(conv_t.device_ptr, activation_elements)
             runtime.record_execution('gpu_native_train:apply_relu', input_name='conv_output', output_name='conv_output', node_count=1)
+        elif normalized_activation_kind == 'leakyrelu':
+            lib.leaky_relu_forward(conv_t.device_ptr, float(activation_alpha), activation_elements)
+            runtime.record_execution('gpu_native_train:leaky_relu_forward', input_name='conv_output', output_name='conv_output', node_count=1)
+        elif normalized_activation_kind == 'sigmoid':
+            lib.sigmoid_forward(conv_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:sigmoid_forward', input_name='conv_output', output_name='conv_output', node_count=1)
+        elif normalized_activation_kind == 'tanh':
+            lib.tanh_forward(conv_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:tanh_forward', input_name='conv_output', output_name='conv_output', node_count=1)
+        elif normalized_activation_kind == 'silu':
+            lib.silu_forward(conv_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:silu_forward', input_name='conv_output', output_name='conv_output', node_count=1)
+        elif normalized_activation_kind == 'gelu':
+            lib.gelu_forward(conv_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:gelu_forward', input_name='conv_output', output_name='conv_output', node_count=1)
         dense_input_t = conv_t
         dense_input_name = 'conv_output'
         if bool(apply_maxpool):
@@ -251,9 +282,25 @@ def native_gpu_conv_linear_training_step(
                 pool_w,
             )
             runtime.record_execution('gpu_native_train:maxpool_backward_nchw', input_name='grad_pooled', output_name='grad_conv_output', node_count=1)
-        if bool(apply_relu_activation):
-            lib.apply_relu_backward(conv_t.device_ptr, grad_conv_t.device_ptr, int(n * conv_features))
+        activation_grad_input_t = conv_t if activation_input_t is None else activation_input_t
+        if normalized_activation_kind == 'relu':
+            lib.apply_relu_backward(activation_grad_input_t.device_ptr, grad_conv_t.device_ptr, activation_elements)
             runtime.record_execution('gpu_native_train:apply_relu_backward', input_name='conv_output', output_name='grad_conv_output', node_count=1)
+        elif normalized_activation_kind == 'leakyrelu':
+            lib.leaky_relu_backward(activation_grad_input_t.device_ptr, grad_conv_t.device_ptr, float(activation_alpha), activation_elements)
+            runtime.record_execution('gpu_native_train:leaky_relu_backward', input_name='conv_output', output_name='grad_conv_output', node_count=1)
+        elif normalized_activation_kind == 'sigmoid':
+            lib.sigmoid_backward(activation_grad_input_t.device_ptr, grad_conv_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:sigmoid_backward', input_name='conv_output', output_name='grad_conv_output', node_count=1)
+        elif normalized_activation_kind == 'tanh':
+            lib.tanh_backward(activation_grad_input_t.device_ptr, grad_conv_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:tanh_backward', input_name='conv_output', output_name='grad_conv_output', node_count=1)
+        elif normalized_activation_kind == 'silu':
+            lib.silu_backward(activation_grad_input_t.device_ptr, grad_conv_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:silu_backward', input_name='conv_output', output_name='grad_conv_output', node_count=1)
+        elif normalized_activation_kind == 'gelu':
+            lib.gelu_backward(activation_grad_input_t.device_ptr, grad_conv_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:gelu_backward', input_name='conv_output', output_name='grad_conv_output', node_count=1)
         if normalized_conv_kind == 'depthwise':
             assert grad_depthwise_bias_t is not None
             lib.depthwise_conv2d_backward(
@@ -386,12 +433,14 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
     conv2_weight_velocity: np.ndarray | None = None,
     linear_weight_velocity: np.ndarray | None = None,
     linear_bias_velocity: np.ndarray | None = None,
+    activation_kind: str | None = None,
+    activation_alpha: float = 0.01,
     bound_lib: Any | None = None,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
     return_intermediates: bool = True,
 ) -> NativeGpuTwoConvReluPoolLinearTrainingStepResult:
-    """Run one native GPU Conv/ReLU/Conv/ReLU/MaxPool/Linear training step."""
+    """Run one native GPU Conv/activation/Conv/activation/MaxPool/Linear training step."""
 
     x_f32 = np.ascontiguousarray(x, dtype=np.float32)
     labels_i32 = np.ascontiguousarray(labels, dtype=np.int32)
@@ -411,10 +460,16 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
     n, in_c, height, width = [int(v) for v in x_f32.shape]
     conv1_out_c, conv1_in_c, k1h, k1w = [int(v) for v in conv1_w_f32.shape]
     conv2_out_c, conv2_in_c, k2h, k2w = [int(v) for v in conv2_w_f32.shape]
+    normalized_activation_kind = str(activation_kind or 'ReLU').strip().lower().replace('_', '')
     if conv1_in_c != in_c:
         raise ValueError(f'conv1 input channels {conv1_in_c} do not match x channels {in_c}')
     if conv2_in_c != conv1_out_c:
         raise ValueError(f'conv2 input channels {conv2_in_c} do not match conv1 output channels {conv1_out_c}')
+    if normalized_activation_kind not in {'relu', 'leakyrelu', 'sigmoid', 'tanh', 'silu', 'gelu'}:
+        raise ValueError(
+            'native_gpu_two_conv_relu_pool_linear_training_step got unsupported '
+            f'activation_kind={activation_kind!r}'
+        )
     conv1_h = height - k1h + 1
     conv1_w = width - k1w + 1
     conv2_h = conv1_h - k2h + 1
@@ -479,9 +534,11 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
     conv1_col_t = alloc((conv1_patch, conv1_spatial), 'conv1_col')
     conv1_raw_t = alloc((conv1_out_c, n, conv1_h, conv1_w), 'conv1_raw_cnhw')
     conv1_t = alloc((n, conv1_out_c, conv1_h, conv1_w), 'conv1_output')
+    conv1_activation_input_t = alloc((n, conv1_out_c, conv1_h, conv1_w), 'conv1_activation_input')
     conv2_col_t = alloc((conv2_patch, conv2_spatial), 'conv2_col')
     conv2_raw_t = alloc((conv2_out_c, n, conv2_h, conv2_w), 'conv2_raw_cnhw')
     conv2_t = alloc((n, conv2_out_c, conv2_h, conv2_w), 'conv2_output')
+    conv2_activation_input_t = alloc((n, conv2_out_c, conv2_h, conv2_w), 'conv2_activation_input')
     pooled_t = alloc((n, conv2_out_c, pool_h, pool_w), 'pooled')
     logits_t = alloc((n, classes), 'logits')
     probs_t = alloc((n, classes), 'probs')
@@ -506,14 +563,48 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
         lib.gemm_forward(conv1_w_t.device_ptr, conv1_col_t.device_ptr, conv1_raw_t.device_ptr, conv1_out_c, conv1_spatial, conv1_patch)
         lib.cnhw_to_nchw(conv1_raw_t.device_ptr, conv1_t.device_ptr, n, conv1_out_c, conv1_h, conv1_w)
         runtime.record_execution('gpu_native_train:conv2d_1_im2col_gemm', input_name='input', output_name='conv1_output', node_count=1)
-        lib.apply_relu(conv1_t.device_ptr, int(n * conv1_features))
-        runtime.record_execution('gpu_native_train:apply_relu_1', input_name='conv1_output', output_name='conv1_output', node_count=1)
+        lib.gpu_memcpy_d2d(conv1_activation_input_t.device_ptr, conv1_t.device_ptr, conv1_t.nbytes)
+        if normalized_activation_kind == 'relu':
+            lib.apply_relu(conv1_t.device_ptr, int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:apply_relu_1', input_name='conv1_output', output_name='conv1_output', node_count=1)
+        elif normalized_activation_kind == 'leakyrelu':
+            lib.leaky_relu_forward(conv1_t.device_ptr, float(activation_alpha), int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:leaky_relu_forward_1', input_name='conv1_output', output_name='conv1_output', node_count=1)
+        elif normalized_activation_kind == 'sigmoid':
+            lib.sigmoid_forward(conv1_t.device_ptr, int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:sigmoid_forward_1', input_name='conv1_output', output_name='conv1_output', node_count=1)
+        elif normalized_activation_kind == 'tanh':
+            lib.tanh_forward(conv1_t.device_ptr, int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:tanh_forward_1', input_name='conv1_output', output_name='conv1_output', node_count=1)
+        elif normalized_activation_kind == 'silu':
+            lib.silu_forward(conv1_t.device_ptr, int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:silu_forward_1', input_name='conv1_output', output_name='conv1_output', node_count=1)
+        else:
+            lib.gelu_forward(conv1_t.device_ptr, int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:gelu_forward_1', input_name='conv1_output', output_name='conv1_output', node_count=1)
         lib.im2col_forward(conv1_t.device_ptr, conv2_col_t.device_ptr, n, conv1_out_c, conv1_h, conv1_w, k2h, k2w, conv2_h, conv2_w)
         lib.gemm_forward(conv2_w_t.device_ptr, conv2_col_t.device_ptr, conv2_raw_t.device_ptr, conv2_out_c, conv2_spatial, conv2_patch)
         lib.cnhw_to_nchw(conv2_raw_t.device_ptr, conv2_t.device_ptr, n, conv2_out_c, conv2_h, conv2_w)
         runtime.record_execution('gpu_native_train:conv2d_2_im2col_gemm', input_name='conv1_output', output_name='conv2_output', node_count=1)
-        lib.apply_relu(conv2_t.device_ptr, int(n * conv2_features))
-        runtime.record_execution('gpu_native_train:apply_relu_2', input_name='conv2_output', output_name='conv2_output', node_count=1)
+        lib.gpu_memcpy_d2d(conv2_activation_input_t.device_ptr, conv2_t.device_ptr, conv2_t.nbytes)
+        if normalized_activation_kind == 'relu':
+            lib.apply_relu(conv2_t.device_ptr, int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:apply_relu_2', input_name='conv2_output', output_name='conv2_output', node_count=1)
+        elif normalized_activation_kind == 'leakyrelu':
+            lib.leaky_relu_forward(conv2_t.device_ptr, float(activation_alpha), int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:leaky_relu_forward_2', input_name='conv2_output', output_name='conv2_output', node_count=1)
+        elif normalized_activation_kind == 'sigmoid':
+            lib.sigmoid_forward(conv2_t.device_ptr, int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:sigmoid_forward_2', input_name='conv2_output', output_name='conv2_output', node_count=1)
+        elif normalized_activation_kind == 'tanh':
+            lib.tanh_forward(conv2_t.device_ptr, int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:tanh_forward_2', input_name='conv2_output', output_name='conv2_output', node_count=1)
+        elif normalized_activation_kind == 'silu':
+            lib.silu_forward(conv2_t.device_ptr, int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:silu_forward_2', input_name='conv2_output', output_name='conv2_output', node_count=1)
+        else:
+            lib.gelu_forward(conv2_t.device_ptr, int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:gelu_forward_2', input_name='conv2_output', output_name='conv2_output', node_count=1)
         lib.apply_maxpool(conv2_t.device_ptr, pooled_t.device_ptr, n, conv2_out_c, conv2_h, conv2_w)
         runtime.record_execution('gpu_native_train:apply_maxpool', input_name='conv2_output', output_name='pooled', node_count=1)
         lib.dense_forward(pooled_t.device_ptr, linear_w_t.device_ptr, linear_b_t.device_ptr, logits_t.device_ptr, n, dense_features, classes)
@@ -556,8 +647,24 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
             pool_w,
         )
         runtime.record_execution('gpu_native_train:maxpool_backward_nchw', input_name='grad_pooled', output_name='grad_conv2_output', node_count=1)
-        lib.apply_relu_backward(conv2_t.device_ptr, grad_conv2_t.device_ptr, int(n * conv2_features))
-        runtime.record_execution('gpu_native_train:apply_relu_backward_2', input_name='conv2_output', output_name='grad_conv2_output', node_count=1)
+        if normalized_activation_kind == 'relu':
+            lib.apply_relu_backward(conv2_activation_input_t.device_ptr, grad_conv2_t.device_ptr, int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:apply_relu_backward_2', input_name='conv2_output', output_name='grad_conv2_output', node_count=1)
+        elif normalized_activation_kind == 'leakyrelu':
+            lib.leaky_relu_backward(conv2_activation_input_t.device_ptr, grad_conv2_t.device_ptr, float(activation_alpha), int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:leaky_relu_backward_2', input_name='conv2_output', output_name='grad_conv2_output', node_count=1)
+        elif normalized_activation_kind == 'sigmoid':
+            lib.sigmoid_backward(conv2_activation_input_t.device_ptr, grad_conv2_t.device_ptr, int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:sigmoid_backward_2', input_name='conv2_output', output_name='grad_conv2_output', node_count=1)
+        elif normalized_activation_kind == 'tanh':
+            lib.tanh_backward(conv2_activation_input_t.device_ptr, grad_conv2_t.device_ptr, int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:tanh_backward_2', input_name='conv2_output', output_name='grad_conv2_output', node_count=1)
+        elif normalized_activation_kind == 'silu':
+            lib.silu_backward(conv2_activation_input_t.device_ptr, grad_conv2_t.device_ptr, int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:silu_backward_2', input_name='conv2_output', output_name='grad_conv2_output', node_count=1)
+        else:
+            lib.gelu_backward(conv2_activation_input_t.device_ptr, grad_conv2_t.device_ptr, int(n * conv2_features))
+            runtime.record_execution('gpu_native_train:gelu_backward_2', input_name='conv2_output', output_name='grad_conv2_output', node_count=1)
         lib.nchw_to_cnhw(grad_conv2_t.device_ptr, grad_conv2_cnhw_t.device_ptr, n, conv2_out_c, conv2_h, conv2_w)
         lib.conv_backward(
             grad_conv2_cnhw_t.device_ptr,
@@ -576,8 +683,24 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
             conv2_out_c,
         )
         runtime.record_execution('gpu_native_train:conv_backward_2', input_name='grad_conv2_output', output_name='grad_conv2_weight', node_count=1)
-        lib.apply_relu_backward(conv1_t.device_ptr, grad_conv1_t.device_ptr, int(n * conv1_features))
-        runtime.record_execution('gpu_native_train:apply_relu_backward_1', input_name='conv1_output', output_name='grad_conv1_output', node_count=1)
+        if normalized_activation_kind == 'relu':
+            lib.apply_relu_backward(conv1_activation_input_t.device_ptr, grad_conv1_t.device_ptr, int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:apply_relu_backward_1', input_name='conv1_output', output_name='grad_conv1_output', node_count=1)
+        elif normalized_activation_kind == 'leakyrelu':
+            lib.leaky_relu_backward(conv1_activation_input_t.device_ptr, grad_conv1_t.device_ptr, float(activation_alpha), int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:leaky_relu_backward_1', input_name='conv1_output', output_name='grad_conv1_output', node_count=1)
+        elif normalized_activation_kind == 'sigmoid':
+            lib.sigmoid_backward(conv1_activation_input_t.device_ptr, grad_conv1_t.device_ptr, int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:sigmoid_backward_1', input_name='conv1_output', output_name='grad_conv1_output', node_count=1)
+        elif normalized_activation_kind == 'tanh':
+            lib.tanh_backward(conv1_activation_input_t.device_ptr, grad_conv1_t.device_ptr, int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:tanh_backward_1', input_name='conv1_output', output_name='grad_conv1_output', node_count=1)
+        elif normalized_activation_kind == 'silu':
+            lib.silu_backward(conv1_activation_input_t.device_ptr, grad_conv1_t.device_ptr, int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:silu_backward_1', input_name='conv1_output', output_name='grad_conv1_output', node_count=1)
+        else:
+            lib.gelu_backward(conv1_activation_input_t.device_ptr, grad_conv1_t.device_ptr, int(n * conv1_features))
+            runtime.record_execution('gpu_native_train:gelu_backward_1', input_name='conv1_output', output_name='grad_conv1_output', node_count=1)
         lib.nchw_to_cnhw(grad_conv1_t.device_ptr, grad_conv1_cnhw_t.device_ptr, n, conv1_out_c, conv1_h, conv1_w)
         lib.conv_backward(
             grad_conv1_cnhw_t.device_ptr,

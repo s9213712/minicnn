@@ -312,6 +312,30 @@ _TRAINING_SUBSETS: dict[tuple[str, ...], tuple[str, str]] = {
     ),
 }
 
+for _conv_prefix, _subset_prefix in (
+    ('Conv2d', 'conv'),
+    ('PointwiseConv2d', 'pointwise_conv'),
+    ('DepthwiseConv2d', 'depthwise_conv'),
+):
+    for _activation in ('LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
+        _activation_key = _activation.replace('ReLU', '_relu').lower()
+        _TRAINING_SUBSETS[(_conv_prefix, _activation, 'Flatten', 'Linear')] = (
+            f'{_subset_prefix}_{_activation_key}_linear',
+            'native_gpu_conv_linear_training_step',
+        )
+        if _conv_prefix != 'PointwiseConv2d':
+            _TRAINING_SUBSETS[(_conv_prefix, _activation, 'MaxPool2d', 'Flatten', 'Linear')] = (
+                f'{_subset_prefix}_{_activation_key}_pool_linear',
+                'native_gpu_conv_linear_training_step',
+            )
+
+for _activation in ('LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
+    _activation_key = _activation.replace('ReLU', '_relu').lower()
+    _TRAINING_SUBSETS[('Conv2d', _activation, 'Conv2d', _activation, 'MaxPool2d', 'Flatten', 'Linear')] = (
+        f'two_conv_{_activation_key}_pool_linear',
+        'native_gpu_two_conv_relu_pool_linear_training_step',
+    )
+
 
 def _forward_training_step(step: GpuDispatchStep) -> GpuTrainingLoweringStep:
     return GpuTrainingLoweringStep(
@@ -609,16 +633,91 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
                 launch_family='normalization_backward',
             )
         )
-    if subset_name in {'conv_relu_linear', 'pointwise_conv_relu_linear', 'depthwise_conv_relu_linear', 'conv_relu_pool_linear', 'depthwise_conv_relu_pool_linear', 'two_conv_relu_pool_linear'}:
+    if subset_name in {
+        'conv_relu_linear',
+        'conv_leaky_relu_linear',
+        'conv_gelu_linear',
+        'conv_silu_linear',
+        'conv_sigmoid_linear',
+        'conv_tanh_linear',
+        'pointwise_conv_relu_linear',
+        'pointwise_conv_leaky_relu_linear',
+        'pointwise_conv_gelu_linear',
+        'pointwise_conv_silu_linear',
+        'pointwise_conv_sigmoid_linear',
+        'pointwise_conv_tanh_linear',
+        'depthwise_conv_relu_linear',
+        'depthwise_conv_leaky_relu_linear',
+        'depthwise_conv_gelu_linear',
+        'depthwise_conv_silu_linear',
+        'depthwise_conv_sigmoid_linear',
+        'depthwise_conv_tanh_linear',
+        'conv_relu_pool_linear',
+        'conv_leaky_relu_pool_linear',
+        'conv_gelu_pool_linear',
+        'conv_silu_pool_linear',
+        'conv_sigmoid_pool_linear',
+        'conv_tanh_pool_linear',
+        'depthwise_conv_relu_pool_linear',
+        'depthwise_conv_leaky_relu_pool_linear',
+        'depthwise_conv_gelu_pool_linear',
+        'depthwise_conv_silu_pool_linear',
+        'depthwise_conv_sigmoid_pool_linear',
+        'depthwise_conv_tanh_pool_linear',
+        'two_conv_relu_pool_linear',
+        'two_conv_leaky_relu_pool_linear',
+        'two_conv_gelu_pool_linear',
+        'two_conv_silu_pool_linear',
+        'two_conv_sigmoid_pool_linear',
+        'two_conv_tanh_pool_linear',
+    }:
+        activation_nodes = [node for node in graph.topological_order() if node.op_type in {'GELU', 'LeakyReLU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'}]
+        activation_op = 'ReLU' if not activation_nodes else str(activation_nodes[-1].op_type)
+        activation_lowering = {
+            'ReLU': 'apply_relu_backward',
+            'LeakyReLU': 'leaky_relu_backward',
+        }.get(activation_op, f'{activation_op.lower()}_backward')
         steps.append(
             GpuTrainingLoweringStep(
                 phase='backward',
-                op_name='ReLU',
-                lowering_kind='apply_relu_backward',
+                op_name=activation_op,
+                lowering_kind=activation_lowering,
                 launch_family='activation_backward',
             )
         )
-    if subset_name in {'conv_pool_linear', 'conv_relu_pool_linear', 'depthwise_conv_pool_linear', 'depthwise_conv_relu_pool_linear', 'two_conv_relu_pool_linear'}:
+        if subset_name in {
+            'two_conv_relu_pool_linear',
+            'two_conv_leaky_relu_pool_linear',
+            'two_conv_gelu_pool_linear',
+            'two_conv_silu_pool_linear',
+            'two_conv_sigmoid_pool_linear',
+            'two_conv_tanh_pool_linear',
+        }:
+            steps.append(
+                GpuTrainingLoweringStep(
+                    phase='backward',
+                    op_name=activation_op,
+                    lowering_kind=activation_lowering,
+                    launch_family='activation_backward',
+                )
+            )
+    if subset_name in {
+        'conv_pool_linear',
+        'conv_relu_pool_linear',
+        'conv_leaky_relu_pool_linear',
+        'conv_gelu_pool_linear',
+        'conv_silu_pool_linear',
+        'conv_sigmoid_pool_linear',
+        'conv_tanh_pool_linear',
+        'depthwise_conv_pool_linear',
+        'depthwise_conv_relu_pool_linear',
+        'depthwise_conv_leaky_relu_pool_linear',
+        'depthwise_conv_gelu_pool_linear',
+        'depthwise_conv_silu_pool_linear',
+        'depthwise_conv_sigmoid_pool_linear',
+        'depthwise_conv_tanh_pool_linear',
+        'two_conv_relu_pool_linear',
+    }:
         steps.append(
             GpuTrainingLoweringStep(
                 phase='backward',

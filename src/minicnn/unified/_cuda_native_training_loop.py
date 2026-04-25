@@ -598,6 +598,8 @@ def run_training_loop(
                             linear_weight_velocity=velocity_state.get(linear_weight_key),
                             linear_bias_velocity=velocity_state.get(linear_bias_key),
                             apply_relu_activation=bool(gpu_training_plan.get('apply_relu_activation', False)),
+                            activation_kind=gpu_training_plan.get('activation_kind'),
+                            activation_alpha=float(gpu_training_plan.get('activation_alpha', 0.01)),
                             apply_maxpool=bool(gpu_training_plan.get('apply_maxpool', False)),
                             conv_kind=str(gpu_training_plan.get('conv_kind', 'conv2d')),
                             bound_lib=ctx.device_runtime.bound_lib,
@@ -632,6 +634,8 @@ def run_training_loop(
                             conv2_weight_velocity=velocity_state.get(conv2_weight_key),
                             linear_weight_velocity=velocity_state.get(linear_weight_key),
                             linear_bias_velocity=velocity_state.get(linear_bias_key),
+                            activation_kind=gpu_training_plan.get('activation_kind'),
+                            activation_alpha=float(gpu_training_plan.get('activation_alpha', 0.01)),
                             bound_lib=ctx.device_runtime.bound_lib,
                             return_intermediates=False,
                         )

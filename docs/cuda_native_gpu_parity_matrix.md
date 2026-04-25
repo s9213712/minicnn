@@ -43,19 +43,25 @@ primitive sequence.
 | `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` | `native_gpu_global_avgpool_linear_training_step` | Covered by GlobalAvgPool helper math | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
+| `Conv2d(valid, bias=false) -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by conv helper activation math and backward-symbol dispatch | Pending real GPU run |
 | `PointwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by Conv2d helper math | Pending real GPU run |
 | `PointwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by Conv2d+ReLU helper math | Pending real GPU run |
+| `PointwiseConv2d(bias=false) -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by conv helper activation math and lowering parity | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
+| `DepthwiseConv2d(bias=false) -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper activation math and lowering parity | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> LayerNorm2d -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_pointwise_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> GELU -> PointwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `model.name=convnext_bridge_tiny` | `native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step` | CLI validation resolves to the deepest bridge subset | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
+| `DepthwiseConv2d(bias=false) -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper activation+pool math and lowering parity | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
+| `Conv2d(valid, bias=false) -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by conv helper activation+pool math and lowering parity | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_two_conv_relu_pool_linear_training_step` | Hermetic reference math, optional debug intermediate return, and fast training path that skips intermediate host copies | Real CIFAR-10 CUDA smoke passed; full CIFAR-10 strict GPU training reached low-to-mid 60% validation accuracy with `configs/cifar10_cuda_native_gpu_stronger.yaml` |
+| `Conv2d(valid, bias=false) -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Conv2d(valid, bias=false) -> same activation -> MaxPool2d -> Flatten -> Linear` | `native_gpu_two_conv_relu_pool_linear_training_step` | Covered by two-conv activation helper math, backward-symbol parity, and the same fast no-intermediate-copy path | Pending real GPU run |
 
 ## Current real-hardware status
 

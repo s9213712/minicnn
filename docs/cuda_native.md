@@ -279,12 +279,16 @@ Current `train-native engine.execution_mode=gpu_native` training subsets:
 - `GlobalAvgPool2d -> Flatten -> Linear`
 - `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
-- `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`
 - `PointwiseConv2d(bias=false) -> Flatten -> Linear`
-- `PointwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear`
+- `PointwiseConv2d(bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`
-- `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
-- `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> MaxPool2d -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> MaxPool2d -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Conv2d(valid, bias=false) -> same activation -> MaxPool2d -> Flatten -> Linear`
 
 These subsets execute through native GPU helper paths for forward, loss-gradient,
 covered backward kernels, and supported optimizer updates. General graph-level
@@ -307,11 +311,13 @@ dispatch/bootstrap primitive set through native elementwise activation shims,
 and `Linear -> activation -> Linear` train-native helper subsets, including
 `LeakyReLU`, now use their native backward C ABI shims.
 `PointwiseConv2d` is also part of the forward dispatch/bootstrap primitive set
-through the native Conv2d im2col/GEMM lowering path; train-native helper
-coverage is still pending.
+through the native Conv2d im2col/GEMM lowering path, and single-stage
+`PointwiseConv2d -> activation -> Flatten -> Linear` helper subsets are now
+covered for `ReLU`, `LeakyReLU`, `GELU`, `SiLU`, `Sigmoid`, and `Tanh`.
 `DepthwiseConv2d` is part of the forward dispatch/bootstrap primitive set
-through `depthwise_conv2d_forward`; train-native helper coverage is still
-pending.
+through `depthwise_conv2d_forward`, and single-stage
+`DepthwiseConv2d -> optional activation -> optional MaxPool2d -> Flatten -> Linear`
+helper subsets are now covered for the same activation family.
 `GroupNorm` is part of the forward dispatch/bootstrap primitive set through
 `groupnorm_forward`; train-native helper coverage is still pending.
 `LayerNorm2d` is part of the forward dispatch/bootstrap primitive set through
