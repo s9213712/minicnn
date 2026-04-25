@@ -4,6 +4,8 @@ import json
 import warnings
 from pathlib import Path
 
+import pytest
+
 
 def _write_cfg(path: Path) -> None:
     path.write_text(
@@ -35,6 +37,17 @@ project:
 """.replace('REPLACE_ARTIFACTS', str(path.parent / 'artifacts')),
         encoding='utf-8',
     )
+
+
+def _run_train_native_or_skip(args: list[str]) -> int:
+    from minicnn.cli import main
+
+    try:
+        return main(args)
+    except RuntimeError as exc:
+        if 'CUDA runtime preflight failed' in str(exc):
+            pytest.skip(str(exc))
+        raise
 
 
 def test_validate_cuda_native_config_reports_reference_numpy_mode(tmp_path, capsys):
@@ -118,14 +131,12 @@ def test_validate_cuda_native_config_accepts_gpu_native_linear_training_subset(t
 
 
 def test_train_native_runs_gpu_native_linear_training_subset(tmp_path, capsys):
-    from minicnn.cli import main
-
     config_path = tmp_path / 'cfg.yaml'
     _write_cfg(config_path)
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        rc = main(['train-native', '--config', str(config_path), 'engine.execution_mode=gpu_native'])
+        rc = _run_train_native_or_skip(['train-native', '--config', str(config_path), 'engine.execution_mode=gpu_native'])
     assert rc == 0
     stdout = capsys.readouterr().out
     json_text = stdout.split('Artifacts written to:')[0].strip()
@@ -139,8 +150,6 @@ def test_train_native_runs_gpu_native_linear_training_subset(tmp_path, capsys):
 
 
 def test_train_native_runs_gpu_native_two_linear_relu_training_subset(tmp_path, capsys):
-    from minicnn.cli import main
-
     config_path = tmp_path / 'cfg.yaml'
     _write_cfg(config_path)
     config_path.write_text(
@@ -153,7 +162,7 @@ def test_train_native_runs_gpu_native_two_linear_relu_training_subset(tmp_path, 
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        rc = main(['train-native', '--config', str(config_path), 'engine.execution_mode=gpu_native'])
+        rc = _run_train_native_or_skip(['train-native', '--config', str(config_path), 'engine.execution_mode=gpu_native'])
     assert rc == 0
     stdout = capsys.readouterr().out
     json_text = stdout.split('Artifacts written to:')[0].strip()
@@ -167,8 +176,6 @@ def test_train_native_runs_gpu_native_two_linear_relu_training_subset(tmp_path, 
 
 
 def test_train_native_runs_gpu_native_pool_linear_training_subset(tmp_path, capsys):
-    from minicnn.cli import main
-
     config_path = tmp_path / 'cfg.yaml'
     _write_cfg(config_path)
     config_path.write_text(
@@ -181,7 +188,7 @@ def test_train_native_runs_gpu_native_pool_linear_training_subset(tmp_path, caps
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        rc = main(['train-native', '--config', str(config_path), 'engine.execution_mode=gpu_native'])
+        rc = _run_train_native_or_skip(['train-native', '--config', str(config_path), 'engine.execution_mode=gpu_native'])
     assert rc == 0
     stdout = capsys.readouterr().out
     json_text = stdout.split('Artifacts written to:')[0].strip()
@@ -341,6 +348,53 @@ def test_validate_cuda_native_config_accepts_gpu_native_linear_global_grad_clip(
     assert rc == 0
     assert payload['execution_readiness_assessment']['training_lowering_plan']['optimizer_steps'][0]['lowering_kind'] == 'grad_l2_sumsq_scale'
     assert payload['errors'] == []
+
+
+def test_validate_cuda_native_config_accepts_gpu_native_linear_grad_accum(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+
+    rc = main([
+        'validate-cuda-native-config',
+        '--config',
+        str(config_path),
+        '--format',
+        'json',
+        'engine.execution_mode=gpu_native',
+        'train.grad_accum_steps=2',
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['selected_execution_mode'] == 'gpu_native'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['ready'] is True
+    assert payload['errors'] == []
+
+
+def test_train_native_runs_gpu_native_linear_grad_accum(tmp_path, capsys):
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        rc = _run_train_native_or_skip([
+            'train-native',
+            '--config',
+            str(config_path),
+            'engine.execution_mode=gpu_native',
+            'train.grad_accum_steps=2',
+        ])
+    assert rc == 0
+    stdout = capsys.readouterr().out
+    json_text = stdout.split('Artifacts written to:')[0].strip()
+    payload, _ = json.JSONDecoder().raw_decode(json_text)
+
+    assert payload['selected_execution_mode'] == 'gpu_native'
+    assert payload['effective_execution_mode'] == 'gpu_native'
+    assert payload['tensor_execution_device'] == 'gpu'
+    assert payload['gpu_execution'] is True
 
 
 def test_execution_mode_sets_are_disjoint():

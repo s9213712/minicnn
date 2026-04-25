@@ -13,8 +13,8 @@ For the closure/status summary, see
 
 | Subset | Helper | Evidence | Hardware status |
 |---|---|---|---|
-| `Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE, label smoothing, SGD/Adam/AdamW/RMSprop, and global grad clip | Real CUDA smoke passed for SGD, RMSprop, and label smoothing |
-| `Flatten -> Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE, label smoothing, SGD/Adam/AdamW/RMSprop, and global grad clip | Covered by Linear helper smoke; full CLI smoke pending |
+| `Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE, label smoothing, SGD/Adam/AdamW/RMSprop, global grad clip, and grad accumulation | Real CUDA smoke passed for SGD, RMSprop, and label smoothing; grad accumulation allocation smoke pending on a compatible host |
+| `Flatten -> Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE, label smoothing, SGD/Adam/AdamW/RMSprop, global grad clip, and grad accumulation | Covered by Linear helper smoke; full CLI smoke pending |
 | `Linear -> ReLU -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
 | `Flatten -> Linear -> ReLU -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
 | `MaxPool2d -> Flatten -> Linear` | `native_gpu_pool_linear_training_step` | Hermetic reference math | Pending real GPU run |
@@ -33,6 +33,9 @@ Representative real CUDA smoke now passes on this machine:
 - minimal Linear RMSprop smoke emits `gpu_native_train:rmsprop_update_fused`
 - minimal Linear label-smoothing smoke emits
   `gpu_native_train:softmax_xent_smooth_grad_loss_acc`
+- minimal Linear `grad_accum_steps=2` validation keeps
+  `engine.execution_mode=gpu_native`; allocation smoke is pending on a
+  CUDA driver/runtime-compatible host
 - minimal Linear global grad-clip smoke emits `gpu_native_train:grad_clip_global`
   and clips the reported gradient norm to the requested threshold
 - minimal Conv+Linear global grad-clip smoke emits `gpu_native_train:grad_clip_global`

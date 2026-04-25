@@ -273,6 +273,8 @@ only report the coarse helper-pattern name.
   `sgd_update_fused`.
 - Supported `gpu_native` training subsets use native `optimizer.grad_clip_global`
   through `grad_l2_sumsq` plus `scale_inplace`.
+- Supported `gpu_native` training subsets accept `train.grad_accum_steps >= 1`
+  by accumulating microbatches into one native GPU helper step.
 
 If `gpu_native` fails with `CUDA runtime preflight failed`, the Python runtime
 reached the real CUDA library but the installed NVIDIA driver/runtime pair is

@@ -30,7 +30,8 @@ Completed:
 - native global-norm gradient clipping for supported `gpu_native` training subsets
 - native CrossEntropyLoss `label_smoothing` helper for supported `gpu_native`
   training subsets
-  subsets
+- `train.grad_accum_steps >= 1` for supported `gpu_native` subsets via native
+  accumulated-batch training steps
 
 ## Current `gpu_native` training subsets
 
@@ -76,6 +77,9 @@ them outside the supported subsets.
 `optimizer.grad_clip_global` is native for supported `gpu_native` subsets through
 `grad_l2_sumsq` plus `scale_inplace`.
 
+`train.grad_accum_steps >= 1` is supported for the same `gpu_native` helper
+subsets by accumulating microbatches into a single native GPU helper step.
+
 ## Real-hardware smoke evidence
 
 Current real CUDA evidence:
@@ -92,6 +96,9 @@ Current real CUDA evidence:
   Conv/Linear gradient norm to the requested threshold
 - minimal Conv+Linear `weight_decay` smoke passed and emitted
   `gpu_native_train:sgd_update_fused`
+- minimal Linear `grad_accum_steps=2` validation now resolves to
+  `engine.execution_mode=gpu_native`; real allocation smoke is pending on a
+  CUDA driver/runtime-compatible host
 - CIFAR-10 repeated-Conv smoke used `official:cifar10:test_batch`; updated
   Conv/Linear weights matched NumPy reference with max absolute diffs around
   `1e-9`
@@ -112,7 +119,7 @@ Still not claimed as complete:
 Current repo-side validation:
 
 ```text
-134 passed
+132 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:

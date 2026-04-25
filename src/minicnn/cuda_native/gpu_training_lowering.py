@@ -299,8 +299,6 @@ def build_gpu_training_lowering_plan(
     optimizer_steps, optimizer_reasons = _optimizer_step(graph, subset_name, optim_cfg)
     unsupported_reasons.extend(optimizer_reasons)
 
-    if int(train_cfg.get('grad_accum_steps', 1)) != 1:
-        unsupported_reasons.append('gpu_native training lowering currently requires train.grad_accum_steps=1')
     if bool(train_cfg.get('amp', False)):
         unsupported_reasons.append('gpu_native training lowering currently requires train.amp=false')
     forward_steps = tuple(_forward_training_step(step) for step in dispatch_plan.steps)

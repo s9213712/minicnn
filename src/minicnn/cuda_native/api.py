@@ -256,8 +256,6 @@ def _validate_gpu_native_training_subset(
     else:
         if optimizer_type != 'sgd':
             errors.append('cuda_native gpu_native non-Linear train-native currently supports only optimizer.type=SGD.')
-    if int(train_cfg.get('grad_accum_steps', 1)) != 1:
-        errors.append('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
     if bool(train_cfg.get('amp', False)):
         errors.append('cuda_native gpu_native train-native currently requires train.amp=false.')
     return errors

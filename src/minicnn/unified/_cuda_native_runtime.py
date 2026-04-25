@@ -506,8 +506,6 @@ def _validate_gpu_native_training_context(ctx: NativeTrainingContext) -> None:
     else:
         if ctx.optimizer_type != 'sgd':
             raise ValueError('cuda_native gpu_native non-Linear train-native currently supports only optimizer.type=SGD.')
-    if ctx.grad_accum_steps != 1:
-        raise ValueError('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
     if ctx.amp:
         raise ValueError('cuda_native gpu_native train-native currently requires train.amp=false.')
 
@@ -604,6 +602,8 @@ def run_training_loop(
             seen = 0
             num_batches = (x_shuf.shape[0] + ctx.batch_size - 1) // ctx.batch_size
             batch_idx = 0
+            gpu_accum_x: list[np.ndarray] = []
+            gpu_accum_y: list[np.ndarray] = []
             for i in range(0, x_shuf.shape[0], ctx.batch_size):
                 batch_idx += 1
                 xb = x_shuf[i:i + ctx.batch_size]
@@ -615,8 +615,15 @@ def run_training_loop(
                     or batch_idx == num_batches
                 )
                 if ctx.execution_mode == 'gpu_native':
+                    gpu_accum_x.append(xb)
+                    gpu_accum_y.append(yb)
                     if not apply_optimizer_step:
-                        raise ValueError('cuda_native gpu_native train-native currently requires train.grad_accum_steps=1.')
+                        continue
+                    if len(gpu_accum_x) > 1:
+                        xb = np.concatenate(gpu_accum_x, axis=0)
+                        yb = np.concatenate(gpu_accum_y, axis=0)
+                    gpu_accum_x.clear()
+                    gpu_accum_y.clear()
                     assert gpu_training_plan is not None
                     velocity_state = optimizer_state.setdefault('velocity', {})
                     flat_xb = xb.reshape(xb.shape[0], -1)
