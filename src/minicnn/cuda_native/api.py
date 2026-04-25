@@ -145,6 +145,27 @@ def resolve_cuda_native_execution_mode(cfg: dict[str, Any]) -> dict[str, object]
     _assert_execution_mode_invariants()
     engine_cfg, _ = _as_mapping('engine', cfg.get('engine'))
     selected_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')
+    if selected_mode == 'gpu_native_auto':
+        auto_policy = _resolve_gpu_native_auto_policy(cfg)
+        effective_mode = 'gpu_native' if bool(auto_policy['gpu_native_ready']) else 'reference_numpy'
+        tensor_execution_device = 'gpu' if effective_mode == 'gpu_native' else 'cpu'
+        return {
+            'execution_mode': effective_mode,
+            'selected_execution_mode': selected_mode,
+            'effective_execution_mode': effective_mode,
+            'tensor_execution_device': tensor_execution_device,
+            'tensors_ran_on': tensor_execution_device,
+            'gpu_execution': effective_mode == 'gpu_native',
+            'planned': False,
+            'supported': True,
+            'gpu_native_ready': bool(auto_policy['gpu_native_ready']),
+            'gpu_native_lowering_ready': bool(auto_policy['gpu_native_lowering_ready']),
+            'gpu_native_runtime_ready': bool(auto_policy['gpu_native_runtime_ready']),
+            'fallback_execution_mode': 'reference_numpy',
+            'fallback_available': True,
+            'fallback_active': effective_mode != 'gpu_native',
+            'fallback_reason': str(auto_policy['fallback_reason']),
+        }
     if selected_mode in _SUPPORTED_EXECUTION_MODES:
         effective_mode = selected_mode
         tensor_execution_device = 'cpu' if selected_mode == 'reference_numpy' else 'gpu'
@@ -178,6 +199,57 @@ def resolve_cuda_native_execution_mode(cfg: dict[str, Any]) -> dict[str, object]
         'gpu_execution': False,
         'planned': False,
         'supported': False,
+    }
+
+
+def _cuda_runtime_ready_for_gpu_native() -> tuple[bool, str]:
+    try:
+        from minicnn.core.cuda_backend import check_cuda_ready
+
+        readiness = check_cuda_ready()
+    except Exception as exc:  # pragma: no cover - environment dependent
+        return False, str(exc)
+    if bool(readiness.get('ready', False)):
+        return True, 'not_needed'
+    return False, str(readiness.get('error') or 'cuda_runtime_not_ready')
+
+
+def _resolve_gpu_native_auto_policy(cfg: dict[str, Any]) -> dict[str, object]:
+    model_cfg, _ = _as_mapping('model', cfg.get('model'))
+    dataset_cfg, _ = _as_mapping('dataset', cfg.get('dataset'))
+    loss_cfg, _ = _as_mapping('loss', cfg.get('loss'))
+    optim_cfg, _ = _as_mapping('optimizer', cfg.get('optimizer'))
+    train_cfg, _ = _as_mapping('train', cfg.get('train'))
+    validation_input_shape = _validation_input_shape(dataset_cfg)
+    lowering_ready = False
+    lowering_reason = 'validation_input_shape_unavailable'
+    if validation_input_shape is not None:
+        try:
+            graph = build_cuda_native_graph(model_cfg, validation_input_shape)
+            plan = build_gpu_training_lowering_plan(
+                graph,
+                loss_cfg=loss_cfg,
+                optim_cfg=optim_cfg,
+                train_cfg=train_cfg,
+            )
+            policy = plan.fallback_policy()
+            lowering_ready = bool(policy.get('gpu_native_ready', False))
+            lowering_reason = str(policy.get('fallback_reason', 'gpu_native_training_lowering_not_ready'))
+        except ValueError as exc:
+            lowering_reason = str(exc)
+    runtime_ready, runtime_reason = _cuda_runtime_ready_for_gpu_native()
+    gpu_native_ready = lowering_ready and runtime_ready
+    if gpu_native_ready:
+        fallback_reason = 'not_needed'
+    elif not lowering_ready:
+        fallback_reason = lowering_reason
+    else:
+        fallback_reason = runtime_reason
+    return {
+        'gpu_native_ready': gpu_native_ready,
+        'gpu_native_lowering_ready': lowering_ready,
+        'gpu_native_runtime_ready': runtime_ready,
+        'fallback_reason': fallback_reason,
     }
 
 

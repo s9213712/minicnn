@@ -329,7 +329,8 @@ def test_cli_cuda_native_capabilities_returns_structured_json(capsys):
     assert payload['summary_status'] == 'beta'
     assert payload['default_execution_mode'] == 'reference_numpy'
     assert payload['default_tensor_execution_device'] == 'cpu'
-    assert payload['execution_modes_supported'] == ['reference_numpy', 'gpu_native']
+    assert payload['execution_modes_supported'] == ['reference_numpy', 'gpu_native_auto', 'gpu_native']
+    assert payload['preferred_gpu_first_execution_mode'] == 'gpu_native_auto'
     assert payload['execution_modes_planned'] == []
     assert payload['gpu_execution'] is False
     assert 'support_tiers' in payload

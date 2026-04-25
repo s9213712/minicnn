@@ -451,6 +451,20 @@ CUDA_NATIVE_EXECUTION_MODE_READINESS: dict[str, dict[str, object]] = {
         'kernel_readiness': {},
         'remaining_blockers': [],
     },
+    'gpu_native_auto': {
+        'status': 'gpu_first_with_reference_numpy_fallback',
+        'ready': True,
+        'tensor_execution_device': 'auto',
+        'bootstrap_subset_ops': GPU_NATIVE_BOOTSTRAP_OPS,
+        'training_subsets': GPU_NATIVE_TRAINING_SUBSETS,
+        'kernel_readiness': {
+            spec.op_name: spec.forward_status
+            for spec in list_gpu_kernel_specs()
+        },
+        'fallback_execution_mode': 'reference_numpy',
+        'fallback_available': True,
+        'remaining_blockers': GPU_NATIVE_BOOTSTRAP_BLOCKERS,
+    },
     'gpu_native': {
         'status': 'bootstrap_training_partial',
         'ready': True,
@@ -565,9 +579,10 @@ def get_cuda_native_capabilities() -> dict[str, Any]:
         'status': 'ok',
         'summary_status': 'beta',
         'capability_kind': 'backend_capability_summary',
-        'execution_modes_supported': ['reference_numpy', 'gpu_native'],
+        'execution_modes_supported': ['reference_numpy', 'gpu_native_auto', 'gpu_native'],
         'execution_modes_planned': [],
         'default_execution_mode': 'reference_numpy',
+        'preferred_gpu_first_execution_mode': 'gpu_native_auto',
         'default_tensor_execution_device': 'cpu',
         'gpu_execution': False,
         'support_tiers': support_tiers,

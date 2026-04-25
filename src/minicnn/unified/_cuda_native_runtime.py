@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from minicnn.cuda_native.api import assess_cuda_native_support_tier
+from minicnn.cuda_native.api import assess_cuda_native_support_tier, resolve_cuda_native_execution_mode
 from minicnn.cuda_native.backward import BackwardExecutor
 from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.device_runtime import DeviceRuntime
@@ -366,14 +366,23 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
         **planner_summary_raw,
         **({} if not isinstance(buffer_plan, dict) else buffer_plan),
     }
-    selected_execution_mode = str(engine_cfg.get('execution_mode', 'reference_numpy') or 'reference_numpy')
+    execution_mode_info = resolve_cuda_native_execution_mode(cfg)
+    selected_execution_mode = str(execution_mode_info.get('effective_execution_mode', 'reference_numpy'))
+    requested_execution_mode = str(execution_mode_info.get('selected_execution_mode', selected_execution_mode))
     tensor_execution_device = 'gpu' if selected_execution_mode == 'gpu_native' else 'cpu'
     bound_lib = None
     if selected_execution_mode == 'gpu_native':
         from minicnn.core._cuda_library import bind_symbols, ensure_cuda_runtime_available, load_library
 
-        bound_lib = bind_symbols(load_library())
-        ensure_cuda_runtime_available(bound_lib)
+        try:
+            bound_lib = bind_symbols(load_library())
+            ensure_cuda_runtime_available(bound_lib)
+        except RuntimeError:
+            if requested_execution_mode != 'gpu_native_auto':
+                raise
+            selected_execution_mode = 'reference_numpy'
+            tensor_execution_device = 'cpu'
+            bound_lib = None
     device_runtime = DeviceRuntime(
         execution_mode=selected_execution_mode,
         tensor_execution_device=tensor_execution_device,

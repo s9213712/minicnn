@@ -90,6 +90,11 @@ Completed:
 - `training_lowering_plan.training_launch_trace` now emits ordered
   forward/loss/backward/optimizer launch packets, which is the bridge from
   helper-backed subsets toward real per-op training lowering shims
+- `engine.execution_mode=gpu_native_auto` is now the GPU-first execution entry:
+  it selects `gpu_native` only when lowering and CUDA runtime readiness both
+  pass, otherwise it explicitly falls back to `reference_numpy`; strict
+  `engine.execution_mode=gpu_native` remains GPU-only and still fails on invalid
+  GPU/runtime conditions
 - runtime `execution_trace` telemetry that records the actual native
   forward/loss/backward/optimizer calls emitted by helper-backed training steps
 - `check_cuda_ready()` now reports `runtime_preflight` and overall `ready`, so
