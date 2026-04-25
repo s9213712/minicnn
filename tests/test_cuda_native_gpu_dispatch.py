@@ -139,6 +139,35 @@ def test_gpu_dispatch_plan_marks_ops_outside_bootstrap_subset():
     assert summary['steps'][2]['param_keys'] == ['_w_linear_2', '_b_linear_2']
 
 
+def test_gpu_dispatch_plan_supports_identity_and_noop_regularization_aliases():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Identity'},
+                {'type': 'Dropout', 'p': 0.0},
+                {'type': 'DropPath', 'p': 0.0},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 1, 4, 4),
+    )
+
+    summary = build_gpu_dispatch_plan(graph).summary()
+
+    assert summary['ready'] is True
+    assert summary['unsupported_ops'] == []
+    assert [step['op_name'] for step in summary['steps'][:3]] == ['Identity', 'Dropout', 'DropPath']
+    assert [step['launch_family'] for step in summary['steps'][:3]] == ['identity_alias', 'identity_alias', 'identity_alias']
+    assert [step['lowering_kind'] for step in summary['steps'][:3]] == [
+        'shape_identity_alias_shim',
+        'regularization_dropout_p0_alias_shim',
+        'regularization_droppath_p0_alias_shim',
+    ]
+    assert summary['steps'][1]['launch_descriptor']['attr_bindings'] == {'p': 0.0}
+    assert summary['steps'][2]['launch_descriptor']['attr_bindings'] == {'p': 0.0}
+
+
 def test_gpu_dispatch_plan_supports_batchnorm2d_forward_shim():
     graph = build_cuda_native_graph(
         {

@@ -95,6 +95,23 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
                 train_cfg=train_cfg,
             )
             training_lowering_plan_summary = training_lowering_plan.summary()
+            if selected_mode == 'gpu_native':
+                supported_from_plan = {
+                    str(step.get('op_name'))
+                    for step in dispatch_plan_summary.get('steps', [])
+                    if bool(step.get('supported', False))
+                }
+                supported_ops = sorted(op for op in layer_types if op in supported_from_plan)
+                missing_ops = sorted(op for op in layer_types if op not in supported_from_plan)
+                for step in dispatch_plan_summary.get('steps', []):
+                    if bool(step.get('supported', False)):
+                        continue
+                    op_name = str(step.get('op_name'))
+                    kernel_specs[op_name] = {
+                        'forward_status': 'outside_bootstrap',
+                        'backward_status': 'outside_bootstrap',
+                        'category': 'unsupported',
+                    }
         except ValueError:
             dispatch_plan_summary = None
             training_lowering_plan_summary = None

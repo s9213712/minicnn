@@ -152,6 +152,10 @@ def _node_attr_bindings(node) -> dict[str, Any]:
     elif node.op_type == 'GroupNorm':
         bindings['num_groups'] = int(node.attrs.get('num_groups', 1))
         bindings['eps'] = float(node.attrs.get('eps', 1e-5))
+    elif node.op_type == 'Dropout':
+        bindings['p'] = float(node.attrs.get('p', 0.5))
+    elif node.op_type == 'DropPath':
+        bindings['p'] = float(node.attrs.get('p', 0.0))
     elif node.op_type == 'AdaptiveAvgPool2d':
         bindings['output_size'] = node.attrs.get('output_size', 1)
     return bindings
@@ -224,6 +228,56 @@ def _normalized_scalar_args(attr_bindings: dict[str, Any]) -> tuple[dict[str, An
     return tuple(normalized)
 
 
+def _conditionally_unsupported_reason(node) -> str | None:
+    if node.op_type == 'Dropout':
+        p = float(node.attrs.get('p', 0.5))
+        if p != 0.0:
+            return 'Dropout gpu_native alias supports only p=0'
+    elif node.op_type == 'DropPath':
+        p = float(node.attrs.get('p', 0.0))
+        if p != 0.0:
+            return 'DropPath gpu_native alias supports only p=0'
+    return None
+
+
+def _unsupported_dispatch_step(node) -> GpuDispatchStep:
+    return GpuDispatchStep(
+        node_name=str(node.name),
+        op_name=str(node.op_type),
+        category='unsupported',
+        launch_family='unsupported',
+        input_names=tuple(str(name) for name in node.inputs),
+        output_names=tuple(str(name) for name in node.outputs),
+        param_keys=tuple(),
+        input_arity=len(node.inputs),
+        output_arity=len(node.outputs),
+        preferred_layout='unknown',
+        lowering_kind='unsupported',
+        launch_descriptor=GpuLaunchDescriptor(
+            launch_family='unsupported',
+            input_bindings=tuple(str(name) for name in node.inputs),
+            output_bindings=tuple(str(name) for name in node.outputs),
+            param_bindings=tuple(),
+            attr_bindings={},
+            input_shapes=tuple(tuple(spec.shape) for spec in node.input_specs),
+            output_shapes=tuple(tuple(spec.shape) for spec in node.output_specs),
+            tensor_dtype=str(node.output_specs[0].dtype if node.output_specs else 'float32'),
+            param_layouts={},
+            normalized_tensor_args=_normalized_tensor_args(
+                node,
+                tuple(str(name) for name in node.inputs),
+                tuple(str(name) for name in node.outputs),
+                tuple(),
+                {},
+            ),
+            normalized_scalar_args=tuple(),
+        ),
+        forward_status='unsupported',
+        backward_status='unsupported',
+        supported=False,
+    )
+
+
 def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
     registry = {
         spec.op_name: spec
@@ -237,45 +291,9 @@ def build_gpu_dispatch_plan(graph: NativeGraph) -> GpuDispatchPlan:
     unsupported_ops: list[str] = []
     for node in graph.topological_order():
         spec = registry.get(node.op_type)
-        if spec is None:
+        if spec is None or _conditionally_unsupported_reason(node) is not None:
             unsupported_ops.append(str(node.op_type))
-            steps.append(
-                GpuDispatchStep(
-                    node_name=str(node.name),
-                    op_name=str(node.op_type),
-                    category='unsupported',
-                    launch_family='unsupported',
-                    input_names=tuple(str(name) for name in node.inputs),
-                    output_names=tuple(str(name) for name in node.outputs),
-                    param_keys=tuple(),
-                    input_arity=len(node.inputs),
-                    output_arity=len(node.outputs),
-                    preferred_layout='unknown',
-                    lowering_kind='unsupported',
-                    launch_descriptor=GpuLaunchDescriptor(
-                        launch_family='unsupported',
-                        input_bindings=tuple(str(name) for name in node.inputs),
-                        output_bindings=tuple(str(name) for name in node.outputs),
-                        param_bindings=tuple(),
-                        attr_bindings={},
-                        input_shapes=tuple(tuple(spec.shape) for spec in node.input_specs),
-                        output_shapes=tuple(tuple(spec.shape) for spec in node.output_specs),
-                        tensor_dtype=str(node.output_specs[0].dtype if node.output_specs else 'float32'),
-                        param_layouts={},
-                        normalized_tensor_args=_normalized_tensor_args(
-                            node,
-                            tuple(str(name) for name in node.inputs),
-                            tuple(str(name) for name in node.outputs),
-                            tuple(),
-                            {},
-                        ),
-                        normalized_scalar_args=tuple(),
-                    ),
-                    forward_status='unsupported',
-                    backward_status='unsupported',
-                    supported=False,
-                )
-            )
+            steps.append(_unsupported_dispatch_step(node))
             continue
         lowering_kind = 'unbound'
         lowering_spec = lowering_specs.get(node.op_type)

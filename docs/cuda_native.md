@@ -264,6 +264,10 @@ helper-backed train-native subsets through `global_avgpool2d_forward` and
 `global_avgpool2d_backward`.
 `AvgPool2d` is part of the forward dispatch/bootstrap primitive set through
 `avgpool2d_forward`; train-native helper coverage is still pending.
+`Identity`, `Dropout(p=0)`, and `DropPath(p=0)` are part of the forward
+dispatch/bootstrap primitive set as no-op GPU aliases. Stochastic
+`Dropout/DropPath` training remains outside the GPU-first path until native mask
+kernels and graph backward lowering land.
 `GELU`, `SiLU`, `Sigmoid`, and `Tanh` are part of the forward
 dispatch/bootstrap primitive set through native elementwise activation shims;
 train-native helper coverage is still pending.

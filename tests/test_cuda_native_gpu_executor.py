@@ -330,6 +330,36 @@ def test_gpu_stub_executor_rejects_graph_outside_bootstrap_subset():
     assert 'Dropout' in message
 
 
+def test_gpu_stub_executor_uses_identity_and_noop_regularization_aliases():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Identity'},
+                {'type': 'Dropout', 'p': 0.0},
+                {'type': 'DropPath', 'p': 0.0},
+            ],
+        },
+        (1, 1, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.asarray([[[[1.0, 2.0], [3.0, 4.0]]]], dtype=np.float32)
+
+    result = executor.run(graph, x)
+
+    np.testing.assert_allclose(result.output, x, rtol=0.0, atol=0.0)
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_alias:Identity'] == 1
+    assert summary['execution_kinds']['gpu_native_alias:Dropout'] == 1
+    assert summary['execution_kinds']['gpu_native_alias:DropPath'] == 1
+
+
 def test_gpu_stub_executor_routes_batchnorm2d_forward_shim():
     graph = build_cuda_native_graph(
         {
