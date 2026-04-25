@@ -84,6 +84,102 @@ class _RawFakeCudaLib:
         x = self._float(d_input).reshape(int(n), int(c), int(h), int(w))
         self._float(d_output)[:] = np.transpose(x, (1, 0, 2, 3)).reshape(-1)
 
+    def depthwise_conv2d_forward(
+        self,
+        d_input,
+        d_weight,
+        d_bias,
+        d_output,
+        n,
+        c,
+        h,
+        w,
+        out_c,
+        kh,
+        kw,
+        out_h,
+        out_w,
+        stride_h,
+        stride_w,
+        pad_h,
+        pad_w,
+        has_bias,
+    ):
+        x = self._float(d_input).reshape(int(n), int(c), int(h), int(w))
+        weight = self._float(d_weight).reshape(int(out_c), 1, int(kh), int(kw))
+        bias = self._float(d_bias).reshape(int(out_c))
+        out = np.zeros((int(n), int(out_c), int(out_h), int(out_w)), dtype=np.float32)
+        multiplier = int(out_c) // int(c)
+        for ni in range(int(n)):
+            for oc in range(int(out_c)):
+                ic = oc // multiplier
+                for oh in range(int(out_h)):
+                    for ow in range(int(out_w)):
+                        total = bias[oc] if int(has_bias) else 0.0
+                        for r in range(int(kh)):
+                            ih = oh * int(stride_h) + r - int(pad_h)
+                            if ih < 0 or ih >= int(h):
+                                continue
+                            for s in range(int(kw)):
+                                iw = ow * int(stride_w) + s - int(pad_w)
+                                if iw < 0 or iw >= int(w):
+                                    continue
+                                total += x[ni, ic, ih, iw] * weight[oc, 0, r, s]
+                        out[ni, oc, oh, ow] = total
+        self._float(d_output)[:] = out.reshape(-1)
+
+    def depthwise_conv2d_backward(
+        self,
+        d_grad_output,
+        d_input,
+        d_weight,
+        d_grad_input,
+        d_grad_weight,
+        d_grad_bias,
+        n,
+        c,
+        h,
+        w,
+        out_c,
+        kh,
+        kw,
+        out_h,
+        out_w,
+        stride_h,
+        stride_w,
+        pad_h,
+        pad_w,
+        has_bias,
+    ):
+        grad_out = self._float(d_grad_output).reshape(int(n), int(out_c), int(out_h), int(out_w))
+        x = self._float(d_input).reshape(int(n), int(c), int(h), int(w))
+        weight = self._float(d_weight).reshape(int(out_c), 1, int(kh), int(kw))
+        grad_input = np.zeros((int(n), int(c), int(h), int(w)), dtype=np.float32)
+        grad_weight = np.zeros((int(out_c), 1, int(kh), int(kw)), dtype=np.float32)
+        grad_bias = np.zeros((int(out_c),), dtype=np.float32)
+        multiplier = int(out_c) // int(c)
+        for ni in range(int(n)):
+            for oc in range(int(out_c)):
+                ic = oc // multiplier
+                for oh in range(int(out_h)):
+                    for ow in range(int(out_w)):
+                        grad_val = grad_out[ni, oc, oh, ow]
+                        if int(has_bias):
+                            grad_bias[oc] += grad_val
+                        for r in range(int(kh)):
+                            ih = oh * int(stride_h) + r - int(pad_h)
+                            if ih < 0 or ih >= int(h):
+                                continue
+                            for s in range(int(kw)):
+                                iw = ow * int(stride_w) + s - int(pad_w)
+                                if iw < 0 or iw >= int(w):
+                                    continue
+                                grad_weight[oc, 0, r, s] += x[ni, ic, ih, iw] * grad_val
+                                grad_input[ni, ic, ih, iw] += weight[oc, 0, r, s] * grad_val
+        self._float(d_grad_input)[:] = grad_input.reshape(-1)
+        self._float(d_grad_weight)[:] = grad_weight.reshape(-1)
+        self._float(d_grad_bias)[:] = grad_bias.reshape(-1)
+
     def conv_backward(
         self,
         d_grad_out_cnhw,
@@ -1433,6 +1529,97 @@ def test_native_gpu_conv_linear_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:conv_backward'] == 1
 
 
+def test_native_gpu_depthwise_conv_linear_training_step_matches_reference_math():
+    x = np.asarray(
+        [
+            [
+                [[1.0, 2.0, -1.0], [0.0, 1.5, 2.5], [3.0, -0.5, 1.0]],
+                [[-1.0, 0.5, 2.0], [1.0, -1.5, 0.0], [2.5, 1.5, -0.5]],
+            ],
+            [
+                [[0.5, -1.0, 1.0], [2.0, 0.0, -0.5], [1.5, 2.5, -1.5]],
+                [[1.0, -0.5, 0.25], [-1.25, 1.5, 2.0], [0.75, -2.0, 1.25]],
+            ],
+        ],
+        dtype=np.float32,
+    )
+    labels = np.asarray([1, 0], dtype=np.int32)
+    conv_weight = np.asarray(
+        [
+            [[[0.2, -0.1], [0.05, 0.3]]],
+            [[[-0.2, 0.1], [0.25, -0.05]]],
+        ],
+        dtype=np.float32,
+    )
+    linear_weight = np.asarray(
+        [
+            [0.1, -0.2, 0.3, 0.05, -0.1, 0.2, -0.05, 0.15],
+            [-0.05, 0.25, -0.15, 0.2, 0.05, -0.1, 0.3, -0.2],
+        ],
+        dtype=np.float32,
+    )
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.06
+
+    result = native_gpu_conv_linear_training_step(
+        x,
+        labels,
+        conv_weight,
+        linear_weight,
+        linear_bias,
+        lr=lr,
+        conv_kind='depthwise',
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    conv = np.zeros((2, 2, 2, 2), dtype=np.float32)
+    for ni in range(x.shape[0]):
+        for oc in range(conv_weight.shape[0]):
+            ic = oc
+            for oh in range(2):
+                for ow in range(2):
+                    conv[ni, oc, oh, ow] = np.sum(x[ni, ic, oh:oh + 2, ow:ow + 2] * conv_weight[oc, 0])
+    flat = conv.reshape(2, -1)
+    logits = flat @ linear_weight.T + linear_bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_linear_weight = grad_logits.T @ flat
+    grad_linear_bias = grad_logits.sum(axis=0)
+    grad_conv_output = (grad_logits @ linear_weight).reshape(conv.shape)
+    grad_conv_weight = np.zeros_like(conv_weight)
+    grad_input = np.zeros_like(x)
+    for ni in range(x.shape[0]):
+        for oc in range(conv_weight.shape[0]):
+            ic = oc
+            for oh in range(2):
+                for ow in range(2):
+                    grad_val = grad_conv_output[ni, oc, oh, ow]
+                    for r in range(2):
+                        for s in range(2):
+                            grad_conv_weight[oc, 0, r, s] += x[ni, ic, oh + r, ow + s] * grad_val
+                            grad_input[ni, ic, oh + r, ow + s] += conv_weight[oc, 0, r, s] * grad_val
+
+    np.testing.assert_allclose(result.conv_output, conv, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.logits, logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.probabilities, probs, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_conv_output, grad_conv_output, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_input, grad_input, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_conv_weight, grad_conv_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_linear_weight, grad_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_linear_bias, grad_linear_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_conv_weight, conv_weight - lr * grad_conv_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_linear_weight, linear_weight - lr * grad_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_linear_bias, linear_bias - lr * grad_linear_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:depthwise_conv2d_forward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:depthwise_conv2d_backward'] == 1
+
+
 def test_native_gpu_conv_relu_linear_training_step_matches_reference_math():
     x = np.asarray(
         [
@@ -1648,6 +1835,10 @@ def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
         ('Conv2d', 'ReLU', 'Flatten', 'Linear'),
         ('PointwiseConv2d', 'Flatten', 'Linear'),
         ('PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'),
+        ('DepthwiseConv2d', 'Flatten', 'Linear'),
+        ('DepthwiseConv2d', 'ReLU', 'Flatten', 'Linear'),
+        ('DepthwiseConv2d', 'MaxPool2d', 'Flatten', 'Linear'),
+        ('DepthwiseConv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'),
         ('Conv2d', 'MaxPool2d', 'Flatten', 'Linear'),
         ('Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'),
         ('Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'),

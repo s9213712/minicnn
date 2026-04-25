@@ -15,7 +15,9 @@ For the closure/status summary, see
 `Dropout(p=0)`, `DropPath(p=0)`, `GELU`, `SiLU`, `Sigmoid`, and `Tanh` are covered as
 `gpu_native` forward dispatch primitives. `AvgPool2d(kernel_size=2,stride=2,padding=0)`
 and `BatchNorm2d -> Flatten -> Linear` are also covered in the helper-backed
-train-native subset matrix.
+train-native subset matrix. `DepthwiseConv2d` now has helper-backed
+train-native coverage for the same SGD/CrossEntropyLoss envelope as the narrow
+conv-family helpers.
 
 | Subset | Helper | Evidence | Hardware status |
 |---|---|---|---|
@@ -34,6 +36,10 @@ train-native subset matrix.
 | `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `PointwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by Conv2d helper math | Pending real GPU run |
 | `PointwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by Conv2d+ReLU helper math | Pending real GPU run |
+| `DepthwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
+| `DepthwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
+| `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
+| `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_two_conv_relu_pool_linear_training_step` | Hermetic reference math | Real CIFAR-10 CUDA smoke passed |

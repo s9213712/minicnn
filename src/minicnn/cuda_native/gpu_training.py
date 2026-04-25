@@ -1906,11 +1906,12 @@ def native_gpu_conv_linear_training_step(
     linear_bias_velocity: np.ndarray | None = None,
     apply_relu_activation: bool = False,
     apply_maxpool: bool = False,
+    conv_kind: str = 'conv2d',
     bound_lib: Any | None = None,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuConvLinearTrainingStepResult:
-    """Run one native GPU Conv2d(valid, no bias) + optional ReLU/MaxPool + Linear + SoftmaxCE + SGD step."""
+    """Run one native GPU Conv2d/DepthwiseConv2d(valid, no bias) + optional ReLU/MaxPool + Linear + SoftmaxCE + SGD step."""
 
     x_f32 = np.ascontiguousarray(x, dtype=np.float32)
     labels_i32 = np.ascontiguousarray(labels, dtype=np.int32)
@@ -1936,12 +1937,20 @@ def native_gpu_conv_linear_training_step(
         raise ValueError(f'native_gpu_conv_linear_training_step expects x with shape (N, C, H, W), got {x_f32.shape}')
     if conv_w_f32.ndim != 4:
         raise ValueError(
-            'native_gpu_conv_linear_training_step expects conv_weight with shape (out_c, in_c, kh, kw), '
+            'native_gpu_conv_linear_training_step expects conv_weight with shape (out_c, in_c_or_1, kh, kw), '
             f'got {conv_w_f32.shape}'
         )
     n, in_c, height, width = [int(v) for v in x_f32.shape]
     out_c, conv_in_c, kh, kw = [int(v) for v in conv_w_f32.shape]
-    if conv_in_c != in_c:
+    normalized_conv_kind = str(conv_kind).lower()
+    if normalized_conv_kind not in {'conv2d', 'depthwise'}:
+        raise ValueError(f'native_gpu_conv_linear_training_step got unsupported conv_kind={conv_kind!r}')
+    if normalized_conv_kind == 'depthwise':
+        if conv_in_c != 1:
+            raise ValueError('native_gpu_conv_linear_training_step depthwise mode expects conv_weight shape (out_c, 1, kh, kw).')
+        if out_c % in_c != 0:
+            raise ValueError('native_gpu_conv_linear_training_step depthwise mode requires out_c to be a multiple of input channels.')
+    elif conv_in_c != in_c:
         raise ValueError(f'conv_weight input channels {conv_in_c} do not match x channels {in_c}')
     out_h = height - kh + 1
     out_w = width - kw + 1
@@ -2003,13 +2012,14 @@ def native_gpu_conv_linear_training_step(
     input_t = stage(x_f32, 'input')
     labels_t = stage(labels_i32, 'labels')
     conv_w_t = stage(conv_w_f32, 'conv_weight')
+    depthwise_bias_t = stage(np.zeros((out_c,), dtype=np.float32), 'depthwise_bias') if normalized_conv_kind == 'depthwise' else None
     linear_w_t = stage(linear_w_f32, 'linear_weight')
     linear_b_t = stage(linear_b_f32, 'linear_bias')
     conv_wv_t = stage(conv_wv_f32, 'conv_weight_velocity')
     linear_wv_t = stage(linear_wv_f32, 'linear_weight_velocity')
     linear_bv_t = stage(linear_bv_f32, 'linear_bias_velocity')
-    col_t = alloc((patch_size, spatial_size), 'conv_col')
-    conv_raw_t = alloc((out_c, n, out_h, out_w), 'conv_raw_cnhw')
+    col_t = alloc((patch_size, spatial_size), 'conv_col') if normalized_conv_kind == 'conv2d' else None
+    conv_raw_t = alloc((out_c, n, out_h, out_w), 'conv_raw_cnhw') if normalized_conv_kind == 'conv2d' else None
     conv_t = alloc((n, out_c, out_h, out_w), 'conv_output')
     pooled_t = alloc((n, out_c, pool_h, pool_w), 'pooled') if bool(apply_maxpool) else None
     logits_t = alloc((n, classes), 'logits')
@@ -2017,9 +2027,10 @@ def native_gpu_conv_linear_training_step(
     grad_logits_t = alloc((n, classes), 'grad_logits')
     grad_conv_t = alloc((n, out_c, out_h, out_w), 'grad_conv_output')
     grad_pooled_t = alloc((n, out_c, pool_h, pool_w), 'grad_pooled') if bool(apply_maxpool) else None
-    grad_conv_cnhw_t = alloc((out_c, n, out_h, out_w), 'grad_conv_cnhw')
+    grad_conv_cnhw_t = alloc((out_c, n, out_h, out_w), 'grad_conv_cnhw') if normalized_conv_kind == 'conv2d' else None
     grad_input_t = alloc((n, in_c, height, width), 'grad_input')
-    grad_conv_w_t = alloc((out_c, in_c, kh, kw), 'grad_conv_weight')
+    grad_conv_w_t = alloc(tuple(int(v) for v in conv_w_f32.shape), 'grad_conv_weight')
+    grad_depthwise_bias_t = alloc((out_c,), 'grad_depthwise_bias') if normalized_conv_kind == 'depthwise' else None
     grad_linear_w_t = alloc((classes, dense_features), 'grad_linear_weight')
     grad_linear_b_t = alloc((classes,), 'grad_linear_bias')
     loss_sum_t = alloc((1,), 'loss_sum')
@@ -2028,10 +2039,36 @@ def native_gpu_conv_linear_training_step(
     try:
         lib.gpu_memset(loss_sum_t.device_ptr, 0, loss_sum_t.nbytes)
         lib.gpu_memset(correct_t.device_ptr, 0, correct_t.nbytes)
-        lib.im2col_forward(input_t.device_ptr, col_t.device_ptr, n, in_c, height, width, kh, kw, out_h, out_w)
-        lib.gemm_forward(conv_w_t.device_ptr, col_t.device_ptr, conv_raw_t.device_ptr, out_c, spatial_size, patch_size)
-        lib.cnhw_to_nchw(conv_raw_t.device_ptr, conv_t.device_ptr, n, out_c, out_h, out_w)
-        runtime.record_execution('gpu_native_train:conv2d_im2col_gemm', input_name='input', output_name='conv_output', node_count=1)
+        if normalized_conv_kind == 'depthwise':
+            assert depthwise_bias_t is not None
+            lib.depthwise_conv2d_forward(
+                input_t.device_ptr,
+                conv_w_t.device_ptr,
+                depthwise_bias_t.device_ptr,
+                conv_t.device_ptr,
+                n,
+                in_c,
+                height,
+                width,
+                out_c,
+                kh,
+                kw,
+                out_h,
+                out_w,
+                1,
+                1,
+                0,
+                0,
+                0,
+            )
+            runtime.record_execution('gpu_native_train:depthwise_conv2d_forward', input_name='input', output_name='conv_output', node_count=1)
+        else:
+            assert col_t is not None
+            assert conv_raw_t is not None
+            lib.im2col_forward(input_t.device_ptr, col_t.device_ptr, n, in_c, height, width, kh, kw, out_h, out_w)
+            lib.gemm_forward(conv_w_t.device_ptr, col_t.device_ptr, conv_raw_t.device_ptr, out_c, spatial_size, patch_size)
+            lib.cnhw_to_nchw(conv_raw_t.device_ptr, conv_t.device_ptr, n, out_c, out_h, out_w)
+            runtime.record_execution('gpu_native_train:conv2d_im2col_gemm', input_name='input', output_name='conv_output', node_count=1)
         if bool(apply_relu_activation):
             lib.apply_relu(conv_t.device_ptr, int(n * conv_features))
             runtime.record_execution('gpu_native_train:apply_relu', input_name='conv_output', output_name='conv_output', node_count=1)
@@ -2090,24 +2127,51 @@ def native_gpu_conv_linear_training_step(
         if bool(apply_relu_activation):
             lib.apply_relu_backward(conv_t.device_ptr, grad_conv_t.device_ptr, int(n * conv_features))
             runtime.record_execution('gpu_native_train:apply_relu_backward', input_name='conv_output', output_name='grad_conv_output', node_count=1)
-        lib.nchw_to_cnhw(grad_conv_t.device_ptr, grad_conv_cnhw_t.device_ptr, n, out_c, out_h, out_w)
-        lib.conv_backward(
-            grad_conv_cnhw_t.device_ptr,
-            input_t.device_ptr,
-            conv_w_t.device_ptr,
-            grad_conv_w_t.device_ptr,
-            grad_input_t.device_ptr,
-            n,
-            in_c,
-            height,
-            width,
-            kh,
-            kw,
-            out_h,
-            out_w,
-            out_c,
-        )
-        runtime.record_execution('gpu_native_train:conv_backward', input_name='grad_conv_output', output_name='grad_conv_weight', node_count=1)
+        if normalized_conv_kind == 'depthwise':
+            assert grad_depthwise_bias_t is not None
+            lib.depthwise_conv2d_backward(
+                grad_conv_t.device_ptr,
+                input_t.device_ptr,
+                conv_w_t.device_ptr,
+                grad_input_t.device_ptr,
+                grad_conv_w_t.device_ptr,
+                grad_depthwise_bias_t.device_ptr,
+                n,
+                in_c,
+                height,
+                width,
+                out_c,
+                kh,
+                kw,
+                out_h,
+                out_w,
+                1,
+                1,
+                0,
+                0,
+                0,
+            )
+            runtime.record_execution('gpu_native_train:depthwise_conv2d_backward', input_name='grad_conv_output', output_name='grad_conv_weight', node_count=1)
+        else:
+            assert grad_conv_cnhw_t is not None
+            lib.nchw_to_cnhw(grad_conv_t.device_ptr, grad_conv_cnhw_t.device_ptr, n, out_c, out_h, out_w)
+            lib.conv_backward(
+                grad_conv_cnhw_t.device_ptr,
+                input_t.device_ptr,
+                conv_w_t.device_ptr,
+                grad_conv_w_t.device_ptr,
+                grad_input_t.device_ptr,
+                n,
+                in_c,
+                height,
+                width,
+                kh,
+                kw,
+                out_h,
+                out_w,
+                out_c,
+            )
+            runtime.record_execution('gpu_native_train:conv_backward', input_name='grad_conv_output', output_name='grad_conv_weight', node_count=1)
         _apply_global_grad_clip(
             runtime,
             lib,

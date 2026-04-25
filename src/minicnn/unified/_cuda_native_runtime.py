@@ -441,11 +441,16 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
         ['PointwiseConv2d', 'Flatten', 'Linear'],
         ['PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
         ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
     ):
         conv_attrs = dict(getattr(nodes[0], 'attrs', {}) or {})
+        conv_op = str(nodes[0].op_type)
 
         def _pair(value: Any, default: int) -> tuple[int, int]:
             if value is None:
@@ -457,15 +462,15 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
             return (int(value), int(value))
 
         if bool(conv_attrs.get('bias', False)):
-            raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires bias=false.')
-        if int(conv_attrs.get('groups', 1)) != 1:
-            raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires groups=1.')
+            raise ValueError(f'cuda_native gpu_native {conv_op} train-native subset currently requires bias=false.')
+        if conv_op != 'DepthwiseConv2d' and int(conv_attrs.get('groups', 1)) != 1:
+            raise ValueError(f'cuda_native gpu_native {conv_op} train-native subset currently requires groups=1.')
         if _pair(conv_attrs.get('stride', 1), 1) != (1, 1):
-            raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires stride=1.')
+            raise ValueError(f'cuda_native gpu_native {conv_op} train-native subset currently requires stride=1.')
         if _pair(conv_attrs.get('padding', 0), 0) != (0, 0):
-            raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires padding=0.')
+            raise ValueError(f'cuda_native gpu_native {conv_op} train-native subset currently requires padding=0.')
         if _pair(conv_attrs.get('dilation', 1), 1) != (1, 1):
-            raise ValueError('cuda_native gpu_native Conv2d train-native subset currently requires dilation=1.')
+            raise ValueError(f'cuda_native gpu_native {conv_op} train-native subset currently requires dilation=1.')
         if ops == ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear']:
             conv2_attrs = dict(getattr(nodes[2], 'attrs', {}) or {})
             if bool(conv2_attrs.get('bias', False)):
@@ -492,6 +497,7 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
             'linear_nodes': [linear_node],
             'apply_relu_activation': has_relu,
             'apply_maxpool': has_pool,
+            'conv_kind': 'depthwise' if conv_op == 'DepthwiseConv2d' else 'conv2d',
         }
     raise ValueError(
         'cuda_native gpu_native train-native currently supports only '
@@ -883,6 +889,7 @@ def run_training_loop(
                             linear_bias_velocity=velocity_state.get(linear_bias_key),
                             apply_relu_activation=bool(gpu_training_plan.get('apply_relu_activation', False)),
                             apply_maxpool=bool(gpu_training_plan.get('apply_maxpool', False)),
+                            conv_kind=str(gpu_training_plan.get('conv_kind', 'conv2d')),
                             bound_lib=ctx.device_runtime.bound_lib,
                         )
                         params = dict(params)

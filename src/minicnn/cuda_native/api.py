@@ -229,6 +229,10 @@ def _validate_gpu_native_training_subset(
         ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
         ['PointwiseConv2d', 'Flatten', 'Linear'],
         ['PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
@@ -243,7 +247,11 @@ def _validate_gpu_native_training_subset(
             '[BatchNorm2d, Flatten, Linear], [GlobalAvgPool2d, Flatten, Linear], '
             '[AdaptiveAvgPool2d, Flatten, Linear], [Conv2d, Flatten, Linear], '
             '[Conv2d, ReLU, Flatten, Linear], [PointwiseConv2d, Flatten, Linear], '
-            '[PointwiseConv2d, ReLU, Flatten, Linear], [Conv2d, MaxPool2d, Flatten, Linear], '
+            '[PointwiseConv2d, ReLU, Flatten, Linear], [DepthwiseConv2d, Flatten, Linear], '
+            '[DepthwiseConv2d, ReLU, Flatten, Linear], '
+            '[DepthwiseConv2d, MaxPool2d, Flatten, Linear], '
+            '[DepthwiseConv2d, ReLU, MaxPool2d, Flatten, Linear], '
+            '[Conv2d, MaxPool2d, Flatten, Linear], '
             '[Conv2d, ReLU, MaxPool2d, Flatten, Linear], or '
             '[Conv2d, ReLU, Conv2d, ReLU, MaxPool2d, Flatten, Linear], '
             f'got {ops}.'
@@ -253,6 +261,10 @@ def _validate_gpu_native_training_subset(
         ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
         ['PointwiseConv2d', 'Flatten', 'Linear'],
         ['PointwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'ReLU', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'MaxPool2d', 'Flatten', 'Linear'],
+        ['DepthwiseConv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'Conv2d', 'ReLU', 'MaxPool2d', 'Flatten', 'Linear'],
@@ -272,16 +284,17 @@ def _validate_gpu_native_training_subset(
 
         for conv_node in conv_attr_nodes:
             conv_attrs = dict(getattr(conv_node, 'attrs', {}) or {})
+            conv_op = str(getattr(conv_node, 'op_type', 'Conv2d'))
             if bool(conv_attrs.get('bias', False)):
-                errors.append('cuda_native gpu_native Conv2d train-native subset currently requires bias=false.')
-            if int(conv_attrs.get('groups', 1)) != 1:
-                errors.append('cuda_native gpu_native Conv2d train-native subset currently requires groups=1.')
+                errors.append(f'cuda_native gpu_native {conv_op} train-native subset currently requires bias=false.')
+            if conv_op != 'DepthwiseConv2d' and int(conv_attrs.get('groups', 1)) != 1:
+                errors.append(f'cuda_native gpu_native {conv_op} train-native subset currently requires groups=1.')
             if _pair(conv_attrs.get('stride', 1), 1) != (1, 1):
-                errors.append('cuda_native gpu_native Conv2d train-native subset currently requires stride=1.')
+                errors.append(f'cuda_native gpu_native {conv_op} train-native subset currently requires stride=1.')
             if _pair(conv_attrs.get('padding', 0), 0) != (0, 0):
-                errors.append('cuda_native gpu_native Conv2d train-native subset currently requires padding=0.')
+                errors.append(f'cuda_native gpu_native {conv_op} train-native subset currently requires padding=0.')
             if _pair(conv_attrs.get('dilation', 1), 1) != (1, 1):
-                errors.append('cuda_native gpu_native Conv2d train-native subset currently requires dilation=1.')
+                errors.append(f'cuda_native gpu_native {conv_op} train-native subset currently requires dilation=1.')
     if ops == ['AvgPool2d', 'Flatten', 'Linear']:
         pool_attrs = dict(getattr(nodes[0], 'attrs', {}) or {})
 

@@ -293,6 +293,37 @@ def test_validate_cuda_native_config_accepts_gpu_native_conv_relu_pool_linear_tr
     assert payload['errors'] == []
 
 
+def test_validate_cuda_native_config_accepts_gpu_native_depthwise_conv_linear_training_subset(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding='utf-8').replace(
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: DepthwiseConv2d\n      kernel_size: 3\n      stride: 1\n      padding: 0\n      bias: false\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+        ),
+        encoding='utf-8',
+    )
+
+    rc = main([
+        'validate-cuda-native-config',
+        '--config',
+        str(config_path),
+        '--format',
+        'json',
+        'engine.execution_mode=gpu_native',
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['selected_execution_mode'] == 'gpu_native'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'depthwise_conv_linear'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['helper'] == 'native_gpu_conv_linear_training_step'
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['backward_steps'][-1]['lowering_kind'] == 'depthwise_conv2d_backward'
+    assert payload['errors'] == []
+
+
 def test_validate_cuda_native_config_accepts_gpu_native_two_conv_relu_pool_linear_training_subset(tmp_path, capsys):
     from minicnn.cli import main
 

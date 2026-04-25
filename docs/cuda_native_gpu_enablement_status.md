@@ -37,6 +37,11 @@ Completed:
   `depthwise_conv2d_forward` C ABI shim
 - `DepthwiseConv2d` backward C ABI shim through
   `depthwise_conv2d_backward`
+- native `DepthwiseConv2d -> Flatten -> Linear`,
+  `DepthwiseConv2d -> ReLU -> Flatten -> Linear`,
+  `DepthwiseConv2d -> MaxPool2d -> Flatten -> Linear`, and
+  `DepthwiseConv2d -> ReLU -> MaxPool2d -> Flatten -> Linear` training helper
+  routing through the depthwise forward/backward C ABI shims
 - `GroupNorm` forward dispatch through the native `groupnorm_forward` C ABI shim
 - `LayerNorm2d` forward dispatch through the native `layernorm2d_forward` C ABI
   shim
@@ -85,6 +90,10 @@ Supported through native GPU helper paths:
 - `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`
 - `PointwiseConv2d(bias=false) -> Flatten -> Linear`
 - `PointwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
@@ -161,8 +170,6 @@ Still not claimed as complete:
   the two-linear helper subsets
 - broader `PointwiseConv2d` graph-level train-native coverage beyond the
   `PointwiseConv2d -> Flatten -> Linear` helper subsets
-- `DepthwiseConv2d` train-native helper coverage; current work is forward
-  dispatch only
 - `GroupNorm` train-native helper coverage; current work is forward dispatch
   only
 - `LayerNorm2d` train-native helper coverage; current work is forward dispatch
@@ -173,7 +180,9 @@ Still not claimed as complete:
 Current repo-side validation:
 
 ```text
-157 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+Current validation count moves as GPU-native coverage expands; the current
+cuda_native GPU enablement subset is expected to pass with a small number of
+CUDA-runtime-preflight skips on hosts with incompatible driver/runtime pairs.
 ```
 
 Covered test subset:
