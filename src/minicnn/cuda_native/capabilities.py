@@ -255,7 +255,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and beta AMP with loss scaling / overflow backoff.',
         'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, and two-Conv ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
         'gpu_native readiness diagnostics expose a training_lowering_plan that decomposes helper subsets into forward, loss, backward, and optimizer lowering steps.',
-        'gpu_native Linear subsets support native CrossEntropyLoss, MSELoss, and BCEWithLogitsLoss loss-gradient helpers; Conv-family subsets currently support CrossEntropyLoss.',
+        'gpu_native Linear subsets support native CrossEntropyLoss with label_smoothing, MSELoss, and BCEWithLogitsLoss loss-gradient helpers; Conv-family subsets currently support CrossEntropyLoss with label_smoothing.',
         'gpu_native Linear subsets support native SGD, Adam, AdamW, and RMSprop update helpers; Conv-family subsets currently support SGD.',
         'gpu_native SGD helper subsets support native weight_decay through sgd_update_fused.',
         'gpu_native training subsets support native global-norm gradient clipping through grad_l2_sumsq plus scale_inplace.',

@@ -28,6 +28,8 @@ Completed:
   `gpu_native` training subsets
 - native SGD fused update helper for Linear `gpu_native` weight-decay parity
 - native global-norm gradient clipping for supported `gpu_native` training subsets
+- native CrossEntropyLoss `label_smoothing` helper for supported `gpu_native`
+  training subsets
   subsets
 
 ## Current `gpu_native` training subsets
@@ -82,6 +84,8 @@ Current real CUDA evidence:
   execution kinds
 - minimal Linear RMSprop smoke passed and emitted
   `gpu_native_train:rmsprop_update_fused`
+- minimal Linear label-smoothing smoke passed and emitted
+  `gpu_native_train:softmax_xent_smooth_grad_loss_acc`
 - minimal Linear global grad-clip smoke passed and emitted
   `gpu_native_train:grad_clip_global` plus `gpu_native_train:sgd_update_fused`
 - minimal Conv+Linear global grad-clip smoke passed and clipped the combined
@@ -108,7 +112,7 @@ Still not claimed as complete:
 Current repo-side validation:
 
 ```text
-133 passed
+134 passed
 ```
 
 Covered test subset:

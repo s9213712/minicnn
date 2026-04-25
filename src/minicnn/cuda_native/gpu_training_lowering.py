@@ -95,9 +95,21 @@ def _conv_nodes(graph: NativeGraph) -> list[Any]:
     return [node for node in graph.topological_order() if node.op_type == 'Conv2d']
 
 
-def _loss_step(loss_type: str, subset_name: str | None) -> tuple[GpuTrainingLoweringStep | None, list[str]]:
+def _loss_step(
+    loss_type: str,
+    subset_name: str | None,
+    *,
+    label_smoothing: float = 0.0,
+) -> tuple[GpuTrainingLoweringStep | None, list[str]]:
     reasons: list[str] = []
     if loss_type == 'CrossEntropyLoss':
+        if float(label_smoothing) > 0.0:
+            return GpuTrainingLoweringStep(
+                phase='loss',
+                op_name='CrossEntropyLoss',
+                lowering_kind='softmax_xent_smooth_grad_loss_acc',
+                launch_family='loss_softmax_xent_smooth',
+            ), reasons
         return GpuTrainingLoweringStep(
             phase='loss',
             op_name='CrossEntropyLoss',
@@ -277,7 +289,11 @@ def build_gpu_training_lowering_plan(
         unsupported_reasons.append(f'unsupported gpu dispatch ops: {list(dispatch_plan.unsupported_ops)}')
 
     loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
-    loss_step, loss_reasons = _loss_step(loss_type, subset_name)
+    loss_step, loss_reasons = _loss_step(
+        loss_type,
+        subset_name,
+        label_smoothing=float(loss_cfg.get('label_smoothing', 0.0)),
+    )
     unsupported_reasons.extend(loss_reasons)
 
     optimizer_steps, optimizer_reasons = _optimizer_step(graph, subset_name, optim_cfg)

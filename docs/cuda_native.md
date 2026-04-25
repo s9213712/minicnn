@@ -262,8 +262,8 @@ only report the coarse helper-pattern name.
 
 `gpu_native` loss support is currently:
 
-- Linear subsets: `CrossEntropyLoss`, `MSELoss`, `BCEWithLogitsLoss`
-- Conv-family subsets: `CrossEntropyLoss`
+- Linear subsets: `CrossEntropyLoss` with `label_smoothing`, `MSELoss`, `BCEWithLogitsLoss`
+- Conv-family subsets: `CrossEntropyLoss` with `label_smoothing`
 
 `gpu_native` optimizer support is currently:
 

@@ -179,6 +179,31 @@ class _RawFakeCudaLib:
         self._float(d_loss_sum)[0] = float(-np.log(probs[np.arange(int(n)), labels] + 1e-10).sum())
         self._int(d_correct_count)[0] = int(np.sum(np.argmax(logits, axis=1) == labels))
 
+    def softmax_xent_smooth_grad_loss_acc(
+        self,
+        d_logits,
+        d_labels,
+        d_probs,
+        d_grad_logits,
+        d_loss_sum,
+        d_correct_count,
+        n,
+        features,
+        label_smoothing,
+    ):
+        logits = self._float(d_logits).reshape(int(n), int(features))
+        labels = self._int(d_labels)[:int(n)]
+        shifted = logits - logits.max(axis=1, keepdims=True)
+        probs = np.exp(shifted)
+        probs /= probs.sum(axis=1, keepdims=True)
+        targets = np.full_like(probs, float(label_smoothing) / float(int(features)))
+        targets[np.arange(int(n)), labels] += 1.0 - float(label_smoothing)
+        grad = (probs - targets) / float(n)
+        self._float(d_probs)[:] = probs.reshape(-1)
+        self._float(d_grad_logits)[:] = grad.reshape(-1)
+        self._float(d_loss_sum)[0] = float(-np.sum(targets * np.log(probs + 1e-10)))
+        self._int(d_correct_count)[0] = int(np.sum(np.argmax(logits, axis=1) == labels))
+
     def mse_fwd_grad_loss_acc(self, d_logits, d_labels, d_grad_logits, d_loss_sum, d_correct_count, n, features):
         logits = self._float(d_logits).reshape(int(n), int(features))
         labels = self._int(d_labels)[:int(n)]
@@ -373,6 +398,49 @@ def test_native_gpu_linear_training_step_sgd_weight_decay_matches_reference_math
     np.testing.assert_allclose(result.updated_weight, weight * (1.0 - lr * weight_decay) - lr * grad_weight, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.updated_bias, bias * (1.0 - lr * weight_decay) - lr * grad_bias, rtol=1e-6, atol=1e-6)
     assert result.runtime_summary['execution_kinds']['gpu_native_train:sgd_update_fused'] == 1
+
+
+def test_native_gpu_linear_training_step_label_smoothing_matches_reference_math():
+    x = np.asarray([[1.0, 2.0, -1.0], [0.5, -1.5, 2.0]], dtype=np.float32)
+    labels = np.asarray([2, 0], dtype=np.int32)
+    weight = np.asarray(
+        [
+            [0.2, -0.1, 0.05],
+            [-0.3, 0.4, 0.1],
+            [0.15, -0.2, 0.3],
+        ],
+        dtype=np.float32,
+    )
+    bias = np.asarray([0.01, -0.02, 0.03], dtype=np.float32)
+    lr = 0.05
+    smoothing = 0.2
+
+    result = native_gpu_linear_training_step(
+        x,
+        labels,
+        weight,
+        bias,
+        lr=lr,
+        label_smoothing=smoothing,
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    logits = x @ weight.T + bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    targets = np.full_like(probs, smoothing / float(probs.shape[1]))
+    targets[np.arange(labels.shape[0]), labels] += 1.0 - smoothing
+    grad_logits = (probs - targets) / float(labels.shape[0])
+    grad_weight = grad_logits.T @ x
+    grad_bias = grad_logits.sum(axis=0)
+    loss_sum = float(-np.sum(targets * np.log(probs + 1e-10)))
+
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.loss_sum, loss_sum, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight, weight - lr * grad_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias, bias - lr * grad_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:softmax_xent_smooth_grad_loss_acc'] == 1
 
 
 def test_native_gpu_linear_training_step_global_grad_clip_matches_reference_math():

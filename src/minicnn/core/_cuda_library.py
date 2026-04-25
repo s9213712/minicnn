@@ -139,6 +139,11 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
         c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
         c_int, c_int,
     ]
+    if hasattr(bound_lib, 'softmax_xent_smooth_grad_loss_acc'):
+        bound_lib.softmax_xent_smooth_grad_loss_acc.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+            c_int, c_int, c_float,
+        ]
     if hasattr(bound_lib, 'mse_fwd_grad_loss_acc'):
         bound_lib.mse_fwd_grad_loss_acc.argtypes = [
             c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int,

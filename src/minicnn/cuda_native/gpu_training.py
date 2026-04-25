@@ -176,6 +176,46 @@ def _apply_global_grad_clip(
         runtime.release_buffer(grad_norm_sumsq_t)
 
 
+def _run_softmax_xent_loss(
+    runtime: DeviceRuntime,
+    lib: Any,
+    logits_t: Any,
+    labels_t: Any,
+    probs_t: Any,
+    grad_logits_t: Any,
+    loss_sum_t: Any,
+    correct_t: Any,
+    n: int,
+    out_f: int,
+    *,
+    label_smoothing: float = 0.0,
+) -> str:
+    if float(label_smoothing) > 0.0:
+        lib.softmax_xent_smooth_grad_loss_acc(
+            logits_t.device_ptr,
+            labels_t.device_ptr,
+            probs_t.device_ptr,
+            grad_logits_t.device_ptr,
+            loss_sum_t.device_ptr,
+            correct_t.device_ptr,
+            int(n),
+            int(out_f),
+            float(label_smoothing),
+        )
+        return 'gpu_native_train:softmax_xent_smooth_grad_loss_acc'
+    lib.softmax_xent_grad_loss_acc(
+        logits_t.device_ptr,
+        labels_t.device_ptr,
+        probs_t.device_ptr,
+        grad_logits_t.device_ptr,
+        loss_sum_t.device_ptr,
+        correct_t.device_ptr,
+        int(n),
+        int(out_f),
+    )
+    return 'gpu_native_train:softmax_xent_grad_loss_acc'
+
+
 def native_gpu_linear_training_step(
     x: np.ndarray,
     labels: np.ndarray,
@@ -185,6 +225,7 @@ def native_gpu_linear_training_step(
     lr: float,
     momentum: float = 0.0,
     loss_type: str = 'cross_entropy',
+    label_smoothing: float = 0.0,
     optimizer_type: str = 'sgd',
     weight_decay: float = 0.0,
     grad_clip_value: float = 0.0,
@@ -358,17 +399,19 @@ def native_gpu_linear_training_step(
         )
         runtime.record_execution('gpu_native_train:dense_forward', input_name='input', output_name='logits', node_count=1)
         if normalized_loss_type == 'cross_entropy':
-            lib.softmax_xent_grad_loss_acc(
-                logits_t.device_ptr,
-                labels_t.device_ptr,
-                probs_t.device_ptr,
-                grad_logits_t.device_ptr,
-                loss_sum_t.device_ptr,
-                correct_t.device_ptr,
+            loss_kind = _run_softmax_xent_loss(
+                runtime,
+                lib,
+                logits_t,
+                labels_t,
+                probs_t,
+                grad_logits_t,
+                loss_sum_t,
+                correct_t,
                 n,
                 out_f,
+                label_smoothing=float(label_smoothing),
             )
-            loss_kind = 'gpu_native_train:softmax_xent_grad_loss_acc'
         elif normalized_loss_type == 'mse':
             lib.mse_fwd_grad_loss_acc(
                 logits_t.device_ptr,
@@ -635,6 +678,7 @@ def native_gpu_two_linear_relu_training_step(
     momentum: float = 0.0,
     grad_clip_value: float = 0.0,
     weight_decay: float = 0.0,
+    label_smoothing: float = 0.0,
     weight1_velocity: np.ndarray | None = None,
     bias1_velocity: np.ndarray | None = None,
     weight2_velocity: np.ndarray | None = None,
@@ -741,18 +785,21 @@ def native_gpu_two_linear_relu_training_step(
         runtime.record_execution('gpu_native_train:apply_relu', input_name='hidden', output_name='hidden', node_count=1)
         lib.dense_forward(hidden_t.device_ptr, w2_t.device_ptr, b2_t.device_ptr, logits_t.device_ptr, n, hidden_f, out_f)
         runtime.record_execution('gpu_native_train:dense_forward_2', input_name='hidden', output_name='logits', node_count=1)
-        lib.softmax_xent_grad_loss_acc(
-            logits_t.device_ptr,
-            labels_t.device_ptr,
-            probs_t.device_ptr,
-            grad_logits_t.device_ptr,
-            loss_sum_t.device_ptr,
-            correct_t.device_ptr,
+        loss_kind = _run_softmax_xent_loss(
+            runtime,
+            lib,
+            logits_t,
+            labels_t,
+            probs_t,
+            grad_logits_t,
+            loss_sum_t,
+            correct_t,
             n,
             out_f,
+            label_smoothing=float(label_smoothing),
         )
         runtime.record_execution(
-            'gpu_native_train:softmax_xent_grad_loss_acc',
+            loss_kind,
             input_name='logits',
             output_name='grad_logits',
             node_count=1,
@@ -884,6 +931,7 @@ def native_gpu_pool_linear_training_step(
     momentum: float = 0.0,
     grad_clip_value: float = 0.0,
     weight_decay: float = 0.0,
+    label_smoothing: float = 0.0,
     weight_velocity: np.ndarray | None = None,
     bias_velocity: np.ndarray | None = None,
     bound_lib: Any | None = None,
@@ -978,18 +1026,21 @@ def native_gpu_pool_linear_training_step(
         runtime.record_execution('gpu_native_train:apply_maxpool', input_name='input', output_name='pooled', node_count=1)
         lib.dense_forward(pooled_t.device_ptr, weight_t.device_ptr, bias_t.device_ptr, logits_t.device_ptr, n, flat_features, out_f)
         runtime.record_execution('gpu_native_train:dense_forward', input_name='pooled', output_name='logits', node_count=1)
-        lib.softmax_xent_grad_loss_acc(
-            logits_t.device_ptr,
-            labels_t.device_ptr,
-            probs_t.device_ptr,
-            grad_logits_t.device_ptr,
-            loss_sum_t.device_ptr,
-            correct_t.device_ptr,
+        loss_kind = _run_softmax_xent_loss(
+            runtime,
+            lib,
+            logits_t,
+            labels_t,
+            probs_t,
+            grad_logits_t,
+            loss_sum_t,
+            correct_t,
             n,
             out_f,
+            label_smoothing=float(label_smoothing),
         )
         runtime.record_execution(
-            'gpu_native_train:softmax_xent_grad_loss_acc',
+            loss_kind,
             input_name='logits',
             output_name='grad_logits',
             node_count=1,
@@ -1086,6 +1137,7 @@ def native_gpu_conv_linear_training_step(
     momentum: float = 0.0,
     grad_clip_value: float = 0.0,
     weight_decay: float = 0.0,
+    label_smoothing: float = 0.0,
     conv_weight_velocity: np.ndarray | None = None,
     linear_weight_velocity: np.ndarray | None = None,
     linear_bias_velocity: np.ndarray | None = None,
@@ -1230,17 +1282,20 @@ def native_gpu_conv_linear_training_step(
             dense_input_name = 'pooled'
         lib.dense_forward(dense_input_t.device_ptr, linear_w_t.device_ptr, linear_b_t.device_ptr, logits_t.device_ptr, n, dense_features, classes)
         runtime.record_execution('gpu_native_train:dense_forward', input_name=dense_input_name, output_name='logits', node_count=1)
-        lib.softmax_xent_grad_loss_acc(
-            logits_t.device_ptr,
-            labels_t.device_ptr,
-            probs_t.device_ptr,
-            grad_logits_t.device_ptr,
-            loss_sum_t.device_ptr,
-            correct_t.device_ptr,
+        loss_kind = _run_softmax_xent_loss(
+            runtime,
+            lib,
+            logits_t,
+            labels_t,
+            probs_t,
+            grad_logits_t,
+            loss_sum_t,
+            correct_t,
             n,
             classes,
+            label_smoothing=float(label_smoothing),
         )
-        runtime.record_execution('gpu_native_train:softmax_xent_grad_loss_acc', input_name='logits', output_name='grad_logits', node_count=1)
+        runtime.record_execution(loss_kind, input_name='logits', output_name='grad_logits', node_count=1)
         dense_grad_t = grad_pooled_t if bool(apply_maxpool) else grad_conv_t
         assert dense_grad_t is not None
         lib.dense_backward_full(
@@ -1372,6 +1427,7 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
     momentum: float = 0.0,
     grad_clip_value: float = 0.0,
     weight_decay: float = 0.0,
+    label_smoothing: float = 0.0,
     conv1_weight_velocity: np.ndarray | None = None,
     conv2_weight_velocity: np.ndarray | None = None,
     linear_weight_velocity: np.ndarray | None = None,
@@ -1507,17 +1563,20 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
         runtime.record_execution('gpu_native_train:apply_maxpool', input_name='conv2_output', output_name='pooled', node_count=1)
         lib.dense_forward(pooled_t.device_ptr, linear_w_t.device_ptr, linear_b_t.device_ptr, logits_t.device_ptr, n, dense_features, classes)
         runtime.record_execution('gpu_native_train:dense_forward', input_name='pooled', output_name='logits', node_count=1)
-        lib.softmax_xent_grad_loss_acc(
-            logits_t.device_ptr,
-            labels_t.device_ptr,
-            probs_t.device_ptr,
-            grad_logits_t.device_ptr,
-            loss_sum_t.device_ptr,
-            correct_t.device_ptr,
+        loss_kind = _run_softmax_xent_loss(
+            runtime,
+            lib,
+            logits_t,
+            labels_t,
+            probs_t,
+            grad_logits_t,
+            loss_sum_t,
+            correct_t,
             n,
             classes,
+            label_smoothing=float(label_smoothing),
         )
-        runtime.record_execution('gpu_native_train:softmax_xent_grad_loss_acc', input_name='logits', output_name='grad_logits', node_count=1)
+        runtime.record_execution(loss_kind, input_name='logits', output_name='grad_logits', node_count=1)
         lib.dense_backward_full(
             grad_logits_t.device_ptr,
             pooled_t.device_ptr,
