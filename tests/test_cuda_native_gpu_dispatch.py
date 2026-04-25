@@ -188,6 +188,32 @@ def test_gpu_dispatch_plan_supports_global_avgpool_forward_shim():
     assert summary['steps'][0]['lowering_kind'] == 'pool_global_avgpool2d_shim'
 
 
+def test_gpu_dispatch_plan_supports_avgpool_forward_shim():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'AvgPool2d', 'kernel_size': 2, 'stride': 2, 'padding': 0},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 4, 8, 8),
+    )
+
+    summary = build_gpu_dispatch_plan(graph).summary()
+
+    assert summary['ready'] is True
+    assert summary['unsupported_ops'] == []
+    assert summary['steps'][0]['op_name'] == 'AvgPool2d'
+    assert summary['steps'][0]['launch_family'] == 'avgpool2d_nchw'
+    assert summary['steps'][0]['lowering_kind'] == 'pool_avgpool2d_shim'
+    assert summary['steps'][0]['launch_descriptor']['attr_bindings'] == {
+        'kernel_size': 2,
+        'stride': 2,
+        'padding': 0,
+    }
+
+
 def test_gpu_dispatch_plan_supports_adaptive_avgpool_output_size_one_forward_shim():
     graph = build_cuda_native_graph(
         {

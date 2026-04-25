@@ -18,6 +18,7 @@ class GpuKernelSpec:
 
 GPU_KERNEL_BOOTSTRAP_SPECS: tuple[GpuKernelSpec, ...] = (
     GpuKernelSpec('Add', 'merge', 'elementwise_merge', 2, 1, tuple(), 'match_inputs', 'native_forward', 'planned'),
+    GpuKernelSpec('AvgPool2d', 'pool', 'avgpool2d_nchw', 1, 1, tuple(), 'NCHW', 'partial_native', 'planned'),
     GpuKernelSpec('BatchNorm2d', 'normalization', 'batchnorm2d_nchw', 1, 1, ('weight', 'bias', 'running_mean', 'running_var'), 'NCHW', 'partial_native', 'planned'),
     GpuKernelSpec('Concat', 'merge', 'concat_merge', 2, 1, tuple(), 'match_inputs', 'native_forward', 'planned'),
     GpuKernelSpec('Conv2d', 'conv', 'conv2d_nchw', 1, 1, ('weight', 'bias'), 'NCHW', 'partial_native', 'partial_native'),

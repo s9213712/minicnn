@@ -26,6 +26,7 @@ GPU_OP_CODES = {
     'DepthwiseConv2d': 17,
     'LayerNorm2d': 18,
     'GroupNorm': 19,
+    'AvgPool2d': 20,
 }
 
 GPU_LAUNCH_FAMILY_CODES = {
@@ -41,6 +42,7 @@ GPU_LAUNCH_FAMILY_CODES = {
     'depthwise_conv2d_nchw': 10,
     'layernorm2d_nchw': 11,
     'groupnorm_nchw': 12,
+    'avgpool2d_nchw': 13,
 }
 
 GPU_LAYOUT_CODES = {
@@ -126,7 +128,7 @@ def _build_bridge_payload(packet: GpuLaunchPacket) -> dict[str, Any]:
         payload['axis'] = int(scalar_args.get('axis', 1))
     elif packet.op_name == 'LeakyReLU':
         payload['negative_slope'] = float(scalar_args.get('negative_slope', 0.01))
-    elif packet.op_name == 'MaxPool2d':
+    elif packet.op_name in {'MaxPool2d', 'AvgPool2d'}:
         payload.update({
             'kernel_size': scalar_args.get('kernel_size', 2),
             'stride': scalar_args.get('stride', 2),

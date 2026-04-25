@@ -19,6 +19,7 @@ Completed:
   primitive set
 - `GlobalAvgPool2d` and `AdaptiveAvgPool2d(output_size=1)` forward dispatch
   through the `global_avgpool2d_forward` C ABI shim
+- `AvgPool2d` forward dispatch through the `avgpool2d_forward` C ABI shim
 - `GELU`, `SiLU`, `Sigmoid`, and `Tanh` forward dispatch through native
   elementwise activation C ABI shims
 - `PointwiseConv2d` forward dispatch through the native Conv2d im2col/GEMM
@@ -31,6 +32,8 @@ Completed:
 - native training helpers for the current narrow training subsets
 - native `GlobalAvgPool2d -> Flatten -> Linear` and
   `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` training helpers
+- `AvgPool2d` train-native helper coverage; current work is forward dispatch
+  only
 - CLI validation/runtime routing for supported `gpu_native` subsets
 - hermetic reference-math parity matrix
 - readiness diagnostics with a `training_lowering_plan` that breaks helper
@@ -151,7 +154,7 @@ Still not claimed as complete:
 Current repo-side validation:
 
 ```text
-150 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+152 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:

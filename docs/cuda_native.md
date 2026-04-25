@@ -262,6 +262,8 @@ subsets.
 `GlobalAvgPool2d` and `AdaptiveAvgPool2d(output_size=1)` are also covered by
 helper-backed train-native subsets through `global_avgpool2d_forward` and
 `global_avgpool2d_backward`.
+`AvgPool2d` is part of the forward dispatch/bootstrap primitive set through
+`avgpool2d_forward`; train-native helper coverage is still pending.
 `GELU`, `SiLU`, `Sigmoid`, and `Tanh` are part of the forward
 dispatch/bootstrap primitive set through native elementwise activation shims;
 train-native helper coverage is still pending.

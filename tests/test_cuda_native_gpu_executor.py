@@ -92,6 +92,42 @@ class _FakeCudaLib:
         x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
         self.memory[d_output][...] = x.mean(axis=(2, 3), keepdims=True).reshape(-1)
 
+    def avgpool2d_forward(
+        self,
+        d_input,
+        d_output,
+        n,
+        c,
+        h,
+        w,
+        out_h,
+        out_w,
+        kh,
+        kw,
+        stride_h,
+        stride_w,
+        pad_h,
+        pad_w,
+    ):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        out = np.zeros((int(n), int(c), int(out_h), int(out_w)), dtype=np.float32)
+        for ni in range(int(n)):
+            for ci in range(int(c)):
+                for oh in range(int(out_h)):
+                    for ow in range(int(out_w)):
+                        total = 0.0
+                        for r in range(int(kh)):
+                            ih = oh * int(stride_h) + r - int(pad_h)
+                            if ih < 0 or ih >= int(h):
+                                continue
+                            for s in range(int(kw)):
+                                iw = ow * int(stride_w) + s - int(pad_w)
+                                if iw < 0 or iw >= int(w):
+                                    continue
+                                total += float(x[ni, ci, ih, iw])
+                        out[ni, ci, oh, ow] = total / float(int(kh) * int(kw))
+        self.memory[d_output][...] = out.reshape(-1)
+
     def im2col_forward(self, d_input, d_output, n, c, h, w, kh, kw, out_h, out_w):
         x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
         col = np.zeros((int(c) * int(kh) * int(kw), int(n) * int(out_h) * int(out_w)), dtype=np.float32)
@@ -691,6 +727,47 @@ def test_gpu_stub_executor_uses_native_global_avgpool_when_device_pointers_avail
 
     summary = runtime.summary()
     assert summary['execution_kinds']['gpu_native_kernel:global_avgpool2d_forward'] == 1
+
+
+def test_gpu_stub_executor_uses_native_avgpool_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'AvgPool2d', 'kernel_size': 2, 'stride': 2, 'padding': 1},
+            ],
+        },
+        (1, 1, 3, 3),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.arange(1, 10, dtype=np.float32).reshape(1, 1, 3, 3)
+    result = executor.run(graph, x)
+
+    padded = np.pad(x, ((0, 0), (0, 0), (1, 1), (1, 1)))
+    expected = np.asarray(
+        [[[
+            [
+                padded[0, 0, 0:2, 0:2].mean(),
+                padded[0, 0, 0:2, 2:4].mean(),
+            ],
+            [
+                padded[0, 0, 2:4, 0:2].mean(),
+                padded[0, 0, 2:4, 2:4].mean(),
+            ],
+        ]]],
+        dtype=np.float32,
+    )
+    np.testing.assert_allclose(result.output, expected, rtol=1e-6, atol=1e-6)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:avgpool2d_forward'] == 1
 
 
 def test_gpu_stub_executor_uses_native_gelu_when_device_pointers_available():

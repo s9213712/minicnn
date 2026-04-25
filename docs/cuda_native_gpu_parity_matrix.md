@@ -11,7 +11,7 @@ For the closure/status summary, see
 
 ## Current training subset matrix
 
-`BatchNorm2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `GroupNorm`, `LayerNorm2d`, `GELU`, `SiLU`, `Sigmoid`, and `Tanh` are covered as
+`AvgPool2d`, `BatchNorm2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `GroupNorm`, `LayerNorm2d`, `GELU`, `SiLU`, `Sigmoid`, and `Tanh` are covered as
 `gpu_native` forward dispatch primitives, but they are not yet part of the
 helper-backed train-native subset matrix.
 

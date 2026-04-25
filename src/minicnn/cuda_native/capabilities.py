@@ -267,6 +267,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and beta AMP with loss scaling / overflow backoff.',
         'gpu_native forward dispatch now includes BatchNorm2d; train-native still restricts BatchNorm2d to reference_numpy until a training helper or graph-backward lowering lands.',
         'gpu_native train-native includes GlobalAvgPool2d/AdaptiveAvgPool2d(output_size=1)+Flatten+Linear through native global_avgpool2d forward/backward C ABI shims.',
+        'gpu_native forward dispatch now includes AvgPool2d through a native avgpool2d_forward C ABI shim; train-native helper coverage is still pending.',
         'gpu_native forward dispatch now includes GELU, SiLU, Sigmoid, and Tanh elementwise activation C ABI shims; train-native helper coverage is still pending.',
         'gpu_native forward dispatch now includes PointwiseConv2d through the Conv2d im2col/GEMM lowering path; train-native helper coverage is still pending.',
         'gpu_native forward dispatch now includes DepthwiseConv2d through a native depthwise_conv2d C ABI shim; train-native helper coverage is still pending.',

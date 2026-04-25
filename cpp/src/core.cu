@@ -124,6 +124,42 @@ __global__ void global_avgpool2d_backward_kernel(const float* grad_output, float
     grad_input[idx] = grad_output[batch * c + channel] / static_cast<float>(hw);
 }
 
+__global__ void avgpool2d_forward_kernel(
+    const float* input,
+    float* output,
+    int n,
+    int c,
+    int h,
+    int w,
+    int out_h,
+    int out_w,
+    int kh,
+    int kw,
+    int stride_h,
+    int stride_w,
+    int pad_h,
+    int pad_w
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n * c * out_h * out_w;
+    if (idx >= total) return;
+    int ow = idx % out_w;
+    int oh = (idx / out_w) % out_h;
+    int ch = (idx / (out_w * out_h)) % c;
+    int batch = idx / (out_w * out_h * c);
+    float sum = 0.0f;
+    for (int r = 0; r < kh; ++r) {
+        int ih = oh * stride_h + r - pad_h;
+        if (ih < 0 || ih >= h) continue;
+        for (int s = 0; s < kw; ++s) {
+            int iw = ow * stride_w + s - pad_w;
+            if (iw < 0 || iw >= w) continue;
+            sum += input[(batch * c + ch) * h * w + ih * w + iw];
+        }
+    }
+    output[idx] = sum / static_cast<float>(kh * kw);
+}
+
 __global__ void depthwise_conv2d_forward_kernel(
     const float* input,
     const float* weight,
@@ -390,6 +426,31 @@ extern "C" {
         int size = n * c * h * w;
         int tpb = 256;
         global_avgpool2d_backward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_grad_output, d_grad_input, n, c, h, w);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void avgpool2d_forward(
+        float* d_input,
+        float* d_output,
+        int n,
+        int c,
+        int h,
+        int w,
+        int out_h,
+        int out_w,
+        int kh,
+        int kw,
+        int stride_h,
+        int stride_w,
+        int pad_h,
+        int pad_w
+    ) {
+        int size = n * c * out_h * out_w;
+        int tpb = 256;
+        avgpool2d_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(
+            d_input, d_output, n, c, h, w, out_h, out_w,
+            kh, kw, stride_h, stride_w, pad_h, pad_w
+        );
         CUDA_KERNEL_CHECK();
     }
 

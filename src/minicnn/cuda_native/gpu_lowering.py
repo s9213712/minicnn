@@ -779,6 +779,59 @@ def _lower_maxpool2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     return _allocate_output(node, ctx, output)
 
 
+def _lower_avgpool2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
+    kh, kw = _attr_pair(node.attrs.get('kernel_size', 2), label='kernel_size', node=node)
+    sh, sw = _attr_pair(node.attrs.get('stride', (kh, kw)), label='stride', node=node)
+    ph, pw = _attr_pair(node.attrs.get('padding', 0), label='padding', node=node)
+    if kh <= 0 or kw <= 0:
+        raise ValueError(f'AvgPool2d node={node.name}: kernel_size must be positive, got {(kh, kw)}')
+    if sh <= 0 or sw <= 0:
+        raise ValueError(f'AvgPool2d node={node.name}: stride must be positive, got {(sh, sw)}')
+    if ph < 0 or pw < 0:
+        raise ValueError(f'AvgPool2d node={node.name}: padding must be non-negative, got {(ph, pw)}')
+    if (
+        ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and hasattr(ctx.runtime.bound_lib, 'avgpool2d_forward')
+        and x.ndim == 4
+    ):
+        output_shape = tuple(node.output_specs[0].shape)
+        output = ctx.runtime.allocate_staging_buffer(
+            output_shape,
+            dtype='float32',
+            name=node.outputs[0],
+        )
+        ctx.runtime.bound_lib.avgpool2d_forward(
+            input_tensor.device_ptr,
+            output.device_ptr,
+            int(x.shape[0]),
+            int(x.shape[1]),
+            int(x.shape[2]),
+            int(x.shape[3]),
+            int(output_shape[2]),
+            int(output_shape[3]),
+            kh,
+            kw,
+            sh,
+            sw,
+            ph,
+            pw,
+        )
+        ctx.runtime.record_execution(
+            'gpu_native_kernel:avgpool2d_forward',
+            input_name=node.inputs[0],
+            output_name=node.outputs[0],
+            node_count=1,
+        )
+        ctx.runtime.sync_tensor_to_host(output)
+        return output
+    windows, _kernel, _stride = _pool2d_windows(node, x)
+    output = windows.mean(axis=(-2, -1)).astype(np.float32)
+    return _allocate_output(node, ctx, output)
+
+
 def _lower_global_avgpool2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     input_tensor = _input_tensor(node, ctx)
     x = np.asarray(input_tensor.data, dtype=np.float32)
@@ -831,6 +884,12 @@ def make_default_gpu_lowering_registry() -> GpuLoweringRegistry:
         lowering_kind='merge_add_shim',
         kernel_category=kernel_categories['Add'],
         fn=_lower_add,
+    )
+    registry.register(
+        'AvgPool2d',
+        lowering_kind='pool_avgpool2d_shim',
+        kernel_category=kernel_categories['AvgPool2d'],
+        fn=_lower_avgpool2d,
     )
     registry.register(
         'Concat',
