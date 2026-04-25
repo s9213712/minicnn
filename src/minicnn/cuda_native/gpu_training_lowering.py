@@ -61,6 +61,8 @@ _TRAINING_SUBSETS: dict[tuple[str, ...], tuple[str, str]] = {
     ('Linear', 'ReLU', 'Linear'): ('linear_relu_linear', 'native_gpu_two_linear_relu_training_step'),
     ('Flatten', 'Linear', 'ReLU', 'Linear'): ('flatten_linear_relu_linear', 'native_gpu_two_linear_relu_training_step'),
     ('MaxPool2d', 'Flatten', 'Linear'): ('maxpool_linear', 'native_gpu_pool_linear_training_step'),
+    ('GlobalAvgPool2d', 'Flatten', 'Linear'): ('global_avgpool_linear', 'native_gpu_global_avgpool_linear_training_step'),
+    ('AdaptiveAvgPool2d', 'Flatten', 'Linear'): ('adaptive_avgpool_linear', 'native_gpu_global_avgpool_linear_training_step'),
     ('Conv2d', 'Flatten', 'Linear'): ('conv_linear', 'native_gpu_conv_linear_training_step'),
     ('Conv2d', 'ReLU', 'Flatten', 'Linear'): ('conv_relu_linear', 'native_gpu_conv_linear_training_step'),
     ('Conv2d', 'MaxPool2d', 'Flatten', 'Linear'): ('conv_pool_linear', 'native_gpu_conv_linear_training_step'),
@@ -166,6 +168,15 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
                 phase='backward',
                 op_name='MaxPool2d',
                 lowering_kind='maxpool_backward_nchw',
+                launch_family='pool_backward',
+            )
+        )
+    if subset_name in {'global_avgpool_linear', 'adaptive_avgpool_linear'}:
+        steps.append(
+            GpuTrainingLoweringStep(
+                phase='backward',
+                op_name='GlobalAvgPool2d',
+                lowering_kind='global_avgpool2d_backward',
                 launch_family='pool_backward',
             )
         )

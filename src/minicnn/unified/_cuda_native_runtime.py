@@ -16,6 +16,7 @@ from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.executor import ForwardExecutor
 from minicnn.cuda_native.gpu_training import (
     native_gpu_conv_linear_training_step,
+    native_gpu_global_avgpool_linear_training_step,
     native_gpu_linear_training_step,
     native_gpu_pool_linear_training_step,
     native_gpu_two_conv_relu_pool_linear_training_step,
@@ -427,6 +428,8 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         return {'kind': 'two_linear_relu', 'linear_nodes': [nodes[1], nodes[3]], 'relu_node': nodes[2]}
     if ops == ['MaxPool2d', 'Flatten', 'Linear']:
         return {'kind': 'pool_linear', 'pool_node': nodes[0], 'linear_nodes': [nodes[2]]}
+    if ops in (['GlobalAvgPool2d', 'Flatten', 'Linear'], ['AdaptiveAvgPool2d', 'Flatten', 'Linear']):
+        return {'kind': 'global_avgpool_linear', 'pool_node': nodes[0], 'linear_nodes': [nodes[2]]}
     if ops in (
         ['Conv2d', 'Flatten', 'Linear'],
         ['Conv2d', 'ReLU', 'Flatten', 'Linear'],
@@ -486,6 +489,7 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         'cuda_native gpu_native train-native currently supports only '
         'ops=[Linear], ops=[Flatten, Linear], ops=[Linear, ReLU, Linear], '
         'ops=[Flatten, Linear, ReLU, Linear], ops=[MaxPool2d, Flatten, Linear], '
+        'ops=[GlobalAvgPool2d, Flatten, Linear], ops=[AdaptiveAvgPool2d, Flatten, Linear], '
         'ops=[Conv2d, Flatten, Linear], ops=[Conv2d, ReLU, Flatten, Linear], '
         'ops=[Conv2d, MaxPool2d, Flatten, Linear], or '
         'ops=[Conv2d, ReLU, MaxPool2d, Flatten, Linear], or '
@@ -741,6 +745,29 @@ def run_training_loop(
                         weight_key = f'_w_{gpu_linear_node.name}'
                         bias_key = f'_b_{gpu_linear_node.name}'
                         step = native_gpu_pool_linear_training_step(
+                            xb,
+                            yb,
+                            params[weight_key],
+                            params[bias_key],
+                            lr=float(optimizer_view.lr),
+                            momentum=float(ctx.momentum),
+                            grad_clip_value=float(ctx.grad_clip_global),
+                            weight_decay=float(ctx.weight_decay),
+                            label_smoothing=float(ctx.loss_cfg.get('label_smoothing', 0.0)),
+                            weight_velocity=velocity_state.get(weight_key),
+                            bias_velocity=velocity_state.get(bias_key),
+                            bound_lib=ctx.device_runtime.bound_lib,
+                        )
+                        params = dict(params)
+                        params[weight_key] = step.updated_weight
+                        params[bias_key] = step.updated_bias
+                        velocity_state[weight_key] = step.updated_weight_velocity
+                        velocity_state[bias_key] = step.updated_bias_velocity
+                    elif gpu_training_plan['kind'] == 'global_avgpool_linear':
+                        gpu_linear_node = gpu_training_plan['linear_nodes'][0]
+                        weight_key = f'_w_{gpu_linear_node.name}'
+                        bias_key = f'_b_{gpu_linear_node.name}'
+                        step = native_gpu_global_avgpool_linear_training_step(
                             xb,
                             yb,
                             params[weight_key],

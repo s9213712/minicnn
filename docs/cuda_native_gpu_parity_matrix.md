@@ -11,10 +11,9 @@ For the closure/status summary, see
 
 ## Current training subset matrix
 
-`BatchNorm2d`, `GlobalAvgPool2d`, `AdaptiveAvgPool2d(output_size=1)`, `GELU`,
-`SiLU`, `Sigmoid`, and `Tanh` are covered as `gpu_native` forward dispatch
-primitives, but they are not yet part of the helper-backed train-native subset
-matrix.
+`BatchNorm2d`, `GELU`, `SiLU`, `Sigmoid`, and `Tanh` are covered as
+`gpu_native` forward dispatch primitives, but they are not yet part of the
+helper-backed train-native subset matrix.
 
 | Subset | Helper | Evidence | Hardware status |
 |---|---|---|---|
@@ -23,6 +22,8 @@ matrix.
 | `Linear -> ReLU -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
 | `Flatten -> Linear -> ReLU -> Linear` | `native_gpu_two_linear_relu_training_step` | Hermetic reference math | Pending real GPU run |
 | `MaxPool2d -> Flatten -> Linear` | `native_gpu_pool_linear_training_step` | Hermetic reference math | Pending real GPU run |
+| `GlobalAvgPool2d -> Flatten -> Linear` | `native_gpu_global_avgpool_linear_training_step` | Hermetic reference math | Pending real GPU run |
+| `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` | `native_gpu_global_avgpool_linear_training_step` | Covered by GlobalAvgPool helper math | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Hermetic reference math | Pending real GPU run |

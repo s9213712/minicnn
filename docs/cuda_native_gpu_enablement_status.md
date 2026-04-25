@@ -22,6 +22,8 @@ Completed:
 - `GELU`, `SiLU`, `Sigmoid`, and `Tanh` forward dispatch through native
   elementwise activation C ABI shims
 - native training helpers for the current narrow training subsets
+- native `GlobalAvgPool2d -> Flatten -> Linear` and
+  `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear` training helpers
 - CLI validation/runtime routing for supported `gpu_native` subsets
 - hermetic reference-math parity matrix
 - readiness diagnostics with a `training_lowering_plan` that breaks helper
@@ -50,6 +52,8 @@ Supported through native GPU helper paths:
 - `Linear -> ReLU -> Linear`
 - `Flatten -> Linear -> ReLU -> Linear`
 - `MaxPool2d -> Flatten -> Linear`
+- `GlobalAvgPool2d -> Flatten -> Linear`
+- `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`
@@ -124,8 +128,6 @@ Still not claimed as complete:
 - composite/block training lowering for residual and ConvNeXt-style models
 - `BatchNorm2d` train-native helper coverage; current work is forward dispatch
   only
-- global/adaptive average pooling train-native helper coverage; current work is
-  forward dispatch only
 - modern elementwise activation train-native helper coverage; current work is
   forward dispatch only
 
@@ -134,7 +136,7 @@ Still not claimed as complete:
 Current repo-side validation:
 
 ```text
-140 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+142 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:

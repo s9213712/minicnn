@@ -114,6 +114,16 @@ __global__ void global_avgpool2d_forward_kernel(const float* input, float* outpu
     output[idx] = sum / static_cast<float>(hw);
 }
 
+__global__ void global_avgpool2d_backward_kernel(const float* grad_output, float* grad_input, int n, int c, int h, int w) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n * c * h * w;
+    if (idx >= total) return;
+    int hw = h * w;
+    int channel = (idx / hw) % c;
+    int batch = idx / (c * hw);
+    grad_input[idx] = grad_output[batch * c + channel] / static_cast<float>(hw);
+}
+
 __global__ void im2col_kernel(const float* input, float* output, int N, int C, int H, int W, int KH, int KW, int outH, int outW) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total_elements = (C * KH * KW) * (N * outH * outW);
@@ -253,6 +263,13 @@ extern "C" {
         int size = n * c;
         int tpb = 256;
         global_avgpool2d_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_input, d_output, n, c, h, w);
+        CUDA_KERNEL_CHECK();
+    }
+
+    void global_avgpool2d_backward(float* d_grad_output, float* d_grad_input, int n, int c, int h, int w) {
+        int size = n * c * h * w;
+        int tpb = 256;
+        global_avgpool2d_backward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(d_grad_output, d_grad_input, n, c, h, w);
         CUDA_KERNEL_CHECK();
     }
 

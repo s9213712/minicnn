@@ -245,6 +245,8 @@ Current `train-native engine.execution_mode=gpu_native` training subsets:
 - `Flatten -> Linear`
 - `Flatten -> Linear -> ReLU -> Linear`
 - `MaxPool2d -> Flatten -> Linear`
+- `GlobalAvgPool2d -> Flatten -> Linear`
+- `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`
 - `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`
@@ -257,9 +259,9 @@ GPU backward lowering is still pending.
 `BatchNorm2d` is now part of the `gpu_native` forward dispatch/bootstrap
 primitive set, but it is not yet accepted by `gpu_native` train-native helper
 subsets.
-`GlobalAvgPool2d` and `AdaptiveAvgPool2d(output_size=1)` are also part of the
-forward dispatch/bootstrap primitive set through `global_avgpool2d_forward`;
-train-native helper coverage is still pending.
+`GlobalAvgPool2d` and `AdaptiveAvgPool2d(output_size=1)` are also covered by
+helper-backed train-native subsets through `global_avgpool2d_forward` and
+`global_avgpool2d_backward`.
 `GELU`, `SiLU`, `Sigmoid`, and `Tanh` are part of the forward
 dispatch/bootstrap primitive set through native elementwise activation shims;
 train-native helper coverage is still pending.

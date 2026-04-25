@@ -6,6 +6,7 @@ import numpy as np
 
 from minicnn.cuda_native.gpu_training import (
     native_gpu_conv_linear_training_step,
+    native_gpu_global_avgpool_linear_training_step,
     native_gpu_linear_training_step,
     native_gpu_pool_linear_training_step,
     native_gpu_two_conv_relu_pool_linear_training_step,
@@ -139,6 +140,15 @@ class _RawFakeCudaLib:
                     for ow in range(out_w):
                         out[ni, ci, oh, ow] = np.max(x[ni, ci, oh * 2:oh * 2 + 2, ow * 2:ow * 2 + 2])
         self._float(d_output)[:] = out.reshape(-1)
+
+    def global_avgpool2d_forward(self, d_input, d_output, n, c, h, w):
+        x = self._float(d_input).reshape(int(n), int(c), int(h), int(w))
+        self._float(d_output)[:] = x.mean(axis=(2, 3), keepdims=True).reshape(-1)
+
+    def global_avgpool2d_backward(self, d_grad_output, d_grad_input, n, c, h, w):
+        grad = self._float(d_grad_output).reshape(int(n), int(c), 1, 1)
+        out = np.broadcast_to(grad / float(int(h) * int(w)), (int(n), int(c), int(h), int(w))).copy()
+        self._float(d_grad_input)[:] = out.reshape(-1)
 
     def maxpool_backward_nchw(self, d_grad_out, d_input, d_grad_input, n, c, in_h, in_w, out_h, out_w):
         grad_out = self._float(d_grad_out).reshape(int(n), int(c), int(out_h), int(out_w))
@@ -857,6 +867,55 @@ def test_native_gpu_pool_linear_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:maxpool_backward_nchw'] == 1
 
 
+def test_native_gpu_global_avgpool_linear_training_step_matches_reference_math():
+    x = np.asarray(
+        [
+            [
+                [[1.0, 2.0], [3.0, 4.0]],
+                [[-1.0, 0.0], [1.0, 2.0]],
+            ],
+            [
+                [[0.5, 1.5], [2.5, 3.5]],
+                [[2.0, 1.0], [0.0, -1.0]],
+            ],
+        ],
+        dtype=np.float32,
+    )
+    labels = np.asarray([1, 0], dtype=np.int32)
+    weight = np.asarray([[0.1, -0.2], [-0.05, 0.25]], dtype=np.float32)
+    bias = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.05
+
+    result = native_gpu_global_avgpool_linear_training_step(x, labels, weight, bias, lr=lr, bound_lib=_RawFakeCudaLib())
+
+    pooled = x.mean(axis=(2, 3), keepdims=True).astype(np.float32)
+    flat = pooled.reshape(2, -1)
+    logits = flat @ weight.T + bias
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_weight = grad_logits.T @ flat
+    grad_bias = grad_logits.sum(axis=0)
+    grad_pooled = (grad_logits @ weight).reshape(pooled.shape)
+    grad_input = np.broadcast_to(grad_pooled / float(x.shape[2] * x.shape[3]), x.shape).copy()
+
+    np.testing.assert_allclose(result.pooled, pooled, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.logits, logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.probabilities, probs, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_pooled, grad_pooled, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_input, grad_input, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_weight, grad_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_bias, grad_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_weight, weight - lr * grad_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_bias, bias - lr * grad_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:global_avgpool2d_forward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:global_avgpool2d_backward'] == 1
+
+
 def test_native_gpu_conv_linear_training_step_matches_reference_math():
     x = np.asarray(
         [
@@ -1139,6 +1198,8 @@ def test_native_gpu_training_subset_parity_matrix_covers_current_surface():
         ('Linear', 'ReLU', 'Linear'),
         ('Flatten', 'Linear', 'ReLU', 'Linear'),
         ('MaxPool2d', 'Flatten', 'Linear'),
+        ('GlobalAvgPool2d', 'Flatten', 'Linear'),
+        ('AdaptiveAvgPool2d', 'Flatten', 'Linear'),
         ('Conv2d', 'Flatten', 'Linear'),
         ('Conv2d', 'ReLU', 'Flatten', 'Linear'),
         ('Conv2d', 'MaxPool2d', 'Flatten', 'Linear'),
