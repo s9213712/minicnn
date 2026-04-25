@@ -25,6 +25,7 @@ GPU_OP_CODES = {
     'PointwiseConv2d': 16,
     'DepthwiseConv2d': 17,
     'LayerNorm2d': 18,
+    'GroupNorm': 19,
 }
 
 GPU_LAUNCH_FAMILY_CODES = {
@@ -39,6 +40,7 @@ GPU_LAUNCH_FAMILY_CODES = {
     'global_avgpool2d_nchw': 9,
     'depthwise_conv2d_nchw': 10,
     'layernorm2d_nchw': 11,
+    'groupnorm_nchw': 12,
 }
 
 GPU_LAYOUT_CODES = {
@@ -130,6 +132,13 @@ def _build_bridge_payload(packet: GpuLaunchPacket) -> dict[str, Any]:
             'stride': scalar_args.get('stride', 2),
             'padding': scalar_args.get('padding', 0),
         })
+    elif packet.op_name == 'GroupNorm':
+        payload.update({
+            'num_groups': int(scalar_args.get('num_groups', 1)),
+            'eps': float(scalar_args.get('eps', 1e-5)),
+        })
+    elif packet.op_name == 'LayerNorm2d':
+        payload['eps'] = float(scalar_args.get('eps', 1e-6))
     return payload
 
 

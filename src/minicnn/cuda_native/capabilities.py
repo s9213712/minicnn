@@ -261,7 +261,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
     'notes': [
         'Backward and training now meet the current beta graduation gate, but the backend is not yet production-ready.',
         'BatchNorm2d forward/backward exist within the beta training surface; runtime hardening still continues.',
-        'GroupNorm and LayerNorm use numpy reference kernels.',
+        'LayerNorm uses numpy reference kernels; GroupNorm forward dispatch now uses a native groupnorm_forward C ABI shim.',
         'ResidualBlock, ConvNeXtBlock, Dropout, and DropPath run through composite/reference numpy kernels; support tier is published separately.',
         'Explicit ordered DAG wiring is supported through named tensor outputs plus Add/Concat multi-input nodes.',
         'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and beta AMP with loss scaling / overflow backoff.',

@@ -125,7 +125,7 @@ def _node_param_keys(node) -> tuple[str, ...]:
             f'_running_mean_{node.name}',
             f'_running_var_{node.name}',
         ))
-    elif node.op_type == 'LayerNorm2d':
+    elif node.op_type in {'GroupNorm', 'LayerNorm2d'}:
         keys.extend((f'_w_{node.name}', f'_b_{node.name}'))
     return tuple(keys)
 
@@ -149,6 +149,9 @@ def _node_attr_bindings(node) -> dict[str, Any]:
         bindings['momentum'] = float(node.attrs.get('momentum', 0.1))
     elif node.op_type == 'LayerNorm2d':
         bindings['eps'] = float(node.attrs.get('eps', 1e-6))
+    elif node.op_type == 'GroupNorm':
+        bindings['num_groups'] = int(node.attrs.get('num_groups', 1))
+        bindings['eps'] = float(node.attrs.get('eps', 1e-5))
     elif node.op_type == 'AdaptiveAvgPool2d':
         bindings['output_size'] = node.attrs.get('output_size', 1)
     return bindings
@@ -165,7 +168,7 @@ def _node_param_layouts(node, param_keys: tuple[str, ...]) -> dict[str, str]:
     elif node.op_type == 'BatchNorm2d':
         for key in param_keys:
             layouts[key] = 'C'
-    elif node.op_type == 'LayerNorm2d':
+    elif node.op_type in {'GroupNorm', 'LayerNorm2d'}:
         for key in param_keys:
             layouts[key] = 'C'
     else:

@@ -202,6 +202,48 @@ __global__ void layernorm2d_forward_kernel(
     }
 }
 
+__global__ void groupnorm_forward_kernel(
+    const float* input,
+    const float* gamma,
+    const float* beta,
+    float* output,
+    int n,
+    int c,
+    int h,
+    int w,
+    int num_groups,
+    float eps
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int spatial = h * w;
+    int total = n * c * spatial;
+    if (idx >= total) return;
+    int ch = (idx / spatial) % c;
+    int batch = idx / (c * spatial);
+    int channels_per_group = c / num_groups;
+    int group = ch / channels_per_group;
+    int channel_start = group * channels_per_group;
+    int group_elements = channels_per_group * spatial;
+    float mean = 0.0f;
+    for (int gc = 0; gc < channels_per_group; ++gc) {
+        int cc = channel_start + gc;
+        for (int s = 0; s < spatial; ++s) {
+            mean += input[(batch * c + cc) * spatial + s];
+        }
+    }
+    mean /= static_cast<float>(group_elements);
+    float var = 0.0f;
+    for (int gc = 0; gc < channels_per_group; ++gc) {
+        int cc = channel_start + gc;
+        for (int s = 0; s < spatial; ++s) {
+            float diff = input[(batch * c + cc) * spatial + s] - mean;
+            var += diff * diff;
+        }
+    }
+    float inv_std = rsqrtf(var / static_cast<float>(group_elements) + eps);
+    output[idx] = ((input[idx] - mean) * inv_std) * gamma[ch] + beta[ch];
+}
+
 __global__ void im2col_kernel(const float* input, float* output, int N, int C, int H, int W, int KH, int KW, int outH, int outW) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total_elements = (C * KH * KW) * (N * outH * outW);
@@ -386,6 +428,15 @@ extern "C" {
         int tpb = 256;
         layernorm2d_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(
             d_input, d_gamma, d_beta, d_output, n, c, h, w, eps
+        );
+        CUDA_KERNEL_CHECK();
+    }
+
+    void groupnorm_forward(float* d_input, float* d_gamma, float* d_beta, float* d_output, int n, int c, int h, int w, int num_groups, float eps) {
+        int size = n * c * h * w;
+        int tpb = 256;
+        groupnorm_forward_kernel<<<(size + tpb - 1) / tpb, tpb>>>(
+            d_input, d_gamma, d_beta, d_output, n, c, h, w, num_groups, eps
         );
         CUDA_KERNEL_CHECK();
     }

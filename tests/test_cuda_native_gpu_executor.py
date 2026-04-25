@@ -168,6 +168,18 @@ class _FakeCudaLib:
         out = ((x - mean) / np.sqrt(var + float(eps))) * gamma.reshape(1, int(c), 1, 1) + beta.reshape(1, int(c), 1, 1)
         self.memory[d_output][...] = out.astype(np.float32).reshape(-1)
 
+    def groupnorm_forward(self, d_input, d_gamma, d_beta, d_output, n, c, h, w, num_groups, eps):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        gamma = self.memory[d_gamma].reshape(int(c))
+        beta = self.memory[d_beta].reshape(int(c))
+        channels_per_group = int(c) // int(num_groups)
+        x_group = x.reshape(int(n), int(num_groups), channels_per_group, int(h), int(w))
+        mean = x_group.mean(axis=(2, 3, 4), keepdims=True)
+        var = x_group.var(axis=(2, 3, 4), keepdims=True)
+        x_hat = ((x_group - mean) / np.sqrt(var + float(eps))).reshape(int(n), int(c), int(h), int(w))
+        out = x_hat * gamma.reshape(1, int(c), 1, 1) + beta.reshape(1, int(c), 1, 1)
+        self.memory[d_output][...] = out.astype(np.float32).reshape(-1)
+
 
 def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     graph = build_cuda_native_graph(
@@ -870,3 +882,41 @@ def test_gpu_stub_executor_uses_native_layernorm2d_when_device_pointers_availabl
 
     summary = runtime.summary()
     assert summary['execution_kinds']['gpu_native_kernel:layernorm2d_forward'] == 1
+
+
+def test_gpu_stub_executor_uses_native_groupnorm_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'GroupNorm', 'num_groups': 2, 'eps': 1e-5},
+            ],
+        },
+        (1, 4, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.arange(1, 17, dtype=np.float32).reshape(1, 4, 2, 2)
+    gamma = np.asarray([1.0, 1.25, 1.5, 1.75], dtype=np.float32)
+    beta = np.asarray([0.0, -0.5, 0.25, 0.75], dtype=np.float32)
+    params = {
+        '_w_groupnorm_0': gamma,
+        '_b_groupnorm_0': beta,
+    }
+
+    result = executor.run(graph, x, params=params)
+
+    x_group = x.reshape(1, 2, 2, 2, 2)
+    mean = x_group.mean(axis=(2, 3, 4), keepdims=True)
+    var = x_group.var(axis=(2, 3, 4), keepdims=True)
+    x_hat = ((x_group - mean) / np.sqrt(var + 1e-5)).reshape(1, 4, 2, 2)
+    expected = x_hat * gamma.reshape(1, 4, 1, 1) + beta.reshape(1, 4, 1, 1)
+    np.testing.assert_allclose(result.output, expected.astype(np.float32), rtol=1e-5, atol=1e-5)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:groupnorm_forward'] == 1

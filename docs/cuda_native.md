@@ -271,6 +271,8 @@ coverage is still pending.
 `DepthwiseConv2d` is part of the forward dispatch/bootstrap primitive set
 through `depthwise_conv2d_forward`; train-native helper coverage is still
 pending.
+`GroupNorm` is part of the forward dispatch/bootstrap primitive set through
+`groupnorm_forward`; train-native helper coverage is still pending.
 `LayerNorm2d` is part of the forward dispatch/bootstrap primitive set through
 `layernorm2d_forward`; train-native helper coverage is still pending.
 

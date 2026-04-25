@@ -302,6 +302,29 @@ def test_gpu_dispatch_plan_supports_layernorm2d_forward_shim():
     assert summary['steps'][0]['param_keys'] == ['_w_layernorm2d_0', '_b_layernorm2d_0']
 
 
+def test_gpu_dispatch_plan_supports_groupnorm_forward_shim():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'GroupNorm', 'num_groups': 2, 'eps': 1e-5},
+                {'type': 'GELU'},
+                {'type': 'GlobalAvgPool2d'},
+            ],
+        },
+        (1, 4, 4, 4),
+    )
+
+    summary = build_gpu_dispatch_plan(graph).summary()
+
+    assert summary['ready'] is True
+    assert summary['unsupported_ops'] == []
+    assert summary['steps'][0]['op_name'] == 'GroupNorm'
+    assert summary['steps'][0]['launch_family'] == 'groupnorm_nchw'
+    assert summary['steps'][0]['lowering_kind'] == 'normalization_groupnorm_shim'
+    assert summary['steps'][0]['param_keys'] == ['_w_groupnorm_0', '_b_groupnorm_0']
+    assert summary['steps'][0]['launch_descriptor']['attr_bindings'] == {'num_groups': 2, 'eps': 1e-05}
+
+
 def test_gpu_training_lowering_plan_records_linear_rmsprop_manifest():
     graph = build_cuda_native_graph(
         {
