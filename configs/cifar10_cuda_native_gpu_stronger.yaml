@@ -1,0 +1,59 @@
+project:
+  name: cifar10-gpu-native-stronger
+  artifacts_root: artifacts/cifar10_cuda_native_gpu_stronger
+
+engine:
+  backend: cuda_native
+  execution_mode: gpu_native
+
+dataset:
+  type: cifar10
+  data_root: /home/s92137/NN/minicnn/data/cifar-10-batches-py
+  num_samples: 45000
+  val_samples: 5000
+  seed: 42
+
+model:
+  input_shape: [3, 32, 32]
+  layers:
+    - type: Conv2d
+      out_channels: 16
+      kernel_size: 3
+      stride: 1
+      padding: 0
+      bias: false
+    - type: ReLU
+    - type: Conv2d
+      out_channels: 32
+      kernel_size: 3
+      stride: 1
+      padding: 0
+      bias: false
+    - type: ReLU
+    - type: MaxPool2d
+      kernel_size: 2
+      stride: 2
+      padding: 0
+    - type: Flatten
+    - type: Linear
+      out_features: 10
+
+loss:
+  type: CrossEntropyLoss
+
+optimizer:
+  name: SGD
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.0005
+
+scheduler:
+  enabled: true
+  type: StepLR
+  step_size: 20
+  gamma: 0.5
+
+train:
+  device: cuda
+  epochs: 60
+  batch_size: 64

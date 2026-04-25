@@ -4,8 +4,10 @@
 # - Minimal integration smoke path for explicit ConvNeXt primitives.
 # - Uses a synthetic random dataset so it works without downloads or prepared
 #   CIFAR-10 files.
-# - Keeps the same frontend structure as convnext_explicit.yaml but shrinks
-#   the dataset and epoch count for quick validation.
+# - Keeps the same explicit primitive stack shape as convnext_explicit.yaml but shrinks
+#   channel widths, dataset, and epoch count for quick validation.
+# - Like convnext_explicit.yaml, this path is a sequential primitive stack and
+#   does not encode residual add or layer scale semantics.
 #
 # Run:
 #   minicnn train-flex --config templates/cifar10/convnext_explicit_smoke.yaml
@@ -30,7 +32,7 @@ dataset:
 model:
   layers:
     - type: Conv2d
-      out_channels: 64
+      out_channels: 8
       kernel_size: 3
       stride: 1
       padding: 1
@@ -38,38 +40,38 @@ model:
       kernel_size: 7
     - type: LayerNorm2d
     - type: PointwiseConv2d
-      out_channels: 256
+      out_channels: 16
     - type: GELU
     - type: PointwiseConv2d
-      out_channels: 64
+      out_channels: 8
     - type: DepthwiseConv2d
       kernel_size: 7
     - type: LayerNorm2d
     - type: PointwiseConv2d
-      out_channels: 256
+      out_channels: 16
     - type: GELU
     - type: PointwiseConv2d
-      out_channels: 64
+      out_channels: 8
     - type: Conv2d
-      out_channels: 128
+      out_channels: 16
       kernel_size: 2
       stride: 2
     - type: DepthwiseConv2d
       kernel_size: 7
     - type: LayerNorm2d
     - type: PointwiseConv2d
-      out_channels: 512
+      out_channels: 32
     - type: GELU
     - type: PointwiseConv2d
-      out_channels: 128
+      out_channels: 16
     - type: DepthwiseConv2d
       kernel_size: 7
     - type: LayerNorm2d
     - type: PointwiseConv2d
-      out_channels: 512
+      out_channels: 32
     - type: GELU
     - type: PointwiseConv2d
-      out_channels: 128
+      out_channels: 16
     - type: GlobalAvgPool2d
     - type: Flatten
     - type: Linear

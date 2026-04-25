@@ -1,0 +1,1224 @@
+from __future__ import annotations
+
+import ctypes
+
+import numpy as np
+
+from minicnn.cuda_native.api import build_cuda_native_graph
+from minicnn.cuda_native.device_runtime import DeviceRuntime
+from minicnn.cuda_native.gpu_bridge import GpuCAbiKernelCall
+from minicnn.cuda_native.gpu_bridge_adapter import GpuNativeLibraryBridgeAdapter
+from minicnn.cuda_native.gpu_executor import GpuStubExecutor, make_native_gpu_forward_executor
+from minicnn.unified._cuda_native_bridge import _init_params
+
+
+class _FakeCudaLib:
+    def __init__(self):
+        self.next_ptr = 1000
+        self.memory = {}
+        self.dense_forward_calls = []
+
+    def gpu_malloc(self, nbytes):
+        ptr = self.next_ptr
+        self.next_ptr += int(nbytes) + 8
+        self.memory[ptr] = np.zeros(int(nbytes) // 4, dtype=np.float32)
+        return ptr
+
+    def gpu_free(self, ptr):
+        self.memory.pop(ptr, None)
+
+    def gpu_memcpy_h2d(self, ptr, host_ptr, nbytes):
+        count = int(nbytes) // 4
+        src = np.ctypeslib.as_array((ctypes.c_float * count).from_address(int(host_ptr)))
+        self.memory[ptr][...] = src
+
+    def gpu_memcpy_d2h(self, host_ptr, ptr, nbytes):
+        count = int(nbytes) // 4
+        dst = np.ctypeslib.as_array((ctypes.c_float * count).from_address(int(host_ptr)))
+        dst[...] = self.memory[ptr]
+
+    def dense_forward(self, d_input, d_weight, d_bias, d_output, n, in_f, out_f):
+        self.dense_forward_calls.append((d_input, d_weight, d_bias, d_output, n, in_f, out_f))
+        x = self.memory[d_input].reshape(int(n), int(in_f))
+        w = self.memory[d_weight].reshape(int(out_f), int(in_f))
+        b = self.memory[d_bias].reshape(int(out_f))
+        self.memory[d_output][...] = (x @ w.T + b).reshape(-1)
+
+    def apply_relu(self, d_data, size):
+        self.memory[d_data][:int(size)] = np.maximum(self.memory[d_data][:int(size)], 0.0)
+
+    def leaky_relu_forward(self, d_data, alpha, size):
+        data = self.memory[d_data][:int(size)]
+        self.memory[d_data][:int(size)] = np.where(data >= 0.0, data, float(alpha) * data)
+
+    def sigmoid_forward(self, d_data, size):
+        data = self.memory[d_data][:int(size)]
+        self.memory[d_data][:int(size)] = 1.0 / (1.0 + np.exp(-data))
+
+    def tanh_forward(self, d_data, size):
+        self.memory[d_data][:int(size)] = np.tanh(self.memory[d_data][:int(size)])
+
+    def silu_forward(self, d_data, size):
+        data = self.memory[d_data][:int(size)]
+        self.memory[d_data][:int(size)] = data / (1.0 + np.exp(-data))
+
+    def gelu_forward(self, d_data, size):
+        data = self.memory[d_data][:int(size)]
+        self.memory[d_data][:int(size)] = 0.5 * data * (
+            1.0 + np.tanh(np.sqrt(2.0 / np.pi) * (data + 0.044715 * data ** 3))
+        )
+
+    def add_forward(self, d_a, d_b, d_output, size):
+        self.memory[d_output][:int(size)] = self.memory[d_a][:int(size)] + self.memory[d_b][:int(size)]
+
+    def concat_forward(self, d_a, d_b, d_output, outer, a_axis, b_axis, inner):
+        a = self.memory[d_a].reshape(int(outer), int(a_axis), int(inner))
+        b = self.memory[d_b].reshape(int(outer), int(b_axis), int(inner))
+        self.memory[d_output][...] = np.concatenate([a, b], axis=1).reshape(-1)
+
+    def apply_maxpool(self, d_input, d_output, n, c, h, w):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        out_h = int(h) // 2
+        out_w = int(w) // 2
+        out = np.zeros((int(n), int(c), out_h, out_w), dtype=np.float32)
+        for ni in range(int(n)):
+            for ci in range(int(c)):
+                for oh in range(out_h):
+                    for ow in range(out_w):
+                        window = x[ni, ci, oh * 2:oh * 2 + 2, ow * 2:ow * 2 + 2]
+                        out[ni, ci, oh, ow] = np.max(window)
+        self.memory[d_output][...] = out.reshape(-1)
+
+    def global_avgpool2d_forward(self, d_input, d_output, n, c, h, w):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        self.memory[d_output][...] = x.mean(axis=(2, 3), keepdims=True).reshape(-1)
+
+    def avgpool2d_forward(
+        self,
+        d_input,
+        d_output,
+        n,
+        c,
+        h,
+        w,
+        out_h,
+        out_w,
+        kh,
+        kw,
+        stride_h,
+        stride_w,
+        pad_h,
+        pad_w,
+    ):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        out = np.zeros((int(n), int(c), int(out_h), int(out_w)), dtype=np.float32)
+        for ni in range(int(n)):
+            for ci in range(int(c)):
+                for oh in range(int(out_h)):
+                    for ow in range(int(out_w)):
+                        total = 0.0
+                        for r in range(int(kh)):
+                            ih = oh * int(stride_h) + r - int(pad_h)
+                            if ih < 0 or ih >= int(h):
+                                continue
+                            for s in range(int(kw)):
+                                iw = ow * int(stride_w) + s - int(pad_w)
+                                if iw < 0 or iw >= int(w):
+                                    continue
+                                total += float(x[ni, ci, ih, iw])
+                        out[ni, ci, oh, ow] = total / float(int(kh) * int(kw))
+        self.memory[d_output][...] = out.reshape(-1)
+
+    def im2col_forward(self, d_input, d_output, n, c, h, w, kh, kw, out_h, out_w):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        col = np.zeros((int(c) * int(kh) * int(kw), int(n) * int(out_h) * int(out_w)), dtype=np.float32)
+        for row_c in range(int(c)):
+            for row_kh in range(int(kh)):
+                for row_kw in range(int(kw)):
+                    row = row_c * int(kh) * int(kw) + row_kh * int(kw) + row_kw
+                    for ni in range(int(n)):
+                        for oh in range(int(out_h)):
+                            for ow in range(int(out_w)):
+                                col_idx = ni * int(out_h) * int(out_w) + oh * int(out_w) + ow
+                                col[row, col_idx] = x[ni, row_c, oh + row_kh, ow + row_kw]
+        self.memory[d_output][...] = col.reshape(-1)
+
+    def gemm_forward(self, d_a, d_b, d_c, m, n, k):
+        a = self.memory[d_a].reshape(int(m), int(k))
+        b = self.memory[d_b].reshape(int(k), int(n))
+        self.memory[d_c][...] = (a @ b).reshape(-1)
+
+    def cnhw_to_nchw(self, d_input, d_output, n, c, h, w):
+        x = self.memory[d_input].reshape(int(c), int(n), int(h), int(w))
+        self.memory[d_output][...] = np.transpose(x, (1, 0, 2, 3)).reshape(-1)
+
+    def depthwise_conv2d_forward(
+        self,
+        d_input,
+        d_weight,
+        d_bias,
+        d_output,
+        n,
+        c,
+        h,
+        w,
+        out_c,
+        kh,
+        kw,
+        out_h,
+        out_w,
+        stride_h,
+        stride_w,
+        pad_h,
+        pad_w,
+        has_bias,
+    ):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        weight = self.memory[d_weight].reshape(int(out_c), 1, int(kh), int(kw))
+        bias = self.memory[d_bias].reshape(int(out_c))
+        out = np.zeros((int(n), int(out_c), int(out_h), int(out_w)), dtype=np.float32)
+        multiplier = int(out_c) // int(c)
+        for ni in range(int(n)):
+            for oc in range(int(out_c)):
+                ic = oc // multiplier
+                for oh in range(int(out_h)):
+                    for ow in range(int(out_w)):
+                        val = bias[oc] if int(has_bias) else 0.0
+                        for r in range(int(kh)):
+                            ih = oh * int(stride_h) + r - int(pad_h)
+                            if ih < 0 or ih >= int(h):
+                                continue
+                            for s in range(int(kw)):
+                                iw = ow * int(stride_w) + s - int(pad_w)
+                                if iw < 0 or iw >= int(w):
+                                    continue
+                                val += x[ni, ic, ih, iw] * weight[oc, 0, r, s]
+                        out[ni, oc, oh, ow] = val
+        self.memory[d_output][...] = out.reshape(-1)
+
+    def layernorm2d_forward(self, d_input, d_gamma, d_beta, d_output, n, c, h, w, eps):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        gamma = self.memory[d_gamma].reshape(int(c))
+        beta = self.memory[d_beta].reshape(int(c))
+        mean = x.mean(axis=1, keepdims=True)
+        var = x.var(axis=1, keepdims=True)
+        out = ((x - mean) / np.sqrt(var + float(eps))) * gamma.reshape(1, int(c), 1, 1) + beta.reshape(1, int(c), 1, 1)
+        self.memory[d_output][...] = out.astype(np.float32).reshape(-1)
+
+    def groupnorm_forward(self, d_input, d_gamma, d_beta, d_output, n, c, h, w, num_groups, eps):
+        x = self.memory[d_input].reshape(int(n), int(c), int(h), int(w))
+        gamma = self.memory[d_gamma].reshape(int(c))
+        beta = self.memory[d_beta].reshape(int(c))
+        channels_per_group = int(c) // int(num_groups)
+        x_group = x.reshape(int(n), int(num_groups), channels_per_group, int(h), int(w))
+        mean = x_group.mean(axis=(2, 3, 4), keepdims=True)
+        var = x_group.var(axis=(2, 3, 4), keepdims=True)
+        x_hat = ((x_group - mean) / np.sqrt(var + float(eps))).reshape(int(n), int(c), int(h), int(w))
+        out = x_hat * gamma.reshape(1, int(c), 1, 1) + beta.reshape(1, int(c), 1, 1)
+        self.memory[d_output][...] = out.astype(np.float32).reshape(-1)
+
+
+def test_gpu_stub_executor_runs_bootstrap_subset_graph():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 8},
+                {'type': 'ReLU'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 8, 8),
+    )
+    params = _init_params(graph, seed=7)
+    runtime = DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu')
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    result = executor.run(graph, np.ones((1, 8, 8), dtype=np.float32), params=params)
+    summary = result.summary()
+    runtime_summary = runtime.summary()
+
+    assert summary['output_name'] == graph.output_spec.name
+    assert summary['dispatch_plan']['ready'] is True
+    assert summary['dispatch_plan']['num_steps'] == 4
+    assert len(summary['launch_trace']) == 4
+    assert len(summary['bridge_trace']) == 4
+    assert len(summary['flat_bridge_trace']) == 4
+    assert len(summary['fixed_bridge_trace']) == 4
+    assert len(summary['c_abi_bridge_trace']) == 4
+    assert len(summary['bridge_results']) == 4
+    assert len(summary['flat_bridge_results']) == 4
+    assert len(summary['fixed_bridge_results']) == 4
+    assert len(summary['c_abi_bridge_results']) == 4
+    assert summary['launch_trace'][0]['launch_family'] == 'reshape_view'
+    assert summary['launch_trace'][1]['launch_family'] == 'gemm_affine'
+    assert summary['launch_trace'][1]['tensor_args'][2]['binding'] == '_w_linear_1'
+    assert summary['bridge_trace'][1]['dispatch_mode'] == 'gpu_bridge_stub'
+    assert summary['bridge_trace'][1]['launch_family'] == 'gemm_affine'
+    assert summary['bridge_trace'][1]['tensor_args'][2]['binding'] == '_w_linear_1'
+    assert summary['bridge_trace'][1]['bridge_payload']['matmul_n'] == 8
+    assert summary['bridge_results'][1]['accepted'] is True
+    assert summary['bridge_results'][1]['dispatch_mode'] == 'gpu_bridge_stub'
+    assert summary['flat_bridge_trace'][1]['launch_family'] == 'gemm_affine'
+    assert summary['flat_bridge_trace'][1]['tensor_bindings'] == ['t_1', 't_2', '_w_linear_1', '_b_linear_1']
+    assert summary['flat_bridge_results'][1]['accepted'] is True
+    assert summary['flat_bridge_results'][1]['flat_tensor_arg_count'] == 4
+    assert summary['fixed_bridge_trace'][1]['launch_family'] == 'gemm_affine'
+    assert summary['fixed_bridge_trace'][1]['weight_binding'] == '_w_linear_1'
+    assert summary['fixed_bridge_trace'][1]['matmul_k'] == 64
+    assert summary['fixed_bridge_results'][1]['accepted'] is True
+    assert summary['fixed_bridge_results'][1]['dispatch_mode'] == 'gpu_backend_stub'
+    assert summary['fixed_bridge_results'][1]['abi_version'] == 1
+    assert summary['fixed_bridge_results'][1]['kernel_symbol'] == 'minicnn_gpu_linear_f32'
+    assert summary['fixed_bridge_results'][1]['matmul_signature'] == [1, 64, 8]
+    assert summary['c_abi_bridge_trace'][1]['op_code'] == 2
+    assert summary['c_abi_bridge_trace'][1]['launch_family_code'] == 2
+    assert summary['c_abi_bridge_trace'][1]['int_args8'] == [0, 0, 0, 0, 1, 1, 64, 8]
+    assert summary['c_abi_bridge_results'][1]['dispatch_mode'] == 'gpu_c_abi_stub'
+    assert summary['c_abi_bridge_results'][1]['abi_version'] == 1
+    assert tuple(summary['output_shape']) == (1, 2)
+    assert runtime_summary['tensor_execution_device'] == 'gpu'
+    assert runtime_summary['execution_kinds']['gpu_stub_forward'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_kernel:Flatten'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_kernel:Linear'] == 2
+    assert runtime_summary['execution_kinds']['gpu_stub_kernel:ReLU'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_launch:reshape_view'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_launch:gemm_affine'] == 2
+    assert runtime_summary['execution_kinds']['gpu_stub_launch:elementwise_unary'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_packet:reshape_view'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_packet:gemm_affine'] == 2
+    assert runtime_summary['execution_kinds']['gpu_stub_packet:elementwise_unary'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_bridge:reshape_view'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_bridge:gemm_affine'] == 2
+    assert runtime_summary['execution_kinds']['gpu_stub_bridge:elementwise_unary'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_flat_bridge:reshape_view'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_flat_bridge:gemm_affine'] == 2
+    assert runtime_summary['execution_kinds']['gpu_stub_flat_bridge:elementwise_unary'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_fixed_bridge:reshape_view'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_fixed_bridge:gemm_affine'] == 2
+    assert runtime_summary['execution_kinds']['gpu_stub_fixed_bridge:elementwise_unary'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_c_abi_bridge:reshape_view'] == 1
+    assert runtime_summary['execution_kinds']['gpu_stub_c_abi_bridge:gemm_affine'] == 2
+    assert runtime_summary['execution_kinds']['gpu_stub_c_abi_bridge:elementwise_unary'] == 1
+    assert runtime_summary['reserved_buffer_reuse_events'] >= 2
+    assert runtime_summary['reserved_buffer_release_events'] >= 2
+
+
+def test_gpu_stub_executor_uses_runtime_batch_shape_for_native_lowerings():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Conv2d', 'out_channels': 2, 'kernel_size': 3, 'bias': False},
+                {'type': 'ReLU'},
+                {'type': 'MaxPool2d', 'kernel_size': 2, 'stride': 2},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 3},
+            ],
+        },
+        (1, 1, 4, 4),
+    )
+    params = _init_params(graph, seed=11)
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = (np.arange(3 * 1 * 4 * 4, dtype=np.float32).reshape(3, 1, 4, 4) / 10.0)
+
+    result = executor.run(graph, x, params=params)
+
+    assert result.output.shape == (3, 3)
+    assert fake_lib.dense_forward_calls[-1][4:] == (3, 2, 3)
+    assert runtime.summary()['execution_kinds']['gpu_native_kernel:conv2d_im2col_gemm'] == 1
+    assert runtime.summary()['execution_kinds']['gpu_native_kernel:apply_maxpool'] == 1
+
+
+def test_gpu_stub_executor_rejects_graph_outside_bootstrap_subset():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Dropout', 'p': 0.1},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 1, 8, 8),
+    )
+    runtime = DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu')
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    try:
+        executor.run(graph, np.ones((1, 1, 8, 8), dtype=np.float32))
+    except ValueError as exc:
+        message = str(exc)
+    else:  # pragma: no cover
+        raise AssertionError('expected bootstrap-subset rejection')
+
+    assert 'unsupported_ops' in message
+    assert 'Dropout' in message
+
+
+def test_gpu_stub_executor_uses_identity_and_noop_regularization_aliases():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Identity'},
+                {'type': 'Dropout', 'p': 0.0},
+                {'type': 'DropPath', 'p': 0.0},
+            ],
+        },
+        (1, 1, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.asarray([[[[1.0, 2.0], [3.0, 4.0]]]], dtype=np.float32)
+
+    result = executor.run(graph, x)
+
+    np.testing.assert_allclose(result.output, x, rtol=0.0, atol=0.0)
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_alias:Identity'] == 1
+    assert summary['execution_kinds']['gpu_native_alias:Dropout'] == 1
+    assert summary['execution_kinds']['gpu_native_alias:DropPath'] == 1
+
+
+def test_gpu_stub_executor_routes_batchnorm2d_forward_shim():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'BatchNorm2d', 'num_features': 1},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 1, 4, 4),
+    )
+    runtime = DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu')
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.ones((1, 1, 4, 4), dtype=np.float32)
+    params = {
+        '_w_batchnorm2d_0': np.ones((1,), dtype=np.float32),
+        '_b_batchnorm2d_0': np.zeros((1,), dtype=np.float32),
+        '_running_mean_batchnorm2d_0': np.zeros((1,), dtype=np.float32),
+        '_running_var_batchnorm2d_0': np.ones((1,), dtype=np.float32),
+        '_w_linear_2': np.ones((2, 16), dtype=np.float32),
+        '_b_linear_2': np.zeros((2,), dtype=np.float32),
+    }
+
+    result = executor.run(graph, x, params=params)
+    summary = result.summary()
+
+    assert summary['dispatch_plan']['ready'] is True
+    assert summary['dispatch_plan']['steps'][0]['op_name'] == 'BatchNorm2d'
+    assert summary['output_shape'] == [1, 2]
+
+
+def test_gpu_stub_executor_backend_stub_routes_conv2d():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Conv2d', 'out_channels': 4, 'kernel_size': 3, 'padding': 1},
+                {'type': 'ReLU'},
+                {'type': 'MaxPool2d', 'kernel_size': 2, 'stride': 2},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 3, 8, 8),
+    )
+    params = _init_params(graph, seed=11)
+    runtime = DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu')
+    runtime.reserve_from_planner(total_bytes=8192, num_buffers=8)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    result = executor.run(graph, np.ones((1, 3, 8, 8), dtype=np.float32), params=params)
+    summary = result.summary()
+
+    conv_result = summary['fixed_bridge_results'][0]
+    assert conv_result['dispatch_mode'] == 'gpu_backend_stub'
+    assert conv_result['kernel_symbol'] == 'minicnn_gpu_conv2d_nchw_f32'
+    assert conv_result['input_shape'] == [1, 3, 8, 8]
+    assert conv_result['output_shape'] == [1, 4, 8, 8]
+    assert conv_result['stride'] == [1, 1]
+    assert conv_result['padding'] == [1, 1]
+
+
+def test_gpu_stub_executor_can_use_native_library_bridge_adapter():
+    class _FakeLib:
+        def dense_forward(self):
+            raise AssertionError('symbol availability check must not execute kernel')
+
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 4),
+    )
+    params = _init_params(graph, seed=13)
+    runtime = DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu')
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=_FakeLib())
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
+
+    result = executor.run(graph, np.ones((1, 4), dtype=np.float32), params=params)
+    summary = result.summary()
+
+    linear_result = summary['c_abi_bridge_results'][1]
+    assert linear_result['dispatch_mode'] == 'gpu_native_library_bridge'
+    assert linear_result['kernel_symbol'] == 'dense_forward'
+    assert linear_result['required_symbols'] == ['dense_forward']
+    assert linear_result['native_library_loaded'] is True
+    assert linear_result['symbol_available'] is True
+    assert linear_result['requires_device_pointers'] is True
+    assert linear_result['executed'] is False
+    assert linear_result['accepted'] is False
+
+
+def test_gpu_native_library_bridge_adapter_declares_current_native_forward_symbols():
+    symbol_names = {
+        'dense_forward',
+        'apply_relu',
+        'leaky_relu_forward',
+        'sigmoid_forward',
+        'tanh_forward',
+        'silu_forward',
+        'gelu_forward',
+        'add_forward',
+        'concat_forward',
+        'apply_maxpool',
+        'avgpool2d_forward',
+        'global_avgpool2d_forward',
+        'bn_eval_forward',
+        'im2col_forward',
+        'gemm_forward',
+        'cnhw_to_nchw',
+        'depthwise_conv2d_forward',
+        'layernorm2d_forward',
+        'groupnorm_forward',
+    }
+
+    class _SymbolLib:
+        def __init__(self):
+            for name in symbol_names:
+                setattr(self, name, lambda *args, **kwargs: None)
+
+    def _request(op_name, launch_family='elementwise_unary'):
+        return GpuCAbiKernelCall(
+            request_id=f'req_{op_name}',
+            node_name=f'node_{op_name}',
+            op_name=op_name,
+            op_code=0,
+            launch_family=launch_family,
+            launch_family_code=0,
+            dtype_code=1,
+            preferred_layout_code=0,
+            input_binding='input',
+            output_binding='output',
+            weight_binding='',
+            bias_binding='',
+            input_rank=4,
+            output_rank=4,
+            input_shape4=(1, 1, 1, 1),
+            output_shape4=(1, 1, 1, 1),
+            int_args8=(0, 0, 0, 0, 0, 0, 0, 0),
+            flags=(0, 0, 0, 0),
+        )
+
+    cases = {
+        'Flatten': ('reshape_view', 'device_pointer_alias', []),
+        'Identity': ('identity_alias', 'device_pointer_alias', []),
+        'Dropout': ('identity_alias', 'device_pointer_alias', []),
+        'DropPath': ('identity_alias', 'device_pointer_alias', []),
+        'Linear': ('gemm_affine', 'dense_forward', ['dense_forward']),
+        'ReLU': ('elementwise_unary', 'apply_relu', ['apply_relu']),
+        'LeakyReLU': ('elementwise_unary', 'leaky_relu_forward', ['leaky_relu_forward']),
+        'Sigmoid': ('elementwise_unary', 'sigmoid_forward', ['sigmoid_forward']),
+        'Tanh': ('elementwise_unary', 'tanh_forward', ['tanh_forward']),
+        'SiLU': ('elementwise_unary', 'silu_forward', ['silu_forward']),
+        'GELU': ('elementwise_unary', 'gelu_forward', ['gelu_forward']),
+        'Add': ('elementwise_merge', 'add_forward', ['add_forward']),
+        'Concat': ('concat_merge', 'concat_forward', ['concat_forward']),
+        'MaxPool2d': ('pool2d_nchw', 'apply_maxpool', ['apply_maxpool']),
+        'AvgPool2d': ('avgpool2d_nchw', 'avgpool2d_forward', ['avgpool2d_forward']),
+        'GlobalAvgPool2d': ('global_avgpool2d_nchw', 'global_avgpool2d_forward', ['global_avgpool2d_forward']),
+        'AdaptiveAvgPool2d': ('global_avgpool2d_nchw', 'global_avgpool2d_forward', ['global_avgpool2d_forward']),
+        'BatchNorm2d': ('batchnorm2d_nchw', 'bn_eval_forward', ['bn_eval_forward']),
+        'Conv2d': ('conv2d_nchw', 'conv2d_im2col_gemm', ['im2col_forward', 'gemm_forward', 'cnhw_to_nchw']),
+        'PointwiseConv2d': ('conv2d_nchw', 'conv2d_im2col_gemm', ['im2col_forward', 'gemm_forward', 'cnhw_to_nchw']),
+        'DepthwiseConv2d': ('depthwise_conv2d_nchw', 'depthwise_conv2d_forward', ['depthwise_conv2d_forward']),
+        'LayerNorm2d': ('layernorm2d_nchw', 'layernorm2d_forward', ['layernorm2d_forward']),
+        'GroupNorm': ('groupnorm_nchw', 'groupnorm_forward', ['groupnorm_forward']),
+    }
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=_SymbolLib())
+
+    for op_name, (launch_family, expected_symbol, expected_symbols) in cases.items():
+        result = adapter.submit_c_abi(_request(op_name, launch_family))
+        assert result['kernel_symbol'] == expected_symbol
+        assert result['required_symbols'] == expected_symbols
+        assert result['symbol_available'] is True
+        assert result['executed'] is False
+        assert result['accepted'] is False
+
+
+def test_gpu_native_library_bridge_adapter_reports_missing_required_symbol():
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=object())
+
+    result = adapter.submit_c_abi(
+        GpuCAbiKernelCall(
+            request_id='req_gelu',
+            node_name='gelu',
+            op_name='GELU',
+            op_code=0,
+            launch_family='elementwise_unary',
+            launch_family_code=0,
+            dtype_code=1,
+            preferred_layout_code=0,
+            input_binding='input',
+            output_binding='output',
+            weight_binding='',
+            bias_binding='',
+            input_rank=4,
+            output_rank=4,
+            input_shape4=(1, 1, 1, 1),
+            output_shape4=(1, 1, 1, 1),
+            int_args8=(0, 0, 0, 0, 0, 0, 0, 0),
+            flags=(0, 0, 0, 0),
+        )
+    )
+
+    assert result['kernel_symbol'] == 'gelu_forward'
+    assert result['required_symbols'] == ['gelu_forward']
+    assert result['symbol_available'] is False
+    assert result['accepted'] is False
+
+
+def test_bootstrap_subset_ops_all_have_lowering_shims():
+    from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
+    from minicnn.cuda_native.gpu_lowering import make_default_gpu_lowering_registry
+
+    registry = make_default_gpu_lowering_registry()
+    missing = []
+    for spec in list_gpu_kernel_specs():
+        try:
+            registry.get(spec.op_name)
+        except KeyError:
+            missing.append(spec.op_name)
+
+    assert missing == []
+
+
+def test_gpu_launch_descriptor_mapping_fields_are_read_only():
+    import pytest
+
+    from minicnn.cuda_native.gpu_dispatch import GpuLaunchDescriptor
+
+    descriptor = GpuLaunchDescriptor(
+        launch_family='gemm_affine',
+        input_bindings=('input',),
+        output_bindings=('output',),
+        param_bindings=('_w_linear_0',),
+        attr_bindings={'stride': 1},
+        input_shapes=((1, 4),),
+        output_shapes=((1, 2),),
+        tensor_dtype='float32',
+        param_layouts={'_w_linear_0': 'OI'},
+        normalized_tensor_args=({'kind': 'input', 'binding': 'input'},),
+        normalized_scalar_args=({'name': 'stride', 'value': 1},),
+    )
+
+    with pytest.raises(TypeError):
+        descriptor.attr_bindings['stride'] = 2
+    with pytest.raises(TypeError):
+        descriptor.param_layouts['_w_linear_0'] = 'IO'
+    with pytest.raises(TypeError):
+        descriptor.normalized_tensor_args[0]['binding'] = 'mutated'
+    with pytest.raises(TypeError):
+        descriptor.normalized_scalar_args[0]['value'] = 2
+
+
+def test_make_native_gpu_forward_executor_wires_runtime_and_native_adapter():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten', 'output': 'flat'},
+                {'type': 'Add', 'inputs': ['flat', 'flat'], 'output': 'sum'},
+            ],
+        },
+        (1, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    executor = make_native_gpu_forward_executor(
+        bound_lib=fake_lib,
+        reserve_bytes=4096,
+        reserve_buffers=4,
+    )
+
+    x = np.asarray([[1.0, 2.0, -3.0, -4.0]], dtype=np.float32)
+    result = executor.run(graph, x, params={})
+
+    np.testing.assert_allclose(result.output, (x * 2.0).astype(np.float32))
+    runtime_summary = executor.device_runtime.summary()
+    assert runtime_summary['native_device_pointers_enabled'] is True
+    assert runtime_summary['execution_kinds']['gpu_native_kernel:add_forward'] == 1
+
+    exec_summary = result.summary()
+    assert exec_summary['c_abi_bridge_results'][1]['dispatch_mode'] == 'gpu_native_library_bridge'
+    assert exec_summary['c_abi_bridge_results'][1]['required_symbols'] == ['add_forward']
+
+
+def test_gpu_stub_executor_uses_native_dense_forward_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 4),
+    )
+    params = {
+        '_w_linear_1': np.asarray([[1.0, 2.0, 3.0, 4.0], [0.5, -1.0, 0.0, 2.0]], dtype=np.float32),
+        '_b_linear_1': np.asarray([0.25, -0.5], dtype=np.float32),
+    }
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
+
+    x = np.asarray([[1.0, 2.0, 3.0, 4.0]], dtype=np.float32)
+    result = executor.run(graph, x, params=params)
+
+    expected = x @ params['_w_linear_1'].T + params['_b_linear_1']
+    np.testing.assert_allclose(result.output, expected.astype(np.float32))
+    assert len(fake_lib.dense_forward_calls) == 1
+
+    summary = runtime.summary()
+    assert summary['native_device_pointers_enabled'] is True
+    assert summary['execution_kinds']['gpu_native_kernel:dense_forward'] == 1
+    assert summary['device_pointer_allocation_events'] >= 4
+    assert summary['device_sync_to_device_events'] >= 3
+    assert summary['device_sync_to_host_events'] >= 1
+
+
+def test_gpu_stub_executor_uses_native_flatten_alias_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+            ],
+        },
+        (1, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
+
+    x = np.asarray([[[1.0, 2.0], [3.0, 4.0]]], dtype=np.float32)
+    result = executor.run(graph, x, params={})
+
+    np.testing.assert_allclose(result.output, x.reshape(1, -1))
+
+    summary = runtime.summary()
+    assert summary['native_device_pointers_enabled'] is True
+    assert summary['execution_kinds']['gpu_native_alias:flatten'] == 1
+    assert summary['device_pointer_allocation_events'] == 1
+
+    exec_summary = result.summary()
+    flatten_bridge_result = exec_summary['c_abi_bridge_results'][0]
+    assert flatten_bridge_result['kernel_symbol'] == 'device_pointer_alias'
+    assert flatten_bridge_result['required_symbols'] == []
+    assert flatten_bridge_result['symbol_available'] is True
+
+
+def test_gpu_stub_executor_uses_native_relu_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 3},
+                {'type': 'ReLU'},
+            ],
+        },
+        (1, 3),
+    )
+    params = {
+        '_w_linear_1': np.asarray([[1.0, 0.0, 0.0], [-1.0, -1.0, 0.0], [0.0, 0.5, 1.0]], dtype=np.float32),
+        '_b_linear_1': np.asarray([-2.0, 0.0, -1.0], dtype=np.float32),
+    }
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.asarray([[1.0, 2.0, 3.0]], dtype=np.float32)
+    result = executor.run(graph, x, params=params)
+
+    expected = np.maximum(x @ params['_w_linear_1'].T + params['_b_linear_1'], 0.0)
+    np.testing.assert_allclose(result.output, expected.astype(np.float32))
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:dense_forward'] == 1
+    assert summary['execution_kinds']['gpu_native_kernel:apply_relu'] == 1
+
+
+def test_gpu_stub_executor_uses_native_leaky_relu_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'LeakyReLU', 'negative_slope': 0.2},
+            ],
+        },
+        (1, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
+
+    x = np.asarray([[-2.0, -0.5, 0.0, 3.0]], dtype=np.float32)
+    result = executor.run(graph, x, params={})
+
+    expected = np.where(x >= 0.0, x, 0.2 * x).astype(np.float32)
+    np.testing.assert_allclose(result.output, expected)
+
+    summary = runtime.summary()
+    assert summary['native_device_pointers_enabled'] is True
+    assert summary['execution_kinds']['gpu_native_kernel:leaky_relu_forward'] == 1
+    assert summary['device_sync_to_device_events'] >= 1
+    assert summary['device_sync_to_host_events'] >= 1
+
+    exec_summary = result.summary()
+    leaky_bridge_result = exec_summary['c_abi_bridge_results'][0]
+    assert leaky_bridge_result['kernel_symbol'] == 'leaky_relu_forward'
+    assert leaky_bridge_result['required_symbols'] == ['leaky_relu_forward']
+    assert leaky_bridge_result['symbol_available'] is True
+
+
+def test_gpu_stub_executor_uses_native_add_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten', 'output': 'flat'},
+                {'type': 'Add', 'inputs': ['flat', 'flat'], 'output': 'sum'},
+            ],
+        },
+        (1, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
+
+    x = np.asarray([[1.0, -2.0, 3.0, -4.0]], dtype=np.float32)
+    result = executor.run(graph, x, params={})
+
+    np.testing.assert_allclose(result.output, (x.reshape(1, -1) * 2.0).astype(np.float32))
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:add_forward'] == 1
+
+    exec_summary = result.summary()
+    add_bridge_result = exec_summary['c_abi_bridge_results'][1]
+    assert add_bridge_result['kernel_symbol'] == 'add_forward'
+    assert add_bridge_result['required_symbols'] == ['add_forward']
+    assert add_bridge_result['symbol_available'] is True
+
+
+def test_gpu_stub_executor_uses_native_concat_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten', 'output': 'flat'},
+                {'type': 'Concat', 'inputs': ['flat', 'flat'], 'axis': 1, 'output': 'cat'},
+            ],
+        },
+        (1, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
+
+    x = np.asarray([[1.0, -2.0, 3.0, -4.0]], dtype=np.float32)
+    result = executor.run(graph, x, params={})
+
+    np.testing.assert_allclose(result.output, np.concatenate([x, x], axis=1).astype(np.float32))
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:concat_forward'] == 1
+
+    exec_summary = result.summary()
+    concat_bridge_result = exec_summary['c_abi_bridge_results'][1]
+    assert concat_bridge_result['kernel_symbol'] == 'concat_forward'
+    assert concat_bridge_result['required_symbols'] == ['concat_forward']
+    assert concat_bridge_result['symbol_available'] is True
+
+
+def test_gpu_stub_executor_uses_native_maxpool_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'MaxPool2d', 'kernel_size': 2, 'stride': 2},
+            ],
+        },
+        (1, 1, 4, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.arange(16, dtype=np.float32).reshape(1, 1, 4, 4)
+    result = executor.run(graph, x)
+
+    expected = np.asarray([[[[5.0, 7.0], [13.0, 15.0]]]], dtype=np.float32)
+    np.testing.assert_allclose(result.output, expected)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:apply_maxpool'] == 1
+
+
+def test_gpu_stub_executor_uses_native_global_avgpool_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'GlobalAvgPool2d'},
+            ],
+        },
+        (1, 2, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.asarray([[[[1.0, 3.0], [5.0, 7.0]], [[2.0, 4.0], [6.0, 8.0]]]], dtype=np.float32)
+    result = executor.run(graph, x)
+
+    expected = np.asarray([[[[4.0]], [[5.0]]]], dtype=np.float32)
+    np.testing.assert_allclose(result.output, expected)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:global_avgpool2d_forward'] == 1
+
+
+def test_gpu_stub_executor_uses_native_avgpool_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'AvgPool2d', 'kernel_size': 2, 'stride': 2, 'padding': 1},
+            ],
+        },
+        (1, 1, 3, 3),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.arange(1, 10, dtype=np.float32).reshape(1, 1, 3, 3)
+    result = executor.run(graph, x)
+
+    padded = np.pad(x, ((0, 0), (0, 0), (1, 1), (1, 1)))
+    expected = np.asarray(
+        [[[
+            [
+                padded[0, 0, 0:2, 0:2].mean(),
+                padded[0, 0, 0:2, 2:4].mean(),
+            ],
+            [
+                padded[0, 0, 2:4, 0:2].mean(),
+                padded[0, 0, 2:4, 2:4].mean(),
+            ],
+        ]]],
+        dtype=np.float32,
+    )
+    np.testing.assert_allclose(result.output, expected, rtol=1e-6, atol=1e-6)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:avgpool2d_forward'] == 1
+
+
+def test_gpu_stub_executor_uses_native_gelu_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'GELU'},
+            ],
+        },
+        (1, 1, 1, 4),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+
+    x = np.asarray([[[[-1.0, 0.0, 1.0, 2.0]]]], dtype=np.float32)
+    result = executor.run(graph, x)
+
+    expected = 0.5 * x * (1.0 + np.tanh(np.sqrt(2.0 / np.pi) * (x + 0.044715 * x ** 3)))
+    np.testing.assert_allclose(result.output, expected.astype(np.float32), rtol=1e-6, atol=1e-6)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:gelu_forward'] == 1
+
+
+def test_gpu_stub_executor_uses_native_conv2d_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Conv2d', 'out_channels': 2, 'kernel_size': 2, 'padding': 0, 'bias': False},
+            ],
+        },
+        (1, 1, 3, 3),
+    )
+    params = {
+        '_w_conv2d_0': np.asarray(
+            [
+                [[[1.0, 0.0], [0.0, 1.0]]],
+                [[[0.5, 0.5], [0.5, 0.5]]],
+            ],
+            dtype=np.float32,
+        ),
+    }
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=8192, num_buffers=8)
+    adapter = GpuNativeLibraryBridgeAdapter(bound_lib=fake_lib)
+    executor = GpuStubExecutor(device_runtime=runtime, c_abi_bridge_adapter=adapter)
+
+    x = np.arange(9, dtype=np.float32).reshape(1, 1, 3, 3)
+    result = executor.run(graph, x, params=params)
+
+    expected = np.asarray(
+        [
+            [
+                [[4.0, 6.0], [10.0, 12.0]],
+                [[4.0, 6.0], [10.0, 12.0]],
+            ]
+        ],
+        dtype=np.float32,
+    )
+    np.testing.assert_allclose(result.output, expected)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:conv2d_im2col_gemm'] == 1
+
+    exec_summary = result.summary()
+    conv_bridge_result = exec_summary['c_abi_bridge_results'][0]
+    assert conv_bridge_result['kernel_symbol'] == 'conv2d_im2col_gemm'
+    assert conv_bridge_result['required_symbols'] == ['im2col_forward', 'gemm_forward', 'cnhw_to_nchw']
+    assert conv_bridge_result['symbol_available'] is True
+
+
+def test_gpu_stub_executor_uses_native_pointwise_conv_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'PointwiseConv2d', 'out_channels': 2, 'bias': False},
+            ],
+        },
+        (1, 1, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.asarray([[[[1.0, 2.0], [3.0, 4.0]]]], dtype=np.float32)
+    params = {
+        '_w_pointwiseconv2d_0': np.asarray([[[[2.0]]], [[[3.0]]]], dtype=np.float32),
+    }
+
+    result = executor.run(graph, x, params=params)
+
+    expected = np.concatenate([x * 2.0, x * 3.0], axis=1)
+    np.testing.assert_allclose(result.output, expected.astype(np.float32), rtol=1e-6, atol=1e-6)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:conv2d_im2col_gemm'] == 1
+
+
+def test_gpu_stub_executor_uses_native_depthwise_conv_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'DepthwiseConv2d', 'out_channels': 2, 'kernel_size': 2, 'padding': 0, 'bias': False},
+            ],
+        },
+        (1, 2, 3, 3),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=8192, num_buffers=8)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.arange(18, dtype=np.float32).reshape(1, 2, 3, 3)
+    params = {
+        '_w_depthwiseconv2d_0': np.asarray(
+            [
+                [[[1.0, 0.0], [0.0, 1.0]]],
+                [[[0.5, 0.5], [0.5, 0.5]]],
+            ],
+            dtype=np.float32,
+        ),
+    }
+
+    result = executor.run(graph, x, params=params)
+
+    expected = np.asarray(
+        [
+            [
+                [[4.0, 6.0], [10.0, 12.0]],
+                [[22.0, 24.0], [28.0, 30.0]],
+            ]
+        ],
+        dtype=np.float32,
+    )
+    np.testing.assert_allclose(result.output, expected.astype(np.float32), rtol=1e-6, atol=1e-6)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:depthwise_conv2d_forward'] == 1
+
+
+def test_gpu_stub_executor_uses_native_layernorm2d_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'LayerNorm2d', 'num_channels': 2, 'eps': 1e-5},
+            ],
+        },
+        (1, 2, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.asarray([[[[1.0, 2.0], [3.0, 4.0]], [[2.0, 4.0], [6.0, 8.0]]]], dtype=np.float32)
+    params = {
+        '_w_layernorm2d_0': np.asarray([1.0, 1.5], dtype=np.float32),
+        '_b_layernorm2d_0': np.asarray([0.0, -0.5], dtype=np.float32),
+    }
+
+    result = executor.run(graph, x, params=params)
+
+    mean = x.mean(axis=1, keepdims=True)
+    var = x.var(axis=1, keepdims=True)
+    expected = ((x - mean) / np.sqrt(var + 1e-5)) * np.asarray([1.0, 1.5], dtype=np.float32).reshape(1, 2, 1, 1)
+    expected += np.asarray([0.0, -0.5], dtype=np.float32).reshape(1, 2, 1, 1)
+    np.testing.assert_allclose(result.output, expected.astype(np.float32), rtol=1e-5, atol=1e-5)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:layernorm2d_forward'] == 1
+
+
+def test_gpu_stub_executor_uses_native_groupnorm_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'GroupNorm', 'num_groups': 2, 'eps': 1e-5},
+            ],
+        },
+        (1, 4, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.arange(1, 17, dtype=np.float32).reshape(1, 4, 2, 2)
+    gamma = np.asarray([1.0, 1.25, 1.5, 1.75], dtype=np.float32)
+    beta = np.asarray([0.0, -0.5, 0.25, 0.75], dtype=np.float32)
+    params = {
+        '_w_groupnorm_0': gamma,
+        '_b_groupnorm_0': beta,
+    }
+
+    result = executor.run(graph, x, params=params)
+
+    x_group = x.reshape(1, 2, 2, 2, 2)
+    mean = x_group.mean(axis=(2, 3, 4), keepdims=True)
+    var = x_group.var(axis=(2, 3, 4), keepdims=True)
+    x_hat = ((x_group - mean) / np.sqrt(var + 1e-5)).reshape(1, 4, 2, 2)
+    expected = x_hat * gamma.reshape(1, 4, 1, 1) + beta.reshape(1, 4, 1, 1)
+    np.testing.assert_allclose(result.output, expected.astype(np.float32), rtol=1e-5, atol=1e-5)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:groupnorm_forward'] == 1

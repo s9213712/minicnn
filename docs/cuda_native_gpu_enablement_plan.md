@@ -1,6 +1,6 @@
 # cuda_native GPU Enablement Plan
 
-Last updated: 2026-04-24
+Last updated: 2026-04-25
 
 This document defines how `cuda_native` should move from a NumPy reference
 backend into a real GPU execution backend.
@@ -21,10 +21,12 @@ See also:
 - [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md)
 - [cuda_native_expansion_plan.md](cuda_native_expansion_plan.md)
 - [backend_capabilities.md](backend_capabilities.md)
+- [cuda_native_gpu_parity_matrix.md](cuda_native_gpu_parity_matrix.md)
+- [cuda_native_gpu_enablement_status.md](cuda_native_gpu_enablement_status.md)
 
 ## Current State
 
-Today, `cuda_native` is:
+Today, default `cuda_native` execution is:
 
 - a native graph/training contract backend
 - a NumPy reference execution backend
@@ -35,18 +37,32 @@ Today, `cuda_native` is:
   - parity/tolerance work
   - planner/telemetry experimentation
 
-Today, `cuda_native` is **not**:
+The opt-in `gpu_native` execution mode is now a partial real-CUDA path:
 
-- a real CUDA-kernel backend
-- a GPU execution backend
+- supported forward ops lower through device-pointer CUDA kernels when a bound
+  native library is available
+- supported training subsets run native forward/loss/backward/update helper
+  steps through the CUDA C ABI
+- unsupported graphs remain rejected or fall back only where the contract says
+  fallback is allowed
+
+Today, `gpu_native` is **not yet**:
+
+- a full-graph CUDA backend
+- a full-backward generalization layer
 - a throughput-oriented runtime
 
 That means:
 
-- `engine.backend=cuda_native` currently executes on CPU through NumPy
-- support for `AMP`, ordered DAG, `Add`, `Concat`, `ResidualBlock`,
-  `ConvNeXtBlock`, and related ops is about semantics and correctness, not GPU
-  acceleration
+- `engine.backend=cuda_native` without `execution_mode=gpu_native` still uses
+  the reference NumPy execution mode
+- `execution_mode=gpu_native` is the GPU-first path for the supported subset
+- GPU-first diagnostics now expose a machine-readable fallback policy: supported
+  subsets keep `reference_numpy` available as a non-active backup, while
+  unsupported GPU subsets mark the NumPy fallback as active instead of pretending
+  that GPU lowering succeeded
+- support for broader composite blocks is still about semantics/correctness
+  until those blocks are lowered into native GPU training composition
 
 ## Why GPU Enablement Is A Separate Phase
 
@@ -116,7 +132,7 @@ Current status:
 
 - initial execution-mode contract slice landed
 - successful `cuda_native` runs now explicitly report `execution_mode=reference_numpy` and `tensor_execution_device=cpu` in CLI, `summary.json`, and `metrics.jsonl`
-- `gpu_native` is now a planned execution mode, not a silently implied one
+- `gpu_native` is now an explicit partial-forward execution track, not a silently implied full-training mode
 - initial device-runtime substrate landed:
   - `DeviceTensor`
   - `DeviceRuntime`
@@ -126,6 +142,30 @@ Current status:
 - eval forward now runs through an explicit staged helper with execution telemetry
 - reserved planner buffers now back staged output allocation/release telemetry
 - train/eval input staging now also prefers reserved buffers, so the pool models a real staged IO lifecycle
+- capability/validation surfaces now expose machine-readable GPU readiness:
+  - `execution_mode_readiness` in `cuda-native-capabilities`
+  - `execution_readiness_assessment` in validation and train preambles
+  - `gpu_kernel_registry_surface` in `cuda-native-capabilities`
+- initial GPU dispatch seam now exists:
+  - `gpu_dispatch.py`
+  - per-node bootstrap dispatch plans for supported subset graphs
+  - explicit unsupported-op reporting for graphs outside the bootstrap subset
+  - partial plans no longer silently drop unsupported nodes; unsupported steps stay visible in the plan
+  - per-step parameter-binding manifests for future kernel lowering ABI
+- native device-pointer forward execution now exists for the bootstrap subset:
+  - `Flatten` uses device-pointer aliasing
+  - `Linear`, `ReLU`, `LeakyReLU`, `Add`, `Concat`, `MaxPool2d`, and a constrained `Conv2d` path lower to native CUDA symbols when a bound library is attached
+  - `Linear + SoftmaxCE + SGD` now has a narrow native GPU training-step helper that exercises forward, loss gradient, dense backward, and optimizer update through the C ABI
+  - `train-native engine.execution_mode=gpu_native` now accepts the narrow `Flatten -> Linear`, `Flatten -> Linear -> ReLU -> Linear`, `MaxPool2d -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> ReLU -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`, `Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`, and `Conv2d(valid, bias=false) -> ReLU -> Conv2d(valid, bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` / `CrossEntropyLoss` / `SGD` subset
+  - CUDA runtime preflight now fails before allocation when the installed driver/runtime pair is incompatible, instead of aborting inside `cudaMalloc`
+  - hermetic GPU training parity matrix now exists in `cuda_native_gpu_parity_matrix.md`
+  - remaining blockers are full graph-level GPU backward generalization and composite-block GPU training composition
+- bridge telemetry now tracks the required CUDA symbols for the current native
+  forward surface, including activation, pool, normalization, convolution, and
+  alias ops, so diagnostics no longer under-report native kernel requirements
+- training lowering summaries now expose `fallback_policy`, making the intended
+  `gpu_native` first / `reference_numpy` backup contract explicit for every
+  validation surface that includes the lowering plan
 
 Goal:
 

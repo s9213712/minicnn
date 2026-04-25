@@ -1,318 +1,24 @@
 from __future__ import annotations
 
-import json
-import time
-from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 
-from minicnn.cuda_native.api import assess_cuda_native_support_tier
-from minicnn.cuda_native.backward import BackwardExecutor
+from minicnn.cuda_native.api import assess_cuda_native_support_tier, resolve_cuda_native_execution_mode
 from minicnn.cuda_native.device_runtime import DeviceRuntime
-from minicnn.cuda_native.device_runtime import DeviceRuntime
-from minicnn.cuda_native.executor import ForwardExecutor
 from minicnn.cuda_native.graph import NativeGraph
 from minicnn.cuda_native.planner import make_plan
-from minicnn.cuda_native.training import train_step
 from minicnn.flex.runtime import create_run_dir, dump_summary
+from minicnn.unified._cuda_native_context import NativeTrainingContext
+from minicnn.unified._cuda_native_training_loop import run_training_loop
 from minicnn.unified._cuda_native_bridge import (
     _best_checkpoint_path,
-    _build_epoch_row,
     _build_training_summary,
-    _epoch_log_message,
-    _evaluate,
     _init_params,
     _load_numpy_data,
-    _make_scheduler,
     _resolve_loss_type,
 )
-
-
-def _optimizer_runtime_snapshot(optimizer_state: dict[str, Any]) -> dict[str, Any]:
-    runtime = dict(optimizer_state.get('optimizer_runtime', {}))
-    state_keys = (
-        'velocity',
-        'adamw_m',
-        'adamw_v',
-        'adam_m',
-        'adam_v',
-        'rmsprop_v',
-        'rmsprop_buf',
-    )
-    tensor_count = 0
-    total_bytes = 0
-    for state_key in state_keys:
-        bucket = optimizer_state.get(state_key, {})
-        if not isinstance(bucket, dict):
-            continue
-        for value in bucket.values():
-            if isinstance(value, np.ndarray):
-                tensor_count += 1
-                total_bytes += int(value.nbytes)
-    runtime['state_tensor_count'] = tensor_count
-    runtime['state_total_bytes'] = total_bytes
-    runtime['state_total_kb'] = round(total_bytes / 1024.0, 3)
-    scratch_bucket = optimizer_state.get('optimizer_scratch', {})
-    scratch_tensor_count = 0
-    scratch_total_bytes = 0
-    if isinstance(scratch_bucket, dict):
-        for value in scratch_bucket.values():
-            if isinstance(value, np.ndarray):
-                scratch_tensor_count += 1
-                scratch_total_bytes += int(value.nbytes)
-    runtime['scratch_tensor_count'] = scratch_tensor_count
-    runtime['scratch_total_bytes'] = scratch_total_bytes
-    runtime['scratch_total_kb'] = round(scratch_total_bytes / 1024.0, 3)
-    grad_buffer = optimizer_state.get('grad_buffer', {})
-    if isinstance(grad_buffer, dict):
-        grad_buffer_tensors = 0
-        grad_buffer_bytes = 0
-        for value in grad_buffer.values():
-            if isinstance(value, np.ndarray):
-                grad_buffer_tensors += 1
-                grad_buffer_bytes += int(value.nbytes)
-        runtime['grad_buffer_tensor_count'] = grad_buffer_tensors
-        runtime['grad_buffer_total_bytes'] = grad_buffer_bytes
-        runtime['grad_buffer_total_kb'] = round(grad_buffer_bytes / 1024.0, 3)
-        active_keys = optimizer_state.get('grad_buffer_active_keys', set())
-        if isinstance(active_keys, set):
-            active_tensors = 0
-            active_bytes = 0
-            for key in active_keys:
-                value = grad_buffer.get(key)
-                if isinstance(value, np.ndarray):
-                    active_tensors += 1
-                    active_bytes += int(value.nbytes)
-            runtime['grad_buffer_active_tensor_count'] = active_tensors
-            runtime['grad_buffer_active_total_bytes'] = active_bytes
-            runtime['grad_buffer_active_total_kb'] = round(active_bytes / 1024.0, 3)
-    return runtime
-
-
-def _profile_hotspots(
-    graph: NativeGraph,
-    x_sample: np.ndarray,
-    params: dict[str, np.ndarray],
-    *,
-    amp_enabled: bool,
-    mode: str,
-    top_k: int = 5,
-) -> dict[str, Any]:
-    from minicnn.cuda_native.debug import TracingForwardExecutor
-
-    if graph.input_spec is None:
-        return {}
-    tracing_executor = TracingForwardExecutor()
-    feeds = {
-        graph.input_spec.name: (x_sample.astype(np.float16) if amp_enabled else x_sample),
-    }
-    profile_params = params
-    if amp_enabled:
-        profile_params = {
-            key: (
-                value.astype(np.float16)
-                if isinstance(value, np.ndarray) and np.issubdtype(value.dtype, np.floating)
-                else value
-            )
-            for key, value in params.items()
-        }
-    _ctx, trace = tracing_executor.run(graph, feeds, profile_params, mode=mode)
-    trace_summary = trace.summary()
-    steps = trace_summary.get('steps', [])
-    sorted_steps = sorted(
-        (step for step in steps if isinstance(step, dict)),
-        key=lambda step: float(step.get('elapsed_ms', 0.0)),
-        reverse=True,
-    )
-    top_nodes = [
-        {
-            'node': step.get('node'),
-            'op': step.get('op'),
-            'category': step.get('category'),
-            'elapsed_ms': step.get('elapsed_ms'),
-        }
-        for step in sorted_steps[:top_k]
-    ]
-    op_totals: dict[str, float] = {}
-    op_counts: dict[str, int] = {}
-    category_totals: dict[str, float] = {}
-    for step in sorted_steps:
-        op = str(step.get('op', 'unknown'))
-        category = str(step.get('category', 'unknown'))
-        op_totals[op] = op_totals.get(op, 0.0) + float(step.get('elapsed_ms', 0.0))
-        op_counts[op] = op_counts.get(op, 0) + 1
-        category_totals[category] = category_totals.get(category, 0.0) + float(step.get('elapsed_ms', 0.0))
-    top_ops = [
-        {
-            'op': op,
-            'elapsed_ms': round(elapsed, 3),
-            'calls': op_counts[op],
-            'avg_ms': round(elapsed / float(max(op_counts[op], 1)), 3),
-        }
-        for op, elapsed in sorted(op_totals.items(), key=lambda item: item[1], reverse=True)[:top_k]
-    ]
-    top_categories = [
-        {'category': category, 'elapsed_ms': round(elapsed, 3)}
-        for category, elapsed in sorted(category_totals.items(), key=lambda item: item[1], reverse=True)[:top_k]
-    ]
-    return {
-        'profile_mode': mode,
-        'sample_batch_size': int(x_sample.shape[0]),
-        'trace_total_ms': round(float(trace_summary.get('total_ms', 0.0)), 3),
-        'trace_steps': len(steps),
-        'top_nodes': top_nodes,
-        'top_ops': top_ops,
-        'top_categories': top_categories,
-    }
-
-
-def _build_hotspot_diff_summary(
-    train_hotspots: dict[str, Any],
-    eval_hotspots: dict[str, Any],
-    *,
-    top_k: int = 5,
-) -> dict[str, Any]:
-    train_nodes = {
-        (str(item.get('node')), str(item.get('op'))): float(item.get('elapsed_ms', 0.0))
-        for item in train_hotspots.get('top_nodes', [])
-        if isinstance(item, dict) and item.get('node') is not None
-    }
-    eval_nodes = {
-        (str(item.get('node')), str(item.get('op'))): float(item.get('elapsed_ms', 0.0))
-        for item in eval_hotspots.get('top_nodes', [])
-        if isinstance(item, dict) and item.get('node') is not None
-    }
-    train_ops = {
-        str(item.get('op')): float(item.get('elapsed_ms', 0.0))
-        for item in train_hotspots.get('top_ops', [])
-        if isinstance(item, dict) and item.get('op') is not None
-    }
-    eval_ops = {
-        str(item.get('op')): float(item.get('elapsed_ms', 0.0))
-        for item in eval_hotspots.get('top_ops', [])
-        if isinstance(item, dict) and item.get('op') is not None
-    }
-    all_ops = sorted(set(train_ops) | set(eval_ops))
-    op_deltas = []
-    for op in all_ops:
-        train_elapsed = train_ops.get(op, 0.0)
-        eval_elapsed = eval_ops.get(op, 0.0)
-        op_deltas.append(
-            {
-                'op': op,
-                'train_elapsed_ms': round(train_elapsed, 3),
-                'eval_elapsed_ms': round(eval_elapsed, 3),
-                'delta_ms': round(train_elapsed - eval_elapsed, 3),
-                'train_eval_ratio': (
-                    round(train_elapsed / eval_elapsed, 3) if eval_elapsed > 0.0 else None
-                ),
-            }
-        )
-    op_deltas.sort(key=lambda item: abs(float(item.get('delta_ms', 0.0))), reverse=True)
-    train_categories = {
-        str(item.get('category')): float(item.get('elapsed_ms', 0.0))
-        for item in train_hotspots.get('top_categories', [])
-        if isinstance(item, dict) and item.get('category') is not None
-    }
-    eval_categories = {
-        str(item.get('category')): float(item.get('elapsed_ms', 0.0))
-        for item in eval_hotspots.get('top_categories', [])
-        if isinstance(item, dict) and item.get('category') is not None
-    }
-    all_categories = sorted(set(train_categories) | set(eval_categories))
-    category_deltas = []
-    for category in all_categories:
-        train_elapsed = train_categories.get(category, 0.0)
-        eval_elapsed = eval_categories.get(category, 0.0)
-        category_deltas.append(
-            {
-                'category': category,
-                'train_elapsed_ms': round(train_elapsed, 3),
-                'eval_elapsed_ms': round(eval_elapsed, 3),
-                'delta_ms': round(train_elapsed - eval_elapsed, 3),
-                'train_eval_ratio': (
-                    round(train_elapsed / eval_elapsed, 3) if eval_elapsed > 0.0 else None
-                ),
-            }
-        )
-    category_deltas.sort(key=lambda item: abs(float(item.get('delta_ms', 0.0))), reverse=True)
-    all_nodes = sorted(set(train_nodes) | set(eval_nodes))
-    node_deltas = []
-    for node_key in all_nodes:
-        train_elapsed = train_nodes.get(node_key, 0.0)
-        eval_elapsed = eval_nodes.get(node_key, 0.0)
-        node_name, op_name = node_key
-        node_deltas.append(
-            {
-                'node': node_name,
-                'op': op_name,
-                'train_elapsed_ms': round(train_elapsed, 3),
-                'eval_elapsed_ms': round(eval_elapsed, 3),
-                'delta_ms': round(train_elapsed - eval_elapsed, 3),
-                'train_eval_ratio': (
-                    round(train_elapsed / eval_elapsed, 3) if eval_elapsed > 0.0 else None
-                ),
-            }
-        )
-    node_deltas.sort(key=lambda item: abs(float(item.get('delta_ms', 0.0))), reverse=True)
-    train_total = float(train_hotspots.get('trace_total_ms', 0.0))
-    eval_total = float(eval_hotspots.get('trace_total_ms', 0.0))
-    bottleneck_summary = {
-        'dominant_train_op': op_deltas[0]['op'] if op_deltas else None,
-        'dominant_train_eval_delta_op': op_deltas[0]['op'] if op_deltas else None,
-        'dominant_train_eval_delta_node': node_deltas[0]['node'] if node_deltas else None,
-        'dominant_train_eval_delta_category': category_deltas[0]['category'] if category_deltas else None,
-    }
-    return {
-        'train_total_ms': round(train_total, 3),
-        'eval_total_ms': round(eval_total, 3),
-        'delta_ms': round(train_total - eval_total, 3),
-        'train_eval_ratio': round(train_total / eval_total, 3) if eval_total > 0.0 else None,
-        'bottleneck_summary': bottleneck_summary,
-        'top_category_deltas': category_deltas[:top_k],
-        'top_node_deltas': node_deltas[:top_k],
-        'top_op_deltas': op_deltas[:top_k],
-    }
-
-
-@dataclass
-class NativeTrainingContext:
-    cfg: dict[str, Any]
-    graph: NativeGraph
-    params: dict[str, np.ndarray]
-    x_train: np.ndarray
-    y_train: np.ndarray
-    x_val: np.ndarray
-    y_val: np.ndarray
-    input_shape: tuple[int, ...]
-    planner_summary: dict[str, Any]
-    batch_size: int
-    epochs: int
-    lr: float
-    optimizer_type: str
-    weight_decay: float
-    momentum: float
-    grad_clip_global: float
-    grad_accum_steps: int
-    amp: bool
-    amp_loss_scale: float
-    amp_dynamic_scale: bool
-    amp_scale_growth: float
-    amp_scale_backoff: float
-    amp_scale_window: int
-    loss_type: str
-    model_cfg: dict[str, Any]
-    loss_cfg: dict[str, Any]
-    optimizer_cfg: dict[str, Any]
-    scheduler_cfg: dict[str, Any]
-    support_tier_assessment: dict[str, Any]
-    execution_mode: str
-    tensor_execution_device: str
-    device_runtime: DeviceRuntime
-
 
 def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeTrainingContext:
     dataset_cfg = cfg.get('dataset', {})
@@ -351,9 +57,47 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
         **planner_summary_raw,
         **({} if not isinstance(buffer_plan, dict) else buffer_plan),
     }
+    execution_mode_info = resolve_cuda_native_execution_mode(cfg)
+    selected_execution_mode = str(execution_mode_info.get('effective_execution_mode', 'reference_numpy'))
+    requested_execution_mode = str(execution_mode_info.get('selected_execution_mode', selected_execution_mode))
+    execution_mode_policy = {
+        key: execution_mode_info[key]
+        for key in (
+            'fallback_execution_mode',
+            'fallback_available',
+            'fallback_active',
+            'fallback_reason',
+            'gpu_native_lowering_ready',
+            'gpu_native_runtime_ready',
+        )
+        if key in execution_mode_info
+    }
+    tensor_execution_device = 'gpu' if selected_execution_mode == 'gpu_native' else 'cpu'
+    bound_lib = None
+    if selected_execution_mode == 'gpu_native':
+        from minicnn.core._cuda_library import bind_symbols, ensure_cuda_runtime_available, load_library
+
+        try:
+            bound_lib = bind_symbols(load_library())
+            ensure_cuda_runtime_available(bound_lib)
+        except RuntimeError as exc:
+            if requested_execution_mode != 'gpu_native_auto':
+                raise
+            selected_execution_mode = 'reference_numpy'
+            tensor_execution_device = 'cpu'
+            bound_lib = None
+            execution_mode_policy = {
+                **execution_mode_policy,
+                'fallback_execution_mode': 'reference_numpy',
+                'fallback_available': True,
+                'fallback_active': True,
+                'fallback_reason': str(exc),
+                'gpu_native_runtime_ready': False,
+            }
     device_runtime = DeviceRuntime(
-        execution_mode='reference_numpy',
-        tensor_execution_device='cpu',
+        execution_mode=selected_execution_mode,
+        tensor_execution_device=tensor_execution_device,
+        bound_lib=bound_lib,
     )
     device_runtime.reserve_from_planner(
         total_bytes=int(planner_summary.get('total_bytes', 0)),
@@ -392,295 +136,12 @@ def prepare_training_context(cfg: dict[str, Any], graph: NativeGraph) -> NativeT
         optimizer_cfg=optim_cfg,
         scheduler_cfg=scheduler_cfg,
         support_tier_assessment=assess_cuda_native_support_tier(cfg),
-        execution_mode='reference_numpy',
-        tensor_execution_device='cpu',
+        execution_mode=selected_execution_mode,
+        selected_execution_mode=requested_execution_mode,
+        tensor_execution_device=tensor_execution_device,
+        execution_mode_policy=execution_mode_policy,
         device_runtime=device_runtime,
     )
-
-
-def run_training_loop(
-    ctx: NativeTrainingContext,
-    *,
-    run_dir: Path,
-) -> tuple[dict[str, np.ndarray], float, dict[str, Any], dict[str, Any], dict[str, Any]]:
-    metrics_path = run_dir / 'metrics.jsonl'
-    fwd = ForwardExecutor()
-    bwd = BackwardExecutor()
-    optimizer_view = SimpleNamespace(lr=ctx.lr)
-    scheduler, scheduler_kind = _make_scheduler(ctx.scheduler_cfg, optimizer_view)
-    optimizer_state: dict[str, Any] = {}
-    best_val_acc = float('-inf')
-    best_params = dict(ctx.params)
-    params = ctx.params
-    rng = np.random.default_rng(int(ctx.cfg.get('train', {}).get('init_seed', ctx.cfg.get('dataset', {}).get('seed', 42))))
-    prev_amp_snapshot = {
-        'skipped_steps': 0,
-        'overflow_steps': 0,
-        'finite_steps': 0,
-        'cache_allocations': 0,
-        'cache_updates': 0,
-        'cache_hits': 0,
-    }
-    prev_optimizer_snapshot = {
-        'steps': 0,
-        'state_tensor_allocations': 0,
-        'state_tensor_updates': 0,
-        'scratch_tensor_allocations': 0,
-        'scratch_tensor_updates': 0,
-        'grad_buffer_allocations': 0,
-        'grad_buffer_reuses': 0,
-        'grad_buffer_reset_events': 0,
-        'grad_buffer_zeroed_tensors': 0,
-    }
-    epoch_times: list[float] = []
-    planner_epoch_state = {
-        'strategy': str(ctx.planner_summary.get('strategy', 'unknown')),
-        'num_buffers': int(ctx.planner_summary.get('num_buffers', 0)),
-        'total_bytes': int(ctx.planner_summary.get('total_bytes', 0)),
-        'total_kb': float(ctx.planner_summary.get('total_kb', 0.0)),
-        'peak_live_bytes': int(ctx.planner_summary.get('peak_live_bytes', 0)),
-        'peak_live_kb': float(ctx.planner_summary.get('peak_live_kb', 0.0)),
-        'reuse_events': int(ctx.planner_summary.get('reuse_events', 0)),
-        'reuse_slack_bytes': int(ctx.planner_summary.get('reuse_slack_bytes', 0)),
-    }
-
-    with metrics_path.open('w', encoding='utf-8') as mf:
-        for epoch in range(1, ctx.epochs + 1):
-            t0 = time.perf_counter()
-            idx = rng.permutation(ctx.x_train.shape[0])
-            x_shuf, y_shuf = ctx.x_train[idx], ctx.y_train[idx]
-            running_loss = 0.0
-            seen = 0
-            num_batches = (x_shuf.shape[0] + ctx.batch_size - 1) // ctx.batch_size
-            batch_idx = 0
-            for i in range(0, x_shuf.shape[0], ctx.batch_size):
-                batch_idx += 1
-                xb = x_shuf[i:i + ctx.batch_size]
-                yb = y_shuf[i:i + ctx.batch_size]
-                if xb.shape[0] == 0:
-                    continue
-                xb_device = ctx.device_runtime.stage_to_device(
-                    xb,
-                    name=ctx.graph.input_spec.name if ctx.graph.input_spec else 'input',
-                    prefer_reserved=True,
-                )
-                apply_optimizer_step = (
-                    batch_idx % ctx.grad_accum_steps == 0
-                    or batch_idx == num_batches
-                )
-                loss_val, params = train_step(
-                    ctx.graph,
-                    xb_device.data,
-                    yb,
-                    params,
-                    lr=optimizer_view.lr,
-                    loss_type=ctx.loss_type,
-                    optimizer_type=ctx.optimizer_type,
-                    weight_decay=ctx.weight_decay,
-                    momentum=ctx.momentum,
-                    label_smoothing=float(ctx.loss_cfg.get('label_smoothing', 0.0)),
-                    grad_accum_steps=ctx.grad_accum_steps,
-                    apply_optimizer_step=apply_optimizer_step,
-                    amp_enabled=ctx.amp,
-                    amp_loss_scale=ctx.amp_loss_scale,
-                    amp_dynamic_scale=ctx.amp_dynamic_scale,
-                    amp_scale_growth=ctx.amp_scale_growth,
-                    amp_scale_backoff=ctx.amp_scale_backoff,
-                    amp_scale_window=ctx.amp_scale_window,
-                    optimizer_state=optimizer_state,
-                    grad_clip_global=ctx.grad_clip_global,
-                    fwd_executor=fwd,
-                    bwd_executor=bwd,
-                )
-                ctx.device_runtime.record_execution(
-                    'train_batch',
-                    input_name=ctx.graph.input_spec.name if ctx.graph.input_spec is not None else 'input',
-                    output_name=ctx.graph.output_spec.name if ctx.graph.output_spec is not None else 'output',
-                    node_count=len(ctx.graph.nodes),
-                )
-                ctx.device_runtime.synchronize('train-batch')
-                ctx.device_runtime.release_buffer(xb_device)
-                running_loss += loss_val * xb.shape[0]
-                seen += xb.shape[0]
-            train_loss = running_loss / max(seen, 1)
-            val_metrics = _evaluate(
-                ctx.graph,
-                ctx.x_val,
-                ctx.y_val,
-                params,
-                ctx.batch_size,
-                ctx.loss_type,
-                amp_enabled=ctx.amp,
-                device_runtime=ctx.device_runtime,
-            )
-            if scheduler is not None:
-                if scheduler_kind == 'plateau':
-                    scheduler.step(val_metrics['loss'])
-                else:
-                    scheduler.step()
-            epoch_time = time.perf_counter() - t0
-            epoch_times.append(epoch_time)
-            amp_epoch_state: dict[str, Any] | None = None
-            optimizer_epoch_state: dict[str, Any] | None = None
-            if ctx.amp:
-                amp_runtime = dict(optimizer_state.get('amp', {}))
-                amp_epoch_state = {
-                    'enabled': True,
-                    'loss_scale': float(amp_runtime.get('loss_scale', ctx.amp_loss_scale)),
-                    'skipped_steps_epoch': int(amp_runtime.get('skipped_steps', 0)) - int(prev_amp_snapshot['skipped_steps']),
-                    'overflow_steps_epoch': int(amp_runtime.get('overflow_steps', 0)) - int(prev_amp_snapshot['overflow_steps']),
-                    'finite_steps_epoch': int(amp_runtime.get('finite_steps', 0)) - int(prev_amp_snapshot['finite_steps']),
-                    'cache_allocations_epoch': int(amp_runtime.get('cache_allocations', 0)) - int(prev_amp_snapshot['cache_allocations']),
-                    'cache_updates_epoch': int(amp_runtime.get('cache_updates', 0)) - int(prev_amp_snapshot['cache_updates']),
-                    'cache_hits_epoch': int(amp_runtime.get('cache_hits', 0)) - int(prev_amp_snapshot['cache_hits']),
-                }
-                prev_amp_snapshot = {
-                    'skipped_steps': int(amp_runtime.get('skipped_steps', 0)),
-                    'overflow_steps': int(amp_runtime.get('overflow_steps', 0)),
-                    'finite_steps': int(amp_runtime.get('finite_steps', 0)),
-                    'cache_allocations': int(amp_runtime.get('cache_allocations', 0)),
-                    'cache_updates': int(amp_runtime.get('cache_updates', 0)),
-                    'cache_hits': int(amp_runtime.get('cache_hits', 0)),
-                }
-            optimizer_runtime = _optimizer_runtime_snapshot(optimizer_state)
-            optimizer_epoch_state = {
-                'optimizer_type': str(optimizer_runtime.get('optimizer_type', ctx.optimizer_type)),
-                'steps': int(optimizer_runtime.get('steps', 0)),
-                'state_tensor_count': int(optimizer_runtime.get('state_tensor_count', 0)),
-                'state_total_bytes': int(optimizer_runtime.get('state_total_bytes', 0)),
-                'state_total_kb': float(optimizer_runtime.get('state_total_kb', 0.0)),
-                'scratch_tensor_count': int(optimizer_runtime.get('scratch_tensor_count', 0)),
-                'scratch_total_bytes': int(optimizer_runtime.get('scratch_total_bytes', 0)),
-                'scratch_total_kb': float(optimizer_runtime.get('scratch_total_kb', 0.0)),
-                'grad_buffer_tensor_count': int(optimizer_runtime.get('grad_buffer_tensor_count', 0)),
-                'grad_buffer_total_bytes': int(optimizer_runtime.get('grad_buffer_total_bytes', 0)),
-                'grad_buffer_total_kb': float(optimizer_runtime.get('grad_buffer_total_kb', 0.0)),
-                'grad_buffer_active_tensor_count': int(optimizer_runtime.get('grad_buffer_active_tensor_count', 0)),
-                'grad_buffer_active_total_bytes': int(optimizer_runtime.get('grad_buffer_active_total_bytes', 0)),
-                'grad_buffer_active_total_kb': float(optimizer_runtime.get('grad_buffer_active_total_kb', 0.0)),
-                'state_tensor_allocations_epoch': (
-                    int(optimizer_runtime.get('state_tensor_allocations', 0))
-                    - int(prev_optimizer_snapshot['state_tensor_allocations'])
-                ),
-                'state_tensor_updates_epoch': (
-                    int(optimizer_runtime.get('state_tensor_updates', 0))
-                    - int(prev_optimizer_snapshot['state_tensor_updates'])
-                ),
-                'scratch_tensor_allocations_epoch': (
-                    int(optimizer_runtime.get('scratch_tensor_allocations', 0))
-                    - int(prev_optimizer_snapshot['scratch_tensor_allocations'])
-                ),
-                'scratch_tensor_updates_epoch': (
-                    int(optimizer_runtime.get('scratch_tensor_updates', 0))
-                    - int(prev_optimizer_snapshot['scratch_tensor_updates'])
-                ),
-                'grad_buffer_allocations_epoch': (
-                    int(optimizer_runtime.get('grad_buffer_allocations', 0))
-                    - int(prev_optimizer_snapshot['grad_buffer_allocations'])
-                ),
-                'grad_buffer_reuses_epoch': (
-                    int(optimizer_runtime.get('grad_buffer_reuses', 0))
-                    - int(prev_optimizer_snapshot['grad_buffer_reuses'])
-                ),
-                'grad_buffer_reset_events_epoch': (
-                    int(optimizer_runtime.get('grad_buffer_reset_events', 0))
-                    - int(prev_optimizer_snapshot['grad_buffer_reset_events'])
-                ),
-                'grad_buffer_zeroed_tensors_epoch': (
-                    int(optimizer_runtime.get('grad_buffer_zeroed_tensors', 0))
-                    - int(prev_optimizer_snapshot['grad_buffer_zeroed_tensors'])
-                ),
-                'steps_epoch': int(optimizer_runtime.get('steps', 0)) - int(prev_optimizer_snapshot['steps']),
-            }
-            prev_optimizer_snapshot = {
-                'steps': int(optimizer_runtime.get('steps', 0)),
-                'state_tensor_allocations': int(optimizer_runtime.get('state_tensor_allocations', 0)),
-                'state_tensor_updates': int(optimizer_runtime.get('state_tensor_updates', 0)),
-                'scratch_tensor_allocations': int(optimizer_runtime.get('scratch_tensor_allocations', 0)),
-                'scratch_tensor_updates': int(optimizer_runtime.get('scratch_tensor_updates', 0)),
-                'grad_buffer_allocations': int(optimizer_runtime.get('grad_buffer_allocations', 0)),
-                'grad_buffer_reuses': int(optimizer_runtime.get('grad_buffer_reuses', 0)),
-                'grad_buffer_reset_events': int(optimizer_runtime.get('grad_buffer_reset_events', 0)),
-                'grad_buffer_zeroed_tensors': int(optimizer_runtime.get('grad_buffer_zeroed_tensors', 0)),
-            }
-            row = _build_epoch_row(
-                epoch=epoch,
-                train_loss=train_loss,
-                val_metrics=val_metrics,
-                lr=float(optimizer_view.lr),
-                epoch_time_s=epoch_time,
-                amp_state=amp_epoch_state,
-                optimizer_state=optimizer_epoch_state,
-                planner_state=planner_epoch_state,
-                device_runtime_state=ctx.device_runtime.summary(),
-                support_tier_assessment=ctx.support_tier_assessment,
-                execution_mode=ctx.execution_mode,
-                tensor_execution_device=ctx.tensor_execution_device,
-            )
-            mf.write(json.dumps(row) + '\n')
-            mf.flush()
-            if val_metrics['acc'] > best_val_acc:
-                best_val_acc = val_metrics['acc']
-                best_params = {k: v.copy() for k, v in params.items()}
-            print(
-                _epoch_log_message(
-                    epoch=epoch,
-                    epochs=ctx.epochs,
-                    train_loss=train_loss,
-                    val_acc=val_metrics['acc'],
-                    lr=float(optimizer_view.lr),
-                    epoch_time_s=epoch_time,
-                    amp_state=amp_epoch_state,
-                    optimizer_state=optimizer_epoch_state,
-                )
-            )
-
-    amp_runtime = dict(optimizer_state.get('amp', {}))
-    optimizer_runtime = _optimizer_runtime_snapshot(optimizer_state)
-    total_epoch_time = float(sum(epoch_times))
-    epochs_completed = len(epoch_times)
-    train_samples_per_epoch = int(ctx.x_train.shape[0])
-    train_hotspot_profile = {}
-    eval_hotspot_profile = {}
-    if ctx.x_val.shape[0] > 0:
-        eval_sample_batch = ctx.x_val[: min(ctx.batch_size, ctx.x_val.shape[0])]
-        eval_hotspot_profile = _profile_hotspots(
-            ctx.graph,
-            eval_sample_batch,
-            best_params,
-            amp_enabled=ctx.amp,
-            mode='eval',
-        )
-    if ctx.x_train.shape[0] > 0:
-        train_sample_batch = ctx.x_train[: min(ctx.batch_size, ctx.x_train.shape[0])]
-        train_hotspot_profile = _profile_hotspots(
-            ctx.graph,
-            train_sample_batch,
-            best_params,
-            amp_enabled=ctx.amp,
-            mode='train',
-        )
-    runtime_profile = {
-        'device_runtime': dict(ctx.device_runtime.summary()),
-        'epochs_completed': epochs_completed,
-        'train_samples_per_epoch': train_samples_per_epoch,
-        'val_samples_per_epoch': int(ctx.x_val.shape[0]),
-        'total_epoch_time_s': round(total_epoch_time, 6),
-        'avg_epoch_time_s': round(total_epoch_time / float(max(epochs_completed, 1)), 6),
-        'min_epoch_time_s': round(min(epoch_times), 6) if epoch_times else 0.0,
-        'max_epoch_time_s': round(max(epoch_times), 6) if epoch_times else 0.0,
-        'train_samples_per_sec': (
-            round((train_samples_per_epoch * epochs_completed) / total_epoch_time, 6)
-            if total_epoch_time > 0.0 and epochs_completed > 0
-            else 0.0
-        ),
-        'train_hotspots': train_hotspot_profile,
-        'eval_hotspots': eval_hotspot_profile,
-        'hotspots': eval_hotspot_profile,
-        'hotspot_diff': _build_hotspot_diff_summary(train_hotspot_profile, eval_hotspot_profile),
-    }
-    return best_params, best_val_acc, amp_runtime, optimizer_runtime, runtime_profile
-
 
 def finalize_training_run(
     ctx: NativeTrainingContext,
@@ -713,12 +174,13 @@ def finalize_training_run(
         capabilities=capabilities,
         support_tier_assessment=ctx.support_tier_assessment,
         execution_mode=ctx.execution_mode,
+        selected_execution_mode=ctx.selected_execution_mode,
         tensor_execution_device=ctx.tensor_execution_device,
+        execution_mode_policy=ctx.execution_mode_policy,
         device_runtime_state=ctx.device_runtime.summary(),
     )
     dump_summary(run_dir, summary)
     return run_dir
-
 
 def train_and_summarize_native_backend(
     cfg: dict[str, Any],

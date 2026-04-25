@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from minicnn.flex.builder import canonical_layer_type
 from minicnn.model_spec import resolve_model_config
 
 
@@ -11,7 +12,10 @@ _PARAMETERIZED_TYPES = {
     'DepthwiseConv2d',
     'BatchNorm2d',
     'LayerNorm',
+    'LayerNorm2d',
     'Linear',
+    'PointwiseConv2d',
+    'ConvNeXtBlock',
     'Embedding',
 }
 
@@ -79,7 +83,7 @@ def _extract_model_layers(layers_cfg: Any) -> list[ModelLayerView]:
 
 
 def _layer_view(index: int, layer_cfg: dict[str, Any]) -> ModelLayerView:
-    layer_type = str(layer_cfg.get('type', 'Unknown'))
+    layer_type = canonical_layer_type(str(layer_cfg.get('type', 'Unknown')))
     child_layers: list[ModelLayerView] = []
     for key in _CHILD_KEYS:
         children_cfg = layer_cfg.get(key)

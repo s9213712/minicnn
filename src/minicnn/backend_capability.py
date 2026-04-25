@@ -5,6 +5,7 @@ from typing import Any
 from minicnn.cuda_native.capabilities import CUDA_NATIVE_CAPABILITIES
 from minicnn.model_spec import resolve_model_config
 
+KNOWN_BACKENDS = frozenset({'torch', 'cuda_legacy', 'cuda_native'})
 
 _TORCH_SUPPORTED_OPS = sorted({
     'AdaptiveAvgPool2d',
@@ -102,12 +103,26 @@ _BACKEND_CAPABILITIES: dict[str, dict[str, Any]] = {
 }
 
 
+def validate_backend_name(backend: str | None) -> list[str]:
+    normalized = str(backend or 'torch')
+    if normalized not in KNOWN_BACKENDS:
+        supported = ', '.join(sorted(KNOWN_BACKENDS))
+        return [f"Unknown backend {normalized!r}. Supported backends: {supported}"]
+    return []
+
+
 def get_backend_capabilities(backend: str | None) -> dict[str, Any]:
     normalized = str(backend or 'torch')
-    return dict(_BACKEND_CAPABILITIES.get(normalized, _BACKEND_CAPABILITIES['torch']))
+    if normalized not in _BACKEND_CAPABILITIES:
+        supported = ', '.join(sorted(KNOWN_BACKENDS))
+        raise ValueError(f"Unknown backend {normalized!r}. Supported backends: {supported}")
+    return dict(_BACKEND_CAPABILITIES[normalized])
 
 
 def validate_backend_model_capabilities(model_cfg: dict[str, Any], backend: str | None) -> list[str]:
+    backend_errors = validate_backend_name(backend)
+    if backend_errors:
+        return backend_errors
     resolved = resolve_model_config(model_cfg)
     caps = get_backend_capabilities(backend)
     supported_ops = set(str(item) for item in caps['supported_ops'])

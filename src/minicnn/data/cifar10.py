@@ -35,9 +35,13 @@ def normalize_cifar(x):
     return ((x - CIFAR_MEAN) / CIFAR_STD).astype(np.float32)
 
 
-def cifar10_ready(data_root):
+def missing_cifar10_files(data_root):
     root = _normalize_data_root(data_root)
-    return all((root / name).exists() for name in REQUIRED_FILES)
+    return [name for name in REQUIRED_FILES if not (root / name).exists()]
+
+
+def cifar10_ready(data_root):
+    return not missing_cifar10_files(data_root)
 
 
 def _safe_extract(tar, path):
@@ -55,7 +59,7 @@ def prepare_cifar10(data_root, download=True):
         return data_root
 
     if not download:
-        missing = [name for name in REQUIRED_FILES if not (data_root / name).exists()]
+        missing = missing_cifar10_files(data_root)
         raise FileNotFoundError(
             "CIFAR-10 Python batch files are missing:\n"
             f"  data_root={data_root}\n"
@@ -65,6 +69,8 @@ def prepare_cifar10(data_root, download=True):
             "or pass an alternate path to train-flex with:\n"
             "  minicnn train-flex --config templates/cifar10/vgg_mini.yaml "
             "dataset.data_root=/path/to/cifar-10-batches-py\n"
+            "or let train-flex download the dataset with:\n"
+            "  minicnn train-flex --config templates/cifar10/vgg_mini.yaml dataset.download=true\n"
             "or pass an alternate path to train-dual with:\n"
             "  minicnn train-dual --data-dir /path/to/cifar-10-batches-py ...\n"
             "or manually place the extracted cifar-10-batches-py directory under data/."
@@ -119,7 +125,7 @@ def _load_training_batches(data_root, batch_ids):
     return np.concatenate(x_parts, axis=0), np.concatenate(y_parts, axis=0)
 
 
-def load_cifar10(data_root, n_train=8000, n_val=2000, seed=None, train_batch_ids=(1,), download=True):
+def load_cifar10(data_root, n_train=8000, n_val=2000, seed=None, train_batch_ids=(1, 2, 3, 4, 5), download=True):
     data_root = prepare_cifar10(data_root, download=download)
     print(f"Loading CIFAR-10 training batches: {train_batch_ids}")
     x_train_all, y_train_all = _load_training_batches(data_root, train_batch_ids)

@@ -42,7 +42,8 @@ Read these in order if you want the current, operational picture of the repo:
 12. [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md) — the staged path from experimental backend to implementation-grade public contract
 13. [docs/cuda_native_amp_graduation_checklist.md](docs/cuda_native_amp_graduation_checklist.md) — the checklist that moved AMP and the backend-wide status from experimental to beta
 14. [docs/cuda_native_gpu_enablement_plan.md](docs/cuda_native_gpu_enablement_plan.md) — the staged path from NumPy reference execution to real GPU execution
-15. [docs/cuda_native_smoke_matrix.md](docs/cuda_native_smoke_matrix.md) — canonical hermetic smoke matrix for public-contract regression coverage
+15. [docs/cuda_native_gpu_cifar10_runbook.md](docs/cuda_native_gpu_cifar10_runbook.md) — real CIFAR-10 strict `gpu_native` training runbook
+16. [docs/cuda_native_smoke_matrix.md](docs/cuda_native_smoke_matrix.md) — canonical hermetic smoke matrix for public-contract regression coverage
 
 ## By Task
 
@@ -100,6 +101,7 @@ Dataset split note:
 - [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md) — the productionization path focused on contract freeze, hardening, and support tiers
 - [docs/cuda_native_amp_graduation_checklist.md](docs/cuda_native_amp_graduation_checklist.md) — the beta-graduation checklist for AMP and backend-wide training stability
 - [docs/cuda_native_gpu_enablement_plan.md](docs/cuda_native_gpu_enablement_plan.md) — the future path from reference execution to true GPU execution
+- [docs/cuda_native_gpu_cifar10_runbook.md](docs/cuda_native_gpu_cifar10_runbook.md) — the current full CIFAR-10 strict GPU training command book
 - [docs/cuda_native_smoke_matrix.md](docs/cuda_native_smoke_matrix.md) — the canonical smoke set and minimum artifact contract
 - [docs/cuda_native_phase5_rfc.md](docs/cuda_native_phase5_rfc.md) — future extension RFCs
 - [docs/backend_capabilities.md](docs/backend_capabilities.md) — current validated support boundary
@@ -241,13 +243,13 @@ If you are unsure where to go next:
 - Need native build/debug details: [docs/guide_project_structure.md](docs/guide_project_structure.md) and [docs/guide_layout_debug.md](docs/guide_layout_debug.md)
 - Need extension points: [docs/custom_components.md](docs/custom_components.md)
 - Need checkpoint format and model reuse details: [docs/model_artifacts.md](docs/model_artifacts.md)
-- Need experimental native graph backend context: [docs/cuda_native.md](docs/cuda_native.md)
+- Need native graph backend context: [docs/cuda_native.md](docs/cuda_native.md)
 
 ## Rule Of Thumb
 
 - Use `torch/flex` as the reference implementation and first stop for new features.
 - Use `train-autograd` when you need a CPU-side correctness oracle or framework-level learning path.
-- Use `cuda_native` when you are pushing the native backend forward; it is the main native growth path, but still experimental.
+- Use `cuda_native` when you are pushing the native backend forward; it is the main native growth path, but tracked by backend readiness tiers.
 - Use `cuda_legacy` only inside its validator boundary and treat it as maintenance-only historical code.
 
 ---
@@ -441,3 +443,9 @@ Python traceback。`healthcheck`、`doctor`、`smoke`、`validate-*`、
 - `train-autograd` 適合當 CPU 側 correctness oracle，也適合框架學習。
 - `cuda_native` 是主要 native 成長方向，但目前仍屬實驗性。
 - `cuda_legacy` 請視為歷史維護路徑，只在 validator 定義的邊界內使用與修補。
+
+## CUDA Native GPU maintenance references
+
+- Strict full CIFAR-10 GPU-native runbook: `docs/cuda_native_gpu_cifar10_runbook.md`.
+- Stronger CIFAR-10 GPU-native config: `configs/cifar10_cuda_native_gpu_stronger.yaml`.
+- Large-file cleanup inventory: `docs/cuda_native_large_file_inventory.md`.

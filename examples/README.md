@@ -96,3 +96,37 @@ PYTHONPATH=src python3 examples/cuda_native_amp_cifar10_beta_demo.py \
 ```
 
 This demo trains a small `cuda_native` model with `AdamW + AMP + grad_accum_steps=2`, then evaluates on the official CIFAR-10 `test_batch` split and prints a JSON summary.
+
+Run the partial native-forward GPU demo against CIFAR-10:
+
+```bash
+PYTHONPATH=src python3 examples/cuda_native_gpu_forward_cifar10_demo.py \
+  --data-root data/cifar-10-batches-py \
+  --batch-size 4
+```
+
+This demo loads an official CIFAR-10 test batch, executes `Conv2d -> ReLU -> MaxPool2d -> Flatten -> Linear` through the native GPU forward executor, compares against the NumPy reference executor, and prints the native kernel execution kinds.
+
+Run the narrow native GPU training-step demo against CIFAR-10:
+
+```bash
+PYTHONPATH=src python3 examples/cuda_native_gpu_linear_training_cifar10_demo.py \
+  --data-root data/cifar-10-batches-py \
+  --batch-size 8
+```
+
+This demo flattens an official CIFAR-10 test batch and executes one `Linear + SoftmaxCE + dense backward + SGD` step through native GPU C ABI calls, then compares the updated parameters against NumPy reference math.
+
+Run the full CIFAR-10 strict `gpu_native` training config:
+
+```bash
+PYTHONPATH=src python3 -m minicnn.cli validate-cuda-native-config \
+  --config configs/cifar10_cuda_native_gpu_stronger.yaml
+
+PYTHONPATH=src timeout 7200s python3 -m minicnn.cli train-native \
+  --config configs/cifar10_cuda_native_gpu_stronger.yaml
+```
+
+This uses the current two-Conv native GPU helper subset on all five CIFAR-10
+training batches. See `docs/cuda_native_gpu_cifar10_runbook.md` for current
+observed accuracy and performance notes.

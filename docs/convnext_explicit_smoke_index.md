@@ -15,6 +15,7 @@ Use it when you want the smallest reliable workflow for:
   - full explicit primitive template
   - intended for direct editing and model experimentation
   - dataset-dependent CIFAR path, not the hermetic smoke path
+  - explicit sequential primitive stack only; no residual add or layer scale
 - `templates/cifar10/convnext_explicit_smoke.yaml`
   - smallest built-in training smoke config
   - uses `dataset.type=random`, so it is hermetic

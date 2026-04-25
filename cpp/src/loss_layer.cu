@@ -125,6 +125,66 @@ __global__ void softmax_xent_grad_loss_acc_kernel(
     }
 }
 
+__global__ void softmax_xent_smooth_grad_loss_acc_kernel(
+    const float* logits,
+    const int* labels,
+    float* probs,
+    float* grad_logits,
+    float* loss_sum,
+    int* correct_count,
+    int N,
+    int features,
+    float label_smoothing
+) {
+    int n = blockIdx.x;
+    int tid = threadIdx.x;
+    if (n >= N || tid >= 32) return;
+
+    const float* row = logits + n * features;
+    float* prob_row = probs + n * features;
+    float* grad_row = grad_logits + n * features;
+    int label = labels[n];
+
+    float thread_max = -1e38f;
+    int thread_pred = features;
+    for (int j = tid; j < features; j += 32) {
+        float v = row[j];
+        if (v > thread_max || (v == thread_max && j < thread_pred)) {
+            thread_max = v;
+            thread_pred = j;
+        }
+    }
+    warp_reduce_max_with_index(thread_max, thread_pred);
+    float max_val = __shfl_sync(0xffffffff, thread_max, 0);
+    int pred = __shfl_sync(0xffffffff, thread_pred, 0);
+
+    float thread_sum = 0.0f;
+    for (int j = tid; j < features; j += 32) {
+        float p = expf(row[j] - max_val);
+        prob_row[j] = p;
+        thread_sum += p;
+    }
+    float sum = __shfl_sync(0xffffffff, warp_reduce_sum(thread_sum), 0);
+
+    float smooth_base = label_smoothing / static_cast<float>(features);
+    float thread_loss = 0.0f;
+    for (int j = tid; j < features; j += 32) {
+        float p = prob_row[j] / sum;
+        prob_row[j] = p;
+        float target = smooth_base + ((j == label) ? (1.0f - label_smoothing) : 0.0f);
+        grad_row[j] = (p - target) / static_cast<float>(N);
+        thread_loss += -target * logf(p + 1e-10f);
+    }
+    float sample_loss = __shfl_sync(0xffffffff, warp_reduce_sum(thread_loss), 0);
+
+    if (tid == 0) {
+        atomicAdd(loss_sum, sample_loss);
+        if (pred == label) {
+            atomicAdd(correct_count, 1);
+        }
+    }
+}
+
 __global__ void count_correct_kernel(
     const float* logits,
     const int* labels,
@@ -175,6 +235,24 @@ extern "C" {
     ) {
         softmax_xent_grad_loss_acc_kernel<<<N, 32>>>(
             d_logits, d_labels, d_probs, d_grad_logits, d_loss_sum, d_correct_count, N, features
+        );
+        CUDA_KERNEL_CHECK();
+    }
+
+    void softmax_xent_smooth_grad_loss_acc(
+        float* d_logits,
+        int* d_labels,
+        float* d_probs,
+        float* d_grad_logits,
+        float* d_loss_sum,
+        int* d_correct_count,
+        int N,
+        int features,
+        float label_smoothing
+    ) {
+        softmax_xent_smooth_grad_loss_acc_kernel<<<N, 32>>>(
+            d_logits, d_labels, d_probs, d_grad_logits, d_loss_sum, d_correct_count,
+            N, features, label_smoothing
         );
         CUDA_KERNEL_CHECK();
     }

@@ -149,6 +149,8 @@ def build_cli_parser() -> argparse.ArgumentParser:
     p_validate_native.add_argument('overrides', nargs='*')
     _add_format_arg(p_validate_native)
 
+    p_check_cuda = sub.add_parser('check-cuda-ready', help='[BETA] Probe native CUDA library, runtime, driver, and environment readiness')
+    p_check_cuda.add_argument('--path', type=str, help='Optional CUDA shared library path or variant name')
     sub.add_parser('cuda-native-capabilities', help='[BETA] Print cuda_native capability descriptor and execution-mode contract')
 
     return parser

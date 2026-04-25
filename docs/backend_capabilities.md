@@ -9,7 +9,7 @@ The frontend surface is broader than the narrowest backend. That is expected.
 | Backend | Role | Practical meaning |
 |---|---|---|
 | `torch/flex` | reference implementation | first destination for new frontend features, broadest stable surface |
-| `cuda_native` | primary native backend | the native path that should grow next, now beta-grade but still not production-ready |
+| `cuda_native` | primary native backend | the native path that should grow next; beta-grade reference mode plus partial real-CUDA `gpu_native` execution |
 | `autograd` | correctness oracle | CPU-side reference path for deterministic checks and framework learning |
 | `cuda_legacy` | maintenance-only historical backend | narrow stable path, kept for compatibility and maintenance, not the default feature-expansion target |
 
@@ -45,7 +45,10 @@ These features were **not** supported in `cuda_legacy` and are now supported in 
 | Memory footprint estimate (`memory_footprint`) | ✗ | ✓ |
 | Buffer pool pre-allocation (`BufferPool`) | ✗ | ✓ |
 
-Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is now beta-grade, not experimental, but it is still not production-ready.
+Note: default `cuda_native` execution uses NumPy reference kernels. Opt-in
+`execution_mode=gpu_native` uses real device-pointer CUDA kernels for the
+supported forward/training subset. The backend is beta-grade, not experimental,
+but it is still not production-ready.
 
 ---
 
@@ -58,9 +61,9 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is now beta-
 | MNIST | ✓ | ✓ slow | ✗ | **✓** |
 | Random toy data | ✓ | ✓ | ✗ | **✓** |
 | **Layers** | | | | |
-| Conv2d | ✓ | ✓ | ✓ fixed 3×3 s1 p0 | ✓ numpy ref |
-| Linear | ✓ | ✓ | ✓ | ✓ numpy ref |
-| MaxPool2d | ✓ | ✓ | ✓ fixed 2×2 | ✓ numpy ref |
+| Conv2d | ✓ | ✓ | ✓ fixed 3×3 s1 p0 | ✓ numpy ref + partial `gpu_native` |
+| Linear | ✓ | ✓ | ✓ | ✓ numpy ref + partial `gpu_native` |
+| MaxPool2d | ✓ | ✓ | ✓ fixed 2×2 | ✓ numpy ref + partial `gpu_native` |
 | AvgPool2d | ✓ | ✓ | ✗ | **✓** numpy ref |
 | BatchNorm2d | ✓ | ✓ | ✗ | ✓ forward/backward prototype |
 | GroupNorm | ✓ | ✗ | ✗ | **✓** prototype |
@@ -75,23 +78,23 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is now beta-
 | ConvNeXtBlock | ✓ experimental | ✗ | ✗ | **✓** composite prototype |
 | Dropout | ✓ | ✓ | ✗ | **✓** prototype |
 | **Activations** | | | | |
-| ReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
-| LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
-| SiLU | ✓ | ✓ | ✗ | ✓ numpy ref |
-| Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref |
-| Tanh | ✓ | ✓ | ✗ | ✓ numpy ref |
-| GELU | ✓ | ✗ | ✗ | **✓** numpy ref |
+| ReLU | ✓ | ✓ | ✓ | ✓ numpy ref + partial `gpu_native` |
+| LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref + partial `gpu_native` |
+| SiLU | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| Tanh | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| GELU | ✓ | ✗ | ✗ | **✓** numpy ref + partial `gpu_native` |
 | **Losses** | | | | |
-| CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
+| CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy + partial `gpu_native` |
 | MSELoss | ✓ | ✓ | Experimental | **✓** numpy |
 | BCEWithLogitsLoss | ✓ binary | ✓ binary | ✗ | **✓** binary |
 | label_smoothing | ✓ | ✓ | ✗ | **✓** cross-entropy prototype |
 | **Optimizers** | | | | |
-| SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Adam | ✓ | ✓ | Experimental | **✓** numpy prototype |
-| AdamW | ✓ | ✓ | ✗ | **✓** numpy prototype |
-| RMSprop | ✓ | ✓ | ✗ | **✓** numpy prototype |
+| SGD | ✓ | ✓ | ✓ | ✓ numpy + partial `gpu_native` |
+| Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy + gpu_native |
+| Adam | ✓ | ✓ | Experimental | **✓** numpy + gpu_native Linear |
+| AdamW | ✓ | ✓ | ✗ | **✓** numpy + gpu_native Linear |
+| RMSprop | ✓ | ✓ | ✗ | **✓** numpy + gpu_native Linear |
 | **Schedulers** | | | | |
 | None / disabled | ✓ | ✓ | ✓ | ✓ |
 | StepLR | ✓ | ✓ | ✗ | ✓ |
@@ -106,10 +109,10 @@ Note: `cuda_native` uses numpy reference kernels, not real CUDA. It is now beta-
 | dotted-path components | ✓ | ✗ | ✗ | ✗ |
 | block presets | ✓ | ✗ | ✗ | ✗ |
 | **Training** | | | | |
-| Forward pass | ✓ | ✓ | ✓ | ✓ |
-| Backward / gradients | ✓ | ✓ | ✓ | Prototype |
-| Full training loop | ✓ | ✓ | ✓ | Prototype |
-| Production-ready | ✓ | ✓ | ✓ | ✗ experimental |
+| Forward pass | ✓ | ✓ | ✓ | ✓ reference + partial `gpu_native` |
+| Backward / gradients | ✓ | ✓ | ✓ | ✓ beta within support boundary |
+| Full training loop | ✓ | ✓ | ✓ | ✓ beta within support boundary |
+| Production-ready | ✓ | ✓ | ✓ | ✗ beta, not production-ready |
 | **Developer tooling** | | | | |
 | Graph dump | ✗ | ✗ | ✗ | **✓** `dump_graph()` |
 | Plan dump | ✗ | ✗ | ✗ | **✓** `dump_plan()` |
@@ -153,9 +156,21 @@ Validation failures now return short CLI messages or JSON payloads instead of ra
 
 ## cuda_native (Primary Native Direction, Beta)
 
-Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work. It is now beta-grade, but still not production-ready and still runs through NumPy reference execution rather than real CUDA kernels.
+Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work. It is now beta-grade, but still not production-ready. The default execution mode is GPU-first auto execution when a CUDA-native lowering is eligible, with NumPy reference execution retained as fallback and parity baseline; opt-in `execution_mode=gpu_native` runs a growing subset through real CUDA device-pointer kernels and native training helpers.
 
-Supported ops: `BatchNorm2d` (forward/backward prototype), `Concat`, `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `DropPath`, `Add`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`.
+Real-data strict GPU training evidence exists for the current repeated-Conv
+subset. Use `configs/cifar10_cuda_native_gpu_stronger.yaml` for the full
+CIFAR-10 command path; see
+[cuda_native_gpu_cifar10_runbook.md](cuda_native_gpu_cifar10_runbook.md).
+
+Supported reference-mode ops: `BatchNorm2d` (forward/backward prototype), `Concat`, `Conv2d`, `DepthwiseConv2d`, `PointwiseConv2d`, `GroupNorm`, `LayerNorm`, `LayerNorm2d`, `ResidualBlock`, `ConvNeXtBlock`, `Dropout`, `DropPath`, `Add`, `ReLU`, `LeakyReLU`, `Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Identity`, `Flatten`, `Linear`, `MaxPool2d`, `AvgPool2d`, `AdaptiveAvgPool2d` (`output_size=(1,1)` only), `GlobalAvgPool2d`.
+
+Supported `gpu_native` forward kernel surface currently includes: `Flatten`,
+`Identity`, `Dropout(p=0)`, `DropPath(p=0)`, `Linear`, `ReLU`, `LeakyReLU`,
+`Sigmoid`, `Tanh`, `SiLU`, `GELU`, `Add`, `Concat`, `Conv2d`,
+`PointwiseConv2d`, `DepthwiseConv2d`, `MaxPool2d`, `AvgPool2d`,
+`GlobalAvgPool2d`, `AdaptiveAvgPool2d(output_size=(1,1))`, `BatchNorm2d`
+eval forward, `LayerNorm2d`, and `GroupNorm`.
 
 Graph semantics:
 
@@ -174,9 +189,17 @@ Validated train-native support boundary:
 - `summary.json` exposes `amp_runtime`, `optimizer_runtime`, `planner`, and `performance_report`
 - `metrics.jsonl` exposes per-epoch AMP, optimizer, and planner telemetry
 
+Supported `gpu_native` training subsets use native `optimizer.grad_clip_global`
+through `grad_l2_sumsq` plus `scale_inplace`.
+Supported SGD `gpu_native` helper subsets use native `optimizer.weight_decay`
+through `sgd_update_fused`.
+
 Still rejected at validation or train-native gating: unsupported optimizers outside `SGD` / `Adam` / `AdamW` / `RMSprop`.
 
-Note: backward and training now meet the current beta graduation gate, and `BatchNorm2d` now has a prototype backward path too. The overall backend is beta, not production-ready. New native capability work should usually land here, not in `cuda_legacy`.
+Note: backward and training now meet the current beta graduation gate, and
+`BatchNorm2d` now has a prototype backward path too. The overall backend is
+beta, not production-ready. New native capability work should usually land here,
+not in `cuda_legacy`.
 
 Developer tooling (unique to cuda_native):
 
@@ -247,7 +270,8 @@ listed item is production-ready.
 ### Experimental
 
 - no public op/optimizer/loss surface currently remains in `experimental`
-- future GPU execution enablement still lives outside the current beta contract
+- full-graph GPU execution, generalized GPU backward, and composite-block GPU
+  training composition still live outside the current beta contract
 
 ## Reading Validation Errors
 
@@ -338,22 +362,22 @@ Debugging order:
 | Dropout | ✓ | ✓ | ✗ | **✓** prototype |
 | **激活函數** | | | | |
 | ReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
-| LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref |
-| SiLU | ✓ | ✓ | ✗ | ✓ numpy ref |
-| Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref |
-| Tanh | ✓ | ✓ | ✗ | ✓ numpy ref |
-| GELU | ✓ | ✗ | ✗ | **✓** numpy ref |
+| LeakyReLU | ✓ | ✓ | ✓ | ✓ numpy ref + partial `gpu_native` |
+| SiLU | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| Sigmoid | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| Tanh | ✓ | ✓ | ✗ | ✓ numpy ref + partial `gpu_native` |
+| GELU | ✓ | ✗ | ✗ | **✓** numpy ref + partial `gpu_native` |
 | **損失函數** | | | | |
 | CrossEntropyLoss | ✓ | ✓ | ✓ | ✓ numpy |
 | MSELoss | ✓ | ✓ | 實驗中 | **✓** numpy |
 | BCEWithLogitsLoss | ✓ binary | ✓ binary | ✗ | **✓** binary |
 | label_smoothing | ✓ | ✓ | ✗ | **✓** cross-entropy prototype |
 | **優化器** | | | | |
-| SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy prototype |
-| Adam | ✓ | ✓ | 實驗中 | **✓** numpy prototype |
-| AdamW | ✓ | ✓ | ✗ | **✓** numpy prototype |
-| RMSprop | ✓ | ✓ | ✗ | **✓** numpy prototype |
+| SGD | ✓ | ✓ | ✓ | ✓ numpy + gpu_native |
+| Momentum SGD | ✓ | ✓ | ✓ | ✓ numpy + gpu_native |
+| Adam | ✓ | ✓ | 實驗中 | **✓** numpy + gpu_native Linear |
+| AdamW | ✓ | ✓ | ✗ | **✓** numpy + gpu_native Linear |
+| RMSprop | ✓ | ✓ | ✗ | **✓** numpy + gpu_native Linear |
 | **Scheduler** | | | | |
 | 無 / 停用 | ✓ | ✓ | ✓ | ✓ |
 | StepLR | ✓ | ✓ | ✗ | ✓ |
@@ -423,6 +447,11 @@ Debugging order:
 - optimizer：支援 `SGD`、`Adam`、`AdamW`、`RMSprop`，並支援 global gradient clipping
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
 - `train.amp=true|false`（帶 loss scaling / overflow backoff 的實驗性 mixed-precision prototype）
+
+支援的 `gpu_native` training subsets 已透過 `grad_l2_sumsq` 加
+`scale_inplace` 支援 native `optimizer.grad_clip_global`。
+支援的 SGD `gpu_native` helper subsets 已透過 `sgd_update_fused`
+支援 native `optimizer.weight_decay`。
 
 支援 op：`BatchNorm2d`（forward/backward prototype）、`Concat`、`Conv2d`、`DepthwiseConv2d`、`PointwiseConv2d`、`GroupNorm`、`LayerNorm`、`LayerNorm2d`、`ResidualBlock`、`ConvNeXtBlock`、`Dropout`、`DropPath`、`Add`、`ReLU`、`LeakyReLU`、`Sigmoid`、`Tanh`、`SiLU`、`GELU`、`Identity`、`Flatten`、`Linear`、`MaxPool2d`、`AvgPool2d`、`AdaptiveAvgPool2d`（僅 `output_size=(1,1)`）、`GlobalAvgPool2d`。
 

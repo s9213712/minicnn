@@ -51,7 +51,6 @@ def prepare_training_context(
     dataset_cfg = cfg.get('dataset', {})
     train_cfg = cfg.get('train', {})
     model_cfg = cfg.get('model', {})
-    run_dir = create_run_dir(cfg)
     device = choose_device(str(train_cfg.get('device', 'auto')))
 
     augmentation_cfg = cfg.get('augmentation', {})
@@ -74,6 +73,7 @@ def prepare_training_context(
         scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
 
     runtime_cfg = cfg.get('runtime', {})
+    run_dir = create_run_dir(cfg)
     return FlexTrainingContext(
         cfg=cfg,
         dataset_cfg=dataset_cfg,

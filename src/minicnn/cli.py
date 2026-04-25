@@ -36,6 +36,7 @@ from minicnn._cli_training import (
     handle_train_native,
 )
 from minicnn._cli_validation import (
+    handle_check_cuda_ready,
     handle_cuda_native_capabilities,
     handle_validate_config,
     handle_validate_cuda_native_config,
@@ -130,6 +131,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == 'cuda-native-capabilities':
         return handle_cuda_native_capabilities()
+
+    if args.command == 'check-cuda-ready':
+        return handle_check_cuda_ready(args)
 
     if args.command == 'train-native':
         return handle_train_native(args)

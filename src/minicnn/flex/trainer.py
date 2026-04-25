@@ -71,13 +71,19 @@ def _optimizer_params(model, optimizer_cfg: dict[str, Any]):
         torch.nn.InstanceNorm3d,
         torch.nn.LayerNorm,
     )
+
+    def _is_no_decay_module(module) -> bool:
+        if isinstance(module, norm_types):
+            return True
+        return module.__class__.__name__ in {'LayerNorm2d'}
+
     decay = []
     no_decay = []
     for module in model.modules():
         for name, param in module.named_parameters(recurse=False):
             if not param.requires_grad:
                 continue
-            if name == 'bias' or isinstance(module, norm_types):
+            if name == 'bias' or _is_no_decay_module(module):
                 no_decay.append(param)
             else:
                 decay.append(param)

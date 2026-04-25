@@ -11,6 +11,9 @@ Related planning docs:
 - [cuda_native_productionization_plan.md](cuda_native_productionization_plan.md)
 - [cuda_native_amp_graduation_checklist.md](cuda_native_amp_graduation_checklist.md)
 - [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_plan.md)
+- [cuda_native_gpu_parity_matrix.md](cuda_native_gpu_parity_matrix.md)
+- [cuda_native_gpu_enablement_status.md](cuda_native_gpu_enablement_status.md)
+- [cuda_native_gpu_cifar10_runbook.md](cuda_native_gpu_cifar10_runbook.md)
 
 ## What cuda_native Is
 
@@ -30,7 +33,7 @@ A staged, modular backend structured in layers:
 ## What cuda_native Is Not
 
 - Not a production training backend
-- Not backed by real CUDA kernels (uses numpy reference implementations)
+- Default execution is GPU-first auto mode where supported; `engine.execution_mode=reference_numpy` remains the explicit CPU reference path and `engine.execution_mode=gpu_native` is strict real-CUDA mode for supported helper subsets
 - Not a full general-purpose graph backend yet (`Add`-based ordered DAG support exists, but richer merge ops are still missing)
 
 For the staged plan to move from NumPy reference execution to real GPU
@@ -42,7 +45,7 @@ execution, see [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_p
 |---|---|
 | Graph IR | ✓ Implemented |
 | Shape inference | ✓ Basic |
-| Forward execution | ✓ Basic (numpy) |
+| Forward execution | ✓ Basic reference mode plus partial native GPU lowering |
 | Planner | ✓ Conservative / beta-grade |
 | Reuse-aware planning | ✓ Experimental (`make_reuse_plan`, `make_plan(..., strategy="reuse")`) |
 | Liveness analysis | ✓ Experimental (`analyze_live_ranges`, `analyze_live_tensor_sets`, `estimate_peak_live_bytes`) |
@@ -53,11 +56,12 @@ execution, see [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_p
 | Memory footprint / pool | ✓ `memory_footprint()`, `BufferPool` |
 | Graph / plan dump | ✓ `dump_graph()`, `dump_plan()` |
 | Execution trace | ✓ `TracingForwardExecutor` |
-| Backward prototype | ⚠ Implemented, not stable |
-| Training loop | ⚠ Research prototype |
+| Backward prototype | ✓ Beta-grade within validated support boundary |
+| Training loop | ✓ Beta-grade within validated support boundary |
 | Training in production | ✗ Not enabled |
 | Dynamic graph | ✗ Not supported |
 | Mixed precision | ✓ Beta AMP |
+| `gpu_native` training | ⚠ Partial helper-backed subsets, including full CIFAR-10 two-Conv strict GPU training |
 
 ## Supported Ops
 
@@ -218,6 +222,163 @@ current state of:
 
 is visible without manually reading the roadmap.
 
+For GPU enablement work, the same capability payload now also exposes
+`execution_mode_readiness`, which answers:
+
+- which execution modes are active vs partial-forward vs planned
+- which ops make up the first `gpu_native` bootstrap subset
+- which blockers still prevent `gpu_native` from covering the full cuda_native training surface
+
+The same payload also exposes `gpu_kernel_registry_surface`, which is the
+bootstrap kernel table for `gpu_native` with per-op forward/backward
+status markers.
+
+Validation payloads and the `train-native` preamble now also include
+`execution_readiness_assessment`, so a concrete config can report:
+
+- which execution mode was requested
+- whether that mode is actually ready
+- which requested ops are already inside the GPU bootstrap subset
+- which requested ops still fall outside that subset
+
+Training artifacts preserve the same distinction:
+
+- `execution_mode` and `effective_execution_mode` report what actually ran
+- `selected_execution_mode` reports what the user requested
+- `execution_mode_policy` records fallback metadata such as `fallback_active`,
+  `fallback_reason`, `gpu_native_lowering_ready`, and
+  `gpu_native_runtime_ready`
+
+Execution-mode guidance:
+
+- default `engine.execution_mode=gpu_native_auto` is the broad GPU-first path:
+  it selects `gpu_native` when the training lowering plan and CUDA runtime
+  readiness both pass, otherwise it explicitly falls back to `reference_numpy`
+- `engine.execution_mode=gpu_native` is strict GPU mode for the supported native
+  helper subsets and fails when the graph/runtime is outside that boundary
+- `engine.execution_mode=reference_numpy` remains available as the historical
+  CPU fallback path
+- `train.device=cuda` or `train.device=gpu` is accepted only with
+  `gpu_native` / `gpu_native_auto`; the actual execution device is still
+  reported by `effective_execution_mode` and `tensor_execution_device`
+- `minicnn check-cuda-ready` probes the selected native library, required
+  symbols, CUDA runtime preflight, driver/runtime mismatch, and WSL device-node
+  state. On WSL, a missing `/dev/dxg` means CUDA Driver API initialization is
+  blocked before `cuda_native` can run real GPU kernels.
+
+Current `train-native engine.execution_mode=gpu_native` training subsets:
+
+- `Flatten -> Linear`
+- `Linear -> ReLU -> Linear`
+- `Flatten -> Linear -> ReLU -> Linear`
+- `Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear`
+- `Flatten -> Linear -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Linear`
+- `MaxPool2d -> Flatten -> Linear`
+- `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear`
+- `BatchNorm2d -> Flatten -> Linear`
+- `GlobalAvgPool2d -> Flatten -> Linear`
+- `AdaptiveAvgPool2d(output_size=1) -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`
+- `PointwiseConv2d(bias=false) -> Flatten -> Linear`
+- `PointwiseConv2d(bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> MaxPool2d -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> MaxPool2d -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> MaxPool2d -> Flatten -> Linear`
+- `Conv2d(valid, bias=false) -> ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Conv2d(valid, bias=false) -> same activation -> MaxPool2d -> Flatten -> Linear`
+
+These subsets execute through native GPU helper paths for forward, loss-gradient,
+covered backward kernels, and supported optimizer updates. General graph-level
+GPU backward lowering is still pending.
+`BatchNorm2d` is now part of the `gpu_native` train-native helper subset for
+`BatchNorm2d -> Flatten -> Linear` through `bn_train_forward` and
+`bn_backward`.
+`GlobalAvgPool2d` and `AdaptiveAvgPool2d(output_size=1)` are also covered by
+helper-backed train-native subsets through `global_avgpool2d_forward` and
+`global_avgpool2d_backward`.
+`AvgPool2d(kernel_size=2,stride=2,padding=0)` is also covered by a
+helper-backed train-native subset through `avgpool2d_forward` and
+`avgpool2d_backward`.
+`Identity`, `Dropout(p=0)`, and `DropPath(p=0)` are part of the forward
+dispatch/bootstrap primitive set as no-op GPU aliases. Stochastic
+`Dropout/DropPath` training remains outside the GPU-first path until native mask
+kernels and graph backward lowering land.
+`LeakyReLU`, `GELU`, `SiLU`, `Sigmoid`, and `Tanh` are part of the forward
+dispatch/bootstrap primitive set through native elementwise activation shims,
+and `Linear -> activation -> Linear` train-native helper subsets, including
+`LeakyReLU`, now use their native backward C ABI shims.
+`PointwiseConv2d` is also part of the forward dispatch/bootstrap primitive set
+through the native Conv2d im2col/GEMM lowering path, and single-stage
+`PointwiseConv2d -> activation -> Flatten -> Linear` helper subsets are now
+covered for `ReLU`, `LeakyReLU`, `GELU`, `SiLU`, `Sigmoid`, and `Tanh`.
+`DepthwiseConv2d` is part of the forward dispatch/bootstrap primitive set
+through `depthwise_conv2d_forward`, and single-stage
+`DepthwiseConv2d -> optional activation -> optional MaxPool2d -> Flatten -> Linear`
+helper subsets are now covered for the same activation family.
+`GroupNorm` is part of the forward dispatch/bootstrap primitive set through
+`groupnorm_forward`; train-native helper coverage is still pending.
+`LayerNorm2d` is part of the forward dispatch/bootstrap primitive set through
+`layernorm2d_forward`; train-native helper coverage is still pending.
+
+`validate-cuda-native-config` now emits a `training_lowering_plan` for
+`gpu_native`. The plan decomposes each accepted helper subset into explicit
+forward, loss, backward, and optimizer lowering steps so diagnostics no longer
+only report the coarse helper-pattern name.
+At runtime, native training helpers also expose an `execution_trace` that records
+the actual emitted GPU training calls in order.
+
+`gpu_native` loss support is currently:
+
+- Linear subsets: `CrossEntropyLoss` with `label_smoothing`, `MSELoss`, `BCEWithLogitsLoss`
+- Conv-family subsets: `CrossEntropyLoss` with `label_smoothing`
+
+`gpu_native` optimizer support is currently:
+
+- Linear subsets: `SGD`, `Adam`, `AdamW`, `RMSprop`
+- Conv-family subsets: `SGD`
+- Supported SGD helper subsets support native `optimizer.weight_decay` through
+  `sgd_update_fused`.
+- Supported `gpu_native` training subsets use native `optimizer.grad_clip_global`
+  through `grad_l2_sumsq` plus `scale_inplace`.
+- Supported `gpu_native` training subsets accept `train.grad_accum_steps >= 1`
+  by accumulating microbatches into one native GPU helper step.
+
+If `gpu_native` fails with `CUDA runtime preflight failed`, the Python runtime
+reached the real CUDA library but the installed NVIDIA driver/runtime pair is
+not compatible. Update the driver, rebuild against a compatible CUDA toolkit, or
+select a compatible `MINICNN_CUDA_VARIANT` before treating the machine as a valid
+GPU smoke environment.
+
+Repeated-Conv real-data GPU smoke entrypoint:
+
+```bash
+PYTHONPATH=src python3 examples/cuda_native_gpu_two_conv_training_cifar10_demo.py --batch-size 2
+```
+
+Current evidence: representative real CUDA smoke passes for minimal Linear SGD,
+minimal Linear RMSprop, and the CIFAR-10 repeated-Conv helper; the repeated-Conv
+smoke uses `official:cifar10:test_batch` when available and compares updated
+weights against NumPy reference.
+
+Full CIFAR-10 strict GPU training runbook:
+
+```bash
+PYTHONPATH=src python3 -m minicnn.cli validate-cuda-native-config \
+  --config configs/cifar10_cuda_native_gpu_stronger.yaml
+
+PYTHONPATH=src timeout 7200s python3 -m minicnn.cli train-native \
+  --config configs/cifar10_cuda_native_gpu_stronger.yaml
+```
+
+Representative real-data result: the stronger two-Conv helper model reached
+low-to-mid 60% validation accuracy in early epochs while train accuracy kept
+rising, confirming real GPU training/eval execution and showing that the next
+accuracy bottleneck is model capacity / regularization. See
+[cuda_native_gpu_cifar10_runbook.md](cuda_native_gpu_cifar10_runbook.md).
+
 Validate a config:
 
 ```bash
@@ -225,6 +386,53 @@ minicnn validate-cuda-native-config --config configs/dual_backend_cnn.yaml \
   optimizer.momentum=0.9 optimizer.grad_clip_global=1.0 \
   scheduler.enabled=true scheduler.type=StepLR scheduler.step_size=5
 ```
+
+Create a partial native-forward GPU executor from Python:
+
+```python
+import numpy as np
+
+from minicnn.cuda_native import build_cuda_native_graph, make_native_gpu_forward_executor
+
+graph = build_cuda_native_graph(
+    {
+        "layers": [
+            {"type": "Flatten", "output": "flat"},
+            {"type": "Add", "inputs": ["flat", "flat"], "output": "sum"},
+        ],
+    },
+    (1, 4),
+)
+
+executor = make_native_gpu_forward_executor(reserve_bytes=4096, reserve_buffers=4)
+result = executor.run(graph, np.asarray([[1.0, -2.0, 3.0, -4.0]], dtype=np.float32))
+print(result.output)
+```
+
+Run one narrow native GPU training step for `Linear + SoftmaxCE + SGD`:
+
+```python
+import numpy as np
+
+from minicnn.cuda_native import native_gpu_linear_training_step
+
+step = native_gpu_linear_training_step(
+    np.asarray([[1.0, 2.0, -1.0]], dtype=np.float32),
+    np.asarray([2], dtype=np.int32),
+    np.asarray([[0.1, 0.0, -0.1], [0.0, 0.2, 0.1], [0.3, -0.2, 0.0]], dtype=np.float32),
+    np.zeros((3,), dtype=np.float32),
+    lr=0.01,
+)
+print(step.loss_mean, step.runtime_summary["execution_kinds"])
+```
+
+The same GPU training substrate also supports the narrow
+`Linear -> ReLU -> Linear` path through `native_gpu_two_linear_relu_training_step`
+and through `train-native engine.execution_mode=gpu_native` when the model graph
+is `Flatten -> Linear -> ReLU -> Linear`.
+MaxPool backward is also covered for the narrow
+`MaxPool2d -> Flatten -> Linear` graph through `native_gpu_pool_linear_training_step`
+and the same `train-native` execution mode.
 
 Validation payloads now also include `support_tier_assessment`, so a config can
 be accepted while still being marked as touching `beta`
@@ -377,6 +585,7 @@ Public executor contract:
 | Phase 4 | MVP stabilization, CLI, doctor, docs | ✓ Done |
 | Phase 4b | Debug observability, layouts, memory layer | ✓ Done |
 | Phase 5 | BatchNorm/Residual/Concat/Memory reuse RFCs | ✓ RFC written |
+| Phase G1 | Partial cuda_native native-forward GPU execution | In progress |
 | Phase 6 | Autograd, optimizer stack, broader op coverage | Future |
 
 AMP graduation checklist: [docs/cuda_native_amp_graduation_checklist.md](cuda_native_amp_graduation_checklist.md)
