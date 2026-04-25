@@ -302,7 +302,7 @@ def test_validate_cuda_native_config_reports_ops_outside_gpu_bootstrap_subset(tm
     config_path.write_text(
         config_path.read_text(encoding='utf-8').replace(
             "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
-            "  layers:\n    - type: BatchNorm2d\n      num_features: 1\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: Dropout\n      p: 0.1\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
         ),
         encoding='utf-8',
     )
@@ -319,13 +319,13 @@ def test_validate_cuda_native_config_reports_ops_outside_gpu_bootstrap_subset(tm
 
     assert rc == 2
     assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Flatten', 'Linear']
-    assert payload['execution_readiness_assessment']['bootstrap_missing_ops'] == ['BatchNorm2d']
-    assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['BatchNorm2d']['forward_status'] == 'outside_bootstrap'
+    assert payload['execution_readiness_assessment']['bootstrap_missing_ops'] == ['Dropout']
+    assert payload['execution_readiness_assessment']['kernel_readiness_for_requested_ops']['Dropout']['forward_status'] == 'outside_bootstrap'
     assert payload['execution_readiness_assessment']['dispatch_plan']['ready'] is False
-    assert payload['execution_readiness_assessment']['dispatch_plan']['unsupported_ops'] == ['BatchNorm2d']
-    assert payload['execution_readiness_assessment']['dispatch_plan']['steps'][0]['op_name'] == 'BatchNorm2d'
+    assert payload['execution_readiness_assessment']['dispatch_plan']['unsupported_ops'] == ['Dropout']
+    assert payload['execution_readiness_assessment']['dispatch_plan']['steps'][0]['op_name'] == 'Dropout'
     assert payload['execution_readiness_assessment']['dispatch_plan']['steps'][0]['supported'] is False
-    assert any("got ['BatchNorm2d', 'Flatten', 'Linear']" in err for err in payload['errors'])
+    assert any("got ['Dropout', 'Flatten', 'Linear']" in err for err in payload['errors'])
 
 
 def test_validate_cuda_native_config_accepts_gpu_native_linear_global_grad_clip(tmp_path, capsys):

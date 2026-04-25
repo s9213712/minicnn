@@ -253,6 +253,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'ResidualBlock, ConvNeXtBlock, Dropout, and DropPath run through composite/reference numpy kernels; support tier is published separately.',
         'Explicit ordered DAG wiring is supported through named tensor outputs plus Add/Concat multi-input nodes.',
         'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and beta AMP with loss scaling / overflow backoff.',
+        'gpu_native forward dispatch now includes BatchNorm2d; train-native still restricts BatchNorm2d to reference_numpy until a training helper or graph-backward lowering lands.',
         'gpu_native train-native currently covers narrow Linear, Linear+ReLU, MaxPool+Linear, Conv2d(valid, bias=false)+Linear, Conv2d(valid, bias=false)+ReLU+Linear, Conv2d(valid, bias=false)+MaxPool+Linear, Conv2d(valid, bias=false)+ReLU+MaxPool+Linear, and two-Conv ReLU+MaxPool+Linear subsets through native device-pointer helpers.',
         'gpu_native readiness diagnostics expose a training_lowering_plan that decomposes helper subsets into forward, loss, backward, and optimizer lowering steps.',
         'gpu_native Linear subsets support native CrossEntropyLoss with label_smoothing, MSELoss, and BCEWithLogitsLoss loss-gradient helpers; Conv-family subsets currently support CrossEntropyLoss with label_smoothing.',

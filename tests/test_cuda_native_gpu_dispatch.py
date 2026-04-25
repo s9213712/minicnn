@@ -115,7 +115,7 @@ def test_gpu_dispatch_plan_marks_ops_outside_bootstrap_subset():
     graph = build_cuda_native_graph(
         {
             'layers': [
-                {'type': 'BatchNorm2d', 'num_features': 1},
+                {'type': 'Dropout', 'p': 0.1},
                 {'type': 'Flatten'},
                 {'type': 'Linear', 'out_features': 2},
             ],
@@ -127,8 +127,8 @@ def test_gpu_dispatch_plan_marks_ops_outside_bootstrap_subset():
     summary = plan.summary()
 
     assert summary['ready'] is False
-    assert summary['unsupported_ops'] == ['BatchNorm2d']
-    assert [step['op_name'] for step in summary['steps']] == ['BatchNorm2d', 'Flatten', 'Linear']
+    assert summary['unsupported_ops'] == ['Dropout']
+    assert [step['op_name'] for step in summary['steps']] == ['Dropout', 'Flatten', 'Linear']
     assert summary['steps'][0]['supported'] is False
     assert summary['steps'][0]['launch_family'] == 'unsupported'
     assert summary['steps'][0]['lowering_kind'] == 'unsupported'
@@ -137,6 +137,34 @@ def test_gpu_dispatch_plan_marks_ops_outside_bootstrap_subset():
     assert summary['steps'][0]['launch_descriptor']['normalized_tensor_args'][0]['binding'] == 'input'
     assert summary['steps'][0]['forward_status'] == 'unsupported'
     assert summary['steps'][2]['param_keys'] == ['_w_linear_2', '_b_linear_2']
+
+
+def test_gpu_dispatch_plan_supports_batchnorm2d_forward_shim():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'BatchNorm2d', 'num_features': 1, 'eps': 1e-4, 'momentum': 0.2},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 1, 8, 8),
+    )
+
+    summary = build_gpu_dispatch_plan(graph).summary()
+
+    assert summary['ready'] is True
+    assert summary['unsupported_ops'] == []
+    assert summary['steps'][0]['op_name'] == 'BatchNorm2d'
+    assert summary['steps'][0]['launch_family'] == 'batchnorm2d_nchw'
+    assert summary['steps'][0]['lowering_kind'] == 'normalization_batchnorm2d_shim'
+    assert summary['steps'][0]['param_keys'] == [
+        '_w_batchnorm2d_0',
+        '_b_batchnorm2d_0',
+        '_running_mean_batchnorm2d_0',
+        '_running_var_batchnorm2d_0',
+    ]
+    assert summary['steps'][0]['launch_descriptor']['attr_bindings'] == {'eps': 0.0001, 'momentum': 0.2}
 
 
 def test_gpu_training_lowering_plan_records_linear_rmsprop_manifest():

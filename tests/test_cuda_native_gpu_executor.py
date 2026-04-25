@@ -186,7 +186,7 @@ def test_gpu_stub_executor_rejects_graph_outside_bootstrap_subset():
     graph = build_cuda_native_graph(
         {
             'layers': [
-                {'type': 'BatchNorm2d', 'num_features': 1},
+                {'type': 'Dropout', 'p': 0.1},
                 {'type': 'Flatten'},
                 {'type': 'Linear', 'out_features': 2},
             ],
@@ -205,7 +205,39 @@ def test_gpu_stub_executor_rejects_graph_outside_bootstrap_subset():
         raise AssertionError('expected bootstrap-subset rejection')
 
     assert 'unsupported_ops' in message
-    assert 'BatchNorm2d' in message
+    assert 'Dropout' in message
+
+
+def test_gpu_stub_executor_routes_batchnorm2d_forward_shim():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'BatchNorm2d', 'num_features': 1},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 1, 4, 4),
+    )
+    runtime = DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu')
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.ones((1, 1, 4, 4), dtype=np.float32)
+    params = {
+        '_w_batchnorm2d_0': np.ones((1,), dtype=np.float32),
+        '_b_batchnorm2d_0': np.zeros((1,), dtype=np.float32),
+        '_running_mean_batchnorm2d_0': np.zeros((1,), dtype=np.float32),
+        '_running_var_batchnorm2d_0': np.ones((1,), dtype=np.float32),
+        '_w_linear_2': np.ones((2, 16), dtype=np.float32),
+        '_b_linear_2': np.zeros((2,), dtype=np.float32),
+    }
+
+    result = executor.run(graph, x, params=params)
+    summary = result.summary()
+
+    assert summary['dispatch_plan']['ready'] is True
+    assert summary['dispatch_plan']['steps'][0]['op_name'] == 'BatchNorm2d'
+    assert summary['output_shape'] == [1, 2]
 
 
 def test_gpu_stub_executor_backend_stub_routes_conv2d():

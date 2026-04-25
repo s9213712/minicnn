@@ -7,7 +7,7 @@ import numpy as np
 
 from minicnn.cuda_native.device_runtime import DeviceRuntime, DeviceTensor
 from minicnn.cuda_native.gpu_kernel_registry import list_gpu_kernel_specs
-from minicnn.cuda_native.kernels import _attr_pair, _conv2d_forward_array, _pool2d_windows
+from minicnn.cuda_native.kernels import _attr_pair, _batchnorm2d_forward_array, _conv2d_forward_array, _pool2d_windows
 from minicnn.cuda_native.nodes import Node
 
 
@@ -320,6 +320,86 @@ def _lower_concat(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     return _allocate_output(node, ctx, output)
 
 
+def _lower_batchnorm2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
+    if x.ndim != 4:
+        raise ValueError(f'BatchNorm2d node={node.name}: expected 4-D NCHW input, got {x.shape}')
+    channels = int(x.shape[1])
+    gamma = np.asarray(ctx.params.get(f'_w_{node.name}', np.ones(channels, dtype=np.float32)), dtype=np.float32)
+    beta = np.asarray(ctx.params.get(f'_b_{node.name}', np.zeros(channels, dtype=np.float32)), dtype=np.float32)
+    running_mean_key = f'_running_mean_{node.name}'
+    running_var_key = f'_running_var_{node.name}'
+    running_mean = np.asarray(ctx.params.get(running_mean_key, np.zeros(channels, dtype=np.float32)), dtype=np.float32)
+    running_var = np.asarray(ctx.params.get(running_var_key, np.ones(channels, dtype=np.float32)), dtype=np.float32)
+    for label, value in (
+        ('weight', gamma),
+        ('bias', beta),
+        ('running_mean', running_mean),
+        ('running_var', running_var),
+    ):
+        if value.shape != (channels,):
+            raise ValueError(f'BatchNorm2d node={node.name}: {label} must have shape {(channels,)}, got {value.shape}')
+    eps = float(node.attrs.get('eps', 1e-5))
+    momentum = float(node.attrs.get('momentum', 0.1))
+    mode = str(ctx.mode)
+    if (
+        mode == 'eval'
+        and ctx.runtime.native_device_pointers_enabled
+        and input_tensor.device_ptr is not None
+        and hasattr(ctx.runtime.bound_lib, 'bn_eval_forward')
+    ):
+        output = ctx.runtime.allocate_staging_buffer(
+            tuple(node.output_specs[0].shape),
+            dtype='float32',
+            name=node.outputs[0],
+        )
+        running_mean_t = ctx.runtime.stage_to_device(running_mean, name=running_mean_key)
+        running_var_t = ctx.runtime.stage_to_device(running_var, name=running_var_key)
+        gamma_t = ctx.runtime.stage_to_device(gamma, name=f'_w_{node.name}')
+        beta_t = ctx.runtime.stage_to_device(beta, name=f'_b_{node.name}')
+        try:
+            ctx.runtime.bound_lib.bn_eval_forward(
+                output.device_ptr,
+                input_tensor.device_ptr,
+                running_mean_t.device_ptr,
+                running_var_t.device_ptr,
+                gamma_t.device_ptr,
+                beta_t.device_ptr,
+                int(x.shape[0]),
+                int(x.shape[1]),
+                int(x.shape[2]),
+                int(x.shape[3]),
+                eps,
+            )
+            ctx.runtime.record_execution(
+                'gpu_native_kernel:bn_eval_forward',
+                input_name=node.inputs[0],
+                output_name=node.outputs[0],
+                node_count=1,
+            )
+            ctx.runtime.sync_tensor_to_host(output)
+        finally:
+            ctx.runtime.release_buffer(running_mean_t)
+            ctx.runtime.release_buffer(running_var_t)
+            ctx.runtime.release_buffer(gamma_t)
+            ctx.runtime.release_buffer(beta_t)
+        return output
+    output, cache = _batchnorm2d_forward_array(
+        x,
+        gamma=gamma,
+        beta=beta,
+        running_mean=running_mean,
+        running_var=running_var,
+        eps=eps,
+        momentum=momentum,
+        mode=mode,
+    )
+    ctx.params[running_mean_key] = cache['running_mean']
+    ctx.params[running_var_key] = cache['running_var']
+    return _allocate_output(node, ctx, output)
+
+
 def _lower_conv2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     input_tensor = _input_tensor(node, ctx)
     x = np.asarray(input_tensor.data, dtype=np.float32)
@@ -457,6 +537,12 @@ def make_default_gpu_lowering_registry() -> GpuLoweringRegistry:
         lowering_kind='merge_concat_shim',
         kernel_category=kernel_categories['Concat'],
         fn=_lower_concat,
+    )
+    registry.register(
+        'BatchNorm2d',
+        lowering_kind='normalization_batchnorm2d_shim',
+        kernel_category=kernel_categories['BatchNorm2d'],
+        fn=_lower_batchnorm2d,
     )
     registry.register(
         'Conv2d',

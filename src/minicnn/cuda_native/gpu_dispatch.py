@@ -118,6 +118,13 @@ def _node_param_keys(node) -> tuple[str, ...]:
         keys.append(f'_w_{node.name}')
         if bool(node.attrs.get('bias', True)):
             keys.append(f'_b_{node.name}')
+    elif node.op_type == 'BatchNorm2d':
+        keys.extend((
+            f'_w_{node.name}',
+            f'_b_{node.name}',
+            f'_running_mean_{node.name}',
+            f'_running_var_{node.name}',
+        ))
     return tuple(keys)
 
 
@@ -135,6 +142,9 @@ def _node_attr_bindings(node) -> dict[str, Any]:
         bindings['negative_slope'] = float(node.attrs.get('negative_slope', 0.01))
     elif node.op_type == 'Concat':
         bindings['axis'] = int(node.attrs.get('axis', 1))
+    elif node.op_type == 'BatchNorm2d':
+        bindings['eps'] = float(node.attrs.get('eps', 1e-5))
+        bindings['momentum'] = float(node.attrs.get('momentum', 0.1))
     return bindings
 
 
@@ -146,6 +156,9 @@ def _node_param_layouts(node, param_keys: tuple[str, ...]) -> dict[str, str]:
     elif node.op_type == 'Linear':
         for key in param_keys:
             layouts[key] = 'OI' if key.startswith('_w_') else 'O'
+    elif node.op_type == 'BatchNorm2d':
+        for key in param_keys:
+            layouts[key] = 'C'
     else:
         for key in param_keys:
             layouts[key] = 'match_op_default'

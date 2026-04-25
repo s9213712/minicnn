@@ -11,6 +11,9 @@ For the closure/status summary, see
 
 ## Current training subset matrix
 
+`BatchNorm2d` is covered as a `gpu_native` forward dispatch primitive, but it is
+not yet part of the helper-backed train-native subset matrix.
+
 | Subset | Helper | Evidence | Hardware status |
 |---|---|---|---|
 | `Linear` | `native_gpu_linear_training_step` | Hermetic reference math for CE/MSE/BCE, label smoothing, SGD/Adam/AdamW/RMSprop, global grad clip, grad accumulation, and execution trace order | Real CUDA smoke passed for SGD, RMSprop, and label smoothing; grad accumulation allocation smoke pending on a compatible host |

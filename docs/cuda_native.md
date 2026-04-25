@@ -254,6 +254,9 @@ Current `train-native engine.execution_mode=gpu_native` training subsets:
 These subsets execute through native GPU helper paths for forward, loss-gradient,
 covered backward kernels, and supported optimizer updates. General graph-level
 GPU backward lowering is still pending.
+`BatchNorm2d` is now part of the `gpu_native` forward dispatch/bootstrap
+primitive set, but it is not yet accepted by `gpu_native` train-native helper
+subsets.
 
 `validate-cuda-native-config` now emits a `training_lowering_plan` for
 `gpu_native`. The plan decomposes each accepted helper subset into explicit

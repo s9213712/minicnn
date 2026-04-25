@@ -15,6 +15,8 @@ Completed:
 - explicit `reference_numpy` vs `gpu_native` execution-mode contract
 - native device-pointer runtime substrate and CUDA runtime preflight
 - native forward lowering for the bootstrap op set
+- `BatchNorm2d` forward dispatch/lowering shim in the `gpu_native` bootstrap
+  primitive set
 - native training helpers for the current narrow training subsets
 - CLI validation/runtime routing for supported `gpu_native` subsets
 - hermetic reference-math parity matrix
@@ -116,13 +118,15 @@ Still not claimed as complete:
 
 - full graph-level GPU backward generalization
 - composite/block training lowering for residual and ConvNeXt-style models
+- `BatchNorm2d` train-native helper coverage; current work is forward dispatch
+  only
 
 ## Validation evidence
 
 Current repo-side validation:
 
 ```text
-133 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
+135 passed, 4 skipped on current host because CUDA runtime preflight reports status=35
 ```
 
 Covered test subset:
