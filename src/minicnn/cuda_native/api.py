@@ -709,7 +709,11 @@ def _validate_scheduler_cfg(scheduler_cfg: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _validate_train_cfg(train_cfg: dict[str, Any]) -> list[str]:
+def _validate_train_cfg(
+    train_cfg: dict[str, Any],
+    *,
+    execution_mode: str = 'reference_numpy',
+) -> list[str]:
     errors: list[str] = []
     grad_accum_steps, grad_accum_errors = _coerce_int(
         'train.grad_accum_steps',
@@ -747,9 +751,13 @@ def _validate_train_cfg(train_cfg: dict[str, Any]) -> list[str]:
     if amp_scale_window is not None and amp_scale_window <= 0:
         errors.append('train.amp_scale_window must be >= 1 for cuda_native AMP.')
     device = train_cfg.get('device')
-    if device not in {None, 'auto', 'cpu'}:
+    allowed_devices = {None, 'auto', 'cpu'}
+    if execution_mode in {'gpu_native', 'gpu_native_auto'}:
+        allowed_devices = {None, 'auto', 'cpu', 'cuda', 'gpu'}
+    if device not in allowed_devices:
         errors.append(
-            f'cuda_native ignores train.device={device!r}; use "auto" or "cpu".'
+            f'cuda_native execution_mode={execution_mode!r} does not accept train.device={device!r}; '
+            f'use one of {sorted(str(item) for item in allowed_devices if item is not None)}.'
         )
     return errors
 
@@ -796,8 +804,9 @@ def validate_cuda_native_config(cfg: dict[str, Any]) -> list[str]:
     errors.extend(_validate_loss_cfg(loss_cfg))
     errors.extend(_validate_optimizer_cfg(optim_cfg))
     errors.extend(_validate_scheduler_cfg(scheduler_cfg))
-    errors.extend(_validate_train_cfg(train_cfg))
     execution_mode = resolve_cuda_native_execution_mode(cfg)
+    selected_execution_mode = str(execution_mode.get('selected_execution_mode', 'reference_numpy'))
+    errors.extend(_validate_train_cfg(train_cfg, execution_mode=selected_execution_mode))
 
     validation_input_shape = _validation_input_shape(dataset_cfg)
     if validation_input_shape is not None and not model_errors:

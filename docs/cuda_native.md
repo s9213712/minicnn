@@ -257,6 +257,9 @@ Execution-mode guidance:
 - `engine.execution_mode=gpu_native_auto` is the GPU-first path: it selects
   `gpu_native` only when the training lowering plan and CUDA runtime readiness
   both pass, otherwise it explicitly falls back to `reference_numpy`
+- `train.device=cuda` or `train.device=gpu` is accepted only with
+  `gpu_native` / `gpu_native_auto`; the actual execution device is still
+  reported by `effective_execution_mode` and `tensor_execution_device`
 
 Current `train-native engine.execution_mode=gpu_native` training subsets:
 

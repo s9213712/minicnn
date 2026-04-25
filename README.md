@@ -193,6 +193,7 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 # GPU-first with NumPy fallback
 minicnn train-native --config configs/dual_backend_cnn.yaml \
   engine.execution_mode=gpu_native_auto \
+  train.device=cuda \
   dataset.type=random dataset.num_samples=128 dataset.val_samples=32
 ```
 

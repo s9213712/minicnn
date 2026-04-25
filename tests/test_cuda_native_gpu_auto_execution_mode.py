@@ -30,6 +30,19 @@ def test_gpu_native_auto_selects_gpu_when_lowering_and_runtime_are_ready(monkeyp
     assert payload['fallback_reason'] == 'not_needed'
 
 
+def test_gpu_execution_modes_accept_cuda_train_device(monkeypatch):
+    import minicnn.cuda_native.api as api
+
+    monkeypatch.setattr(api, '_cuda_runtime_ready_for_gpu_native', lambda: (False, 'cuda_runtime_not_ready'))
+    cfg = _cfg([
+        {'type': 'Flatten'},
+        {'type': 'Linear', 'out_features': 2},
+    ])
+    cfg['train']['device'] = 'cuda'
+
+    assert api.validate_cuda_native_config(cfg) == []
+
+
 def test_gpu_native_auto_falls_back_to_numpy_when_lowering_is_not_ready(monkeypatch):
     import minicnn.cuda_native.api as api
 
