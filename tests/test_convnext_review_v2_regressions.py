@@ -7,6 +7,9 @@ import pytest
 import yaml
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 def test_validate_config_rejects_unknown_backend(capsys):
     from minicnn.cli import main
 
@@ -142,7 +145,7 @@ def test_train_flex_does_not_leave_run_dir_when_dataset_setup_fails(tmp_path):
     from minicnn.flex.config import load_flex_config
     from minicnn.flex.trainer import train_from_config
 
-    cfg = load_flex_config(Path('/home/s92137/NN/minicnn/templates/cifar10/convnext_explicit.yaml'), [])
+    cfg = load_flex_config(REPO_ROOT / 'templates/cifar10/convnext_explicit.yaml', [])
     cfg['dataset']['data_root'] = str(tmp_path / 'missing-cifar')
     cfg['dataset']['download'] = False
     cfg['dataset']['num_samples'] = 8
@@ -169,10 +172,10 @@ def test_random_dataset_rejects_negative_split_sizes():
 
 
 def test_convnext_explicit_template_docs_residual_boundary_is_honest():
-    template_path = Path('/home/s92137/NN/minicnn/templates/cifar10/convnext_explicit.yaml')
+    template_path = REPO_ROOT / 'templates/cifar10/convnext_explicit.yaml'
     raw = template_path.read_text(encoding='utf-8')
     assert 'does NOT include residual add or layer scale' in raw
 
-    smoke_path = Path('/home/s92137/NN/minicnn/templates/cifar10/convnext_explicit_smoke.yaml')
+    smoke_path = REPO_ROOT / 'templates/cifar10/convnext_explicit_smoke.yaml'
     smoke_raw = smoke_path.read_text(encoding='utf-8')
     assert 'does not encode residual add or layer scale semantics' in smoke_raw

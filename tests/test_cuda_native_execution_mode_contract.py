@@ -45,8 +45,9 @@ def _run_train_native_or_skip(args: list[str]) -> int:
     try:
         return main(args)
     except RuntimeError as exc:
-        if 'CUDA runtime preflight failed' in str(exc):
-            pytest.skip(str(exc))
+        message = str(exc)
+        if 'CUDA runtime preflight failed' in message or 'CUDA shared library not found' in message:
+            pytest.skip(message)
         raise
 
 
