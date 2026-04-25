@@ -19,6 +19,7 @@ from minicnn.cuda_native.gpu_training import (
     native_gpu_batchnorm_linear_training_step,
     native_gpu_conv_linear_training_step,
     native_gpu_depthwise_layernorm2d_linear_training_step,
+    native_gpu_depthwise_layernorm2d_pointwise_linear_training_step,
     native_gpu_global_avgpool_linear_training_step,
     native_gpu_groupnorm_linear_training_step,
     native_gpu_layernorm2d_linear_training_step,
@@ -466,6 +467,42 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
             'conv_node': nodes[0],
             'layernorm2d_node': nodes[1],
             'linear_nodes': [nodes[3]],
+        }
+    if ops == ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear']:
+        depthwise_attrs = dict(getattr(nodes[0], 'attrs', {}) or {})
+        pointwise_attrs = dict(getattr(nodes[2], 'attrs', {}) or {})
+
+        def _pair(value: Any, default: int) -> tuple[int, int]:
+            if value is None:
+                return (default, default)
+            if isinstance(value, (list, tuple)):
+                if len(value) == 1:
+                    return (int(value[0]), int(value[0]))
+                return (int(value[0]), int(value[1]))
+            return (int(value), int(value))
+
+        if bool(depthwise_attrs.get('bias', False)):
+            raise ValueError('cuda_native gpu_native DepthwiseConv2d train-native subset currently requires bias=false.')
+        if _pair(depthwise_attrs.get('stride', 1), 1) != (1, 1):
+            raise ValueError('cuda_native gpu_native DepthwiseConv2d train-native subset currently requires stride=1.')
+        if _pair(depthwise_attrs.get('padding', 0), 0) != (0, 0):
+            raise ValueError('cuda_native gpu_native DepthwiseConv2d train-native subset currently requires padding=0.')
+        if _pair(depthwise_attrs.get('dilation', 1), 1) != (1, 1):
+            raise ValueError('cuda_native gpu_native DepthwiseConv2d train-native subset currently requires dilation=1.')
+        if bool(pointwise_attrs.get('bias', False)):
+            raise ValueError('cuda_native gpu_native PointwiseConv2d train-native subset currently requires bias=false.')
+        if _pair(pointwise_attrs.get('kernel_size', 1), 1) != (1, 1):
+            raise ValueError('cuda_native gpu_native PointwiseConv2d train-native subset currently requires kernel_size=1.')
+        if _pair(pointwise_attrs.get('stride', 1), 1) != (1, 1):
+            raise ValueError('cuda_native gpu_native PointwiseConv2d train-native subset currently requires stride=1.')
+        if _pair(pointwise_attrs.get('padding', 0), 0) != (0, 0):
+            raise ValueError('cuda_native gpu_native PointwiseConv2d train-native subset currently requires padding=0.')
+        return {
+            'kind': 'depthwise_layernorm2d_pointwise_linear',
+            'depthwise_node': nodes[0],
+            'layernorm2d_node': nodes[1],
+            'pointwise_node': nodes[2],
+            'linear_nodes': [nodes[4]],
         }
     if ops in (['GlobalAvgPool2d', 'Flatten', 'Linear'], ['AdaptiveAvgPool2d', 'Flatten', 'Linear']):
         return {'kind': 'global_avgpool_linear', 'pool_node': nodes[0], 'linear_nodes': [nodes[2]]}
@@ -1011,6 +1048,53 @@ def run_training_loop(
                         velocity_state[conv_weight_key] = step.updated_conv_weight_velocity
                         velocity_state[norm_weight_key] = step.updated_norm_weight_velocity
                         velocity_state[norm_bias_key] = step.updated_norm_bias_velocity
+                        velocity_state[linear_weight_key] = step.updated_linear_weight_velocity
+                        velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
+                    elif gpu_training_plan['kind'] == 'depthwise_layernorm2d_pointwise_linear':
+                        depthwise_node = gpu_training_plan['depthwise_node']
+                        norm_node = gpu_training_plan['layernorm2d_node']
+                        pointwise_node = gpu_training_plan['pointwise_node']
+                        gpu_linear_node = gpu_training_plan['linear_nodes'][0]
+                        depthwise_weight_key = f'_w_{depthwise_node.name}'
+                        norm_weight_key = f'_w_{norm_node.name}'
+                        norm_bias_key = f'_b_{norm_node.name}'
+                        pointwise_weight_key = f'_w_{pointwise_node.name}'
+                        linear_weight_key = f'_w_{gpu_linear_node.name}'
+                        linear_bias_key = f'_b_{gpu_linear_node.name}'
+                        step = native_gpu_depthwise_layernorm2d_pointwise_linear_training_step(
+                            xb,
+                            yb,
+                            params[depthwise_weight_key],
+                            params[norm_weight_key],
+                            params[norm_bias_key],
+                            params[pointwise_weight_key],
+                            params[linear_weight_key],
+                            params[linear_bias_key],
+                            lr=float(optimizer_view.lr),
+                            momentum=float(ctx.momentum),
+                            grad_clip_value=float(ctx.grad_clip_global),
+                            weight_decay=float(ctx.weight_decay),
+                            label_smoothing=float(ctx.loss_cfg.get('label_smoothing', 0.0)),
+                            norm_eps=float(norm_node.attrs.get('eps', 1e-6)),
+                            depthwise_weight_velocity=velocity_state.get(depthwise_weight_key),
+                            norm_weight_velocity=velocity_state.get(norm_weight_key),
+                            norm_bias_velocity=velocity_state.get(norm_bias_key),
+                            pointwise_weight_velocity=velocity_state.get(pointwise_weight_key),
+                            linear_weight_velocity=velocity_state.get(linear_weight_key),
+                            linear_bias_velocity=velocity_state.get(linear_bias_key),
+                            bound_lib=ctx.device_runtime.bound_lib,
+                        )
+                        params = dict(params)
+                        params[depthwise_weight_key] = step.updated_depthwise_weight
+                        params[norm_weight_key] = step.updated_norm_weight
+                        params[norm_bias_key] = step.updated_norm_bias
+                        params[pointwise_weight_key] = step.updated_pointwise_weight
+                        params[linear_weight_key] = step.updated_linear_weight
+                        params[linear_bias_key] = step.updated_linear_bias
+                        velocity_state[depthwise_weight_key] = step.updated_depthwise_weight_velocity
+                        velocity_state[norm_weight_key] = step.updated_norm_weight_velocity
+                        velocity_state[norm_bias_key] = step.updated_norm_bias_velocity
+                        velocity_state[pointwise_weight_key] = step.updated_pointwise_weight_velocity
                         velocity_state[linear_weight_key] = step.updated_linear_weight_velocity
                         velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
                     elif gpu_training_plan['kind'] == 'conv_linear':

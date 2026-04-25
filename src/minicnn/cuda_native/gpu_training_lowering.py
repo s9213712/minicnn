@@ -179,6 +179,10 @@ _TRAINING_SUBSETS: dict[tuple[str, ...], tuple[str, str]] = {
         'depthwise_layernorm2d_linear',
         'native_gpu_depthwise_layernorm2d_linear_training_step',
     ),
+    ('DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear'): (
+        'depthwise_layernorm2d_pointwise_linear',
+        'native_gpu_depthwise_layernorm2d_pointwise_linear_training_step',
+    ),
     ('GlobalAvgPool2d', 'Flatten', 'Linear'): ('global_avgpool_linear', 'native_gpu_global_avgpool_linear_training_step'),
     ('AdaptiveAvgPool2d', 'Flatten', 'Linear'): ('adaptive_avgpool_linear', 'native_gpu_global_avgpool_linear_training_step'),
     ('Conv2d', 'Flatten', 'Linear'): ('conv_linear', 'native_gpu_conv_linear_training_step'),
@@ -333,6 +337,38 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
                 launch_family='pool_backward',
             )
         )
+    if subset_name == 'depthwise_layernorm2d_pointwise_linear':
+        pointwise_node = next(node for node in conv_nodes if str(node.op_type) == 'PointwiseConv2d')
+        depthwise_node = next(node for node in conv_nodes if str(node.op_type) == 'DepthwiseConv2d')
+        steps.append(
+            GpuTrainingLoweringStep(
+                phase='backward',
+                op_name='PointwiseConv2d',
+                lowering_kind='conv_backward',
+                launch_family='conv2d_backward',
+                node_name=str(pointwise_node.name),
+                param_keys=(f'_w_{pointwise_node.name}',),
+            )
+        )
+        steps.append(
+            GpuTrainingLoweringStep(
+                phase='backward',
+                op_name='LayerNorm2d',
+                lowering_kind='layernorm2d_backward',
+                launch_family='normalization_backward',
+            )
+        )
+        steps.append(
+            GpuTrainingLoweringStep(
+                phase='backward',
+                op_name='DepthwiseConv2d',
+                lowering_kind='depthwise_conv2d_backward',
+                launch_family='depthwise_conv2d_backward',
+                node_name=str(depthwise_node.name),
+                param_keys=(f'_w_{depthwise_node.name}',),
+            )
+        )
+        return tuple(steps)
     if subset_name == 'batchnorm_linear':
         steps.append(
             GpuTrainingLoweringStep(
@@ -342,7 +378,11 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
                 launch_family='normalization_backward',
             )
         )
-    if subset_name in {'layernorm2d_linear', 'depthwise_layernorm2d_linear'}:
+    if subset_name in {
+        'layernorm2d_linear',
+        'depthwise_layernorm2d_linear',
+        'depthwise_layernorm2d_pointwise_linear',
+    }:
         steps.append(
             GpuTrainingLoweringStep(
                 phase='backward',
