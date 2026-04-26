@@ -66,7 +66,7 @@ class GpuBackendStubAdapter:
         self.submitted_requests.append(request)
         if request.launch_family == 'gemm_affine':
             return self._submit_linear(request)
-        if request.launch_family == 'conv2d_nchw':
+        if request.launch_family in {'conv2d_nchw', 'depthwise_conv2d_nchw'}:
             return self._submit_conv2d(request)
         return self._submit_generic(request)
 
@@ -92,7 +92,12 @@ class GpuBackendStubAdapter:
         return result
 
     def _submit_conv2d(self, request: GpuFixedKernelCall) -> dict[str, Any]:
-        result = self._base_result(request, kernel_symbol='minicnn_gpu_conv2d_nchw_f32')
+        kernel_symbol = (
+            'minicnn_gpu_depthwise_conv2d_nchw_f32'
+            if request.launch_family == 'depthwise_conv2d_nchw'
+            else 'minicnn_gpu_conv2d_nchw_f32'
+        )
+        result = self._base_result(request, kernel_symbol=kernel_symbol)
         result.update({
             'input_binding': request.input_binding,
             'output_binding': request.output_binding,

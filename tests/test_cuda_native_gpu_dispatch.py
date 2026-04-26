@@ -7,6 +7,7 @@ from minicnn.cuda_native.gpu_bridge import (
     build_flat_gpu_bridge_trace,
     build_gpu_bridge_trace,
 )
+from minicnn.cuda_native.gpu_bridge_adapter import GpuBackendStubAdapter
 from minicnn.cuda_native.gpu_dispatch import build_gpu_dispatch_plan, build_gpu_launch_trace
 from minicnn.cuda_native.gpu_training_lowering import build_gpu_training_lowering_plan
 
@@ -666,6 +667,30 @@ def test_conv_fixed_and_c_abi_bridge_trace_carry_dilation():
     assert fixed_calls[0].dilation_h == 2
     assert fixed_calls[0].dilation_w == 2
     assert c_abi_calls[0].int_args8 == (1, 1, 0, 0, 1, 2, 2, 0)
+
+
+def test_depthwise_fixed_bridge_result_preserves_conv_geometry():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'DepthwiseConv2d', 'out_channels': 3, 'kernel_size': 3, 'padding': 1, 'bias': False},
+            ],
+        },
+        (1, 3, 4, 4),
+    )
+
+    packets = build_gpu_launch_trace(build_gpu_dispatch_plan(graph))
+    requests = build_gpu_bridge_trace(packets)
+    flat_requests = build_flat_gpu_bridge_trace(requests)
+    fixed_calls = build_fixed_kernel_trace(flat_requests)
+    result = GpuBackendStubAdapter().submit_fixed(fixed_calls[0])
+
+    assert result['dispatch_mode'] == 'gpu_backend_stub'
+    assert result['kernel_symbol'] == 'minicnn_gpu_depthwise_conv2d_nchw_f32'
+    assert result['stride'] == [1, 1]
+    assert result['padding'] == [1, 1]
+    assert result['dilation'] == [1, 1]
+    assert result['groups'] == 3
 
 
 def test_c_abi_gpu_bridge_trace_builds_stable_records():
