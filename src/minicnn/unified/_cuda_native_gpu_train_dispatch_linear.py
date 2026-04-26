@@ -169,6 +169,8 @@ def run_gpu_native_linear_or_pool_batch(
             buf_bucket[bias_key] = step.updated_bias_rmsprop_buf
         return params, step
     if kind == 'two_linear_activation':
+        persistent_runtime = _persistent_linear_runtime(ctx, optimizer_state)
+        runtime_before = persistent_runtime.summary()
         first_linear, second_linear = gpu_training_plan['linear_nodes']
         activation_node = gpu_training_plan['activation_node']
         w1_key = f'_w_{first_linear.name}'
@@ -193,9 +195,12 @@ def run_gpu_native_linear_or_pool_batch(
             bias2_velocity=velocity_state.get(b2_key),
             activation=str(activation_node.op_type),
             activation_alpha=float(activation_node.attrs.get('negative_slope', 0.01)),
-            bound_lib=ctx.device_runtime.bound_lib,
+            device_runtime=persistent_runtime,
+            persistent_device_state=True,
+            persistent_cache_prefix=f'train:{w1_key}:{b1_key}:{w2_key}:{b2_key}',
             return_intermediates=False,
         )
+        step = replace(step, runtime_summary=_runtime_summary_delta(runtime_before, step.runtime_summary))
         params = dict(params)
         params[w1_key] = step.updated_weight1
         params[b1_key] = step.updated_bias1

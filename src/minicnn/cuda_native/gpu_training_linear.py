@@ -535,6 +535,9 @@ def native_gpu_two_linear_relu_training_step(
     activation: str = 'ReLU',
     activation_alpha: float = 0.01,
     bound_lib: Any | None = None,
+    device_runtime: DeviceRuntime | None = None,
+    persistent_device_state: bool = False,
+    persistent_cache_prefix: str = 'two_linear',
     return_intermediates: bool = True,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
@@ -601,12 +604,13 @@ def native_gpu_two_linear_relu_training_step(
     if activation_key not in activation_forward:
         raise ValueError(f'native_gpu_two_linear_relu_training_step does not support activation={activation_name!r}')
 
-    lib = _load_bound_lib(bound_lib)
-    runtime = DeviceRuntime(
+    lib = _load_bound_lib(bound_lib if bound_lib is not None else (device_runtime.bound_lib if device_runtime is not None else None))
+    runtime = device_runtime if device_runtime is not None else DeviceRuntime(
         execution_mode='gpu_native',
         tensor_execution_device='gpu',
         bound_lib=lib,
     )
+    runtime.bound_lib = lib
     if reserve_bytes > 0 or reserve_buffers > 0:
         runtime.reserve_from_planner(total_bytes=int(reserve_bytes), num_buffers=int(reserve_buffers))
 
@@ -620,6 +624,19 @@ def native_gpu_two_linear_relu_training_step(
         tensors.append(tensor)
         return tensor
 
+    def stage_state(array: np.ndarray, name: str):
+        if persistent_device_state:
+            tensor = runtime.stage_persistent_to_device(
+                array,
+                key=f'{persistent_cache_prefix}:{name}',
+                name=name,
+                update_on_reuse=False,
+            )
+        else:
+            tensor = runtime.stage_to_device(array, name=name)
+        tensors.append(tensor)
+        return tensor
+
     def alloc(shape: tuple[int, ...], name: str, dtype: str = 'float32'):
         tensor = runtime.allocate(shape, dtype=dtype, name=name)
         tensors.append(tensor)
@@ -627,14 +644,14 @@ def native_gpu_two_linear_relu_training_step(
 
     input_t = stage(x_f32, 'input')
     labels_t = stage(labels_i32, 'labels')
-    w1_t = stage(w1_f32, 'weight1')
-    b1_t = stage(b1_f32, 'bias1')
-    w2_t = stage(w2_f32, 'weight2')
-    b2_t = stage(b2_f32, 'bias2')
-    w1v_t = stage(w1v_f32, 'weight1_velocity')
-    b1v_t = stage(b1v_f32, 'bias1_velocity')
-    w2v_t = stage(w2v_f32, 'weight2_velocity')
-    b2v_t = stage(b2v_f32, 'bias2_velocity')
+    w1_t = stage_state(w1_f32, 'weight1')
+    b1_t = stage_state(b1_f32, 'bias1')
+    w2_t = stage_state(w2_f32, 'weight2')
+    b2_t = stage_state(b2_f32, 'bias2')
+    w1v_t = stage_state(w1v_f32, 'weight1_velocity')
+    b1v_t = stage_state(b1v_f32, 'bias1_velocity')
+    w2v_t = stage_state(w2v_f32, 'weight2_velocity')
+    b2v_t = stage_state(b2v_f32, 'bias2_velocity')
     hidden_pre_t = alloc((n, hidden_f), 'hidden_pre')
     hidden_t = alloc((n, hidden_f), 'hidden')
     logits_t = alloc((n, out_f), 'logits')

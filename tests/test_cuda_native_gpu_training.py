@@ -1395,6 +1395,83 @@ def test_native_gpu_two_linear_modern_activation_training_step_matches_reference
         assert result.runtime_summary['execution_kinds'][f'gpu_native_train:{runtime_key}_backward'] == 1
 
 
+def test_native_gpu_two_linear_relu_training_step_reuses_persistent_device_state():
+    x = np.asarray([[0.5, -1.0], [1.5, 0.25]], dtype=np.float32)
+    labels = np.asarray([1, 0], dtype=np.int32)
+    w1 = np.asarray([[0.2, -0.1], [0.05, 0.3], [-0.25, 0.15]], dtype=np.float32)
+    b1 = np.asarray([0.01, -0.02, 0.03], dtype=np.float32)
+    w2 = np.asarray([[0.1, -0.2, 0.05], [-0.05, 0.25, -0.15]], dtype=np.float32)
+    b2 = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.03
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    first = native_gpu_two_linear_relu_training_step(
+        x,
+        labels,
+        w1,
+        b1,
+        w2,
+        b2,
+        lr=lr,
+        device_runtime=runtime,
+        persistent_device_state=True,
+        persistent_cache_prefix='two_linear_test',
+        return_intermediates=False,
+    )
+    first_h2d = first.runtime_summary['host_to_device_transfer_events']
+    first_allocs = first.runtime_summary['device_pointer_allocation_events']
+
+    second = native_gpu_two_linear_relu_training_step(
+        x,
+        labels,
+        first.updated_weight1,
+        first.updated_bias1,
+        first.updated_weight2,
+        first.updated_bias2,
+        lr=lr,
+        weight1_velocity=first.updated_weight1_velocity,
+        bias1_velocity=first.updated_bias1_velocity,
+        weight2_velocity=first.updated_weight2_velocity,
+        bias2_velocity=first.updated_bias2_velocity,
+        device_runtime=runtime,
+        persistent_device_state=True,
+        persistent_cache_prefix='two_linear_test',
+        return_intermediates=False,
+    )
+    reference_second = native_gpu_two_linear_relu_training_step(
+        x,
+        labels,
+        first.updated_weight1,
+        first.updated_bias1,
+        first.updated_weight2,
+        first.updated_bias2,
+        lr=lr,
+        weight1_velocity=first.updated_weight1_velocity,
+        bias1_velocity=first.updated_bias1_velocity,
+        weight2_velocity=first.updated_weight2_velocity,
+        bias2_velocity=first.updated_bias2_velocity,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    np.testing.assert_allclose(second.updated_weight1, reference_second.updated_weight1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_bias1, reference_second.updated_bias1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_weight2, reference_second.updated_weight2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_bias2, reference_second.updated_bias2, rtol=1e-6, atol=1e-6)
+    assert second.runtime_summary['persistent_device_cache_entries'] == 8
+    assert second.runtime_summary['persistent_device_cache_misses'] == 8
+    assert second.runtime_summary['persistent_device_cache_hits'] == 8
+    assert second.runtime_summary['host_to_device_transfer_events'] - first_h2d == 2
+    assert second.runtime_summary['device_pointer_allocation_events'] - first_allocs < 18
+
+    runtime.clear_persistent_device_cache()
+    assert runtime.summary()['persistent_device_cache_entries'] == 0
+
+
 def test_native_gpu_two_linear_relu_training_step_can_skip_intermediate_host_copies():
     x = np.asarray([[0.5, -1.0], [1.5, 0.25]], dtype=np.float32)
     labels = np.asarray([1, 0], dtype=np.int32)
