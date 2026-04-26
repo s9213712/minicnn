@@ -25,8 +25,8 @@ Today MiniCNN supports exactly this ConvNeXt-related slice:
 
 - one built-in `ConvNeXtBlock` on `torch/flex`
 - one tracked torch-only template: `templates/cifar10/convnext_like.yaml`
-- one experimental `cuda_native` block smoke path
-- one experimental `cuda_native` explicit primitive smoke path
+- one beta-grade `cuda_native` block smoke path
+- one beta-grade `cuda_native` explicit primitive smoke path
 - test-backed flex builder and registry coverage
 - capability-table and docs coverage that explicitly mark backend boundaries
 

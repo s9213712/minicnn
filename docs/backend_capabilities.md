@@ -295,7 +295,7 @@ Debugging order:
 | Backend | 角色 | 實際意義 |
 |---|---|---|
 | `torch/flex` | reference implementation | 新 frontend 功能的第一站，也是最廣、最穩的路徑 |
-| `cuda_native` | 主要 native backend | 後續 native 能力應優先長在這裡，但目前仍屬實驗性 |
+| `cuda_native` | 主要 native backend | 後續 native 能力應優先長在這裡，現為 beta 級但仍非 production-ready |
 | `autograd` | correctness oracle | CPU 側的參考路徑，適合 deterministic 檢查與框架學習 |
 | `cuda_legacy` | 歷史維護 backend | 在窄邊界內穩定，但主要用途是相容與維護，不是預設擴充目標 |
 
@@ -320,9 +320,9 @@ Debugging order:
 | MNIST 資料集 | ✗ | ✓ |
 | 隨機假資料 | ✗ | ✓ |
 | **層** | | |
-| AvgPool2d | ✗ | ✓ numpy ref |
+| AvgPool2d | ✗ | ✓ |
 | **損失函數** | | |
-| MSELoss | 實驗中 | ✓ numpy |
+| MSELoss | 實驗中 | ✓ |
 | **開發者工具** | | |
 | Graph dump（`dump_graph`） | ✗ | ✓ |
 | Plan dump（`dump_plan`） | ✗ | ✓ |
@@ -331,13 +331,13 @@ Debugging order:
 | 記憶體估算（`memory_footprint`） | ✗ | ✓ |
 | Buffer pool 預分配（`BufferPool`） | ✗ | ✓ |
 
-注意：`cuda_native` 使用 numpy 參考 kernel，不是真正的 CUDA，屬於實驗性 backend。
+注意：`cuda_native` 已是 beta 級 backend。預設 `gpu_native_auto` 會先嘗試符合條件的 GPU-native path，`reference_numpy` 保留為明確 fallback 與 parity baseline。
 
 ---
 
 ## 完整能力對照表
 
-| 功能 | Torch/flex | CPU/NumPy autograd | CUDA legacy | cuda_native（實驗） |
+| 功能 | Torch/flex | CPU/NumPy autograd | CUDA legacy | cuda_native（beta） |
 |---|:---:|:---:|:---:|:---:|
 | **資料集** | | | | |
 | CIFAR-10 | ✓ | ✓ 較慢 | ✓ | ✓ |
@@ -436,9 +436,9 @@ Debugging order:
 訓練前請先執行 `minicnn validate-dual-config`。
 驗證失敗現在會回傳簡短 CLI 訊息或 JSON payload，而不是直接丟出 raw traceback。
 
-## cuda_native（主要 native 方向，仍屬實驗）
+## cuda_native（主要 native 方向，現為 beta）
 
-透過 `engine.backend=cuda_native` 或 `train-native` 明確啟用。這是目前 repo 裡主要的 native 發展方向，但仍不適合正式環境。
+透過 `engine.backend=cuda_native` 或 `train-native` 明確啟用。這是目前 repo 裡主要的 native 發展方向，現為 beta 級，但仍不適合宣稱 production-ready。
 
 目前通過驗證的 train-native 支援範圍：
 
@@ -446,7 +446,7 @@ Debugging order:
 - loss：`CrossEntropyLoss`、`MSELoss`
 - optimizer：支援 `SGD`、`Adam`、`AdamW`、`RMSprop`，並支援 global gradient clipping
 - scheduler：支援 `StepLR`、`CosineAnnealingLR`、`ReduceLROnPlateau`，也可停用
-- `train.amp=true|false`（帶 loss scaling / overflow backoff 的實驗性 mixed-precision prototype）
+- `train.amp=true|false`（beta 級 mixed precision，含 loss scaling / overflow backoff）
 
 支援的 `gpu_native` training subsets 已透過 `grad_l2_sumsq` 加
 `scale_inplace` 支援 native `optimizer.grad_clip_global`。
@@ -457,7 +457,7 @@ Debugging order:
 
 目前驗證或 `train-native` gate 仍拒絕：不在 `SGD` / `Adam` / `AdamW` / `RMSprop` 內的 optimizer。
 
-注意：雖然已有 backward 與 training prototype，且 `BatchNorm2d` 也已有 prototype 級的 backward，但整體 backend 仍屬實驗性，不是正式訓練後端。後續 native 能力通常也應優先長在這裡，而不是回填到 `cuda_legacy`。
+注意：整體 backend 已不是頂層 experimental，但仍不是正式訓練後端。後續 native 能力通常也應優先長在這裡，而不是回填到 `cuda_legacy`。
 
 開發者工具（cuda_native 獨有）：
 

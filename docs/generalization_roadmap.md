@@ -22,7 +22,7 @@ Today the repo already has:
 - a useful NumPy autograd path
 - a shared-config `train-dual` entrypoint
 - a validator that makes `cuda_legacy` limits explicit
-- an experimental `cuda_native` backend on the public CLI surface
+- a beta-grade `cuda_native` backend on the public CLI surface
 
 The narrow part is mainly `cuda_legacy`, not the entire project.
 

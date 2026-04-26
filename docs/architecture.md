@@ -220,20 +220,20 @@ model config
 
 ## cuda_native Backend
 
-分階段設計的實驗性 backend，位於 `src/minicnn/cuda_native/`，也是目前 repo 裡主要的 native 成長方向：
+分階段設計的 beta 級 backend，位於 `src/minicnn/cuda_native/`，也是目前 repo 裡主要的 native 成長方向：
 
 - `graph.py`, `nodes.py` — graph IR（NativeGraph、Node、TensorSpec）
 - `validators.py`, `shapes.py` — shape inference 與合法性檢查
 - `planner.py` — 保守的 buffer 分配計劃
-- `executor.py`, `kernels.py` — numpy 參考 kernel 與 dispatch
-- `backward.py` — backward pass prototype
-- `loss.py`, `training.py` — loss 與 SGD 訓練迴圈 prototype
+- `executor.py`, `kernels.py` — GPU-first executor 與 reference/native dispatch
+- `backward.py` — backward pass execution
+- `loss.py`, `training.py` — loss 與 training loop
 - `capabilities.py` — 誠實的功能旗標
 - `layouts.py` — layout 常數（NCHW/NC）、各 op 的規則、`validate_graph_layouts()`
 - `memory.py` — `BufferAllocator`、`BufferPool`、`memory_footprint()`
 - `debug.py` — `dump_graph()`、`dump_plan()`、`TracingForwardExecutor`、`ExecutionTrace`
 
-Capability descriptor 標記為：實驗性、僅支援 sequential graph、numpy-only、非正式環境可用。
+Capability descriptor 標記為：beta、ordered DAG、符合條件時 GPU-first `gpu_native`、`reference_numpy` 明確保留為 fallback/parity path、仍非 production-ready。
 
 完整支援矩陣見 [backend_capabilities.md](backend_capabilities.md)。
 
@@ -294,4 +294,4 @@ src/minicnn/
 
 ## CUDA Native source layout note
 
-`src/minicnn/cuda_native/gpu_training.py` remains the compatibility import surface for GPU training helpers. Result dataclasses, shared CUDA helpers, linear, pool, norm, conv-family, and depthwise-bridge helpers now live in focused `gpu_training_*` modules. Runtime context, diagnostics, training-loop execution, and GPU-native plan selection also moved into focused `src/minicnn/unified/_cuda_native_*` modules, and lowering registry/tensor helpers moved into `gpu_lowering_registry.py` and `gpu_lowering_utils.py`.
+`src/minicnn/cuda_native/gpu_training.py` remains the compatibility import surface for GPU training helpers. Result dataclasses, shared CUDA helpers, linear, pool, norm, conv-family, base depthwise, single-pointwise bridge, and two-pointwise activation bridge helpers now live in focused `gpu_training_*` modules. Runtime context, diagnostics, training-loop execution, GPU-native batch dispatch routing/family helpers, and GPU-native plan selection now live in focused `src/minicnn/unified/_cuda_native_*` modules. Lowering is also split into focused `gpu_lowering_*` modules for normalization, shape aliases, merge ops, activations, conv/pool ops, and registry assembly.

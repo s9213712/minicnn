@@ -64,7 +64,7 @@ They do not automatically become valid for:
 
 - `cuda_legacy`
 - the NumPy autograd path
-- the experimental `cuda_native` backend
+- the beta-grade `cuda_native` backend
 
 If a component also needs to run on `cuda_legacy`, you still have to add:
 

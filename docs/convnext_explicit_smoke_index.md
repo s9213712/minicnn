@@ -98,7 +98,7 @@ Path policy note:
 This path is intentionally split into two scopes:
 
 - `convnext_like.yaml`: `torch/flex` only block path
-- explicit primitive path: `torch/flex` plus an experimental `cuda_native` smoke slice
+- explicit primitive path: `torch/flex` plus a beta-grade `cuda_native` smoke slice
 
 It still does not claim:
 

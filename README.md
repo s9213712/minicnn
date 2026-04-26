@@ -213,7 +213,7 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 
 See [docs/cuda_native.md](docs/cuda_native.md) for the full guide.
 See [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md) for the staged expansion direction.
-See [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md) for the path from experimental backend to implementation-grade public contract.
+See [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md) for the path from the historical experimental state to an implementation-grade public contract.
 See [docs/cuda_native_amp_graduation_checklist.md](docs/cuda_native_amp_graduation_checklist.md) for the AMP graduation gate that moved the backend to beta.
 See [docs/cuda_native_gpu_enablement_plan.md](docs/cuda_native_gpu_enablement_plan.md) for the separate path from NumPy reference execution to real GPU execution.
 See [docs/cuda_native_gpu_cifar10_runbook.md](docs/cuda_native_gpu_cifar10_runbook.md) for the current full CIFAR-10 strict `gpu_native` training runbook.
@@ -507,7 +507,7 @@ That distinction matters:
 - `torch` is the default place for new model ideas
 - `torch/flex` is the reference implementation and first stop for new features
 - `autograd` is the internal oracle for correctness-oriented checks
-- `cuda_native` is the primary native direction, but tracked by backend readiness tiers
+- `cuda_native` is the primary native direction, now beta-grade and still tracked by backend readiness tiers
 - `cuda_legacy` is kept for maintenance inside its validator-enforced boundary, not as the default place for new capability growth
 
 See [docs/backend_capabilities.md](docs/backend_capabilities.md) for the

@@ -600,7 +600,7 @@ Phase 5 RFCs: [docs/cuda_native_phase5_rfc.md](cuda_native_phase5_rfc.md)
 
 `cuda_native` 是 MiniCNN 目前主要的 native backend 方向，現況已提升到 beta。
 
-它目前仍屬實驗性，也**不適合**正式環境使用。這條 backend 的目的是把
+它已不是頂層 experimental，但也**不適合**正式環境使用。這條 backend 的目的是把
 native graph/planner/executor 能力公開地逐步長出來；`cuda_legacy`
 則維持為窄邊界的歷史維護路徑。
 
@@ -613,9 +613,9 @@ native graph/planner/executor 能力公開地逐步長出來；`cuda_legacy`
 - **IR 層**（`graph.py`, `nodes.py`）— graph 與 tensor 表示
 - **驗證層**（`validators.py`, `shapes.py`）— shape inference 與合法性檢查
 - **規劃層**（`planner.py`）— 保守的 buffer 分配
-- **執行層**（`executor.py`, `kernels.py`）— numpy 參考 kernel，dispatch table
-- **Backward 層**（`backward.py`）— 梯度 kernel prototype
-- **訓練層**（`loss.py`, `training.py`）— 損失函數與 SGD 訓練迴圈
+- **執行層**（`executor.py`, `kernels.py`）— GPU-first executor 與 reference/native dispatch
+- **Backward 層**（`backward.py`）— backward execution
+- **訓練層**（`loss.py`, `training.py`）— 損失函數與 training loop
 - **能力層**（`capabilities.py`）— 誠實的功能旗標
 - **Layout 層**（`layouts.py`）— layout 常數、各 op 的輸入輸出規則、驗證
 - **Memory 層**（`memory.py`）— buffer 分配器與 pool 抽象
@@ -624,8 +624,8 @@ native graph/planner/executor 能力公開地逐步長出來；`cuda_legacy`
 ## cuda_native 不是什麼
 
 - 不是正式環境的訓練 backend
-- 不使用真正的 CUDA kernel（使用 numpy 參考實作）
-- 不支援通用 graph（僅限 sequential graph，不支援 branching）
+- 不是完整 general-purpose 的全 GPU backend
+- 不是所有 graph 都能保證走 `gpu_native`；未就緒部分仍會回退到 `reference_numpy`
 
 ## 目前狀態
 
@@ -633,9 +633,9 @@ native graph/planner/executor 能力公開地逐步長出來；`cuda_legacy`
 |---|---|
 | Graph IR | ✓ 已實作 |
 | Shape inference | ✓ 基本實作 |
-| Forward execution | ✓ 基本實作（numpy） |
-| Planner | ✓ 保守 / 實驗中 |
-| MaxPool2d、AvgPool2d | ✓ 支援（numpy ref） |
+| Forward execution | ✓ 已實作（GPU-first `gpu_native_auto` + `reference_numpy` fallback） |
+| Planner | ✓ 保守、可用且持續優化中 |
+| MaxPool2d、AvgPool2d | ✓ 支援 |
 | Layout 驗證 | ✓ `validate_graph_layouts()` |
 | 記憶體估算 / pool | ✓ `memory_footprint()`、`BufferPool` |
 | Graph / plan dump | ✓ `dump_graph()`、`dump_plan()` |

@@ -114,12 +114,12 @@ The primary Python/CLI training path uses the flat C ABI and `ctypes`. `network.
 | `src/minicnn/config/parsing.py` | CLI/config scalar parser, strict boolean parser, and dotted-override list-index write helper. |
 | `src/minicnn/core/build.py` | Native CUDA shared library build/check wrapper supporting default, cublas, handmade, and both variants. |
 | `src/minicnn/core/cuda_backend.py` | Lazy `ctypes` loader for the native CUDA library; does not load `.so`/`.dll` on non-CUDA command imports. `reset_library_cache()` clears the cached handle when switching native variants in the same process. |
-| `src/minicnn/cuda_native/` | Primary native backend direction; public CLI surface is beta-grade, with GPU-first `gpu_native_auto`, strict `gpu_native` for supported real-CUDA subsets, and `reference_numpy` retained as explicit fallback/parity path. |
+| `src/minicnn/cuda_native/` | Primary native backend direction; public CLI surface is beta-grade, with GPU-first `gpu_native_auto`, strict `gpu_native` for supported real-CUDA subsets, and `reference_numpy` retained as explicit fallback/parity path. Training helpers are split into focused `gpu_training_*` modules for linear, pool, normalization, convolution, base depthwise, single-pointwise bridge, and two-pointwise activation bridge families. Lowering is likewise split into focused `gpu_lowering_*` modules for normalization, shape aliases, merge ops, activations, conv/pool ops, and registry assembly. |
 | `src/minicnn/data/` | CIFAR-10 and MNIST preparation and data loading. |
 | `src/minicnn/flex/` | PyTorch reference implementation: flexible config-driven model builder, registry, and trainer. |
 | `src/minicnn/training/train_cuda.py` | Historical `cuda_legacy` CIFAR-10 orchestration: data, epoch, validation, checkpoint, LR reduction, early stop, final test evaluation. |
 | `src/minicnn/training/cuda_batch.py` | CUDA batch-level forward/loss/backward/update steps; called by `train_cuda.py` to isolate kernel orchestration from training control flow. |
-| `src/minicnn/unified/` | Shared config compiler mapping supported configs to the torch reference path, the historical `cuda_legacy` path, or the experimental `cuda_native` path. |
+| `src/minicnn/unified/` | Shared config compiler mapping supported configs to the torch reference path, the historical `cuda_legacy` path, or the beta-grade `cuda_native` path. Runtime orchestration is now split into focused modules for context, diagnostics, training plans, gpu-native batch dispatch routing/family helpers, and the epoch loop. |
 
 ## Current Reliability Guarantees
 
@@ -242,10 +242,10 @@ minicnn/
 | `src/minicnn/compiler/` | 輕量 MiniCNN IR、config tracer 與 fusion/cleanup pass。 |
 | `src/minicnn/core/build.py` | native CUDA shared library build/check wrapper。 |
 | `src/minicnn/core/cuda_backend.py` | native CUDA library 的 lazy `ctypes` loader；非 CUDA 指令 import 時不會主動載入 `.so`/`.dll`，`reset_library_cache()` 供同一 process 切換 native variant 時清掉舊 handle。 |
-| `src/minicnn/cuda_native/` | 主要 native backend 方向；已有公開 CLI 介面，但實作仍屬實驗性。 |
+| `src/minicnn/cuda_native/` | 主要 native backend 方向；已有公開 CLI 介面，現為 beta 級，預設 GPU-first `gpu_native_auto` 並保留 `reference_numpy` fallback。 |
 | `src/minicnn/training/train_cuda.py` | legacy CUDA CIFAR-10 orchestration 入口。 |
 | `src/minicnn/training/cuda_batch.py` | CUDA batch 級 forward/loss/backward/update 步驟。 |
-| `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 torch reference 路徑、歷史 `cuda_legacy` 路徑或實驗中的 `cuda_native` 路徑。 |
+| `src/minicnn/unified/` | shared config compiler，將支援的 config 映射到 torch reference 路徑、歷史 `cuda_legacy` 路徑或 beta 級 `cuda_native` 路徑。 |
 
 ## 目前可靠性邊界
 
@@ -259,4 +259,4 @@ minicnn/
 
 ## CUDA Native maintenance map
 
-The CUDA-native GPU training surface is being split incrementally without breaking public imports. `gpu_training.py` stays as the compatibility-facing module, while focused `gpu_training_*` modules now isolate result types, shared helpers, linear, pool, LayerNorm-family, BatchNorm/GroupNorm, conv-family, and depthwise-bridge helper code. Normalization-family lowering has also been extracted into `gpu_lowering_norm.py`, alongside the earlier registry/utility helper splits. See `docs/cuda_native_large_file_inventory.md` for the active large-file cleanup queue.
+The CUDA-native GPU training surface is being split incrementally without breaking public imports. `gpu_training.py` stays as the compatibility-facing module, while focused `gpu_training_*` modules now isolate result types, shared helpers, linear, pool, LayerNorm-family, BatchNorm/GroupNorm, conv-family, base depthwise helpers, and pointwise bridge-family helper code. Normalization-family lowering has also been extracted into `gpu_lowering_norm.py`, alongside the earlier registry/utility helper splits. See `docs/cuda_native_large_file_inventory.md` for the active large-file cleanup queue.

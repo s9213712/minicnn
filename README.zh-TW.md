@@ -473,7 +473,7 @@ minicnn train-native --config configs/dual_backend_cnn.yaml \
 - `torch` 是新模型想法的預設家
 - `torch/flex` 是 reference implementation，也是新功能第一站
 - `autograd` 是內部 correctness oracle
-- `cuda_native` 是主要 native 方向，但仍屬實驗性
+- `cuda_native` 是主要 native 方向，現為 beta 級
 - `cuda_legacy` 保留在 validator 定義的邊界內做維護，不是新功能預設成長點
 
 完整支援矩陣見 [docs/backend_capabilities.md](docs/backend_capabilities.md)，長期方向見 [docs/generalization_roadmap.md](docs/generalization_roadmap.md)。
@@ -579,7 +579,7 @@ minicnn/
 - 顯式的 backend 能力邊界，而非模糊的對等性宣稱
 - 一個前端介面，在這個範圍內抽象是誠實的
 - 不支援的 backend 組合快速失敗
-- 實驗性 backend 工作維持可見，但不偽裝成穩定
+- beta 與後續實驗性 backend 工作都維持可見，但不偽裝成穩定
 
 ## License
 

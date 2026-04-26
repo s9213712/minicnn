@@ -39,7 +39,7 @@ Read these in order if you want the current, operational picture of the repo:
 9. [docs/convnext_support_blueprint.md](docs/convnext_support_blueprint.md) — the compact "what exists / what is still forbidden" execution brief
 10. [docs/cuda_native_expansion_plan.md](docs/cuda_native_expansion_plan.md) — the current staged expansion plan for the primary native backend
 11. [docs/optimization_progress.md](docs/optimization_progress.md) — recent engineering progress and current phase framing
-12. [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md) — the staged path from experimental backend to implementation-grade public contract
+12. [docs/cuda_native_productionization_plan.md](docs/cuda_native_productionization_plan.md) — the staged path from the historical experimental state to an implementation-grade public contract
 13. [docs/cuda_native_amp_graduation_checklist.md](docs/cuda_native_amp_graduation_checklist.md) — the checklist that moved AMP and the backend-wide status from experimental to beta
 14. [docs/cuda_native_gpu_enablement_plan.md](docs/cuda_native_gpu_enablement_plan.md) — the staged path from NumPy reference execution to real GPU execution
 15. [docs/cuda_native_gpu_cifar10_runbook.md](docs/cuda_native_gpu_cifar10_runbook.md) — real CIFAR-10 strict `gpu_native` training runbook
@@ -435,13 +435,13 @@ Python traceback。`healthcheck`、`doctor`、`smoke`、`validate-*`、
 - 想看 native build/debug 細節： [docs/guide_project_structure.md](docs/guide_project_structure.md) 與 [docs/guide_layout_debug.md](docs/guide_layout_debug.md)
 - 想看 extension points： [docs/custom_components.md](docs/custom_components.md)
 - 想看 checkpoint 格式與模型復用： [docs/model_artifacts.md](docs/model_artifacts.md)
-- 想看實驗性 native graph backend： [docs/cuda_native.md](docs/cuda_native.md)
+- 想看 beta 級 native graph backend： [docs/cuda_native.md](docs/cuda_native.md)
 
 ## 簡單原則
 
 - `torch/flex` 是 reference implementation，也是新功能的第一站。
 - `train-autograd` 適合當 CPU 側 correctness oracle，也適合框架學習。
-- `cuda_native` 是主要 native 成長方向，但目前仍屬實驗性。
+- `cuda_native` 是主要 native 成長方向，現為 beta 級，但仍非 production-ready。
 - `cuda_legacy` 請視為歷史維護路徑，只在 validator 定義的邊界內使用與修補。
 
 ## CUDA Native GPU maintenance references
