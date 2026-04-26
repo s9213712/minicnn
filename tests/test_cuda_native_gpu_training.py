@@ -4076,4 +4076,9 @@ def test_native_gpu_two_conv_relu_pool_linear_training_step_can_skip_intermediat
     assert result.updated_conv1_weight.shape == conv1_weight.shape
     assert result.updated_conv2_weight.shape == conv2_weight.shape
     assert result.updated_linear_weight.shape == linear_weight.shape
-    assert result.runtime_summary['device_to_host_transfer_events'] == 10
+    assert result.updated_linear_bias.shape == linear_bias.shape
+    assert result.updated_conv1_weight_velocity is None
+    assert result.updated_conv2_weight_velocity is None
+    assert result.updated_linear_weight_velocity is None
+    assert result.updated_linear_bias_velocity is None
+    assert result.runtime_summary['device_to_host_transfer_events'] == 6

@@ -803,10 +803,11 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
         updated_conv2_weight = runtime.stage_to_host(conv2_w_t)
         updated_linear_weight = runtime.stage_to_host(linear_w_t)
         updated_linear_bias = runtime.stage_to_host(linear_b_t)
-        updated_conv1_weight_velocity = runtime.stage_to_host(conv1_wv_t)
-        updated_conv2_weight_velocity = runtime.stage_to_host(conv2_wv_t)
-        updated_linear_weight_velocity = runtime.stage_to_host(linear_wv_t)
-        updated_linear_bias_velocity = runtime.stage_to_host(linear_bv_t)
+        copy_velocity = return_intermediates or float(momentum) != 0.0
+        updated_conv1_weight_velocity = runtime.stage_to_host(conv1_wv_t) if copy_velocity else None
+        updated_conv2_weight_velocity = runtime.stage_to_host(conv2_wv_t) if copy_velocity else None
+        updated_linear_weight_velocity = runtime.stage_to_host(linear_wv_t) if copy_velocity else None
+        updated_linear_bias_velocity = runtime.stage_to_host(linear_bv_t) if copy_velocity else None
         loss_sum = float(runtime.stage_to_host(loss_sum_t)[0])
         correct_count = int(runtime.stage_to_host(correct_t)[0])
         runtime.synchronize('gpu-native-two-conv-relu-pool-linear-training-step')
