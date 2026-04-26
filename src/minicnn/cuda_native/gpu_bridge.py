@@ -142,6 +142,11 @@ def _build_bridge_payload(packet: GpuLaunchPacket) -> dict[str, Any]:
         })
     elif packet.op_name in {'Dropout', 'DropPath'}:
         payload['p'] = float(scalar_args.get('p', 0.0))
+    elif packet.op_name == 'BatchNorm2d':
+        payload.update({
+            'eps': float(scalar_args.get('eps', 1e-5)),
+            'momentum': float(scalar_args.get('momentum', 0.1)),
+        })
     elif packet.op_name == 'GroupNorm':
         payload.update({
             'num_groups': int(scalar_args.get('num_groups', 1)),

@@ -228,6 +228,26 @@ def test_gpu_dispatch_plan_supports_batchnorm2d_forward_shim():
     assert summary['steps'][0]['launch_descriptor']['attr_bindings'] == {'eps': 0.0001, 'momentum': 0.2}
 
 
+def test_gpu_bridge_trace_includes_batchnorm2d_attrs_in_bridge_payload():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'BatchNorm2d', 'num_features': 1, 'eps': 1e-4, 'momentum': 0.2},
+                {'type': 'Flatten'},
+                {'type': 'Linear', 'out_features': 2},
+            ],
+        },
+        (1, 1, 8, 8),
+    )
+
+    packets = build_gpu_launch_trace(build_gpu_dispatch_plan(graph))
+    requests = build_gpu_bridge_trace(packets)
+
+    assert requests[0].op_name == 'BatchNorm2d'
+    assert requests[0].bridge_payload['eps'] == 0.0001
+    assert requests[0].bridge_payload['momentum'] == 0.2
+
+
 def test_gpu_dispatch_plan_supports_global_avgpool_forward_shim():
     graph = build_cuda_native_graph(
         {
