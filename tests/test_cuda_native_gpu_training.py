@@ -1738,6 +1738,60 @@ def test_native_gpu_batchnorm_linear_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:bn_backward'] == 1
 
 
+def test_native_gpu_batchnorm_linear_training_step_can_skip_intermediate_host_copies():
+    x = (np.arange(16, dtype=np.float32).reshape(2, 2, 2, 2) - 6.0) / 5.0
+    labels = np.asarray([1, 0], dtype=np.int32)
+    bn_weight = np.asarray([1.0, 1.5], dtype=np.float32)
+    bn_bias = np.asarray([-0.25, 0.5], dtype=np.float32)
+    running_mean = np.asarray([0.1, -0.2], dtype=np.float32)
+    running_var = np.asarray([1.2, 0.8], dtype=np.float32)
+    linear_weight = np.asarray(
+        [
+            [0.1, -0.2, 0.05, 0.3, -0.1, 0.2, 0.15, -0.05],
+            [-0.05, 0.25, -0.15, 0.2, 0.12, -0.18, 0.08, 0.04],
+        ],
+        dtype=np.float32,
+    )
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+
+    result = native_gpu_batchnorm_linear_training_step(
+        x,
+        labels,
+        bn_weight,
+        bn_bias,
+        running_mean,
+        running_var,
+        linear_weight,
+        linear_bias,
+        lr=0.05,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    assert result.logits.shape == (0,)
+    assert result.probabilities.shape == (0,)
+    assert result.grad_logits.shape == (0,)
+    assert result.bn_output.shape == (0,)
+    assert result.x_hat.shape == (0,)
+    assert result.batch_mean.shape == (0,)
+    assert result.batch_inv_std.shape == (0,)
+    assert result.grad_bn_output.shape == (0,)
+    assert result.grad_input.shape == (0,)
+    assert result.grad_bn_weight.shape == (0,)
+    assert result.grad_bn_bias.shape == (0,)
+    assert result.grad_linear_weight.shape == (0,)
+    assert result.grad_linear_bias.shape == (0,)
+    assert result.updated_bn_weight.shape == bn_weight.shape
+    assert result.updated_bn_bias.shape == bn_bias.shape
+    assert result.updated_running_mean.shape == running_mean.shape
+    assert result.updated_running_var.shape == running_var.shape
+    assert result.updated_linear_weight.shape == linear_weight.shape
+    assert result.updated_linear_bias.shape == linear_bias.shape
+    assert result.updated_bn_weight_velocity is None
+    assert result.updated_linear_weight_velocity is None
+    assert result.runtime_summary['device_to_host_transfer_events'] == 8
+
+
 def test_native_gpu_layernorm2d_linear_training_step_matches_reference_math():
     x = np.asarray(
         [
@@ -2059,6 +2113,46 @@ def test_native_gpu_groupnorm_linear_training_step_matches_reference_math():
     np.testing.assert_allclose(result.updated_linear_bias, linear_bias - lr * grad_linear_bias, rtol=1e-6, atol=1e-6)
     assert result.runtime_summary['execution_kinds']['gpu_native_train:groupnorm_forward'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:groupnorm_backward'] == 1
+
+
+def test_native_gpu_groupnorm_linear_training_step_can_skip_intermediate_host_copies():
+    x = (np.arange(64, dtype=np.float32).reshape(2, 4, 2, 4) - 20.0) / 10.0
+    labels = np.asarray([1, 0], dtype=np.int32)
+    norm_weight = np.asarray([1.0, 1.5, 0.75, 1.25], dtype=np.float32)
+    norm_bias = np.asarray([0.0, -0.25, 0.1, -0.15], dtype=np.float32)
+    linear_weight = np.linspace(-0.2, 0.25, num=64, dtype=np.float32).reshape(2, 32)
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+
+    result = native_gpu_groupnorm_linear_training_step(
+        x,
+        labels,
+        norm_weight,
+        norm_bias,
+        linear_weight,
+        linear_bias,
+        lr=0.03,
+        num_groups=2,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    assert result.logits.shape == (0,)
+    assert result.probabilities.shape == (0,)
+    assert result.norm_output.shape == (0,)
+    assert result.grad_logits.shape == (0,)
+    assert result.grad_norm_output.shape == (0,)
+    assert result.grad_input.shape == (0,)
+    assert result.grad_norm_weight.shape == (0,)
+    assert result.grad_norm_bias.shape == (0,)
+    assert result.grad_linear_weight.shape == (0,)
+    assert result.grad_linear_bias.shape == (0,)
+    assert result.updated_norm_weight.shape == norm_weight.shape
+    assert result.updated_norm_bias.shape == norm_bias.shape
+    assert result.updated_linear_weight.shape == linear_weight.shape
+    assert result.updated_linear_bias.shape == linear_bias.shape
+    assert result.updated_norm_weight_velocity is None
+    assert result.updated_linear_weight_velocity is None
+    assert result.runtime_summary['device_to_host_transfer_events'] == 6
 
 
 def test_native_gpu_conv_linear_training_step_matches_reference_math():
