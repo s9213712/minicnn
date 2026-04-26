@@ -220,10 +220,12 @@ def _required_symbols_for_lowering(lowering_kind: str) -> tuple[str, ...]:
         'avgpool2d_shim': ('avgpool2d_forward',),
         'global_avgpool2d_shim': ('global_avgpool2d_forward',),
         'normalization_batchnorm2d_shim': ('bn_eval_forward',),
+        'normalization_batchnorm2d_train_shim': ('bn_train_forward',),
         'normalization_layernorm_shim': ('layernorm_nd_forward',),
         'normalization_layernorm2d_shim': ('layernorm2d_forward',),
         'normalization_groupnorm_shim': ('groupnorm_forward',),
         'batchnorm2d_shim': ('bn_eval_forward',),
+        'batchnorm2d_train_shim': ('bn_train_forward',),
         'layernorm_shim': ('layernorm_nd_forward',),
         'layernorm2d_shim': ('layernorm2d_forward',),
         'groupnorm_shim': ('groupnorm_forward',),
@@ -350,11 +352,14 @@ for _activation in ('ReLU', 'LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
     )
 
 
-def _forward_training_step(step: GpuDispatchStep) -> GpuTrainingLoweringStep:
+def _forward_training_step(step: GpuDispatchStep, subset_name: str | None) -> GpuTrainingLoweringStep:
+    lowering_kind = step.lowering_kind
+    if subset_name == 'batchnorm_linear' and step.op_name == 'BatchNorm2d':
+        lowering_kind = 'normalization_batchnorm2d_train_shim'
     return GpuTrainingLoweringStep(
         phase='forward',
         op_name=step.op_name,
-        lowering_kind=step.lowering_kind,
+        lowering_kind=lowering_kind,
         launch_family=step.launch_family,
         node_name=step.node_name,
         param_keys=step.param_keys,
@@ -905,7 +910,7 @@ def build_gpu_training_lowering_plan(
 
     if bool(train_cfg.get('amp', False)):
         unsupported_reasons.append('gpu_native training lowering currently requires train.amp=false')
-    forward_steps = tuple(_forward_training_step(step) for step in dispatch_plan.steps)
+    forward_steps = tuple(_forward_training_step(step, subset_name) for step in dispatch_plan.steps)
     backward_steps = _backward_steps(graph, subset_name) if subset_name is not None else tuple()
     ready = (
         dispatch_plan.ready

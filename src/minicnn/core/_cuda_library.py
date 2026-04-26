@@ -67,6 +67,7 @@ GPU_NATIVE_TRAINING_SYMBOLS = tuple(dict.fromkeys((
     'rmsprop_update_fused',
     'grad_l2_sumsq',
     'scale_inplace',
+    'bn_train_forward',
     'bn_eval_forward',
     'bn_backward',
     'avgpool2d_forward',
