@@ -38,6 +38,9 @@ def native_gpu_depthwise_layernorm2d_pointwise_linear_training_step(
     linear_weight_velocity: np.ndarray | None = None,
     linear_bias_velocity: np.ndarray | None = None,
     bound_lib: Any | None = None,
+    device_runtime: DeviceRuntime | None = None,
+    persistent_device_state: bool = False,
+    persistent_cache_prefix: str = 'depthwise_layernorm2d_pointwise_linear',
     return_intermediates: bool = True,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
@@ -91,8 +94,9 @@ def native_gpu_depthwise_layernorm2d_pointwise_linear_training_step(
     if np.any(labels_i32 < 0) or np.any(labels_i32 >= linear_w_f32.shape[0]):
         raise ValueError('native_gpu_depthwise_layernorm2d_pointwise_linear_training_step labels must be in [0, out_f).')
 
-    lib = _load_bound_lib(bound_lib)
-    runtime = DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu', bound_lib=lib)
+    lib = _load_bound_lib(bound_lib if bound_lib is not None else (device_runtime.bound_lib if device_runtime is not None else None))
+    runtime = device_runtime if device_runtime is not None else DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu', bound_lib=lib)
+    runtime.bound_lib = lib
     if reserve_bytes > 0 or reserve_buffers > 0:
         runtime.reserve_from_planner(total_bytes=int(reserve_bytes), num_buffers=int(reserve_buffers))
 
@@ -106,6 +110,19 @@ def native_gpu_depthwise_layernorm2d_pointwise_linear_training_step(
         tensors.append(tensor)
         return tensor
 
+    def stage_state(array: np.ndarray, name: str):
+        if persistent_device_state:
+            tensor = runtime.stage_persistent_to_device(
+                array,
+                key=f'{persistent_cache_prefix}:{name}',
+                name=name,
+                update_on_reuse=False,
+            )
+        else:
+            tensor = runtime.stage_to_device(array, name=name)
+        tensors.append(tensor)
+        return tensor
+
     def alloc(shape: tuple[int, ...], name: str, dtype: str = 'float32'):
         tensor = runtime.allocate(shape, dtype=dtype, name=name)
         tensors.append(tensor)
@@ -113,19 +130,19 @@ def native_gpu_depthwise_layernorm2d_pointwise_linear_training_step(
 
     input_t = stage(x_f32, 'input')
     labels_t = stage(labels_i32, 'labels')
-    depthwise_w_t = stage(depthwise_w_f32, 'depthwise_weight')
+    depthwise_w_t = stage_state(depthwise_w_f32, 'depthwise_weight')
     depthwise_bias_t = stage(np.zeros((depthwise_out_c,), dtype=np.float32), 'depthwise_bias')
-    norm_weight_t = stage(norm_weight_f32, 'norm_weight')
-    norm_bias_t = stage(norm_bias_f32, 'norm_bias')
-    pointwise_w_t = stage(pointwise_w_f32, 'pointwise_weight')
-    linear_w_t = stage(linear_w_f32, 'linear_weight')
-    linear_b_t = stage(linear_b_f32, 'linear_bias')
-    depthwise_wv_t = stage(depthwise_wv_f32, 'depthwise_weight_velocity')
-    norm_wv_t = stage(norm_wv_f32, 'norm_weight_velocity')
-    norm_bv_t = stage(norm_bv_f32, 'norm_bias_velocity')
-    pointwise_wv_t = stage(pointwise_wv_f32, 'pointwise_weight_velocity')
-    linear_wv_t = stage(linear_wv_f32, 'linear_weight_velocity')
-    linear_bv_t = stage(linear_bv_f32, 'linear_bias_velocity')
+    norm_weight_t = stage_state(norm_weight_f32, 'norm_weight')
+    norm_bias_t = stage_state(norm_bias_f32, 'norm_bias')
+    pointwise_w_t = stage_state(pointwise_w_f32, 'pointwise_weight')
+    linear_w_t = stage_state(linear_w_f32, 'linear_weight')
+    linear_b_t = stage_state(linear_b_f32, 'linear_bias')
+    depthwise_wv_t = stage_state(depthwise_wv_f32, 'depthwise_weight_velocity')
+    norm_wv_t = stage_state(norm_wv_f32, 'norm_weight_velocity')
+    norm_bv_t = stage_state(norm_bv_f32, 'norm_bias_velocity')
+    pointwise_wv_t = stage_state(pointwise_wv_f32, 'pointwise_weight_velocity')
+    linear_wv_t = stage_state(linear_wv_f32, 'linear_weight_velocity')
+    linear_bv_t = stage_state(linear_bv_f32, 'linear_bias_velocity')
     depthwise_t = alloc((n, depthwise_out_c, out_h, out_w), 'depthwise_output')
     norm_t = alloc((n, depthwise_out_c, out_h, out_w), 'norm_output')
     pointwise_col_t = alloc((pointwise_patch_size, pointwise_spatial_size), 'pointwise_col')

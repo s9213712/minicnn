@@ -3176,6 +3176,110 @@ def test_native_gpu_depthwise_layernorm2d_pointwise_linear_training_step_can_ski
     assert result.runtime_summary['device_to_host_transfer_events'] == 8
 
 
+def test_native_gpu_depthwise_layernorm2d_pointwise_linear_training_step_reuses_persistent_device_state():
+    x = (np.arange(36, dtype=np.float32).reshape(2, 2, 3, 3) - 12.0) / 10.0
+    labels = np.asarray([1, 0], dtype=np.int32)
+    depthwise_weight = np.asarray(
+        [
+            [[[0.2, -0.1], [0.05, 0.3]]],
+            [[[-0.2, 0.1], [0.25, -0.05]]],
+        ],
+        dtype=np.float32,
+    )
+    norm_weight = np.asarray([1.0, 1.25], dtype=np.float32)
+    norm_bias = np.asarray([0.0, -0.1], dtype=np.float32)
+    pointwise_weight = np.asarray(
+        [
+            [[[0.1]], [[-0.2]]],
+            [[[0.25]], [[0.05]]],
+            [[[-0.15]], [[0.2]]],
+        ],
+        dtype=np.float32,
+    )
+    linear_weight = (np.arange(24, dtype=np.float32).reshape(2, 12) - 8.0) / 50.0
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.04
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    first = native_gpu_depthwise_layernorm2d_pointwise_linear_training_step(
+        x,
+        labels,
+        depthwise_weight,
+        norm_weight,
+        norm_bias,
+        pointwise_weight,
+        linear_weight,
+        linear_bias,
+        lr=lr,
+        device_runtime=runtime,
+        persistent_device_state=True,
+        persistent_cache_prefix='depthwise_layernorm2d_pointwise_linear_test',
+        return_intermediates=False,
+    )
+    first_h2d = first.runtime_summary['host_to_device_transfer_events']
+    first_allocs = first.runtime_summary['device_pointer_allocation_events']
+
+    second = native_gpu_depthwise_layernorm2d_pointwise_linear_training_step(
+        x,
+        labels,
+        first.updated_depthwise_weight,
+        first.updated_norm_weight,
+        first.updated_norm_bias,
+        first.updated_pointwise_weight,
+        first.updated_linear_weight,
+        first.updated_linear_bias,
+        lr=lr,
+        depthwise_weight_velocity=first.updated_depthwise_weight_velocity,
+        norm_weight_velocity=first.updated_norm_weight_velocity,
+        norm_bias_velocity=first.updated_norm_bias_velocity,
+        pointwise_weight_velocity=first.updated_pointwise_weight_velocity,
+        linear_weight_velocity=first.updated_linear_weight_velocity,
+        linear_bias_velocity=first.updated_linear_bias_velocity,
+        device_runtime=runtime,
+        persistent_device_state=True,
+        persistent_cache_prefix='depthwise_layernorm2d_pointwise_linear_test',
+        return_intermediates=False,
+    )
+    reference_second = native_gpu_depthwise_layernorm2d_pointwise_linear_training_step(
+        x,
+        labels,
+        first.updated_depthwise_weight,
+        first.updated_norm_weight,
+        first.updated_norm_bias,
+        first.updated_pointwise_weight,
+        first.updated_linear_weight,
+        first.updated_linear_bias,
+        lr=lr,
+        depthwise_weight_velocity=first.updated_depthwise_weight_velocity,
+        norm_weight_velocity=first.updated_norm_weight_velocity,
+        norm_bias_velocity=first.updated_norm_bias_velocity,
+        pointwise_weight_velocity=first.updated_pointwise_weight_velocity,
+        linear_weight_velocity=first.updated_linear_weight_velocity,
+        linear_bias_velocity=first.updated_linear_bias_velocity,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    np.testing.assert_allclose(second.updated_depthwise_weight, reference_second.updated_depthwise_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_norm_weight, reference_second.updated_norm_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_norm_bias, reference_second.updated_norm_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_pointwise_weight, reference_second.updated_pointwise_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_linear_weight, reference_second.updated_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_linear_bias, reference_second.updated_linear_bias, rtol=1e-6, atol=1e-6)
+    assert second.runtime_summary['persistent_device_cache_entries'] == 12
+    assert second.runtime_summary['persistent_device_cache_misses'] == 12
+    assert second.runtime_summary['persistent_device_cache_hits'] == 12
+    assert second.runtime_summary['host_to_device_transfer_events'] - first_h2d == 3
+    assert second.runtime_summary['device_pointer_allocation_events'] - first_allocs < first_allocs
+
+    runtime.clear_persistent_device_cache()
+    assert runtime.summary()['persistent_device_cache_entries'] == 0
+
+
 def test_native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step_matches_reference_math():
     x = (np.arange(36, dtype=np.float32).reshape(2, 2, 3, 3) - 12.0) / 10.0
     labels = np.asarray([1, 0], dtype=np.int32)
