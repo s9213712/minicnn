@@ -198,6 +198,7 @@ def run_gpu_native_conv_batch(
             apply_maxpool=bool(gpu_training_plan.get('apply_maxpool', False)),
             conv_kind=str(gpu_training_plan.get('conv_kind', 'conv2d')),
             bound_lib=ctx.device_runtime.bound_lib,
+            return_intermediates=False,
         )
         params = dict(params)
         params[conv_weight_key] = step.updated_conv_weight

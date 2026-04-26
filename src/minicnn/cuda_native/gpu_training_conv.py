@@ -37,6 +37,7 @@ def native_gpu_conv_linear_training_step(
     apply_maxpool: bool = False,
     conv_kind: str = 'conv2d',
     bound_lib: Any | None = None,
+    return_intermediates: bool = True,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuConvLinearTrainingStepResult:
@@ -368,23 +369,38 @@ def native_gpu_conv_linear_training_step(
             update_kind = 'gpu_native_train:apply_sgd_update'
         runtime.record_execution(update_kind, input_name='grad_conv_weight', output_name='conv_weight', node_count=1)
 
-        logits = runtime.stage_to_host(logits_t)
-        probabilities = runtime.stage_to_host(probs_t)
-        conv_output = runtime.stage_to_host(conv_t)
-        pooled_output = runtime.stage_to_host(pooled_t) if pooled_t is not None else None
-        grad_logits = runtime.stage_to_host(grad_logits_t)
-        grad_conv_output = runtime.stage_to_host(grad_conv_t)
-        grad_pooled = runtime.stage_to_host(grad_pooled_t) if grad_pooled_t is not None else None
-        grad_input = runtime.stage_to_host(grad_input_t)
-        grad_conv_weight = runtime.stage_to_host(grad_conv_w_t)
-        grad_linear_weight = runtime.stage_to_host(grad_linear_w_t)
-        grad_linear_bias = runtime.stage_to_host(grad_linear_b_t)
+        if return_intermediates:
+            logits = runtime.stage_to_host(logits_t)
+            probabilities = runtime.stage_to_host(probs_t)
+            conv_output = runtime.stage_to_host(conv_t)
+            pooled_output = runtime.stage_to_host(pooled_t) if pooled_t is not None else None
+            grad_logits = runtime.stage_to_host(grad_logits_t)
+            grad_conv_output = runtime.stage_to_host(grad_conv_t)
+            grad_pooled = runtime.stage_to_host(grad_pooled_t) if grad_pooled_t is not None else None
+            grad_input = runtime.stage_to_host(grad_input_t)
+            grad_conv_weight = runtime.stage_to_host(grad_conv_w_t)
+            grad_linear_weight = runtime.stage_to_host(grad_linear_w_t)
+            grad_linear_bias = runtime.stage_to_host(grad_linear_b_t)
+        else:
+            empty = np.empty((0,), dtype=np.float32)
+            logits = empty
+            probabilities = empty
+            conv_output = empty
+            pooled_output = empty if pooled_t is not None else None
+            grad_logits = empty
+            grad_conv_output = empty
+            grad_pooled = empty if grad_pooled_t is not None else None
+            grad_input = empty
+            grad_conv_weight = empty
+            grad_linear_weight = empty
+            grad_linear_bias = empty
         updated_conv_weight = runtime.stage_to_host(conv_w_t)
         updated_linear_weight = runtime.stage_to_host(linear_w_t)
         updated_linear_bias = runtime.stage_to_host(linear_b_t)
-        updated_conv_weight_velocity = runtime.stage_to_host(conv_wv_t)
-        updated_linear_weight_velocity = runtime.stage_to_host(linear_wv_t)
-        updated_linear_bias_velocity = runtime.stage_to_host(linear_bv_t)
+        copy_velocity = return_intermediates or float(momentum) != 0.0
+        updated_conv_weight_velocity = runtime.stage_to_host(conv_wv_t) if copy_velocity else None
+        updated_linear_weight_velocity = runtime.stage_to_host(linear_wv_t) if copy_velocity else None
+        updated_linear_bias_velocity = runtime.stage_to_host(linear_bv_t) if copy_velocity else None
         loss_sum = float(runtime.stage_to_host(loss_sum_t)[0])
         correct_count = int(runtime.stage_to_host(correct_t)[0])
         runtime.synchronize('gpu-native-conv-linear-training-step')
