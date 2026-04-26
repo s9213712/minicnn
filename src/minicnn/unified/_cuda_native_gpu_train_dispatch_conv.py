@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
@@ -12,6 +13,10 @@ from minicnn.cuda_native.gpu_training import (
     native_gpu_two_conv_relu_pool_linear_training_step,
 )
 from minicnn.unified._cuda_native_context import NativeTrainingContext
+from minicnn.unified._cuda_native_gpu_train_dispatch_linear import (
+    _persistent_linear_runtime,
+    _runtime_summary_delta,
+)
 
 
 def run_gpu_native_conv_batch(
@@ -176,6 +181,8 @@ def run_gpu_native_conv_batch(
         velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
         return params, step
     if kind == 'conv_linear':
+        persistent_runtime = _persistent_linear_runtime(ctx, optimizer_state)
+        runtime_before = persistent_runtime.summary()
         conv_node = gpu_training_plan['conv_node']
         gpu_linear_node = gpu_training_plan['linear_nodes'][0]
         conv_weight_key = f'_w_{conv_node.name}'
@@ -200,9 +207,12 @@ def run_gpu_native_conv_batch(
             activation_alpha=float(gpu_training_plan.get('activation_alpha', 0.01)),
             apply_maxpool=bool(gpu_training_plan.get('apply_maxpool', False)),
             conv_kind=str(gpu_training_plan.get('conv_kind', 'conv2d')),
-            bound_lib=ctx.device_runtime.bound_lib,
+            device_runtime=persistent_runtime,
+            persistent_device_state=True,
+            persistent_cache_prefix=f'train:{conv_weight_key}:{linear_weight_key}:{linear_bias_key}',
             return_intermediates=False,
         )
+        step = replace(step, runtime_summary=_runtime_summary_delta(runtime_before, step.runtime_summary))
         params = dict(params)
         params[conv_weight_key] = step.updated_conv_weight
         params[linear_weight_key] = step.updated_linear_weight

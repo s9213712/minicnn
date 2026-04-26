@@ -37,6 +37,9 @@ def native_gpu_conv_linear_training_step(
     apply_maxpool: bool = False,
     conv_kind: str = 'conv2d',
     bound_lib: Any | None = None,
+    device_runtime: DeviceRuntime | None = None,
+    persistent_device_state: bool = False,
+    persistent_cache_prefix: str = 'conv_linear',
     return_intermediates: bool = True,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
@@ -125,12 +128,13 @@ def native_gpu_conv_linear_training_step(
     if np.any(labels_i32 < 0) or np.any(labels_i32 >= linear_w_f32.shape[0]):
         raise ValueError('native_gpu_conv_linear_training_step labels must be in [0, classes)')
 
-    lib = _load_bound_lib(bound_lib)
-    runtime = DeviceRuntime(
+    lib = _load_bound_lib(bound_lib if bound_lib is not None else (device_runtime.bound_lib if device_runtime is not None else None))
+    runtime = device_runtime if device_runtime is not None else DeviceRuntime(
         execution_mode='gpu_native',
         tensor_execution_device='gpu',
         bound_lib=lib,
     )
+    runtime.bound_lib = lib
     if reserve_bytes > 0 or reserve_buffers > 0:
         runtime.reserve_from_planner(total_bytes=int(reserve_bytes), num_buffers=int(reserve_buffers))
 
@@ -144,6 +148,19 @@ def native_gpu_conv_linear_training_step(
         tensors.append(tensor)
         return tensor
 
+    def stage_state(array: np.ndarray, name: str):
+        if persistent_device_state:
+            tensor = runtime.stage_persistent_to_device(
+                array,
+                key=f'{persistent_cache_prefix}:{name}',
+                name=name,
+                update_on_reuse=False,
+            )
+        else:
+            tensor = runtime.stage_to_device(array, name=name)
+        tensors.append(tensor)
+        return tensor
+
     def alloc(shape: tuple[int, ...], name: str, dtype: str = 'float32'):
         tensor = runtime.allocate(shape, dtype=dtype, name=name)
         tensors.append(tensor)
@@ -151,13 +168,13 @@ def native_gpu_conv_linear_training_step(
 
     input_t = stage(x_f32, 'input')
     labels_t = stage(labels_i32, 'labels')
-    conv_w_t = stage(conv_w_f32, 'conv_weight')
+    conv_w_t = stage_state(conv_w_f32, 'conv_weight')
     depthwise_bias_t = stage(np.zeros((out_c,), dtype=np.float32), 'depthwise_bias') if normalized_conv_kind == 'depthwise' else None
-    linear_w_t = stage(linear_w_f32, 'linear_weight')
-    linear_b_t = stage(linear_b_f32, 'linear_bias')
-    conv_wv_t = stage(conv_wv_f32, 'conv_weight_velocity')
-    linear_wv_t = stage(linear_wv_f32, 'linear_weight_velocity')
-    linear_bv_t = stage(linear_bv_f32, 'linear_bias_velocity')
+    linear_w_t = stage_state(linear_w_f32, 'linear_weight')
+    linear_b_t = stage_state(linear_b_f32, 'linear_bias')
+    conv_wv_t = stage_state(conv_wv_f32, 'conv_weight_velocity')
+    linear_wv_t = stage_state(linear_wv_f32, 'linear_weight_velocity')
+    linear_bv_t = stage_state(linear_bv_f32, 'linear_bias_velocity')
     col_t = alloc((patch_size, spatial_size), 'conv_col') if normalized_conv_kind == 'conv2d' else None
     conv_raw_t = alloc((out_c, n, out_h, out_w), 'conv_raw_cnhw') if normalized_conv_kind == 'conv2d' else None
     conv_t = alloc((n, out_c, out_h, out_w), 'conv_output')
