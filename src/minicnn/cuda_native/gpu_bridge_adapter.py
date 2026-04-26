@@ -102,6 +102,7 @@ class GpuBackendStubAdapter:
             'output_shape': list(request.output_shape),
             'stride': [request.stride_h, request.stride_w],
             'padding': [request.padding_h, request.padding_w],
+            'dilation': [request.dilation_h, request.dilation_w],
             'groups': request.groups,
         })
         return result

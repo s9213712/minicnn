@@ -248,6 +248,8 @@ class GpuFixedKernelCall:
     stride_w: int
     padding_h: int
     padding_w: int
+    dilation_h: int
+    dilation_w: int
     groups: int
     matmul_m: int
     matmul_k: int
@@ -272,6 +274,8 @@ class GpuFixedKernelCall:
             'stride_w': self.stride_w,
             'padding_h': self.padding_h,
             'padding_w': self.padding_w,
+            'dilation_h': self.dilation_h,
+            'dilation_w': self.dilation_w,
             'groups': self.groups,
             'matmul_m': self.matmul_m,
             'matmul_k': self.matmul_k,
@@ -409,6 +413,11 @@ def build_fixed_kernel_call(request: GpuFlatKernelRequest) -> GpuFixedKernelCall
         padding_h, padding_w = int(padding[0]), int(padding[1])
     else:
         padding_h = padding_w = int(padding)
+    dilation = payload.get('dilation', 1)
+    if isinstance(dilation, (list, tuple)):
+        dilation_h, dilation_w = int(dilation[0]), int(dilation[1])
+    else:
+        dilation_h = dilation_w = int(dilation)
     return GpuFixedKernelCall(
         request_id=request.request_id,
         node_name=request.node_name,
@@ -427,6 +436,8 @@ def build_fixed_kernel_call(request: GpuFlatKernelRequest) -> GpuFixedKernelCall
         stride_w=stride_w,
         padding_h=padding_h,
         padding_w=padding_w,
+        dilation_h=dilation_h,
+        dilation_w=dilation_w,
         groups=int(payload.get('groups', 1)),
         matmul_m=int(payload.get('matmul_m', 0)),
         matmul_k=int(payload.get('matmul_k', 0)),
@@ -450,6 +461,28 @@ def _shape4(shape: tuple[int, ...]) -> tuple[int, int, int, int]:
 def build_c_abi_kernel_call(request: GpuFixedKernelCall) -> GpuCAbiKernelCall:
     has_weight = 1 if request.weight_binding else 0
     has_bias = 1 if request.bias_binding else 0
+    if request.launch_family in {'conv2d_nchw', 'depthwise_conv2d_nchw'}:
+        int_args8 = (
+            int(request.stride_h),
+            int(request.stride_w),
+            int(request.padding_h),
+            int(request.padding_w),
+            int(request.groups),
+            int(request.dilation_h),
+            int(request.dilation_w),
+            0,
+        )
+    else:
+        int_args8 = (
+            int(request.stride_h),
+            int(request.stride_w),
+            int(request.padding_h),
+            int(request.padding_w),
+            int(request.groups),
+            int(request.matmul_m),
+            int(request.matmul_k),
+            int(request.matmul_n),
+        )
     return GpuCAbiKernelCall(
         request_id=request.request_id,
         node_name=request.node_name,
@@ -467,16 +500,7 @@ def build_c_abi_kernel_call(request: GpuFixedKernelCall) -> GpuCAbiKernelCall:
         output_rank=len(request.output_shape),
         input_shape4=_shape4(request.input_shape),
         output_shape4=_shape4(request.output_shape),
-        int_args8=(
-            int(request.stride_h),
-            int(request.stride_w),
-            int(request.padding_h),
-            int(request.padding_w),
-            int(request.groups),
-            int(request.matmul_m),
-            int(request.matmul_k),
-            int(request.matmul_n),
-        ),
+        int_args8=int_args8,
         flags=(has_weight, has_bias, 0, 0),
     )
 

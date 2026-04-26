@@ -647,6 +647,27 @@ def test_fixed_gpu_bridge_trace_builds_fixed_calls():
     assert fixed_calls[1].matmul_n == 8
 
 
+def test_conv_fixed_and_c_abi_bridge_trace_carry_dilation():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Conv2d', 'out_channels': 4, 'kernel_size': 3, 'dilation': 2, 'bias': False},
+            ],
+        },
+        (1, 3, 8, 8),
+    )
+
+    packets = build_gpu_launch_trace(build_gpu_dispatch_plan(graph))
+    requests = build_gpu_bridge_trace(packets)
+    flat_requests = build_flat_gpu_bridge_trace(requests)
+    fixed_calls = build_fixed_kernel_trace(flat_requests)
+    c_abi_calls = build_c_abi_kernel_trace(fixed_calls)
+
+    assert fixed_calls[0].dilation_h == 2
+    assert fixed_calls[0].dilation_w == 2
+    assert c_abi_calls[0].int_args8 == (1, 1, 0, 0, 1, 2, 2, 0)
+
+
 def test_c_abi_gpu_bridge_trace_builds_stable_records():
     graph = build_cuda_native_graph(
         {
