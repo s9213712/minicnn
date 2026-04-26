@@ -202,6 +202,13 @@ def lower_layernorm(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
                 feature_count,
                 float(eps),
             )
+            ctx.runtime.record_execution(
+                'gpu_native_kernel:layernorm_nd_forward',
+                input_name=node.inputs[0],
+                output_name=node.outputs[0],
+                node_count=1,
+            )
+            ctx.runtime.sync_tensor_to_host(output)
             return output
         finally:
             ctx.runtime.release_buffer(gamma_t)

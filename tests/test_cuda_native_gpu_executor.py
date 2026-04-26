@@ -1223,3 +1223,41 @@ def test_gpu_stub_executor_uses_native_groupnorm_when_device_pointers_available(
 
     summary = runtime.summary()
     assert summary['execution_kinds']['gpu_native_kernel:groupnorm_forward'] == 1
+
+
+def test_gpu_stub_executor_uses_native_layernorm_nd_when_device_pointers_available():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'LayerNorm', 'normalized_shape': 8, 'eps': 1e-5},
+            ],
+        },
+        (1, 2, 2, 2),
+    )
+    fake_lib = _FakeCudaLib()
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=fake_lib,
+    )
+    runtime.reserve_from_planner(total_bytes=4096, num_buffers=4)
+    executor = GpuStubExecutor(device_runtime=runtime)
+    x = np.asarray([[[[1.0, 2.0], [3.0, 4.0]], [[2.0, 4.0], [6.0, 8.0]]]], dtype=np.float32)
+    gamma = np.asarray([1.0, 1.1, 1.2, 1.3, 0.9, 0.8, 0.7, 0.6], dtype=np.float32)
+    beta = np.asarray([0.0, -0.1, 0.2, -0.3, 0.4, -0.5, 0.6, -0.7], dtype=np.float32)
+    params = {
+        '_w_layernorm_1': gamma,
+        '_b_layernorm_1': beta,
+    }
+
+    result = executor.run(graph, x, params=params)
+
+    flat = x.reshape(1, 8)
+    mean = flat.mean(axis=1, keepdims=True)
+    var = flat.var(axis=1, keepdims=True)
+    expected = ((flat - mean) / np.sqrt(var + 1e-5)) * gamma.reshape(1, 8) + beta.reshape(1, 8)
+    np.testing.assert_allclose(result.output, expected.astype(np.float32), rtol=1e-5, atol=1e-5)
+
+    summary = runtime.summary()
+    assert summary['execution_kinds']['gpu_native_kernel:layernorm_nd_forward'] == 1
