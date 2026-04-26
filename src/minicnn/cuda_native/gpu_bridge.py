@@ -30,6 +30,7 @@ GPU_OP_CODES = {
     'Identity': 21,
     'Dropout': 22,
     'DropPath': 23,
+    'LayerNorm': 24,
 }
 
 GPU_LAUNCH_FAMILY_CODES = {
@@ -47,6 +48,7 @@ GPU_LAUNCH_FAMILY_CODES = {
     'groupnorm_nchw': 12,
     'avgpool2d_nchw': 13,
     'identity_alias': 14,
+    'layernorm_nd': 15,
 }
 
 GPU_LAYOUT_CODES = {
@@ -143,6 +145,11 @@ def _build_bridge_payload(packet: GpuLaunchPacket) -> dict[str, Any]:
     elif packet.op_name == 'GroupNorm':
         payload.update({
             'num_groups': int(scalar_args.get('num_groups', 1)),
+            'eps': float(scalar_args.get('eps', 1e-5)),
+        })
+    elif packet.op_name == 'LayerNorm':
+        payload.update({
+            'normalized_shape': scalar_args.get('normalized_shape'),
             'eps': float(scalar_args.get('eps', 1e-5)),
         })
     elif packet.op_name == 'LayerNorm2d':

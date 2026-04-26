@@ -21,6 +21,7 @@ from minicnn.cuda_native.gpu_training_linear import (
 from minicnn.cuda_native.gpu_training_norm import (
     native_gpu_batchnorm_linear_training_step,
     native_gpu_groupnorm_linear_training_step,
+    native_gpu_layernorm_linear_training_step,
     native_gpu_layernorm2d_linear_training_step,
 )
 from minicnn.cuda_native.gpu_training_pool import (
@@ -35,6 +36,7 @@ from minicnn.cuda_native.gpu_training_types import (
     NativeGpuDepthwiseLayerNorm2dPointwiseGeluPointwiseLinearTrainingStepResult,
     NativeGpuDepthwiseLayerNorm2dPointwiseLinearTrainingStepResult,
     NativeGpuGroupNormLinearTrainingStepResult,
+    NativeGpuLayerNormLinearTrainingStepResult,
     NativeGpuLayerNorm2dLinearTrainingStepResult,
     NativeGpuLinearTrainingStepResult,
     NativeGpuPoolLinearTrainingStepResult,
@@ -585,11 +587,13 @@ def native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_st
     pointwise2_weight_velocity: np.ndarray | None = None,
     linear_weight_velocity: np.ndarray | None = None,
     linear_bias_velocity: np.ndarray | None = None,
+    activation_kind: str = 'GELU',
+    activation_alpha: float = 0.01,
     bound_lib: Any | None = None,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuDepthwiseLayerNorm2dPointwiseGeluPointwiseLinearTrainingStepResult:
-    """Run native GPU DepthwiseConv2d + LayerNorm2d + PointwiseConv2d + GELU + PointwiseConv2d + Linear."""
+    """Run native GPU DepthwiseConv2d + LayerNorm2d + PointwiseConv2d + activation + PointwiseConv2d + Linear."""
 
     x_f32 = np.ascontiguousarray(x, dtype=np.float32)
     labels_i32 = np.ascontiguousarray(labels, dtype=np.int32)
@@ -607,6 +611,7 @@ def native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_st
     pointwise2_wv_f32 = np.zeros_like(pointwise2_w_f32) if pointwise2_weight_velocity is None else np.ascontiguousarray(pointwise2_weight_velocity, dtype=np.float32)
     linear_wv_f32 = np.zeros_like(linear_w_f32) if linear_weight_velocity is None else np.ascontiguousarray(linear_weight_velocity, dtype=np.float32)
     linear_bv_f32 = np.zeros_like(linear_b_f32) if linear_bias_velocity is None else np.ascontiguousarray(linear_bias_velocity, dtype=np.float32)
+    normalized_activation_kind = str(activation_kind).strip().lower().replace('_', '')
 
     if x_f32.ndim != 4:
         raise ValueError(f'native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step expects x with shape (N, C, H, W), got {x_f32.shape}')
@@ -644,6 +649,11 @@ def native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_st
         raise ValueError('native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step expects labels with shape (N,).')
     if np.any(labels_i32 < 0) or np.any(labels_i32 >= linear_w_f32.shape[0]):
         raise ValueError('native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step labels must be in [0, out_f).')
+    if normalized_activation_kind not in {'gelu', 'leakyrelu', 'silu', 'sigmoid', 'tanh'}:
+        raise ValueError(
+            'native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step got unsupported '
+            f'activation_kind={activation_kind!r}'
+        )
 
     lib = _load_bound_lib(bound_lib)
     runtime = DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu', bound_lib=lib)
@@ -743,9 +753,23 @@ def native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_st
         lib.gemm_forward(pointwise1_w_t.device_ptr, pw1_col_t.device_ptr, pw1_raw_t.device_ptr, hidden_c, spatial_size, depthwise_out_c)
         lib.cnhw_to_nchw(pw1_raw_t.device_ptr, pw1_t.device_ptr, n, hidden_c, out_h, out_w)
         runtime.record_execution('gpu_native_train:pointwise1_conv2d_im2col_gemm', input_name='norm_output', output_name='pointwise1_output', node_count=1)
+        activation_elements = int(n * hidden_c * out_h * out_w)
         lib.gpu_memcpy_d2d(activation_t.device_ptr, pw1_t.device_ptr, activation_t.nbytes)
-        lib.gelu_forward(activation_t.device_ptr, int(n * hidden_c * out_h * out_w))
-        runtime.record_execution('gpu_native_train:gelu_forward', input_name='pointwise1_output', output_name='activation_output', node_count=1)
+        if normalized_activation_kind == 'gelu':
+            lib.gelu_forward(activation_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:gelu_forward', input_name='pointwise1_output', output_name='activation_output', node_count=1)
+        elif normalized_activation_kind == 'leakyrelu':
+            lib.leaky_relu_forward(activation_t.device_ptr, float(activation_alpha), activation_elements)
+            runtime.record_execution('gpu_native_train:leaky_relu_forward', input_name='pointwise1_output', output_name='activation_output', node_count=1)
+        elif normalized_activation_kind == 'silu':
+            lib.silu_forward(activation_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:silu_forward', input_name='pointwise1_output', output_name='activation_output', node_count=1)
+        elif normalized_activation_kind == 'sigmoid':
+            lib.sigmoid_forward(activation_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:sigmoid_forward', input_name='pointwise1_output', output_name='activation_output', node_count=1)
+        else:
+            lib.tanh_forward(activation_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:tanh_forward', input_name='pointwise1_output', output_name='activation_output', node_count=1)
         lib.im2col_forward(activation_t.device_ptr, pw2_col_t.device_ptr, n, hidden_c, out_h, out_w, 1, 1, out_h, out_w)
         lib.gemm_forward(pointwise2_w_t.device_ptr, pw2_col_t.device_ptr, pw2_raw_t.device_ptr, pointwise_out_c, spatial_size, hidden_c)
         lib.cnhw_to_nchw(pw2_raw_t.device_ptr, pw2_t.device_ptr, n, pointwise_out_c, out_h, out_w)
@@ -775,8 +799,21 @@ def native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_st
         )
         runtime.record_execution('gpu_native_train:pointwise2_conv2d_backward', input_name='grad_pointwise2_output', output_name='grad_pointwise2_weight', node_count=1)
         lib.gpu_memcpy_d2d(grad_activation_before_gelu_t.device_ptr, grad_activation_t.device_ptr, grad_activation_before_gelu_t.nbytes)
-        lib.gelu_backward(pw1_t.device_ptr, grad_activation_t.device_ptr, int(n * hidden_c * out_h * out_w))
-        runtime.record_execution('gpu_native_train:gelu_backward', input_name='pointwise1_output', output_name='grad_pointwise1_output', node_count=1)
+        if normalized_activation_kind == 'gelu':
+            lib.gelu_backward(pw1_t.device_ptr, grad_activation_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:gelu_backward', input_name='pointwise1_output', output_name='grad_pointwise1_output', node_count=1)
+        elif normalized_activation_kind == 'leakyrelu':
+            lib.leaky_relu_backward(pw1_t.device_ptr, grad_activation_t.device_ptr, float(activation_alpha), activation_elements)
+            runtime.record_execution('gpu_native_train:leaky_relu_backward', input_name='pointwise1_output', output_name='grad_pointwise1_output', node_count=1)
+        elif normalized_activation_kind == 'silu':
+            lib.silu_backward(pw1_t.device_ptr, grad_activation_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:silu_backward', input_name='pointwise1_output', output_name='grad_pointwise1_output', node_count=1)
+        elif normalized_activation_kind == 'sigmoid':
+            lib.sigmoid_backward(pw1_t.device_ptr, grad_activation_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:sigmoid_backward', input_name='pointwise1_output', output_name='grad_pointwise1_output', node_count=1)
+        else:
+            lib.tanh_backward(pw1_t.device_ptr, grad_activation_t.device_ptr, activation_elements)
+            runtime.record_execution('gpu_native_train:tanh_backward', input_name='pointwise1_output', output_name='grad_pointwise1_output', node_count=1)
         lib.nchw_to_cnhw(grad_activation_t.device_ptr, grad_activation_cnhw_t.device_ptr, n, hidden_c, out_h, out_w)
         lib.conv_backward(
             grad_activation_cnhw_t.device_ptr,

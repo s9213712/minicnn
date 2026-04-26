@@ -31,6 +31,7 @@ GPU_KERNEL_BOOTSTRAP_SPECS: tuple[GpuKernelSpec, ...] = (
     GpuKernelSpec('GlobalAvgPool2d', 'pool', 'global_avgpool2d_nchw', 1, 1, tuple(), 'NCHW', 'partial_native', 'partial_native'),
     GpuKernelSpec('GroupNorm', 'normalization', 'groupnorm_nchw', 1, 1, ('weight', 'bias'), 'NCHW', 'partial_native', 'partial_native'),
     GpuKernelSpec('Identity', 'shape', 'identity_alias', 1, 1, tuple(), 'match_input', 'native_alias', 'not_needed'),
+    GpuKernelSpec('LayerNorm', 'normalization', 'layernorm_nd', 1, 1, ('weight', 'bias'), 'match_input', 'partial_native', 'partial_native'),
     GpuKernelSpec('LayerNorm2d', 'normalization', 'layernorm2d_nchw', 1, 1, ('weight', 'bias'), 'NCHW', 'partial_native', 'partial_native'),
     GpuKernelSpec('LeakyReLU', 'activation', 'elementwise_unary', 1, 1, tuple(), 'match_input', 'native_forward', 'planned'),
     GpuKernelSpec('Linear', 'linear', 'gemm_affine', 1, 1, ('weight', 'bias'), 'row_major', 'native_forward', 'partial_native'),

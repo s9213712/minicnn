@@ -135,6 +135,32 @@ class NativeGpuLayerNorm2dLinearTrainingStepResult:
 
 
 @dataclass(frozen=True)
+class NativeGpuLayerNormLinearTrainingStepResult:
+    logits: np.ndarray
+    probabilities: np.ndarray
+    norm_output: np.ndarray
+    grad_logits: np.ndarray
+    grad_norm_output: np.ndarray
+    grad_input: np.ndarray
+    grad_norm_weight: np.ndarray
+    grad_norm_bias: np.ndarray
+    grad_linear_weight: np.ndarray
+    grad_linear_bias: np.ndarray
+    updated_norm_weight: np.ndarray
+    updated_norm_bias: np.ndarray
+    updated_linear_weight: np.ndarray
+    updated_linear_bias: np.ndarray
+    updated_norm_weight_velocity: np.ndarray | None
+    updated_norm_bias_velocity: np.ndarray | None
+    updated_linear_weight_velocity: np.ndarray | None
+    updated_linear_bias_velocity: np.ndarray | None
+    loss_sum: float
+    loss_mean: float
+    correct_count: int
+    runtime_summary: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class NativeGpuGroupNormLinearTrainingStepResult:
     logits: np.ndarray
     probabilities: np.ndarray

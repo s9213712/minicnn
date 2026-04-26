@@ -245,6 +245,7 @@ def _required_symbols_for_lowering(lowering_kind: str) -> tuple[str, ...]:
         'bn_backward': ('bn_backward',),
         'layernorm2d_backward': ('layernorm2d_backward',),
         'groupnorm_backward': ('groupnorm_backward',),
+        'layernorm_backward_reference': tuple(),
         'conv_backward': ('conv_backward',),
         'depthwise_conv2d_backward': ('depthwise_conv2d_backward',),
         'grad_l2_sumsq_scale': ('grad_l2_sumsq', 'scale_inplace'),
@@ -274,6 +275,7 @@ _TRAINING_SUBSETS: dict[tuple[str, ...], tuple[str, str]] = {
     ('MaxPool2d', 'Flatten', 'Linear'): ('maxpool_linear', 'native_gpu_pool_linear_training_step'),
     ('AvgPool2d', 'Flatten', 'Linear'): ('avgpool_linear', 'native_gpu_avgpool_linear_training_step'),
     ('BatchNorm2d', 'Flatten', 'Linear'): ('batchnorm_linear', 'native_gpu_batchnorm_linear_training_step'),
+    ('Flatten', 'LayerNorm', 'Linear'): ('flatten_layernorm_linear', 'native_gpu_layernorm_linear_training_step'),
     ('LayerNorm2d', 'Flatten', 'Linear'): ('layernorm2d_linear', 'native_gpu_layernorm2d_linear_training_step'),
     ('GroupNorm', 'Flatten', 'Linear'): ('groupnorm_linear', 'native_gpu_groupnorm_linear_training_step'),
     ('DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'): (
@@ -317,8 +319,8 @@ for _conv_prefix, _subset_prefix in (
     ('PointwiseConv2d', 'pointwise_conv'),
     ('DepthwiseConv2d', 'depthwise_conv'),
 ):
-    for _activation in ('LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
-        _activation_key = _activation.replace('ReLU', '_relu').lower()
+    for _activation in ('ReLU', 'LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
+        _activation_key = 'relu' if _activation == 'ReLU' else _activation.replace('ReLU', '_relu').lower()
         _TRAINING_SUBSETS[(_conv_prefix, _activation, 'Flatten', 'Linear')] = (
             f'{_subset_prefix}_{_activation_key}_linear',
             'native_gpu_conv_linear_training_step',
@@ -329,11 +331,19 @@ for _conv_prefix, _subset_prefix in (
                 'native_gpu_conv_linear_training_step',
             )
 
-for _activation in ('LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
-    _activation_key = _activation.replace('ReLU', '_relu').lower()
+for _activation in ('ReLU', 'LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
+    _activation_key = 'relu' if _activation == 'ReLU' else _activation.replace('ReLU', '_relu').lower()
     _TRAINING_SUBSETS[('Conv2d', _activation, 'Conv2d', _activation, 'MaxPool2d', 'Flatten', 'Linear')] = (
         f'two_conv_{_activation_key}_pool_linear',
         'native_gpu_two_conv_relu_pool_linear_training_step',
+    )
+    _TRAINING_SUBSETS[('DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', _activation, 'PointwiseConv2d', 'Flatten', 'Linear')] = (
+        f'depthwise_layernorm2d_pointwise_{_activation_key}_pointwise_linear',
+        'native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step',
+    )
+    _TRAINING_SUBSETS[('Flatten', 'LayerNorm', _activation, 'Linear')] = (
+        f'flatten_layernorm_{_activation_key}_linear',
+        'native_gpu_layernorm_linear_training_step',
     )
 
 
@@ -551,10 +561,22 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
             )
         )
         return tuple(steps)
-    if subset_name == 'depthwise_layernorm2d_pointwise_gelu_pointwise_linear':
+    if subset_name in {
+        'depthwise_layernorm2d_pointwise_gelu_pointwise_linear',
+        'depthwise_layernorm2d_pointwise_leaky_relu_pointwise_linear',
+        'depthwise_layernorm2d_pointwise_silu_pointwise_linear',
+        'depthwise_layernorm2d_pointwise_sigmoid_pointwise_linear',
+        'depthwise_layernorm2d_pointwise_tanh_pointwise_linear',
+    }:
         pointwise_nodes = [node for node in conv_nodes if str(node.op_type) == 'PointwiseConv2d']
         depthwise_node = next(node for node in conv_nodes if str(node.op_type) == 'DepthwiseConv2d')
         pointwise1_node, pointwise2_node = pointwise_nodes[0], pointwise_nodes[1]
+        activation_node = next(node for node in graph.topological_order() if node.op_type in {'GELU', 'LeakyReLU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'})
+        activation_op = str(activation_node.op_type)
+        activation_lowering = {
+            'ReLU': 'apply_relu_backward',
+            'LeakyReLU': 'leaky_relu_backward',
+        }.get(activation_op, f'{activation_op.lower()}_backward')
         steps.append(
             GpuTrainingLoweringStep(
                 phase='backward',
@@ -568,8 +590,8 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
         steps.append(
             GpuTrainingLoweringStep(
                 phase='backward',
-                op_name='GELU',
-                lowering_kind='gelu_backward',
+                op_name=activation_op,
+                lowering_kind=activation_lowering,
                 launch_family='activation_backward',
             )
         )
@@ -609,6 +631,44 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
                 op_name='BatchNorm2d',
                 lowering_kind='bn_backward',
                 launch_family='normalization_backward',
+            )
+        )
+    if subset_name == 'flatten_layernorm_linear':
+        steps.append(
+            GpuTrainingLoweringStep(
+                phase='backward',
+                op_name='LayerNorm',
+                lowering_kind='layernorm_backward_reference',
+                launch_family='normalization_backward_reference',
+            )
+        )
+    if subset_name in {
+        'flatten_layernorm_relu_linear',
+        'flatten_layernorm_leaky_relu_linear',
+        'flatten_layernorm_gelu_linear',
+        'flatten_layernorm_silu_linear',
+        'flatten_layernorm_sigmoid_linear',
+        'flatten_layernorm_tanh_linear',
+    }:
+        activation_op = 'ReLU' if not activation_nodes else str(activation_nodes[0].op_type)
+        activation_lowering = {
+            'ReLU': 'apply_relu_backward',
+            'LeakyReLU': 'leaky_relu_backward',
+        }.get(activation_op, f'{activation_op.lower()}_backward')
+        steps.append(
+            GpuTrainingLoweringStep(
+                phase='backward',
+                op_name=activation_op,
+                lowering_kind=activation_lowering,
+                launch_family='activation_backward',
+            )
+        )
+        steps.append(
+            GpuTrainingLoweringStep(
+                phase='backward',
+                op_name='LayerNorm',
+                lowering_kind='layernorm_backward_reference',
+                launch_family='normalization_backward_reference',
             )
         )
     if subset_name in {

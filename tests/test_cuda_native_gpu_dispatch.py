@@ -24,6 +24,7 @@ def test_gpu_kernel_registry_marks_helper_backed_backward_ops_partial_native():
         'GELU',
         'GlobalAvgPool2d',
         'GroupNorm',
+        'LayerNorm',
         'LayerNorm2d',
         'Linear',
         'MaxPool2d',
@@ -386,6 +387,33 @@ def test_gpu_dispatch_plan_supports_layernorm2d_forward_shim():
     assert summary['steps'][0]['launch_family'] == 'layernorm2d_nchw'
     assert summary['steps'][0]['lowering_kind'] == 'normalization_layernorm2d_shim'
     assert summary['steps'][0]['param_keys'] == ['_w_layernorm2d_0', '_b_layernorm2d_0']
+
+
+def test_gpu_dispatch_plan_supports_layernorm_forward_shim():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Flatten'},
+                {'type': 'LayerNorm', 'normalized_shape': 48, 'eps': 1e-5},
+                {'type': 'GELU'},
+            ],
+        },
+        (3, 4, 4),
+    )
+
+    summary = build_gpu_dispatch_plan(graph).summary()
+
+    assert summary['ready'] is True
+    assert summary['unsupported_ops'] == []
+    assert summary['steps'][1]['op_name'] == 'LayerNorm'
+    assert summary['steps'][1]['launch_family'] == 'layernorm_nd'
+    assert summary['steps'][1]['lowering_kind'] == 'normalization_layernorm_shim'
+    assert summary['steps'][1]['param_keys'] == ['_w_layernorm_1', '_b_layernorm_1']
+    assert summary['steps'][1]['launch_descriptor']['attr_bindings'] == {'eps': 1e-05, 'normalized_shape': 48}
+    assert summary['steps'][1]['launch_descriptor']['param_layouts'] == {
+        '_w_layernorm_1': 'normalized_shape',
+        '_b_layernorm_1': 'normalized_shape',
+    }
 
 
 def test_gpu_dispatch_plan_supports_groupnorm_forward_shim():

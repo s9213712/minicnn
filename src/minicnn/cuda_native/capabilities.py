@@ -124,6 +124,12 @@ GPU_NATIVE_TRAINING_SUBSETS = [
         'parity': 'hermetic_reference_math',
     },
     {
+        'name': 'flatten_layernorm_linear',
+        'ops': ['Flatten', 'LayerNorm', 'Linear'],
+        'helper': 'native_gpu_layernorm_linear_training_step',
+        'parity': 'hermetic_reference_math',
+    },
+    {
         'name': 'layernorm2d_linear',
         'ops': ['LayerNorm2d', 'Flatten', 'Linear'],
         'helper': 'native_gpu_layernorm2d_linear_training_step',
@@ -304,8 +310,26 @@ for _conv_prefix, _subset_prefix in (
                 }
             )
 
-for _activation in ('LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
-    _activation_key = _activation.replace('ReLU', '_relu').lower()
+for _activation in ('ReLU', 'LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
+    _activation_key = 'relu' if _activation == 'ReLU' else _activation.replace('ReLU', '_relu').lower()
+    GPU_NATIVE_TRAINING_SUBSETS.append(
+        {
+            'name': f'flatten_layernorm_{_activation_key}_linear',
+            'ops': ['Flatten', 'LayerNorm', _activation, 'Linear'],
+            'helper': 'native_gpu_layernorm_linear_training_step',
+            'parity': 'hermetic_reference_math',
+            'losses': ['CrossEntropyLoss'],
+            'optimizers': ['SGD'],
+            'execution_mode': 'gpu_native',
+            'fallback_execution_mode': 'reference_numpy',
+            'fallback_policy': {
+                'fallback_execution_mode': 'reference_numpy',
+                'fallback_available': True,
+                'fallback_active_when': 'gpu_native_lowering_not_ready',
+            },
+            'constraints': _training_subset_constraints(['Flatten', 'LayerNorm', _activation, 'Linear']),
+        }
+    )
     GPU_NATIVE_TRAINING_SUBSETS.append(
         {
             'name': f'two_conv_{_activation_key}_pool_linear',
@@ -322,6 +346,24 @@ for _activation in ('LeakyReLU', 'GELU', 'SiLU', 'Sigmoid', 'Tanh'):
                 'fallback_active_when': 'gpu_native_lowering_not_ready',
             },
             'constraints': _training_subset_constraints(['Conv2d', _activation, 'Conv2d', _activation, 'MaxPool2d', 'Flatten', 'Linear']),
+            }
+        )
+    GPU_NATIVE_TRAINING_SUBSETS.append(
+        {
+            'name': f'depthwise_layernorm2d_pointwise_{_activation_key}_pointwise_linear',
+            'ops': ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', _activation, 'PointwiseConv2d', 'Flatten', 'Linear'],
+            'helper': 'native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step',
+            'parity': 'hermetic_reference_math',
+            'losses': ['CrossEntropyLoss'],
+            'optimizers': ['SGD'],
+            'execution_mode': 'gpu_native',
+            'fallback_execution_mode': 'reference_numpy',
+            'fallback_policy': {
+                'fallback_execution_mode': 'reference_numpy',
+                'fallback_available': True,
+                'fallback_active_when': 'gpu_native_lowering_not_ready',
+            },
+            'constraints': _training_subset_constraints(['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', _activation, 'PointwiseConv2d', 'Flatten', 'Linear']),
         }
     )
 

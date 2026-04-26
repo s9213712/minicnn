@@ -505,6 +505,42 @@ def _lower_layernorm2d(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     return _allocate_output(node, ctx, output)
 
 
+def _lower_layernorm(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
+    input_tensor = _input_tensor(node, ctx)
+    x = np.asarray(input_tensor.data, dtype=np.float32)
+    normalized_shape_attr = node.attrs.get('normalized_shape')
+    if normalized_shape_attr is None:
+        raise ValueError(f'LayerNorm node={node.name}: missing required attr "normalized_shape"')
+    if isinstance(normalized_shape_attr, int):
+        normalized_shape = (int(normalized_shape_attr),)
+    else:
+        normalized_shape = tuple(int(v) for v in normalized_shape_attr)
+    if not normalized_shape:
+        raise ValueError(f'LayerNorm node={node.name}: normalized_shape must contain at least one dimension')
+    gamma = np.asarray(
+        ctx.params.get(f'_w_{node.name}', np.ones(normalized_shape, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    beta = np.asarray(
+        ctx.params.get(f'_b_{node.name}', np.zeros(normalized_shape, dtype=np.float32)),
+        dtype=np.float32,
+    )
+    for label, value in (('weight', gamma), ('bias', beta)):
+        if value.shape != normalized_shape:
+            raise ValueError(
+                f'LayerNorm node={node.name}: {label} must have shape {normalized_shape}, got {value.shape}'
+            )
+    eps = float(node.attrs.get('eps', 1e-5))
+    output, _cache = _layernorm_forward_array(
+        x,
+        gamma=gamma,
+        beta=beta,
+        normalized_shape=normalized_shape,
+        eps=eps,
+    )
+    return _allocate_output(node, ctx, output)
+
+
 def _lower_groupnorm(node: Node, ctx: GpuLoweringContext) -> DeviceTensor:
     input_tensor = _input_tensor(node, ctx)
     x = np.asarray(input_tensor.data, dtype=np.float32)
@@ -932,6 +968,12 @@ def make_default_gpu_lowering_registry() -> GpuLoweringRegistry:
         lowering_kind='shape_identity_alias_shim',
         kernel_category=kernel_categories['Identity'],
         fn=_lower_identity_alias,
+    )
+    registry.register(
+        'LayerNorm',
+        lowering_kind='normalization_layernorm_shim',
+        kernel_category=kernel_categories['LayerNorm'],
+        fn=_lower_layernorm,
     )
     registry.register(
         'LayerNorm2d',

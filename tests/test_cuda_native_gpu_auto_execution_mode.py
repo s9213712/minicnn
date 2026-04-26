@@ -63,7 +63,53 @@ def test_gpu_native_auto_falls_back_to_numpy_when_lowering_is_not_ready(monkeypa
     assert 'unsupported gpu_native training subset' in payload['fallback_reason']
     assert readiness['bootstrap_subset_complete'] is False
     assert readiness['bootstrap_missing_ops'] == ['Dropout']
+    assert readiness['dispatch_lowering_ready'] is False
+    assert readiness['training_lowering_ready'] is False
     assert readiness['kernel_readiness_for_requested_ops']['Dropout']['forward_status'] == 'outside_bootstrap'
+
+
+def test_gpu_native_auto_selects_gpu_for_flatten_layernorm_linear_training_subset(monkeypatch):
+    import minicnn.cuda_native.api as api
+
+    monkeypatch.setattr(api, '_cuda_runtime_ready_for_gpu_native', lambda: (True, 'not_needed'))
+    cfg = _cfg([
+        {'type': 'Flatten'},
+        {'type': 'LayerNorm', 'normalized_shape': 16},
+        {'type': 'Linear', 'out_features': 2},
+    ])
+    payload = api.resolve_cuda_native_execution_mode(cfg)
+    readiness = api.assess_cuda_native_execution_readiness(cfg)
+
+    assert payload['selected_execution_mode'] == 'gpu_native_auto'
+    assert payload['effective_execution_mode'] == 'gpu_native'
+    assert payload['gpu_native_lowering_ready'] is True
+    assert readiness['dispatch_lowering_ready'] is True
+    assert readiness['training_lowering_ready'] is True
+    assert readiness['bootstrap_supported_ops'] == ['Flatten', 'LayerNorm', 'Linear']
+    assert readiness['bootstrap_missing_ops'] == []
+    assert readiness['kernel_readiness_for_requested_ops']['LayerNorm']['forward_status'] == 'partial_native'
+
+
+def test_gpu_native_auto_selects_gpu_for_flatten_layernorm_silu_linear_training_subset(monkeypatch):
+    import minicnn.cuda_native.api as api
+
+    monkeypatch.setattr(api, '_cuda_runtime_ready_for_gpu_native', lambda: (True, 'not_needed'))
+    cfg = _cfg([
+        {'type': 'Flatten'},
+        {'type': 'LayerNorm', 'normalized_shape': 16},
+        {'type': 'SiLU'},
+        {'type': 'Linear', 'out_features': 2},
+    ])
+    payload = api.resolve_cuda_native_execution_mode(cfg)
+    readiness = api.assess_cuda_native_execution_readiness(cfg)
+
+    assert payload['selected_execution_mode'] == 'gpu_native_auto'
+    assert payload['effective_execution_mode'] == 'gpu_native'
+    assert payload['gpu_native_lowering_ready'] is True
+    assert readiness['dispatch_lowering_ready'] is True
+    assert readiness['training_lowering_ready'] is True
+    assert readiness['bootstrap_supported_ops'] == ['Flatten', 'LayerNorm', 'Linear', 'SiLU']
+    assert readiness['bootstrap_missing_ops'] == []
 
 
 def test_gpu_native_auto_falls_back_to_numpy_when_runtime_is_not_ready(monkeypatch):

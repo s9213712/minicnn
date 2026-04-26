@@ -19,6 +19,7 @@ from minicnn.cuda_native.gpu_training import (
     native_gpu_depthwise_layernorm2d_pointwise_linear_training_step,
     native_gpu_global_avgpool_linear_training_step,
     native_gpu_groupnorm_linear_training_step,
+    native_gpu_layernorm_linear_training_step,
     native_gpu_layernorm2d_linear_training_step,
     native_gpu_linear_training_step,
     native_gpu_pool_linear_training_step,
@@ -400,6 +401,81 @@ def run_training_loop(
                         velocity_state[norm_bias_key] = step.updated_norm_bias_velocity
                         velocity_state[linear_weight_key] = step.updated_linear_weight_velocity
                         velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
+                    elif gpu_training_plan['kind'] == 'layernorm_linear':
+                        norm_node = gpu_training_plan['layernorm_node']
+                        gpu_linear_node = gpu_training_plan['linear_nodes'][0]
+                        norm_weight_key = f'_w_{norm_node.name}'
+                        norm_bias_key = f'_b_{norm_node.name}'
+                        linear_weight_key = f'_w_{gpu_linear_node.name}'
+                        linear_bias_key = f'_b_{gpu_linear_node.name}'
+                        step = native_gpu_layernorm_linear_training_step(
+                            xb,
+                            yb,
+                            params[norm_weight_key],
+                            params[norm_bias_key],
+                            params[linear_weight_key],
+                            params[linear_bias_key],
+                            lr=float(optimizer_view.lr),
+                            momentum=float(ctx.momentum),
+                            grad_clip_value=float(ctx.grad_clip_global),
+                            weight_decay=float(ctx.weight_decay),
+                            label_smoothing=float(ctx.loss_cfg.get('label_smoothing', 0.0)),
+                            normalized_shape=norm_node.attrs.get('normalized_shape'),
+                            norm_eps=float(norm_node.attrs.get('eps', 1e-5)),
+                            norm_weight_velocity=velocity_state.get(norm_weight_key),
+                            norm_bias_velocity=velocity_state.get(norm_bias_key),
+                            linear_weight_velocity=velocity_state.get(linear_weight_key),
+                            linear_bias_velocity=velocity_state.get(linear_bias_key),
+                            bound_lib=ctx.device_runtime.bound_lib,
+                        )
+                        params = dict(params)
+                        params[norm_weight_key] = step.updated_norm_weight
+                        params[norm_bias_key] = step.updated_norm_bias
+                        params[linear_weight_key] = step.updated_linear_weight
+                        params[linear_bias_key] = step.updated_linear_bias
+                        velocity_state[norm_weight_key] = step.updated_norm_weight_velocity
+                        velocity_state[norm_bias_key] = step.updated_norm_bias_velocity
+                        velocity_state[linear_weight_key] = step.updated_linear_weight_velocity
+                        velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
+                    elif gpu_training_plan['kind'] == 'layernorm_activation_linear':
+                        norm_node = gpu_training_plan['layernorm_node']
+                        activation_node = gpu_training_plan['activation_node']
+                        gpu_linear_node = gpu_training_plan['linear_nodes'][0]
+                        norm_weight_key = f'_w_{norm_node.name}'
+                        norm_bias_key = f'_b_{norm_node.name}'
+                        linear_weight_key = f'_w_{gpu_linear_node.name}'
+                        linear_bias_key = f'_b_{gpu_linear_node.name}'
+                        step = native_gpu_layernorm_linear_training_step(
+                            xb,
+                            yb,
+                            params[norm_weight_key],
+                            params[norm_bias_key],
+                            params[linear_weight_key],
+                            params[linear_bias_key],
+                            lr=float(optimizer_view.lr),
+                            momentum=float(ctx.momentum),
+                            grad_clip_value=float(ctx.grad_clip_global),
+                            weight_decay=float(ctx.weight_decay),
+                            label_smoothing=float(ctx.loss_cfg.get('label_smoothing', 0.0)),
+                            activation=str(activation_node.op_type),
+                            activation_alpha=float(activation_node.attrs.get('negative_slope', 0.01)),
+                            normalized_shape=norm_node.attrs.get('normalized_shape'),
+                            norm_eps=float(norm_node.attrs.get('eps', 1e-5)),
+                            norm_weight_velocity=velocity_state.get(norm_weight_key),
+                            norm_bias_velocity=velocity_state.get(norm_bias_key),
+                            linear_weight_velocity=velocity_state.get(linear_weight_key),
+                            linear_bias_velocity=velocity_state.get(linear_bias_key),
+                            bound_lib=ctx.device_runtime.bound_lib,
+                        )
+                        params = dict(params)
+                        params[norm_weight_key] = step.updated_norm_weight
+                        params[norm_bias_key] = step.updated_norm_bias
+                        params[linear_weight_key] = step.updated_linear_weight
+                        params[linear_bias_key] = step.updated_linear_bias
+                        velocity_state[norm_weight_key] = step.updated_norm_weight_velocity
+                        velocity_state[norm_bias_key] = step.updated_norm_bias_velocity
+                        velocity_state[linear_weight_key] = step.updated_linear_weight_velocity
+                        velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
                     elif gpu_training_plan['kind'] == 'groupnorm_linear':
                         norm_node = gpu_training_plan['groupnorm_node']
                         gpu_linear_node = gpu_training_plan['linear_nodes'][0]
@@ -560,6 +636,8 @@ def run_training_loop(
                             pointwise2_weight_velocity=velocity_state.get(pointwise2_weight_key),
                             linear_weight_velocity=velocity_state.get(linear_weight_key),
                             linear_bias_velocity=velocity_state.get(linear_bias_key),
+                            activation_kind=str(gpu_training_plan.get('activation_kind', 'GELU')),
+                            activation_alpha=float(gpu_training_plan.get('activation_alpha', 0.01)),
                             bound_lib=ctx.device_runtime.bound_lib,
                         )
                         params = dict(params)

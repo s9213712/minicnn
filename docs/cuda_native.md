@@ -167,6 +167,8 @@ Current tiering:
 - `GroupNorm`
 - `LayerNorm`
 - `LayerNorm2d`
+- `Flatten -> LayerNorm -> Linear`
+- `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> PointwiseConv2d -> Flatten -> Linear`
 - `BCEWithLogitsLoss`
 - `RMSprop`
 - AMP (beta)

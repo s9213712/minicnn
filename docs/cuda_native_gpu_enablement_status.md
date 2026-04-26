@@ -50,6 +50,9 @@ Completed:
 - `GroupNorm` backward C ABI shim through `groupnorm_backward`
 - native `GroupNorm -> Flatten -> Linear` training helper routing through the
   groupnorm forward/backward C ABI shims
+- native `Flatten -> LayerNorm -> Linear` training helper routing through a
+  reference `LayerNorm` shim plus native dense/loss/update kernels as an
+  intermediate bridge before a full `LayerNorm` C ABI path exists
 - `LayerNorm2d` forward dispatch through the native `layernorm2d_forward` C ABI
   shim
 - `LayerNorm2d` backward C ABI shim through `layernorm2d_backward` as the
@@ -62,9 +65,10 @@ Completed:
 - native `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> Flatten ->
   Linear` training helper routing through depthwise, layernorm2d, and
   pointwise im2col/GEMM forward/backward C ABI shims
-- native `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU ->
-  PointwiseConv2d -> Flatten -> Linear` training helper routing through the
-  same depthwise/norm/pointwise C ABI shims plus native GELU forward/backward
+- native `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d ->
+  LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> PointwiseConv2d -> Flatten -> Linear`
+  training helper family routing through the same depthwise/norm/pointwise C
+  ABI shims plus native activation forward/backward dispatch
 - kernel registry backward statuses now mark helper-backed backward ops as
   `partial_native`, so per-op diagnostics line up with the implemented
   GPU-training helper surface instead of leaving those ops as only `planned`
@@ -145,6 +149,7 @@ Supported through native GPU helper paths:
 - `MaxPool2d -> Flatten -> Linear`
 - `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear`
 - `BatchNorm2d -> Flatten -> Linear`
+- `Flatten -> LayerNorm -> Linear`
 - `LayerNorm2d -> Flatten -> Linear`
 - `GroupNorm -> Flatten -> Linear`
 - `GlobalAvgPool2d -> Flatten -> Linear`
@@ -163,7 +168,7 @@ Supported through native GPU helper paths:
 - `DepthwiseConv2d(bias=false) -> ReLU -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> LayerNorm2d -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> Flatten -> Linear`
-- `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> GELU -> PointwiseConv2d(bias=false) -> Flatten -> Linear`
+- `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> PointwiseConv2d(bias=false) -> Flatten -> Linear`
 - `model.name=convnext_bridge_tiny` resolves to the same deepest bridge subset
 - `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear`
 - `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear`
@@ -230,11 +235,13 @@ Current real CUDA evidence:
   `configs/cifar10_cuda_native_gpu_stronger.yaml` loaded all five training
   batches, ran native helper-backed GPU training/eval, and reached roughly
   low-to-mid 60% validation accuracy in early epochs
-- ConvNeXt-style bridge CIFAR-10 smoke entrypoint exists for
-  `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU ->
-  PointwiseConv2d -> Flatten -> Linear`; the current host stops at CUDA runtime
-  preflight with status 35 because the installed driver is older than the CUDA
-  runtime used to build/load the native library
+- ConvNeXt-style bridge CIFAR-10 smoke entrypoint exists for the
+  `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> activation ->
+  PointwiseConv2d -> Flatten -> Linear` family, with
+  `model.name=convnext_bridge_tiny` still targeting the GELU variant; the
+  current host stops at CUDA runtime preflight with status 35 because the
+  installed driver is older than the CUDA runtime used to build/load the
+  native library
 - a CUDA 11.5 handmade native variant built successfully with `/usr/bin/nvcc`,
   but the same host still reports CUDA runtime preflight status 35 with
   `driver=unknown`; this narrows the remaining real-smoke blocker to local CUDA
@@ -266,8 +273,8 @@ Still not claimed as complete:
 - broader `PointwiseConv2d` graph-level train-native coverage beyond the
   `PointwiseConv2d -> Flatten -> Linear` helper subsets
 - full ConvNeXt block train-native coverage beyond the current
-  `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU ->
-  PointwiseConv2d -> Flatten -> Linear` bridge subset
+  `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> activation ->
+  PointwiseConv2d -> Flatten -> Linear` bridge family
 
 ## Validation evidence
 

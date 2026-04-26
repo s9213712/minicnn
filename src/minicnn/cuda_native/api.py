@@ -84,12 +84,14 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
     remaining_blockers = [str(item) for item in mode_readiness.get('remaining_blockers', [])]
     dispatch_plan_summary: dict[str, object] | None = None
     training_lowering_plan_summary: dict[str, object] | None = None
+    dispatch_lowering_ready = False
     validation_input_shape = _validation_input_shape(dataset_cfg)
     if validation_input_shape is not None:
         try:
             graph = build_cuda_native_graph(model_cfg, validation_input_shape)
             dispatch_plan = build_gpu_dispatch_plan(graph)
             dispatch_plan_summary = dispatch_plan.summary()
+            dispatch_lowering_ready = bool(dispatch_plan_summary.get('ready', False))
             loss_cfg, _ = _as_mapping('loss', cfg.get('loss'))
             optim_cfg, _ = _as_mapping('optimizer', cfg.get('optimizer'))
             train_cfg, _ = _as_mapping('train', cfg.get('train'))
@@ -134,6 +136,8 @@ def assess_cuda_native_execution_readiness(cfg: dict[str, Any]) -> dict[str, obj
         'bootstrap_subset_complete': len(missing_ops) == 0,
         'bootstrap_supported_ops': supported_ops,
         'bootstrap_missing_ops': missing_ops,
+        'dispatch_lowering_ready': dispatch_lowering_ready,
+        'training_lowering_ready': bool(training_lowering_plan_summary and training_lowering_plan_summary.get('ready', False)),
         'kernel_readiness_for_requested_ops': {
             op_name: kernel_specs.get(
                 op_name,
@@ -307,6 +311,7 @@ def _validate_gpu_native_training_subset(
         ('MaxPool2d', 'Flatten', 'Linear'),
         ('AvgPool2d', 'Flatten', 'Linear'),
         ('BatchNorm2d', 'Flatten', 'Linear'),
+        ('Flatten', 'LayerNorm', 'Linear'),
         ('LayerNorm2d', 'Flatten', 'Linear'),
         ('GroupNorm', 'Flatten', 'Linear'),
         ('DepthwiseConv2d', 'LayerNorm2d', 'Flatten', 'Linear'),
@@ -325,7 +330,9 @@ def _validate_gpu_native_training_subset(
         if _conv_op != 'PointwiseConv2d':
             allowed_ops.add((_conv_op, 'MaxPool2d', 'Flatten', 'Linear'))
     for _activation in _GPU_NATIVE_SINGLE_CONV_ACTIVATIONS:
+        allowed_ops.add(('Flatten', 'LayerNorm', _activation, 'Linear'))
         allowed_ops.add(('Conv2d', _activation, 'Conv2d', _activation, 'MaxPool2d', 'Flatten', 'Linear'))
+        allowed_ops.add(('DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', _activation, 'PointwiseConv2d', 'Flatten', 'Linear'))
     if tuple(ops) not in allowed_ops:
         errors.append(
             'cuda_native gpu_native train-native currently supports only the narrow '
@@ -334,11 +341,11 @@ def _validate_gpu_native_training_subset(
             '[Linear, LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Linear], '
             '[Flatten, Linear, LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Linear], '
             '[MaxPool2d, Flatten, Linear], [AvgPool2d, Flatten, Linear], '
-            '[BatchNorm2d, Flatten, Linear], [LayerNorm2d, Flatten, Linear], '
+            '[BatchNorm2d, Flatten, Linear], [Flatten, LayerNorm, Linear], [Flatten, LayerNorm, LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Linear], [LayerNorm2d, Flatten, Linear], '
             '[GroupNorm, Flatten, Linear], '
             '[DepthwiseConv2d, LayerNorm2d, Flatten, Linear], '
             '[DepthwiseConv2d, LayerNorm2d, PointwiseConv2d, Flatten, Linear], '
-            '[DepthwiseConv2d, LayerNorm2d, PointwiseConv2d, GELU, PointwiseConv2d, Flatten, Linear], '
+            '[DepthwiseConv2d, LayerNorm2d, PointwiseConv2d, LeakyReLU/GELU/SiLU/Sigmoid/Tanh, PointwiseConv2d, Flatten, Linear], '
             '[GlobalAvgPool2d, Flatten, Linear], '
             '[AdaptiveAvgPool2d, Flatten, Linear], [Conv2d, Flatten, Linear], '
             '[Conv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Flatten, Linear], '
@@ -369,6 +376,7 @@ def _validate_gpu_native_training_subset(
             conv_constraint_ops.add((_conv_op, 'MaxPool2d', 'Flatten', 'Linear'))
     for _activation in _GPU_NATIVE_SINGLE_CONV_ACTIVATIONS:
         conv_constraint_ops.add(('Conv2d', _activation, 'Conv2d', _activation, 'MaxPool2d', 'Flatten', 'Linear'))
+        conv_constraint_ops.add(('DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', _activation, 'PointwiseConv2d', 'Flatten', 'Linear'))
     if tuple(ops) in conv_constraint_ops:
         conv_attr_nodes = [nodes[0]]
         if (
@@ -382,7 +390,12 @@ def _validate_gpu_native_training_subset(
             conv_attr_nodes.append(nodes[2])
         if ops == ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'Flatten', 'Linear']:
             conv_attr_nodes.append(nodes[2])
-        if ops == ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear']:
+        if (
+            len(ops) == 7
+            and ops[0:3] == ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d']
+            and ops[3] in _GPU_NATIVE_SINGLE_CONV_ACTIVATIONS
+            and ops[4:] == ['PointwiseConv2d', 'Flatten', 'Linear']
+        ):
             conv_attr_nodes.extend((nodes[2], nodes[4]))
 
         def _pair(value: Any, default: int) -> tuple[int, int]:

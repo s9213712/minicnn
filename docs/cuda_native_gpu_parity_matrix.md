@@ -21,10 +21,10 @@ conv-family helpers. `DepthwiseConv2d -> LayerNorm2d -> Flatten -> Linear` is
 covered as the first ConvNeXt-style bridge subset, and
 `DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> Flatten -> Linear`
 extends that bridge through a native pointwise im2col/GEMM forward/backward.
-`DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> GELU -> PointwiseConv2d
--> Flatten -> Linear` is the deepest current ConvNeXt-style helper-backed
-training subset. `model.name=convnext_bridge_tiny` resolves directly to this
-primitive sequence.
+`DepthwiseConv2d -> LayerNorm2d -> PointwiseConv2d -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh
+-> PointwiseConv2d -> Flatten -> Linear` is the deepest current ConvNeXt-style
+helper-backed training family. `model.name=convnext_bridge_tiny` resolves
+directly to the GELU member of this primitive sequence.
 
 | Subset | Helper | Evidence | Hardware status |
 |---|---|---|---|
@@ -37,6 +37,7 @@ primitive sequence.
 | `MaxPool2d -> Flatten -> Linear` | `native_gpu_pool_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `AvgPool2d(kernel_size=2,stride=2,padding=0) -> Flatten -> Linear` | `native_gpu_avgpool_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `BatchNorm2d -> Flatten -> Linear` | `native_gpu_batchnorm_linear_training_step` | Hermetic reference math | Pending real GPU run |
+| `Flatten -> LayerNorm -> Linear` | `native_gpu_layernorm_linear_training_step` | Hermetic reference math with reference LayerNorm shim + native dense/update path | Pending real GPU run |
 | `LayerNorm2d -> Flatten -> Linear` | `native_gpu_layernorm2d_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `GroupNorm -> Flatten -> Linear` | `native_gpu_groupnorm_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `GlobalAvgPool2d -> Flatten -> Linear` | `native_gpu_global_avgpool_linear_training_step` | Hermetic reference math | Pending real GPU run |
@@ -52,8 +53,8 @@ primitive sequence.
 | `DepthwiseConv2d(bias=false) -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper activation math and lowering parity | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> LayerNorm2d -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_linear_training_step` | Hermetic reference math | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_pointwise_linear_training_step` | Hermetic reference math | Pending real GPU run |
-| `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> GELU -> PointwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step` | Hermetic reference math | Pending real GPU run |
-| `model.name=convnext_bridge_tiny` | `native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step` | CLI validation resolves to the deepest bridge subset | Pending real GPU run |
+| `DepthwiseConv2d(bias=false) -> LayerNorm2d -> PointwiseConv2d(bias=false) -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> PointwiseConv2d(bias=false) -> Flatten -> Linear` | `native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step` | Hermetic reference math and activation-family lowering parity | Pending real GPU run |
+| `model.name=convnext_bridge_tiny` | `native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step` | CLI validation resolves to the deepest bridge subset family | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> ReLU -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper routing | Pending real GPU run |
 | `DepthwiseConv2d(bias=false) -> LeakyReLU/GELU/SiLU/Sigmoid/Tanh -> MaxPool2d -> Flatten -> Linear` | `native_gpu_conv_linear_training_step` | Covered by depthwise helper activation+pool math and lowering parity | Pending real GPU run |

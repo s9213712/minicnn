@@ -551,6 +551,77 @@ def test_validate_cuda_native_config_accepts_gpu_native_layernorm2d_linear_train
     assert payload['errors'] == []
 
 
+def test_validate_cuda_native_config_accepts_gpu_native_flatten_layernorm_linear_training_subset(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding='utf-8').replace(
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: Flatten\n    - type: LayerNorm\n      normalized_shape: 64\n      eps: 0.00001\n    - type: Linear\n      out_features: 2\n",
+        ),
+        encoding='utf-8',
+    )
+
+    rc = main([
+        'validate-cuda-native-config',
+        '--config',
+        str(config_path),
+        '--format',
+        'json',
+        'engine.execution_mode=gpu_native',
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    readiness = payload['execution_readiness_assessment']
+    assert readiness['dispatch_lowering_ready'] is True
+    assert readiness['training_lowering_ready'] is True
+    assert readiness['bootstrap_supported_ops'] == ['Flatten', 'LayerNorm', 'Linear']
+    assert readiness['bootstrap_missing_ops'] == []
+    assert readiness['kernel_readiness_for_requested_ops']['LayerNorm']['forward_status'] == 'partial_native'
+    assert readiness['training_lowering_plan']['subset_name'] == 'flatten_layernorm_linear'
+    assert readiness['training_lowering_plan']['helper'] == 'native_gpu_layernorm_linear_training_step'
+    assert readiness['training_lowering_plan']['required_symbols_by_phase']['forward'] == ['dense_forward']
+    assert 'dense_backward_full' in readiness['training_lowering_plan']['required_symbols_by_phase']['backward']
+    assert payload['errors'] == []
+
+
+def test_validate_cuda_native_config_accepts_gpu_native_flatten_layernorm_silu_linear_training_subset(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding='utf-8').replace(
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: Flatten\n    - type: LayerNorm\n      normalized_shape: 64\n      eps: 0.00001\n    - type: SiLU\n    - type: Linear\n      out_features: 2\n",
+        ),
+        encoding='utf-8',
+    )
+
+    rc = main([
+        'validate-cuda-native-config',
+        '--config',
+        str(config_path),
+        '--format',
+        'json',
+        'engine.execution_mode=gpu_native',
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    readiness = payload['execution_readiness_assessment']
+    assert readiness['dispatch_lowering_ready'] is True
+    assert readiness['training_lowering_ready'] is True
+    assert readiness['training_lowering_plan']['subset_name'] == 'flatten_layernorm_silu_linear'
+    assert readiness['training_lowering_plan']['helper'] == 'native_gpu_layernorm_linear_training_step'
+    assert 'silu_forward' in readiness['training_lowering_plan']['required_symbols_by_phase']['forward']
+    assert 'silu_backward' in readiness['training_lowering_plan']['required_symbols_by_phase']['backward']
+    assert payload['errors'] == []
+
+
 def test_validate_cuda_native_config_accepts_gpu_native_depthwise_layernorm2d_linear_training_subset(tmp_path, capsys):
     from minicnn.cli import main
 
@@ -653,6 +724,36 @@ def test_validate_cuda_native_config_accepts_gpu_native_convnext_bridge_training
     assert payload['execution_readiness_assessment']['training_lowering_plan']['backward_steps'][1]['lowering_kind'] == 'conv_backward'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['backward_steps'][2]['lowering_kind'] == 'gelu_backward'
     assert payload['execution_readiness_assessment']['training_lowering_plan']['backward_steps'][-1]['lowering_kind'] == 'depthwise_conv2d_backward'
+    assert payload['errors'] == []
+
+
+def test_validate_cuda_native_config_accepts_gpu_native_convnext_bridge_silu_training_subset(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding='utf-8').replace(
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: DepthwiseConv2d\n      kernel_size: 3\n      stride: 1\n      padding: 0\n      bias: false\n    - type: LayerNorm2d\n      eps: 0.00001\n    - type: PointwiseConv2d\n      out_channels: 3\n      bias: false\n    - type: SiLU\n    - type: PointwiseConv2d\n      out_channels: 2\n      bias: false\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+        ),
+        encoding='utf-8',
+    )
+
+    rc = main([
+        'validate-cuda-native-config',
+        '--config',
+        str(config_path),
+        '--format',
+        'json',
+        'engine.execution_mode=gpu_native',
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['execution_readiness_assessment']['training_lowering_plan']['subset_name'] == 'depthwise_layernorm2d_pointwise_silu_pointwise_linear'
+    assert 'silu_forward' in payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols_by_phase']['forward']
+    assert 'silu_backward' in payload['execution_readiness_assessment']['training_lowering_plan']['required_symbols_by_phase']['backward']
     assert payload['errors'] == []
 
 

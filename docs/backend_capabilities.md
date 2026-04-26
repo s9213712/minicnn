@@ -137,7 +137,7 @@ Intentionally educational, CPU-only, and used as the internal correctness oracle
 
 Use it for framework learning, deterministic tests, parity checks, and small experiments without torch dependency.
 
-Limitations: Conv2d is much slower than torch; no AMP; no LayerNorm / GroupNorm; no dotted-path custom components.
+Limitations: Conv2d is much slower than torch; no full-graph AMP; `LayerNorm` and `GroupNorm` train-native coverage remain narrow/helper-scoped; no dotted-path custom components.
 
 ## CUDA Legacy
 
@@ -420,7 +420,7 @@ Debugging order:
 
 適合框架學習、可重現測試、對照驗證，以及不依賴 torch 的小型實驗。
 
-限制：Conv2d 比 torch 慢很多；不支援 AMP、LayerNorm、GroupNorm、dotted-path 自訂元件。
+限制：Conv2d 比 torch 慢很多；不支援完整圖級 AMP；`LayerNorm` 與 `GroupNorm` 的 train-native 覆蓋仍偏窄、以 helper 子集為主；不支援 dotted-path 自訂元件。
 
 ## CUDA Legacy
 

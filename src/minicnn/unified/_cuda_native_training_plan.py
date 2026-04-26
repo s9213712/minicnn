@@ -25,6 +25,10 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         return {'kind': 'avgpool_linear', 'pool_node': nodes[0], 'linear_nodes': [nodes[2]]}
     if ops == ['BatchNorm2d', 'Flatten', 'Linear']:
         return {'kind': 'batchnorm_linear', 'batchnorm_node': nodes[0], 'linear_nodes': [nodes[2]]}
+    if ops == ['Flatten', 'LayerNorm', 'Linear']:
+        return {'kind': 'layernorm_linear', 'layernorm_node': nodes[1], 'linear_nodes': [nodes[2]]}
+    if len(ops) == 4 and ops[0] == 'Flatten' and ops[1] == 'LayerNorm' and ops[2] in _SINGLE_STAGE_ACTIVATIONS and ops[3] == 'Linear':
+        return {'kind': 'layernorm_activation_linear', 'layernorm_node': nodes[1], 'activation_node': nodes[2], 'linear_nodes': [nodes[3]]}
     if ops == ['LayerNorm2d', 'Flatten', 'Linear']:
         return {'kind': 'layernorm2d_linear', 'layernorm2d_node': nodes[0], 'linear_nodes': [nodes[2]]}
     if ops == ['GroupNorm', 'Flatten', 'Linear']:
@@ -91,7 +95,12 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
             'pointwise_node': nodes[2],
             'linear_nodes': [nodes[4]],
         }
-    if ops == ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', 'GELU', 'PointwiseConv2d', 'Flatten', 'Linear']:
+    if (
+        len(ops) == 7
+        and ops[0:3] == ['DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d']
+        and ops[3] in _SINGLE_STAGE_ACTIVATIONS
+        and ops[4:] == ['PointwiseConv2d', 'Flatten', 'Linear']
+    ):
         depthwise_attrs = dict(getattr(nodes[0], 'attrs', {}) or {})
         pointwise1_attrs = dict(getattr(nodes[2], 'attrs', {}) or {})
         pointwise2_attrs = dict(getattr(nodes[4], 'attrs', {}) or {})
@@ -128,6 +137,12 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
             'layernorm2d_node': nodes[1],
             'pointwise1_node': nodes[2],
             'pointwise2_node': nodes[4],
+            'activation_kind': str(nodes[3].op_type),
+            'activation_alpha': (
+                float(getattr(nodes[3], 'attrs', {}).get('negative_slope', 0.01))
+                if str(nodes[3].op_type) == 'LeakyReLU'
+                else 0.01
+            ),
             'linear_nodes': [nodes[6]],
         }
     if ops in (['GlobalAvgPool2d', 'Flatten', 'Linear'], ['AdaptiveAvgPool2d', 'Flatten', 'Linear']):
