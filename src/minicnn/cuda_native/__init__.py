@@ -1,8 +1,9 @@
 """cuda_native — beta ordered-graph native backend.
 
 Status: beta
-Training: beta-grade within the NumPy-reference execution model
-Backward: beta-grade within the NumPy-reference execution model
+Execution: gpu-first via `gpu_native_auto` with `reference_numpy` fallback
+Training: beta-grade with native helper subsets plus reference fallback paths
+Backward: beta-grade across native and fallback lowering paths
 Graph mode: ordered DAG
 """
 from minicnn.cuda_native.capabilities import CUDA_NATIVE_CAPABILITIES, get_cuda_native_capabilities
@@ -11,7 +12,6 @@ from minicnn.cuda_native.api import (
     build_cuda_native_graph,
     get_capability_summary,
 )
-from minicnn.cuda_native.device_runtime import DeviceRuntime, DeviceTensor
 from minicnn.cuda_native.device_runtime import DeviceRuntime, DeviceTensor
 from minicnn.cuda_native.graph import NativeGraph, build_graph
 from minicnn.cuda_native.executor import ForwardExecutor
