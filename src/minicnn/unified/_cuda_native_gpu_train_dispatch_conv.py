@@ -157,6 +157,7 @@ def run_gpu_native_conv_batch(
             activation_kind=str(gpu_training_plan.get('activation_kind', 'GELU')),
             activation_alpha=float(gpu_training_plan.get('activation_alpha', 0.01)),
             bound_lib=ctx.device_runtime.bound_lib,
+            return_intermediates=False,
         )
         params = dict(params)
         params[depthwise_weight_key] = step.updated_depthwise_weight

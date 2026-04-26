@@ -3081,6 +3081,90 @@ def test_native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_traini
     assert result.runtime_summary['execution_kinds']['gpu_native_train:depthwise_conv2d_backward'] == 1
 
 
+def test_native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step_can_skip_intermediate_host_copies():
+    x = (np.arange(36, dtype=np.float32).reshape(2, 2, 3, 3) - 12.0) / 10.0
+    labels = np.asarray([1, 0], dtype=np.int32)
+    depthwise_weight = np.asarray(
+        [
+            [[[0.2, -0.1], [0.05, 0.3]]],
+            [[[-0.2, 0.1], [0.25, -0.05]]],
+        ],
+        dtype=np.float32,
+    )
+    norm_weight = np.asarray([1.0, 1.25], dtype=np.float32)
+    norm_bias = np.asarray([0.0, -0.1], dtype=np.float32)
+    pointwise1_weight = np.asarray(
+        [
+            [[[0.1]], [[-0.2]]],
+            [[[0.25]], [[0.05]]],
+            [[[-0.15]], [[0.2]]],
+        ],
+        dtype=np.float32,
+    )
+    pointwise2_weight = np.asarray(
+        [
+            [[[0.12]], [[-0.18]], [[0.07]]],
+            [[[-0.05]], [[0.22]], [[-0.11]]],
+        ],
+        dtype=np.float32,
+    )
+    linear_weight = (np.arange(16, dtype=np.float32).reshape(2, 8) - 5.0) / 40.0
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+
+    result = native_gpu_depthwise_layernorm2d_pointwise_gelu_pointwise_linear_training_step(
+        x,
+        labels,
+        depthwise_weight,
+        norm_weight,
+        norm_bias,
+        pointwise1_weight,
+        pointwise2_weight,
+        linear_weight,
+        linear_bias,
+        lr=0.035,
+        norm_eps=1e-5,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    assert result.logits.shape == (0,)
+    assert result.probabilities.shape == (0,)
+    assert result.depthwise_output.shape == (0,)
+    assert result.norm_output.shape == (0,)
+    assert result.pointwise1_output.shape == (0,)
+    assert result.activation_output.shape == (0,)
+    assert result.pointwise2_output.shape == (0,)
+    assert result.grad_logits.shape == (0,)
+    assert result.grad_pointwise2_output.shape == (0,)
+    assert result.grad_activation_output.shape == (0,)
+    assert result.grad_pointwise1_output.shape == (0,)
+    assert result.grad_norm_output.shape == (0,)
+    assert result.grad_depthwise_output.shape == (0,)
+    assert result.grad_input.shape == (0,)
+    assert result.grad_depthwise_weight.shape == (0,)
+    assert result.grad_norm_weight.shape == (0,)
+    assert result.grad_norm_bias.shape == (0,)
+    assert result.grad_pointwise1_weight.shape == (0,)
+    assert result.grad_pointwise2_weight.shape == (0,)
+    assert result.grad_linear_weight.shape == (0,)
+    assert result.grad_linear_bias.shape == (0,)
+    assert result.updated_depthwise_weight.shape == depthwise_weight.shape
+    assert result.updated_norm_weight.shape == norm_weight.shape
+    assert result.updated_norm_bias.shape == norm_bias.shape
+    assert result.updated_pointwise1_weight.shape == pointwise1_weight.shape
+    assert result.updated_pointwise2_weight.shape == pointwise2_weight.shape
+    assert result.updated_linear_weight.shape == linear_weight.shape
+    assert result.updated_linear_bias.shape == linear_bias.shape
+    assert result.updated_depthwise_weight_velocity is None
+    assert result.updated_norm_weight_velocity is None
+    assert result.updated_norm_bias_velocity is None
+    assert result.updated_pointwise1_weight_velocity is None
+    assert result.updated_pointwise2_weight_velocity is None
+    assert result.updated_linear_weight_velocity is None
+    assert result.updated_linear_bias_velocity is None
+    assert result.runtime_summary['device_to_host_transfer_events'] == 9
+
+
 def test_native_gpu_depthwise_layernorm2d_pointwise_silu_pointwise_linear_training_step_matches_reference_math():
     x = (np.arange(36, dtype=np.float32).reshape(2, 2, 3, 3) - 12.0) / 10.0
     labels = np.asarray([1, 0], dtype=np.int32)
