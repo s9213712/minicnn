@@ -851,6 +851,36 @@ def test_native_gpu_linear_training_step_reuses_persistent_device_state():
     assert runtime.summary()['persistent_device_cache_entries'] == 0
 
 
+def test_native_gpu_linear_training_step_can_skip_intermediate_host_copies():
+    x = np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+    labels = np.asarray([0, 1], dtype=np.int32)
+    weight = np.asarray([[0.2, -0.1], [0.05, 0.3]], dtype=np.float32)
+    bias = np.asarray([0.01, -0.02], dtype=np.float32)
+
+    result = native_gpu_linear_training_step(
+        x,
+        labels,
+        weight,
+        bias,
+        lr=0.05,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    assert result.logits.shape == (0,)
+    assert result.probabilities.shape == (0,)
+    assert result.grad_logits.shape == (0,)
+    assert result.grad_input.shape == (0,)
+    assert result.grad_weight.shape == (0,)
+    assert result.grad_bias.shape == (0,)
+    assert result.updated_weight.shape == weight.shape
+    assert result.updated_bias.shape == bias.shape
+    assert result.updated_weight_velocity is None
+    assert result.updated_weight_m is None
+    assert result.updated_weight_rmsprop_v is None
+    assert result.runtime_summary['device_to_host_transfer_events'] == 4
+
+
 def test_native_gpu_linear_training_step_grad_accum_mega_batch_matches_reference_math():
     x = np.asarray(
         [

@@ -145,6 +145,7 @@ def run_gpu_native_linear_or_pool_batch(
             device_runtime=persistent_runtime,
             persistent_device_state=True,
             persistent_cache_prefix=f'train:{weight_key}:{bias_key}:{ctx.optimizer_type}',
+            return_intermediates=False,
         )
         step = replace(step, runtime_summary=_runtime_summary_delta(runtime_before, step.runtime_summary))
         params = dict(params)
