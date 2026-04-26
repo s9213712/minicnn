@@ -194,6 +194,7 @@ def run_gpu_native_linear_or_pool_batch(
             activation=str(activation_node.op_type),
             activation_alpha=float(activation_node.attrs.get('negative_slope', 0.01)),
             bound_lib=ctx.device_runtime.bound_lib,
+            return_intermediates=False,
         )
         params = dict(params)
         params[w1_key] = step.updated_weight1

@@ -535,6 +535,7 @@ def native_gpu_two_linear_relu_training_step(
     activation: str = 'ReLU',
     activation_alpha: float = 0.01,
     bound_lib: Any | None = None,
+    return_intermediates: bool = True,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuTwoLinearReluTrainingStepResult:
@@ -754,23 +755,36 @@ def native_gpu_two_linear_relu_training_step(
             update_kind = 'gpu_native_train:apply_sgd_update'
         runtime.record_execution(update_kind, input_name='grad_weight1', output_name='weight1', node_count=1)
 
-        logits = runtime.stage_to_host(logits_t)
-        probabilities = runtime.stage_to_host(probs_t)
-        grad_logits = runtime.stage_to_host(grad_logits_t)
-        grad_hidden = runtime.stage_to_host(grad_hidden_t)
-        grad_input = runtime.stage_to_host(grad_input_t)
-        grad_weight1 = runtime.stage_to_host(grad_w1_t)
-        grad_bias1 = runtime.stage_to_host(grad_b1_t)
-        grad_weight2 = runtime.stage_to_host(grad_w2_t)
-        grad_bias2 = runtime.stage_to_host(grad_b2_t)
+        if return_intermediates:
+            logits = runtime.stage_to_host(logits_t)
+            probabilities = runtime.stage_to_host(probs_t)
+            grad_logits = runtime.stage_to_host(grad_logits_t)
+            grad_hidden = runtime.stage_to_host(grad_hidden_t)
+            grad_input = runtime.stage_to_host(grad_input_t)
+            grad_weight1 = runtime.stage_to_host(grad_w1_t)
+            grad_bias1 = runtime.stage_to_host(grad_b1_t)
+            grad_weight2 = runtime.stage_to_host(grad_w2_t)
+            grad_bias2 = runtime.stage_to_host(grad_b2_t)
+        else:
+            empty = np.empty((0,), dtype=np.float32)
+            logits = empty
+            probabilities = empty
+            grad_logits = empty
+            grad_hidden = empty
+            grad_input = empty
+            grad_weight1 = empty
+            grad_bias1 = empty
+            grad_weight2 = empty
+            grad_bias2 = empty
         updated_weight1 = runtime.stage_to_host(w1_t)
         updated_bias1 = runtime.stage_to_host(b1_t)
         updated_weight2 = runtime.stage_to_host(w2_t)
         updated_bias2 = runtime.stage_to_host(b2_t)
-        updated_weight1_velocity = runtime.stage_to_host(w1v_t)
-        updated_bias1_velocity = runtime.stage_to_host(b1v_t)
-        updated_weight2_velocity = runtime.stage_to_host(w2v_t)
-        updated_bias2_velocity = runtime.stage_to_host(b2v_t)
+        copy_velocity = return_intermediates or float(momentum) != 0.0
+        updated_weight1_velocity = runtime.stage_to_host(w1v_t) if copy_velocity else None
+        updated_bias1_velocity = runtime.stage_to_host(b1v_t) if copy_velocity else None
+        updated_weight2_velocity = runtime.stage_to_host(w2v_t) if copy_velocity else None
+        updated_bias2_velocity = runtime.stage_to_host(b2v_t) if copy_velocity else None
         loss_sum = float(runtime.stage_to_host(loss_sum_t)[0])
         correct_count = int(runtime.stage_to_host(correct_t)[0])
         runtime.synchronize('gpu-native-two-linear-relu-training-step')

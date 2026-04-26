@@ -1395,6 +1395,44 @@ def test_native_gpu_two_linear_modern_activation_training_step_matches_reference
         assert result.runtime_summary['execution_kinds'][f'gpu_native_train:{runtime_key}_backward'] == 1
 
 
+def test_native_gpu_two_linear_relu_training_step_can_skip_intermediate_host_copies():
+    x = np.asarray([[0.5, -1.0], [1.5, 0.25]], dtype=np.float32)
+    labels = np.asarray([1, 0], dtype=np.int32)
+    w1 = np.asarray([[0.2, -0.1], [0.05, 0.3], [-0.25, 0.15]], dtype=np.float32)
+    b1 = np.asarray([0.01, -0.02, 0.03], dtype=np.float32)
+    w2 = np.asarray([[0.1, -0.2, 0.05], [-0.05, 0.25, -0.15]], dtype=np.float32)
+    b2 = np.asarray([0.02, -0.01], dtype=np.float32)
+
+    result = native_gpu_two_linear_relu_training_step(
+        x,
+        labels,
+        w1,
+        b1,
+        w2,
+        b2,
+        lr=0.03,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    assert result.logits.shape == (0,)
+    assert result.probabilities.shape == (0,)
+    assert result.grad_logits.shape == (0,)
+    assert result.grad_hidden.shape == (0,)
+    assert result.grad_input.shape == (0,)
+    assert result.grad_weight1.shape == (0,)
+    assert result.grad_bias1.shape == (0,)
+    assert result.grad_weight2.shape == (0,)
+    assert result.grad_bias2.shape == (0,)
+    assert result.updated_weight1.shape == w1.shape
+    assert result.updated_bias1.shape == b1.shape
+    assert result.updated_weight2.shape == w2.shape
+    assert result.updated_bias2.shape == b2.shape
+    assert result.updated_weight1_velocity is None
+    assert result.updated_weight2_velocity is None
+    assert result.runtime_summary['device_to_host_transfer_events'] == 6
+
+
 def test_native_gpu_pool_linear_training_step_matches_reference_math():
     x = np.asarray(
         [
