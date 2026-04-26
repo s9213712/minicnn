@@ -83,7 +83,7 @@ def test_gpu_training_per_op_lowering_manifest_exposes_helper_transition_contrac
     ]
 
 
-def test_gpu_training_lowering_plans_generic_per_op_trace_for_non_helper_graph():
+def test_gpu_training_lowering_plans_generic_per_op_trace_for_mlp_runtime_executor():
     from minicnn.cuda_native.api import build_cuda_native_graph
     from minicnn.cuda_native.gpu_training_lowering import build_gpu_training_lowering_plan
 
@@ -104,17 +104,14 @@ def test_gpu_training_lowering_plans_generic_per_op_trace_for_non_helper_graph()
     )
     manifest = plan.summary()['per_op_lowering_shim']
 
-    assert plan.ready is False
-    assert plan.subset_name is None
+    assert plan.ready is True
+    assert plan.subset_name == 'generic_mlp'
     assert plan.helper is None
     assert manifest['helper_backed'] is False
     assert manifest['graph_wide_lowering_ready'] is True
-    assert manifest['runtime_executor_ready'] is False
-    assert manifest['transition_policy'] == 'runtime_per_op_executor_pending'
-    assert any(
-        reason.startswith('gpu_native runtime per-op training executor pending')
-        for reason in plan.unsupported_reasons
-    )
+    assert manifest['runtime_executor_ready'] is True
+    assert manifest['transition_policy'] == 'runtime_per_op_executor'
+    assert plan.unsupported_reasons == ()
     assert [(step.phase, step.lowering_kind) for step in plan.backward_steps] == [
         ('backward', 'dense_backward_full'),
         ('backward', 'gelu_backward'),
@@ -131,4 +128,4 @@ def test_gpu_training_lowering_plans_generic_per_op_trace_for_non_helper_graph()
         '_w_linear_5',
         '_b_linear_5',
     )
-    assert manifest['fallback_policy']['fallback_active'] is True
+    assert manifest['fallback_policy']['fallback_active'] is False

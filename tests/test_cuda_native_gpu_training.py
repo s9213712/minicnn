@@ -18,6 +18,7 @@ from minicnn.cuda_native.gpu_training import (
     native_gpu_layernorm_linear_training_step,
     native_gpu_layernorm2d_linear_training_step,
     native_gpu_linear_training_step,
+    native_gpu_mlp_training_step,
     native_gpu_pool_linear_training_step,
     native_gpu_two_conv_relu_pool_linear_training_step,
     native_gpu_two_linear_relu_training_step,
@@ -1309,6 +1310,81 @@ def test_native_gpu_two_linear_relu_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:apply_relu_backward'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full_1'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:dense_backward_full_2'] == 1
+
+
+def test_native_gpu_mlp_training_step_matches_three_linear_reference_math():
+    x = np.asarray([[0.2, -0.4, 0.6], [-0.1, 0.3, -0.5]], dtype=np.float32)
+    labels = np.asarray([1, 0], dtype=np.int32)
+    w1 = np.asarray([[0.2, -0.1, 0.05], [-0.3, 0.25, 0.15], [0.1, 0.2, -0.2]], dtype=np.float32)
+    b1 = np.asarray([0.01, -0.02, 0.03], dtype=np.float32)
+    w2 = np.asarray([[0.1, -0.2, 0.05], [-0.05, 0.3, 0.2]], dtype=np.float32)
+    b2 = np.asarray([0.02, -0.01], dtype=np.float32)
+    w3 = np.asarray([[0.15, -0.25], [0.05, 0.35]], dtype=np.float32)
+    b3 = np.asarray([0.01, -0.03], dtype=np.float32)
+    lr = 0.04
+
+    result = native_gpu_mlp_training_step(
+        x,
+        labels,
+        (
+            ('linear_1', w1, b1),
+            ('linear_3', w2, b2),
+            ('linear_5', w3, b3),
+        ),
+        (('ReLU', 0.01), ('GELU', 0.01)),
+        lr=lr,
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    z1 = x @ w1.T + b1
+    a1 = np.maximum(z1, 0.0)
+    z2 = a1 @ w2.T + b2
+    inner = np.sqrt(2.0 / np.pi) * (z2 + 0.044715 * z2 ** 3)
+    tanh_inner = np.tanh(inner)
+    a2 = 0.5 * z2 * (1.0 + tanh_inner)
+    logits = a2 @ w3.T + b3
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs /= probs.sum(axis=1, keepdims=True)
+    grad_logits = probs.copy()
+    grad_logits[np.arange(labels.shape[0]), labels] -= 1.0
+    grad_logits /= float(labels.shape[0])
+    grad_w3 = grad_logits.T @ a2
+    grad_b3 = grad_logits.sum(axis=0)
+    grad_a2 = grad_logits @ w3
+    sech2_inner = 1.0 - tanh_inner * tanh_inner
+    inner_grad = np.sqrt(2.0 / np.pi) * (1.0 + 3.0 * 0.044715 * z2 ** 2)
+    gelu_grad = 0.5 * (1.0 + tanh_inner) + 0.5 * z2 * sech2_inner * inner_grad
+    grad_z2 = grad_a2 * gelu_grad
+    grad_w2 = grad_z2.T @ a1
+    grad_b2 = grad_z2.sum(axis=0)
+    grad_a1 = grad_z2 @ w2
+    grad_z1 = np.where(z1 > 0.0, grad_a1, 0.0)
+    grad_w1 = grad_z1.T @ x
+    grad_b1 = grad_z1.sum(axis=0)
+
+    np.testing.assert_allclose(result.logits, logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.probabilities, probs, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_logits, grad_logits, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_input, grad_z1 @ w1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_params['_w_linear_1'], grad_w1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_params['_b_linear_1'], grad_b1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_params['_w_linear_3'], grad_w2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_params['_b_linear_3'], grad_b2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_params['_w_linear_5'], grad_w3, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.grad_params['_b_linear_5'], grad_b3, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_params['_w_linear_1'], w1 - lr * grad_w1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_params['_b_linear_1'], b1 - lr * grad_b1, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_params['_w_linear_3'], w2 - lr * grad_w2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_params['_b_linear_3'], b2 - lr * grad_b2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_params['_w_linear_5'], w3 - lr * grad_w3, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(result.updated_params['_b_linear_5'], b3 - lr * grad_b3, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:generic_mlp:dense_forward_1'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:generic_mlp:dense_forward_2'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:generic_mlp:dense_forward_3'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:generic_mlp:apply_relu_backward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:generic_mlp:gelu_backward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:generic_mlp:apply_sgd_update'] == 1
 
 
 def test_native_gpu_two_linear_modern_activation_training_step_matches_reference_math():

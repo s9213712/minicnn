@@ -10,6 +10,7 @@ from minicnn.cuda_native.gpu_training import (
     native_gpu_avgpool_linear_training_step,
     native_gpu_global_avgpool_linear_training_step,
     native_gpu_linear_training_step,
+    native_gpu_mlp_training_step,
     native_gpu_pool_linear_training_step,
     native_gpu_two_linear_relu_training_step,
 )
@@ -210,6 +211,50 @@ def run_gpu_native_linear_or_pool_batch(
         velocity_state[b1_key] = step.updated_bias1_velocity
         velocity_state[w2_key] = step.updated_weight2_velocity
         velocity_state[b2_key] = step.updated_bias2_velocity
+        return params, step
+    if kind == 'generic_mlp':
+        persistent_runtime = _persistent_linear_runtime(ctx, optimizer_state)
+        runtime_before = persistent_runtime.summary()
+        linear_nodes = list(gpu_training_plan['linear_nodes'])
+        activation_nodes = list(gpu_training_plan['activation_nodes'])
+        linear_params = tuple(
+            (
+                str(node.name),
+                params[f'_w_{node.name}'],
+                params[f'_b_{node.name}'],
+            )
+            for node in linear_nodes
+        )
+        activations = tuple(
+            (
+                str(node.op_type),
+                float(getattr(node, 'attrs', {}).get('negative_slope', 0.01)),
+            )
+            for node in activation_nodes
+        )
+        step = native_gpu_mlp_training_step(
+            flat_xb,
+            yb,
+            linear_params,
+            activations,
+            lr=float(optimizer_view.lr),
+            momentum=float(ctx.momentum),
+            grad_clip_value=float(ctx.grad_clip_global),
+            weight_decay=float(ctx.weight_decay),
+            label_smoothing=float(ctx.loss_cfg.get('label_smoothing', 0.0)),
+            velocity=velocity_state,
+            device_runtime=persistent_runtime,
+            persistent_device_state=True,
+            persistent_cache_prefix='train:generic_mlp:' + ':'.join(
+                f'_w_{node.name}:_b_{node.name}' for node in linear_nodes
+            ),
+            return_intermediates=False,
+        )
+        step = replace(step, runtime_summary=_runtime_summary_delta(runtime_before, step.runtime_summary))
+        params = dict(params)
+        params.update(step.updated_params)
+        if step.updated_velocity is not None:
+            velocity_state.update(step.updated_velocity)
         return params, step
     if kind in {'pool_linear', 'global_avgpool_linear', 'avgpool_linear'}:
         gpu_linear_node = gpu_training_plan['linear_nodes'][0]

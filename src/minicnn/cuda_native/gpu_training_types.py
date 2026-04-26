@@ -58,6 +58,21 @@ class NativeGpuTwoLinearReluTrainingStepResult:
 
 
 @dataclass(frozen=True)
+class NativeGpuMlpTrainingStepResult:
+    logits: np.ndarray
+    probabilities: np.ndarray
+    grad_logits: np.ndarray
+    grad_input: np.ndarray
+    grad_params: dict[str, np.ndarray]
+    updated_params: dict[str, np.ndarray]
+    updated_velocity: dict[str, np.ndarray] | None
+    loss_sum: float
+    loss_mean: float
+    correct_count: int
+    runtime_summary: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class NativeGpuPoolLinearTrainingStepResult:
     logits: np.ndarray
     probabilities: np.ndarray

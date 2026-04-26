@@ -119,12 +119,13 @@ class GpuTrainingLoweringPlan:
         packets = build_gpu_training_launch_trace(self)
         graph_wide_lowering_ready = all(packet.supported for packet in packets)
         ready = self.ready and graph_wide_lowering_ready
-        runtime_executor_ready = self.helper is not None
-        transition_policy = (
-            'helper_backed_until_runtime_per_op_executor'
-            if self.helper is not None
-            else 'runtime_per_op_executor_pending'
-        )
+        runtime_executor_ready = self.helper is not None or self.subset_name == 'generic_mlp'
+        if self.helper is not None:
+            transition_policy = 'helper_backed_until_runtime_per_op_executor'
+        elif runtime_executor_ready:
+            transition_policy = 'runtime_per_op_executor'
+        else:
+            transition_policy = 'runtime_per_op_executor_pending'
         return {
             'schema_version': 1,
             'manifest_kind': 'cuda_native_gpu_training_per_op_lowering_shim',
@@ -399,6 +400,21 @@ def _conv_nodes(graph: NativeGraph) -> list[Any]:
     return [node for node in graph.topological_order() if node.op_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d'}]
 
 
+def _is_generic_mlp_ops(ops: tuple[str, ...]) -> bool:
+    remaining = ops[1:] if ops and ops[0] == 'Flatten' else ops
+    if len(remaining) < 5 or remaining[0] != 'Linear' or remaining[-1] != 'Linear':
+        return False
+    expect_activation = True
+    for op in remaining[1:-1]:
+        if expect_activation:
+            if op not in {'GELU', 'LeakyReLU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'}:
+                return False
+        elif op != 'Linear':
+            return False
+        expect_activation = not expect_activation
+    return not expect_activation
+
+
 def _trainable_param_keys_for_node(node: Any) -> tuple[str, ...]:
     if node.op_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d', 'Linear'}:
         keys = [f'_w_{node.name}']
@@ -517,6 +533,8 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
         node for node in graph.topological_order()
         if node.op_type in {'GELU', 'LeakyReLU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'}
     ]
+    if subset_name is None or subset_name == 'generic_mlp':
+        return _generic_backward_steps(graph)
     if subset_name in {
         'linear_relu_linear',
         'flatten_linear_relu_linear',
@@ -986,7 +1004,9 @@ def build_gpu_training_lowering_plan(
     subset_name = None if subset is None else subset[0]
     helper = None if subset is None else subset[1]
     unsupported_reasons: list[str] = []
-    if subset is None:
+    if subset is None and _is_generic_mlp_ops(ops):
+        subset_name = 'generic_mlp'
+    if subset is None and subset_name is None:
         unsupported_reasons.append(f'unsupported gpu_native training subset: {list(ops)}')
         unsupported_reasons.append(
             f'gpu_native runtime per-op training executor pending for graph ops: {list(ops)}'
@@ -1009,11 +1029,7 @@ def build_gpu_training_lowering_plan(
     if bool(train_cfg.get('amp', False)):
         unsupported_reasons.append('gpu_native training lowering currently requires train.amp=false')
     forward_steps = tuple(_forward_training_step(step, subset_name) for step in dispatch_plan.steps)
-    backward_steps = (
-        _backward_steps(graph, subset_name)
-        if subset_name is not None
-        else _generic_backward_steps(graph)
-    )
+    backward_steps = _backward_steps(graph, subset_name)
     if any(not step.supported for step in backward_steps):
         unsupported_backward = sorted({
             step.op_name for step in backward_steps if not step.supported
