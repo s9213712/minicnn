@@ -217,6 +217,15 @@ class _FakeCudaLib:
         out = x_hat * gamma.reshape(1, int(c), 1, 1) + beta.reshape(1, int(c), 1, 1)
         self.memory[d_output][...] = out.astype(np.float32).reshape(-1)
 
+    def layernorm_nd_forward(self, d_input, d_gamma, d_beta, d_output, rows, feature_count, eps):
+        x = self.memory[d_input].reshape(int(rows), int(feature_count))
+        gamma = self.memory[d_gamma].reshape(1, int(feature_count))
+        beta = self.memory[d_beta].reshape(1, int(feature_count))
+        mean = x.mean(axis=1, keepdims=True)
+        var = x.var(axis=1, keepdims=True)
+        out = ((x - mean) / np.sqrt(var + float(eps))) * gamma + beta
+        self.memory[d_output][...] = out.astype(np.float32).reshape(-1)
+
 
 def test_gpu_stub_executor_runs_bootstrap_subset_graph():
     graph = build_cuda_native_graph(

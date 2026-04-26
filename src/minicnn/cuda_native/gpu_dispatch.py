@@ -155,6 +155,7 @@ def _node_attr_bindings(node) -> dict[str, Any]:
                 int(node.input_specs[0].shape[1]) if node.op_type == 'DepthwiseConv2d' else 1,
             )
         )
+        bindings['kernel_size'] = node.attrs.get('kernel_size', 1)
         bindings['stride'] = node.attrs.get('stride', 1)
         bindings['padding'] = node.attrs.get('padding', 0)
         bindings['dilation'] = node.attrs.get('dilation', 1)
@@ -237,12 +238,16 @@ def _normalized_tensor_args(
             'layout': spec.layout,
         })
     for idx, binding in enumerate(param_bindings):
-        args.append({
+        arg = {
             'kind': 'param',
             'index': idx,
             'binding': binding,
             'layout': param_layouts.get(binding, 'match_op_default'),
-        })
+        }
+        if binding in node.trainable_state:
+            arg['shape'] = list(node.trainable_state[binding])
+            arg['dtype'] = node.output_specs[0].dtype if node.output_specs else 'float32'
+        args.append(arg)
     return tuple(args)
 
 

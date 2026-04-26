@@ -91,6 +91,12 @@ def _param_args(packet: GpuLaunchPacket) -> list[dict[str, Any]]:
     return [dict(arg) for arg in packet.tensor_args if arg.get('kind') == 'param']
 
 
+def _pair(value: Any) -> list[int]:
+    if isinstance(value, (list, tuple)):
+        return [int(value[0]), int(value[1])]
+    return [int(value), int(value)]
+
+
 def _build_bridge_payload(packet: GpuLaunchPacket) -> dict[str, Any]:
     scalar_args = _scalar_arg_map(packet)
     input_arg = _input_arg(packet)
@@ -118,7 +124,7 @@ def _build_bridge_payload(packet: GpuLaunchPacket) -> dict[str, Any]:
         n, c_in, h, w = [int(v) for v in input_arg['shape']]
         _, c_out, h_out, w_out = [int(v) for v in output_arg['shape']]
         weight_shape = [int(v) for v in weight_arg.get('shape', ())]
-        kernel_hw = weight_shape[2:4] if len(weight_shape) >= 4 else [1, 1]
+        kernel_hw = weight_shape[2:4] if len(weight_shape) >= 4 else _pair(scalar_args.get('kernel_size', 1))
         payload.update({
             'batch_size': n,
             'in_channels': c_in,
