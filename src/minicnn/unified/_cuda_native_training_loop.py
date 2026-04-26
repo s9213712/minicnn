@@ -359,4 +359,7 @@ def run_training_loop(
         'hotspots': eval_hotspot_profile,
         'hotspot_diff': build_hotspot_diff_summary(train_hotspot_profile, eval_hotspot_profile),
     }
+    persistent_runtime = optimizer_state.get('persistent_device_runtime')
+    if persistent_runtime is not None and hasattr(persistent_runtime, 'clear_persistent_device_cache'):
+        persistent_runtime.clear_persistent_device_cache()
     return best_params, best_val_acc, amp_runtime, optimizer_runtime, runtime_profile

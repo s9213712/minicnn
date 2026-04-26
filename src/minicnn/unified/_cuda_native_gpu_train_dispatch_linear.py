@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
 
+from minicnn.cuda_native.device_runtime import DeviceRuntime
 from minicnn.cuda_native.gpu_training import (
     native_gpu_avgpool_linear_training_step,
     native_gpu_global_avgpool_linear_training_step,
@@ -12,6 +14,62 @@ from minicnn.cuda_native.gpu_training import (
     native_gpu_two_linear_relu_training_step,
 )
 from minicnn.unified._cuda_native_context import NativeTrainingContext
+
+
+_RUNTIME_DELTA_KEYS = {
+    'host_to_device_transfer_events',
+    'host_to_device_transfer_bytes',
+    'device_to_host_transfer_events',
+    'device_to_host_transfer_bytes',
+    'allocation_events',
+    'allocated_bytes',
+    'synchronization_events',
+    'device_pointer_allocation_events',
+    'device_pointer_free_events',
+    'device_pointer_bytes',
+    'device_pointer_live_bytes',
+    'device_sync_to_host_events',
+    'device_sync_to_device_events',
+    'persistent_device_cache_hits',
+    'persistent_device_cache_misses',
+    'persistent_device_cache_invalidations',
+    'execution_events',
+    'executed_node_count',
+}
+
+
+def _runtime_summary_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    delta = dict(after)
+    for key in _RUNTIME_DELTA_KEYS:
+        delta[key] = int(after.get(key, 0)) - int(before.get(key, 0))
+    before_kinds = dict(before.get('execution_kinds', {}))
+    delta['execution_kinds'] = {
+        str(kind): int(count) - int(before_kinds.get(kind, 0))
+        for kind, count in dict(after.get('execution_kinds', {})).items()
+        if int(count) - int(before_kinds.get(kind, 0)) != 0
+    }
+    before_trace_len = len(list(before.get('execution_trace', [])))
+    delta['execution_trace'] = list(after.get('execution_trace', []))[before_trace_len:]
+    delta['persistent_device_cache_entries'] = int(after.get('persistent_device_cache_entries', 0))
+    delta['persistent_device_cache_bytes'] = int(after.get('persistent_device_cache_bytes', 0))
+    delta['synchronization_reasons'] = list(after.get('synchronization_reasons', []))[len(list(before.get('synchronization_reasons', []))):]
+    return delta
+
+
+def _persistent_linear_runtime(
+    ctx: NativeTrainingContext,
+    optimizer_state: dict[str, Any],
+) -> DeviceRuntime:
+    runtime = optimizer_state.get('persistent_device_runtime')
+    if not isinstance(runtime, DeviceRuntime):
+        runtime = DeviceRuntime(
+            execution_mode='gpu_native',
+            tensor_execution_device='gpu',
+            bound_lib=ctx.device_runtime.bound_lib,
+        )
+        optimizer_state['persistent_device_runtime'] = runtime
+    runtime.bound_lib = ctx.device_runtime.bound_lib
+    return runtime
 
 
 def run_gpu_native_linear_or_pool_batch(
@@ -28,6 +86,8 @@ def run_gpu_native_linear_or_pool_batch(
     flat_xb = xb.reshape(xb.shape[0], -1)
     kind = gpu_training_plan['kind']
     if kind == 'linear':
+        persistent_runtime = _persistent_linear_runtime(ctx, optimizer_state)
+        runtime_before = persistent_runtime.summary()
         gpu_linear_node = gpu_training_plan['linear_nodes'][0]
         weight_key = f'_w_{gpu_linear_node.name}'
         bias_key = f'_b_{gpu_linear_node.name}'
@@ -82,8 +142,11 @@ def run_gpu_native_linear_or_pool_batch(
                 optimizer_state.setdefault('rmsprop_buf', {}).get(bias_key)
                 if ctx.optimizer_type == 'rmsprop' else None
             ),
-            bound_lib=ctx.device_runtime.bound_lib,
+            device_runtime=persistent_runtime,
+            persistent_device_state=True,
+            persistent_cache_prefix=f'train:{weight_key}:{bias_key}:{ctx.optimizer_type}',
         )
+        step = replace(step, runtime_summary=_runtime_summary_delta(runtime_before, step.runtime_summary))
         params = dict(params)
         params[weight_key] = step.updated_weight
         params[bias_key] = step.updated_bias

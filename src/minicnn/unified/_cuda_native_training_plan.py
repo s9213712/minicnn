@@ -301,11 +301,16 @@ def _merge_gpu_native_step_runtime(ctx: NativeTrainingContext, step_summary: dic
         'device_pointer_allocation_events',
         'device_pointer_free_events',
         'device_pointer_bytes',
+        'device_pointer_live_bytes',
         'device_sync_to_host_events',
         'device_sync_to_device_events',
+        'persistent_device_cache_hits',
+        'persistent_device_cache_misses',
+        'persistent_device_cache_invalidations',
     ):
         setattr(ctx.device_runtime, attr, int(getattr(ctx.device_runtime, attr)) + int(step_summary.get(attr, 0)))
-    ctx.device_runtime.device_pointer_live_bytes += int(step_summary.get('device_pointer_live_bytes', 0))
+    ctx.device_runtime.persistent_device_cache_entries = int(step_summary.get('persistent_device_cache_entries', getattr(ctx.device_runtime, 'persistent_device_cache_entries', 0)))
+    ctx.device_runtime.persistent_device_cache_bytes = int(step_summary.get('persistent_device_cache_bytes', getattr(ctx.device_runtime, 'persistent_device_cache_bytes', 0)))
     for kind, count in dict(step_summary.get('execution_kinds', {})).items():
         for _ in range(int(count)):
             ctx.device_runtime.record_execution(str(kind), node_count=0)

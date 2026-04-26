@@ -49,6 +49,9 @@ def native_gpu_linear_training_step(
     bias_rmsprop_v: np.ndarray | None = None,
     bias_rmsprop_buf: np.ndarray | None = None,
     bound_lib: Any | None = None,
+    device_runtime: DeviceRuntime | None = None,
+    persistent_device_state: bool = False,
+    persistent_cache_prefix: str = 'linear',
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuLinearTrainingStepResult:
@@ -154,31 +157,43 @@ def native_gpu_linear_training_step(
     elif np.any(labels_i32 < 0) or np.any(labels_i32 >= weight_f32.shape[0]):
         raise ValueError('native_gpu_linear_training_step labels must be in [0, out_f)')
 
-    lib = _load_bound_lib(bound_lib)
-    runtime = DeviceRuntime(
+    lib = _load_bound_lib(bound_lib if bound_lib is not None else (device_runtime.bound_lib if device_runtime is not None else None))
+    runtime = device_runtime if device_runtime is not None else DeviceRuntime(
         execution_mode='gpu_native',
         tensor_execution_device='gpu',
         bound_lib=lib,
     )
+    runtime.bound_lib = lib
     if reserve_bytes > 0 or reserve_buffers > 0:
         runtime.reserve_from_planner(total_bytes=int(reserve_bytes), num_buffers=int(reserve_buffers))
 
     n, in_f = int(x_f32.shape[0]), int(x_f32.shape[1])
     out_f = int(weight_f32.shape[0])
+
+    def stage_state(array: np.ndarray, name: str):
+        if persistent_device_state:
+            return runtime.stage_persistent_to_device(
+                array,
+                key=f'{persistent_cache_prefix}:{name}',
+                name=name,
+                update_on_reuse=False,
+            )
+        return runtime.stage_to_device(array, name=name)
+
     input_t = runtime.stage_to_device(x_f32, name='input')
     labels_t = runtime.stage_to_device(labels_i32, name='labels')
-    weight_t = runtime.stage_to_device(weight_f32, name='weight')
-    bias_t = runtime.stage_to_device(bias_f32, name='bias')
-    weight_velocity_t = runtime.stage_to_device(weight_velocity_f32, name='weight_velocity')
-    bias_velocity_t = runtime.stage_to_device(bias_velocity_f32, name='bias_velocity')
-    weight_m_t = runtime.stage_to_device(weight_m_f32, name='weight_m')
-    weight_v_t = runtime.stage_to_device(weight_v_f32, name='weight_v')
-    bias_m_t = runtime.stage_to_device(bias_m_f32, name='bias_m')
-    bias_v_t = runtime.stage_to_device(bias_v_f32, name='bias_v')
-    weight_rmsprop_v_t = runtime.stage_to_device(weight_rmsprop_v_f32, name='weight_rmsprop_v')
-    weight_rmsprop_buf_t = runtime.stage_to_device(weight_rmsprop_buf_f32, name='weight_rmsprop_buf')
-    bias_rmsprop_v_t = runtime.stage_to_device(bias_rmsprop_v_f32, name='bias_rmsprop_v')
-    bias_rmsprop_buf_t = runtime.stage_to_device(bias_rmsprop_buf_f32, name='bias_rmsprop_buf')
+    weight_t = stage_state(weight_f32, 'weight')
+    bias_t = stage_state(bias_f32, 'bias')
+    weight_velocity_t = stage_state(weight_velocity_f32, 'weight_velocity')
+    bias_velocity_t = stage_state(bias_velocity_f32, 'bias_velocity')
+    weight_m_t = stage_state(weight_m_f32, 'weight_m')
+    weight_v_t = stage_state(weight_v_f32, 'weight_v')
+    bias_m_t = stage_state(bias_m_f32, 'bias_m')
+    bias_v_t = stage_state(bias_v_f32, 'bias_v')
+    weight_rmsprop_v_t = stage_state(weight_rmsprop_v_f32, 'weight_rmsprop_v')
+    weight_rmsprop_buf_t = stage_state(weight_rmsprop_buf_f32, 'weight_rmsprop_buf')
+    bias_rmsprop_v_t = stage_state(bias_rmsprop_v_f32, 'bias_rmsprop_v')
+    bias_rmsprop_buf_t = stage_state(bias_rmsprop_buf_f32, 'bias_rmsprop_buf')
     logits_t = runtime.allocate((n, out_f), dtype='float32', name='logits')
     probs_t = runtime.allocate((n, out_f), dtype='float32', name='probs')
     grad_logits_t = runtime.allocate((n, out_f), dtype='float32', name='grad_logits')
