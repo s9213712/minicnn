@@ -2012,6 +2012,65 @@ def test_native_gpu_layernorm_linear_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:layernorm_backward'] == 1
 
 
+def test_native_gpu_layernorm_linear_training_step_can_skip_intermediate_host_copies():
+    x = np.asarray(
+        [
+            [
+                [[1.0, 2.0], [3.0, 4.0]],
+                [[2.0, 4.0], [6.0, 8.0]],
+            ],
+            [
+                [[-1.0, 0.5], [2.0, -0.5]],
+                [[1.5, -1.0], [0.0, 2.5]],
+            ],
+        ],
+        dtype=np.float32,
+    )
+    labels = np.asarray([1, 0], dtype=np.int32)
+    norm_weight = np.asarray([1.0, 1.5, 0.5, 1.25, 0.8, 1.1, 0.9, 1.3], dtype=np.float32)
+    norm_bias = np.asarray([0.0, -0.25, 0.1, -0.05, 0.2, -0.15, 0.05, -0.1], dtype=np.float32)
+    linear_weight = np.asarray(
+        [
+            [0.1, -0.2, 0.3, 0.05, -0.1, 0.2, -0.05, 0.15],
+            [-0.05, 0.25, -0.15, 0.2, 0.05, -0.1, 0.3, -0.2],
+        ],
+        dtype=np.float32,
+    )
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+
+    result = native_gpu_layernorm_linear_training_step(
+        x,
+        labels,
+        norm_weight,
+        norm_bias,
+        linear_weight,
+        linear_bias,
+        lr=0.04,
+        activation='SiLU',
+        normalized_shape=8,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    assert result.logits.shape == (0,)
+    assert result.probabilities.shape == (0,)
+    assert result.norm_output.shape == (0,)
+    assert result.grad_logits.shape == (0,)
+    assert result.grad_norm_output.shape == (0,)
+    assert result.grad_input.shape == (0,)
+    assert result.grad_norm_weight.shape == (0,)
+    assert result.grad_norm_bias.shape == (0,)
+    assert result.grad_linear_weight.shape == (0,)
+    assert result.grad_linear_bias.shape == (0,)
+    assert result.updated_norm_weight.shape == norm_weight.shape
+    assert result.updated_norm_bias.shape == norm_bias.shape
+    assert result.updated_linear_weight.shape == linear_weight.shape
+    assert result.updated_linear_bias.shape == linear_bias.shape
+    assert result.updated_norm_weight_velocity is None
+    assert result.updated_linear_weight_velocity is None
+    assert result.runtime_summary['device_to_host_transfer_events'] == 6
+
+
 def test_native_gpu_layernorm_silu_linear_training_step_matches_reference_math():
     x = np.asarray(
         [
