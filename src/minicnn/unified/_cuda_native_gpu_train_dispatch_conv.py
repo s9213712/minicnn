@@ -102,6 +102,7 @@ def run_gpu_native_conv_batch(
             linear_weight_velocity=velocity_state.get(linear_weight_key),
             linear_bias_velocity=velocity_state.get(linear_bias_key),
             bound_lib=ctx.device_runtime.bound_lib,
+            return_intermediates=False,
         )
         params = dict(params)
         params[depthwise_weight_key] = step.updated_depthwise_weight
