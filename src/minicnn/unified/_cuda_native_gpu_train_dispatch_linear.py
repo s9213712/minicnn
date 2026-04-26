@@ -224,6 +224,7 @@ def run_gpu_native_linear_or_pool_batch(
                 weight_velocity=velocity_state.get(weight_key),
                 bias_velocity=velocity_state.get(bias_key),
                 bound_lib=ctx.device_runtime.bound_lib,
+                return_intermediates=False,
             )
         elif kind == 'global_avgpool_linear':
             step = native_gpu_global_avgpool_linear_training_step(
@@ -239,6 +240,7 @@ def run_gpu_native_linear_or_pool_batch(
                 weight_velocity=velocity_state.get(weight_key),
                 bias_velocity=velocity_state.get(bias_key),
                 bound_lib=ctx.device_runtime.bound_lib,
+                return_intermediates=False,
             )
         else:
             step = native_gpu_avgpool_linear_training_step(
@@ -254,6 +256,7 @@ def run_gpu_native_linear_or_pool_batch(
                 weight_velocity=velocity_state.get(weight_key),
                 bias_velocity=velocity_state.get(bias_key),
                 bound_lib=ctx.device_runtime.bound_lib,
+                return_intermediates=False,
             )
         params = dict(params)
         params[weight_key] = step.updated_weight

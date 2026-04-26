@@ -1600,6 +1600,59 @@ def test_native_gpu_avgpool_linear_training_step_matches_reference_math():
     assert result.runtime_summary['execution_kinds']['gpu_native_train:avgpool2d_backward'] == 1
 
 
+@pytest.mark.parametrize(
+    ('step_fn', 'weight'),
+    [
+        (
+            native_gpu_pool_linear_training_step,
+            np.asarray([[0.1, -0.2, 0.3, 0.05], [-0.05, 0.25, -0.15, 0.2]], dtype=np.float32),
+        ),
+        (
+            native_gpu_avgpool_linear_training_step,
+            np.asarray([[0.1, -0.2, 0.3, 0.05], [-0.05, 0.25, -0.15, 0.2]], dtype=np.float32),
+        ),
+        (
+            native_gpu_global_avgpool_linear_training_step,
+            np.asarray([[0.1], [-0.05]], dtype=np.float32),
+        ),
+    ],
+)
+def test_native_gpu_pool_family_training_steps_can_skip_intermediate_host_copies(step_fn, weight):
+    x = np.asarray(
+        [
+            [[[1.0, 2.0, -1.0, 0.0], [3.0, 4.0, 2.0, 1.0], [0.5, -0.5, 1.5, 2.5], [1.0, 0.0, 3.0, 2.0]]],
+            [[[-1.0, 1.0, 0.5, 2.0], [2.0, 0.0, 1.0, 3.0], [1.5, 2.5, -0.5, 0.5], [0.0, 1.0, 2.0, 4.0]]],
+        ],
+        dtype=np.float32,
+    )
+    labels = np.asarray([1, 0], dtype=np.int32)
+    bias = np.asarray([0.02, -0.01], dtype=np.float32)
+
+    result = step_fn(
+        x,
+        labels,
+        weight,
+        bias,
+        lr=0.05,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    assert result.logits.shape == (0,)
+    assert result.probabilities.shape == (0,)
+    assert result.grad_logits.shape == (0,)
+    assert result.pooled.shape == (0,)
+    assert result.grad_pooled.shape == (0,)
+    assert result.grad_input.shape == (0,)
+    assert result.grad_weight.shape == (0,)
+    assert result.grad_bias.shape == (0,)
+    assert result.updated_weight.shape == weight.shape
+    assert result.updated_bias.shape == bias.shape
+    assert result.updated_weight_velocity is None
+    assert result.updated_bias_velocity is None
+    assert result.runtime_summary['device_to_host_transfer_events'] == 4
+
+
 def test_native_gpu_batchnorm_linear_training_step_matches_reference_math():
     x = (np.arange(16, dtype=np.float32).reshape(2, 2, 2, 2) - 6.0) / 5.0
     labels = np.asarray([1, 0], dtype=np.int32)
