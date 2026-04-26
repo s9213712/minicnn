@@ -113,7 +113,7 @@ def _build_bridge_payload(packet: GpuLaunchPacket) -> dict[str, Any]:
             'weight_layout': weight_arg['layout'],
             'has_bias': any(arg['binding'].startswith('_b_') for arg in _param_args(packet)),
         })
-    elif packet.op_name == 'Conv2d':
+    elif packet.op_name in {'Conv2d', 'PointwiseConv2d', 'DepthwiseConv2d'}:
         weight_arg = _param_args(packet)[0]
         n, c_in, h, w = [int(v) for v in input_arg['shape']]
         _, c_out, h_out, w_out = [int(v) for v in output_arg['shape']]

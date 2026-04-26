@@ -385,6 +385,28 @@ def test_gpu_dispatch_plan_supports_depthwise_conv_forward_shim():
     assert summary['steps'][0]['launch_family'] == 'depthwise_conv2d_nchw'
     assert summary['steps'][0]['lowering_kind'] == 'depthwise_conv2d_shim'
     assert summary['steps'][0]['param_keys'] == ['_w_depthwiseconv2d_0']
+    assert summary['steps'][0]['launch_descriptor']['attr_bindings']['groups'] == 3
+
+
+def test_gpu_bridge_trace_includes_depthwise_conv_payload_geometry():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'DepthwiseConv2d', 'out_channels': 3, 'kernel_size': 3, 'padding': 1, 'bias': False},
+            ],
+        },
+        (1, 3, 4, 4),
+    )
+
+    packets = build_gpu_launch_trace(build_gpu_dispatch_plan(graph))
+    requests = build_gpu_bridge_trace(packets)
+
+    assert requests[0].op_name == 'DepthwiseConv2d'
+    assert requests[0].bridge_payload['in_channels'] == 3
+    assert requests[0].bridge_payload['out_channels'] == 3
+    assert requests[0].bridge_payload['input_hw'] == [4, 4]
+    assert requests[0].bridge_payload['output_hw'] == [4, 4]
+    assert requests[0].bridge_payload['groups'] == 3
 
 
 def test_gpu_dispatch_plan_supports_layernorm2d_forward_shim():

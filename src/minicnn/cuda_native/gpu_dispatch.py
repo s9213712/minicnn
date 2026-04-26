@@ -149,9 +149,15 @@ def _node_param_keys(node) -> tuple[str, ...]:
 def _node_attr_bindings(node) -> dict[str, Any]:
     bindings: dict[str, Any] = {}
     if node.op_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d'}:
+        groups = int(
+            node.attrs.get(
+                'groups',
+                int(node.input_specs[0].shape[1]) if node.op_type == 'DepthwiseConv2d' else 1,
+            )
+        )
         bindings['stride'] = node.attrs.get('stride', 1)
         bindings['padding'] = node.attrs.get('padding', 0)
-        bindings['groups'] = int(node.attrs.get('groups', 1))
+        bindings['groups'] = groups
     elif node.op_type in {'MaxPool2d', 'AvgPool2d'}:
         bindings['kernel_size'] = node.attrs.get('kernel_size', 2)
         bindings['stride'] = node.attrs.get('stride', node.attrs.get('kernel_size', 2))
