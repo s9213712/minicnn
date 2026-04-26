@@ -82,6 +82,8 @@ GPU_NATIVE_TRAINING_SYMBOLS = tuple(dict.fromkeys((
     'depthwise_conv2d_backward',
     'layernorm2d_forward',
     'layernorm2d_backward',
+    'layernorm_nd_forward',
+    'layernorm_nd_backward',
     'groupnorm_forward',
     'groupnorm_backward',
 )))
@@ -250,6 +252,14 @@ def bind_symbols(bound_lib: ctypes.CDLL) -> ctypes.CDLL:
     if hasattr(bound_lib, 'layer_norm_backward'):
         bound_lib.layer_norm_backward.argtypes = [
             c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_float,
+        ]
+    if hasattr(bound_lib, 'layernorm_nd_forward'):
+        bound_lib.layernorm_nd_forward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_float,
+        ]
+    if hasattr(bound_lib, 'layernorm_nd_backward'):
+        bound_lib.layernorm_nd_backward.argtypes = [
+            c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_int, c_float,
         ]
     if hasattr(bound_lib, 'bn_train_forward'):
         bound_lib.bn_train_forward.argtypes = [

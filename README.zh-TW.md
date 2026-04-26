@@ -156,7 +156,7 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 - `summary.json` 會輸出 `amp_runtime`、`optimizer_runtime`、`planner` 與 `performance_report`
 - `metrics.jsonl` 每個 epoch row 會輸出 AMP、optimizer 與 planner telemetry
 
-這條 backend 現在已經是 beta 級，`training_stable=true`、`backward_stable=true`，但仍不適合宣稱 production-ready，而且目前仍是 NumPy reference execution，不是真正的 CUDA kernel backend。它已支援具名 tensor wiring 與 `Add` merge 的 ordered DAG 執行；後續 native 功能仍應優先往這條線發展，`cuda_legacy` 則維持窄邊界維護。
+這條 backend 現在已經是 beta 級，`training_stable=true`、`backward_stable=true`，但仍不適合宣稱 production-ready。預設路徑是 GPU-first 的 `gpu_native_auto`；對已支援的 subset 會優先走真正的 CUDA helper / device-pointer 路徑，`reference_numpy` 則保留成明確 fallback 與 parity baseline。它已支援具名 tensor wiring 與 `Add` merge 的 ordered DAG 執行；後續 native 功能仍應優先往這條線發展，`cuda_legacy` 則維持窄邊界維護。
 
 目前也已有 hermetic native smoke 範本可直接用於：
 

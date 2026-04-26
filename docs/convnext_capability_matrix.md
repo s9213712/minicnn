@@ -171,4 +171,4 @@ MiniCNN should currently talk about ConvNeXt this way:
 - includes beta `cuda_native` smoke paths for explicit and block-based execution
 - not yet a built-in repo-wide supported architecture family
 - not a `cuda_legacy` target
-- `cuda_native` support is now beta-grade, still not production-ready
+- `cuda_native` support is now beta-grade, GPU-first for eligible helper subsets, and still not production-ready

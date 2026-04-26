@@ -156,7 +156,7 @@ Validation failures now return short CLI messages or JSON payloads instead of ra
 
 ## cuda_native (Primary Native Direction, Beta)
 
-Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work. It is now beta-grade, but still not production-ready. The default execution mode is GPU-first auto execution when a CUDA-native lowering is eligible, with NumPy reference execution retained as fallback and parity baseline; opt-in `execution_mode=gpu_native` runs a growing subset through real CUDA device-pointer kernels and native training helpers.
+Opt-in via `engine.backend=cuda_native` or `train-native`. This is the main native direction for future work. It is now beta-grade, but still not production-ready. The default execution mode is GPU-first auto execution when a CUDA-native lowering is eligible, with `reference_numpy` retained as explicit fallback and parity baseline; opt-in `execution_mode=gpu_native` runs a growing subset through real CUDA device-pointer kernels and native training helpers.
 
 Real-data strict GPU training evidence exists for the current repeated-Conv
 subset. Use `configs/cifar10_cuda_native_gpu_stronger.yaml` for the full

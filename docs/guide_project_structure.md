@@ -114,7 +114,7 @@ The primary Python/CLI training path uses the flat C ABI and `ctypes`. `network.
 | `src/minicnn/config/parsing.py` | CLI/config scalar parser, strict boolean parser, and dotted-override list-index write helper. |
 | `src/minicnn/core/build.py` | Native CUDA shared library build/check wrapper supporting default, cublas, handmade, and both variants. |
 | `src/minicnn/core/cuda_backend.py` | Lazy `ctypes` loader for the native CUDA library; does not load `.so`/`.dll` on non-CUDA command imports. `reset_library_cache()` clears the cached handle when switching native variants in the same process. |
-| `src/minicnn/cuda_native/` | Primary native backend direction; public CLI surface exists and is now beta-grade, but the implementation still uses NumPy reference execution and is not production-ready. |
+| `src/minicnn/cuda_native/` | Primary native backend direction; public CLI surface is beta-grade, with GPU-first `gpu_native_auto`, strict `gpu_native` for supported real-CUDA subsets, and `reference_numpy` retained as explicit fallback/parity path. |
 | `src/minicnn/data/` | CIFAR-10 and MNIST preparation and data loading. |
 | `src/minicnn/flex/` | PyTorch reference implementation: flexible config-driven model builder, registry, and trainer. |
 | `src/minicnn/training/train_cuda.py` | Historical `cuda_legacy` CIFAR-10 orchestration: data, epoch, validation, checkpoint, LR reduction, early stop, final test evaluation. |
@@ -259,4 +259,4 @@ minicnn/
 
 ## CUDA Native maintenance map
 
-The CUDA-native GPU training surface is being split incrementally without breaking public imports. `gpu_training.py` stays as the compatibility-facing module, while focused `gpu_training_*` modules hold result types, shared helpers, linear, pool, norm, and conv-family helper code. Runtime context/diagnostics and GPU lowering registry/utility helpers have also been extracted. See `docs/cuda_native_large_file_inventory.md` for the active large-file cleanup queue.
+The CUDA-native GPU training surface is being split incrementally without breaking public imports. `gpu_training.py` stays as the compatibility-facing module, while focused `gpu_training_*` modules now isolate result types, shared helpers, linear, pool, LayerNorm-family, BatchNorm/GroupNorm, conv-family, and depthwise-bridge helper code. Normalization-family lowering has also been extracted into `gpu_lowering_norm.py`, alongside the earlier registry/utility helper splits. See `docs/cuda_native_large_file_inventory.md` for the active large-file cleanup queue.

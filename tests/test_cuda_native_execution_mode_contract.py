@@ -583,8 +583,10 @@ def test_validate_cuda_native_config_accepts_gpu_native_flatten_layernorm_linear
     assert readiness['kernel_readiness_for_requested_ops']['LayerNorm']['forward_status'] == 'partial_native'
     assert readiness['training_lowering_plan']['subset_name'] == 'flatten_layernorm_linear'
     assert readiness['training_lowering_plan']['helper'] == 'native_gpu_layernorm_linear_training_step'
-    assert readiness['training_lowering_plan']['required_symbols_by_phase']['forward'] == ['dense_forward']
+    assert 'layernorm_nd_forward' in readiness['training_lowering_plan']['required_symbols_by_phase']['forward']
+    assert 'dense_forward' in readiness['training_lowering_plan']['required_symbols_by_phase']['forward']
     assert 'dense_backward_full' in readiness['training_lowering_plan']['required_symbols_by_phase']['backward']
+    assert 'layernorm_nd_backward' in readiness['training_lowering_plan']['required_symbols_by_phase']['backward']
     assert payload['errors'] == []
 
 
@@ -617,7 +619,9 @@ def test_validate_cuda_native_config_accepts_gpu_native_flatten_layernorm_silu_l
     assert readiness['training_lowering_ready'] is True
     assert readiness['training_lowering_plan']['subset_name'] == 'flatten_layernorm_silu_linear'
     assert readiness['training_lowering_plan']['helper'] == 'native_gpu_layernorm_linear_training_step'
+    assert 'layernorm_nd_forward' in readiness['training_lowering_plan']['required_symbols_by_phase']['forward']
     assert 'silu_forward' in readiness['training_lowering_plan']['required_symbols_by_phase']['forward']
+    assert 'layernorm_nd_backward' in readiness['training_lowering_plan']['required_symbols_by_phase']['backward']
     assert 'silu_backward' in readiness['training_lowering_plan']['required_symbols_by_phase']['backward']
     assert payload['errors'] == []
 

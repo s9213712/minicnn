@@ -30,7 +30,7 @@ The stable default backend toggle is still:
 - `engine.backend=torch`
 - `engine.backend=cuda_legacy`
 
-`cuda_native` is already public and CLI-visible, and it has now graduated to a beta-grade backend. It remains a NumPy-reference execution path rather than a stable production backend.
+`cuda_native` is already public and CLI-visible, and it has now graduated to a beta-grade backend. It is now GPU-first for eligible `gpu_native` paths, with `reference_numpy` retained as explicit fallback/parity infrastructure rather than the only execution reality.
 
 ## What Is In Good Shape
 

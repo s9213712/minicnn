@@ -32,7 +32,7 @@ A staged, modular backend structured in layers:
 
 ## What cuda_native Is Not
 
-- Not a production training backend
+- Not a production-ready training backend
 - Default execution is GPU-first auto mode where supported; `engine.execution_mode=reference_numpy` remains the explicit CPU reference path and `engine.execution_mode=gpu_native` is strict real-CUDA mode for supported helper subsets
 - Not a full general-purpose graph backend yet (`Add`-based ordered DAG support exists, but richer merge ops are still missing)
 
@@ -45,7 +45,7 @@ execution, see [cuda_native_gpu_enablement_plan.md](cuda_native_gpu_enablement_p
 |---|---|
 | Graph IR | ✓ Implemented |
 | Shape inference | ✓ Basic |
-| Forward execution | ✓ Basic reference mode plus partial native GPU lowering |
+| Forward execution | ✓ Reference mode plus partial real-CUDA GPU lowering |
 | Planner | ✓ Conservative / beta-grade |
 | Reuse-aware planning | ✓ Experimental (`make_reuse_plan`, `make_plan(..., strategy="reuse")`) |
 | Liveness analysis | ✓ Experimental (`analyze_live_ranges`, `analyze_live_tensor_sets`, `estimate_peak_live_bytes`) |
@@ -141,7 +141,7 @@ Hermetic smoke configs:
 
 ## Support Tiers
 
-`cuda_native` is now beta as a whole backend, while still remaining a NumPy-reference execution path rather than a production-ready GPU runtime. Its public surface
+`cuda_native` is now beta as a whole backend, with GPU-first `gpu_native` execution for eligible subsets and `reference_numpy` retained as explicit fallback/parity infrastructure rather than the only runtime reality. Its public surface
 is no longer one undifferentiated bucket.
 
 Current tiering:

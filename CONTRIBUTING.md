@@ -20,6 +20,14 @@ python -m compileall -q src
 pytest -q
 ```
 
+Also do a short repo hygiene pass before pushing:
+
+- scan changed docs/README files for stale backend wording
+- check whether any production file became an oversized concentration point
+- split concentrated runtime/helper code before it becomes review-hostile
+- avoid committing runtime artifacts, caches, or generated binaries
+- run `git diff --check`
+
 ## Style guidelines
 
 - Prefer small, focused commits.

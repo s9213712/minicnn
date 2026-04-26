@@ -394,7 +394,7 @@ def test_gpu_dispatch_plan_supports_layernorm_forward_shim():
         {
             'layers': [
                 {'type': 'Flatten'},
-                {'type': 'LayerNorm', 'normalized_shape': 48, 'eps': 1e-5},
+                {'type': 'LayerNorm', 'normalized_shape': 16, 'eps': 1e-5},
                 {'type': 'GELU'},
             ],
         },
@@ -409,7 +409,7 @@ def test_gpu_dispatch_plan_supports_layernorm_forward_shim():
     assert summary['steps'][1]['launch_family'] == 'layernorm_nd'
     assert summary['steps'][1]['lowering_kind'] == 'normalization_layernorm_shim'
     assert summary['steps'][1]['param_keys'] == ['_w_layernorm_1', '_b_layernorm_1']
-    assert summary['steps'][1]['launch_descriptor']['attr_bindings'] == {'eps': 1e-05, 'normalized_shape': 48}
+    assert summary['steps'][1]['launch_descriptor']['attr_bindings'] == {'eps': 1e-05, 'normalized_shape': 16}
     assert summary['steps'][1]['launch_descriptor']['param_layouts'] == {
         '_w_layernorm_1': 'normalized_shape',
         '_b_layernorm_1': 'normalized_shape',

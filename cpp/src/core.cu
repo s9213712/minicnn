@@ -322,6 +322,150 @@ __global__ void layernorm2d_forward_kernel(
     }
 }
 
+__device__ float warp_reduce_sum_layernorm_nd(float value) {
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        value += __shfl_down_sync(0xffffffff, value, offset);
+    }
+    return value;
+}
+
+__device__ float block_reduce_sum_layernorm_nd(float value, float* shared) {
+    int tid = threadIdx.x;
+    int lane = tid & 31;
+    int warp_id = tid >> 5;
+    int nwarps = (blockDim.x + 31) >> 5;
+
+    value = warp_reduce_sum_layernorm_nd(value);
+    if (lane == 0) {
+        shared[warp_id] = value;
+    }
+    __syncthreads();
+
+    value = (tid < nwarps) ? shared[tid] : 0.0f;
+    if (warp_id == 0) {
+        value = warp_reduce_sum_layernorm_nd(value);
+    }
+    return value;
+}
+
+__global__ void layernorm_nd_forward_kernel(
+    const float* input,
+    const float* gamma,
+    const float* beta,
+    float* output,
+    int rows,
+    int features,
+    float eps
+) {
+    int row = blockIdx.x;
+    if (row >= rows) return;
+    int base = row * features;
+
+    extern __shared__ float shared[];
+    __shared__ float mean;
+    __shared__ float inv_std;
+
+    float local_sum = 0.0f;
+    for (int i = threadIdx.x; i < features; i += blockDim.x) {
+        local_sum += input[base + i];
+    }
+    float sum = block_reduce_sum_layernorm_nd(local_sum, shared);
+    if (threadIdx.x == 0) {
+        mean = sum / static_cast<float>(features);
+    }
+    __syncthreads();
+
+    float local_var = 0.0f;
+    for (int i = threadIdx.x; i < features; i += blockDim.x) {
+        float diff = input[base + i] - mean;
+        local_var += diff * diff;
+    }
+    float var_sum = block_reduce_sum_layernorm_nd(local_var, shared);
+    if (threadIdx.x == 0) {
+        inv_std = rsqrtf(var_sum / static_cast<float>(features) + eps);
+    }
+    __syncthreads();
+
+    for (int i = threadIdx.x; i < features; i += blockDim.x) {
+        float x_hat = (input[base + i] - mean) * inv_std;
+        output[base + i] = x_hat * gamma[i] + beta[i];
+    }
+}
+
+__global__ void layernorm_nd_backward_kernel(
+    const float* grad_output,
+    const float* input,
+    const float* gamma,
+    float* grad_input,
+    float* grad_gamma,
+    float* grad_beta,
+    int rows,
+    int features,
+    float eps
+) {
+    int row = blockIdx.x;
+    if (row >= rows) return;
+    int base = row * features;
+    float inv_features = 1.0f / static_cast<float>(features);
+
+    extern __shared__ float shared[];
+    __shared__ float mean;
+    __shared__ float inv_std;
+    __shared__ float mean_dxhat;
+    __shared__ float mean_dxhat_xhat;
+
+    float local_sum = 0.0f;
+    for (int i = threadIdx.x; i < features; i += blockDim.x) {
+        local_sum += input[base + i];
+    }
+    float sum = block_reduce_sum_layernorm_nd(local_sum, shared);
+    if (threadIdx.x == 0) {
+        mean = sum * inv_features;
+    }
+    __syncthreads();
+
+    float local_var = 0.0f;
+    for (int i = threadIdx.x; i < features; i += blockDim.x) {
+        float diff = input[base + i] - mean;
+        local_var += diff * diff;
+    }
+    float var_sum = block_reduce_sum_layernorm_nd(local_var, shared);
+    if (threadIdx.x == 0) {
+        inv_std = rsqrtf(var_sum * inv_features + eps);
+    }
+    __syncthreads();
+
+    float local_dxhat = 0.0f;
+    for (int i = threadIdx.x; i < features; i += blockDim.x) {
+        local_dxhat += grad_output[base + i] * gamma[i];
+    }
+    float dxhat_sum = block_reduce_sum_layernorm_nd(local_dxhat, shared);
+    if (threadIdx.x == 0) {
+        mean_dxhat = dxhat_sum * inv_features;
+    }
+    __syncthreads();
+
+    float local_dxhat_xhat = 0.0f;
+    for (int i = threadIdx.x; i < features; i += blockDim.x) {
+        float x_hat = (input[base + i] - mean) * inv_std;
+        local_dxhat_xhat += grad_output[base + i] * gamma[i] * x_hat;
+    }
+    float dxhat_xhat_sum = block_reduce_sum_layernorm_nd(local_dxhat_xhat, shared);
+    if (threadIdx.x == 0) {
+        mean_dxhat_xhat = dxhat_xhat_sum * inv_features;
+    }
+    __syncthreads();
+
+    for (int i = threadIdx.x; i < features; i += blockDim.x) {
+        float x_hat = (input[base + i] - mean) * inv_std;
+        float grad_out = grad_output[base + i];
+        float dxhat = grad_out * gamma[i];
+        grad_input[base + i] = inv_std * (dxhat - mean_dxhat - x_hat * mean_dxhat_xhat);
+        atomicAdd(&grad_gamma[i], grad_out * x_hat);
+        atomicAdd(&grad_beta[i], grad_out);
+    }
+}
+
 __global__ void layernorm2d_backward_kernel(
     const float* grad_output,
     const float* input,
@@ -790,6 +934,50 @@ extern "C" {
         layernorm2d_backward_kernel<<<(total + tpb - 1) / tpb, tpb>>>(
             d_grad_output, d_input, d_gamma, d_grad_input, d_grad_gamma, d_grad_beta,
             n, c, h, w, eps
+        );
+        CUDA_KERNEL_CHECK();
+    }
+
+    void layernorm_nd_forward(
+        float* d_input,
+        float* d_gamma,
+        float* d_beta,
+        float* d_output,
+        int rows,
+        int features,
+        float eps
+    ) {
+        int tpb = features < 256 ? features : 256;
+        if (tpb < 1) tpb = 1;
+        int nwarps = (tpb + 31) / 32;
+        size_t shared_bytes = (size_t)(nwarps < tpb ? tpb : nwarps) * sizeof(float);
+        layernorm_nd_forward_kernel<<<rows, tpb, shared_bytes>>>(
+            d_input, d_gamma, d_beta, d_output, rows, features, eps
+        );
+        CUDA_KERNEL_CHECK();
+    }
+
+    void layernorm_nd_backward(
+        float* d_grad_output,
+        float* d_input,
+        float* d_gamma,
+        float* d_grad_input,
+        float* d_grad_gamma,
+        float* d_grad_beta,
+        int rows,
+        int features,
+        float eps
+    ) {
+        int tpb = features < 256 ? features : 256;
+        if (tpb < 1) tpb = 1;
+        int nwarps = (tpb + 31) / 32;
+        size_t shared_bytes = (size_t)(nwarps < tpb ? tpb : nwarps) * sizeof(float);
+        cudaMemset(d_grad_gamma, 0, features * sizeof(float));
+        CUDA_KERNEL_CHECK();
+        cudaMemset(d_grad_beta, 0, features * sizeof(float));
+        CUDA_KERNEL_CHECK();
+        layernorm_nd_backward_kernel<<<rows, tpb, shared_bytes>>>(
+            d_grad_output, d_input, d_gamma, d_grad_input, d_grad_gamma, d_grad_beta, rows, features, eps
         );
         CUDA_KERNEL_CHECK();
     }

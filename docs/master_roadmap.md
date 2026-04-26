@@ -34,7 +34,7 @@ MiniCNN already has a coherent four-path shape:
 - `torch/flex`: broad reference implementation and first landing zone for new frontend work
 - `autograd`: CPU-side correctness oracle and educational path
 - `cuda_legacy`: narrow maintenance-only historical CUDA backend
-- `cuda_native`: beta primary native direction with graph/planner/executor structure and NumPy-reference execution
+- `cuda_native`: beta primary native direction with graph/planner/executor structure, GPU-first `gpu_native` subsets, and explicit `reference_numpy` fallback
 
 The project is not blocked on "becoming a framework" first. The main remaining
 work is about promoting the right features through the right backend path

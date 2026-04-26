@@ -220,9 +220,11 @@ def _required_symbols_for_lowering(lowering_kind: str) -> tuple[str, ...]:
         'avgpool2d_shim': ('avgpool2d_forward',),
         'global_avgpool2d_shim': ('global_avgpool2d_forward',),
         'normalization_batchnorm2d_shim': ('bn_eval_forward',),
+        'normalization_layernorm_shim': ('layernorm_nd_forward',),
         'normalization_layernorm2d_shim': ('layernorm2d_forward',),
         'normalization_groupnorm_shim': ('groupnorm_forward',),
         'batchnorm2d_shim': ('bn_eval_forward',),
+        'layernorm_shim': ('layernorm_nd_forward',),
         'layernorm2d_shim': ('layernorm2d_forward',),
         'groupnorm_shim': ('groupnorm_forward',),
         'conv2d_reference_shim': ('im2col_forward', 'gemm_forward', 'cnhw_to_nchw'),
@@ -243,6 +245,7 @@ def _required_symbols_for_lowering(lowering_kind: str) -> tuple[str, ...]:
         'avgpool2d_backward': ('avgpool2d_backward',),
         'global_avgpool2d_backward': ('global_avgpool2d_backward',),
         'bn_backward': ('bn_backward',),
+        'layernorm_nd_backward': ('layernorm_nd_backward',),
         'layernorm2d_backward': ('layernorm2d_backward',),
         'groupnorm_backward': ('groupnorm_backward',),
         'layernorm_backward_reference': tuple(),
@@ -638,8 +641,8 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
             GpuTrainingLoweringStep(
                 phase='backward',
                 op_name='LayerNorm',
-                lowering_kind='layernorm_backward_reference',
-                launch_family='normalization_backward_reference',
+                lowering_kind='layernorm_nd_backward',
+                launch_family='normalization_backward',
             )
         )
     if subset_name in {
@@ -667,8 +670,8 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
             GpuTrainingLoweringStep(
                 phase='backward',
                 op_name='LayerNorm',
-                lowering_kind='layernorm_backward_reference',
-                launch_family='normalization_backward_reference',
+                lowering_kind='layernorm_nd_backward',
+                launch_family='normalization_backward',
             )
         )
     if subset_name in {

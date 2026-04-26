@@ -1,6 +1,6 @@
 # CUDA Native Large File Inventory
 
-Last updated: 2026-04-25
+Last updated: 2026-04-26
 
 This note tracks large MiniCNN files that can slow review and maintenance as `cuda_native` moves from experimental toward beta/stable-ready GPU-native execution.
 
@@ -8,9 +8,11 @@ This note tracks large MiniCNN files that can slow review and maintenance as `cu
 
 | File | Approx. lines | Status | Suggested next action |
 | --- | ---: | --- | --- |
-| `src/minicnn/cuda_native/gpu_lowering.py` | ~980 | Partially split. Registry types and shared tensor helpers were moved out. | Split lowering implementations by op family once per-op coverage stabilizes. |
-| `src/minicnn/cuda_native/gpu_training.py` | ~900 | Compatibility import surface plus remaining depthwise-family helpers. Linear, pool, norm, conv, result types, and shared helpers were moved out. | Move remaining depthwise-family helpers into a dedicated module, then leave this file as a thin compatibility facade. |
-| `src/minicnn/unified/_cuda_native_training_loop.py` | ~800 | Extracted from `_cuda_native_runtime.py`; owns epoch loop, fallback training path, metrics, and profiling orchestration. GPU-native plan selection moved out. | Split epoch metrics construction only if this file grows again. |
+| `src/minicnn/unified/_cuda_native_training_loop.py` | ~1.0k | Extracted from `_cuda_native_runtime.py`; owns epoch loop, fallback training path, metrics, and profiling orchestration. GPU-native plan selection moved out. | Split epoch metrics/reporting construction if this file grows further. |
+| `src/minicnn/cuda_native/gpu_training_depthwise.py` | ~0.9k | Depthwise bridge-family helpers were extracted from `gpu_training.py`, but the bridge family is still concentrated here. | Split bridge families by topology if this file grows again. |
+| `src/minicnn/cuda_native/gpu_lowering.py` | ~0.8k | Lowering registry file after normalization-family extraction. | Next split target is shape/merge or pool-family lowering only if it starts growing again. |
+| `src/minicnn/cuda_native/gpu_training_norm.py` | ~0.5k | BatchNorm and GroupNorm helpers after LayerNorm-family extraction. | Leave as-is unless BatchNorm/GroupNorm logic grows materially. |
+| `src/minicnn/cuda_native/gpu_training_layernorm.py` | ~0.5k | Dedicated LayerNorm/LayerNorm2d helper module extracted from `gpu_training_norm.py`. | Keep isolated so future LayerNorm-family growth does not re-inflate `gpu_training_norm.py`. |
 
 ## Extracted production modules
 
@@ -24,10 +26,13 @@ This note tracks large MiniCNN files that can slow review and maintenance as `cu
 | `src/minicnn/cuda_native/gpu_training_common.py` | Shared CUDA binding, loss, and gradient-clip helpers. |
 | `src/minicnn/cuda_native/gpu_training_linear.py` | Linear and two-linear GPU training helpers. |
 | `src/minicnn/cuda_native/gpu_training_pool.py` | Pool/avgpool/global-avgpool GPU training helpers. |
-| `src/minicnn/cuda_native/gpu_training_norm.py` | BatchNorm/LayerNorm/GroupNorm GPU training helpers. |
+| `src/minicnn/cuda_native/gpu_training_norm.py` | BatchNorm/GroupNorm GPU training helpers plus compatibility re-exports for LayerNorm-family helpers. |
+| `src/minicnn/cuda_native/gpu_training_layernorm.py` | LayerNorm/LayerNorm2d GPU training helpers. |
 | `src/minicnn/cuda_native/gpu_training_conv.py` | Conv-family GPU training helpers. |
+| `src/minicnn/cuda_native/gpu_training_depthwise.py` | Depthwise + LayerNorm2d bridge-family GPU training helpers. |
 | `src/minicnn/cuda_native/gpu_lowering_registry.py` | GPU lowering registry/context/spec types. |
 | `src/minicnn/cuda_native/gpu_lowering_utils.py` | Shared GPU lowering tensor helpers. |
+| `src/minicnn/cuda_native/gpu_lowering_norm.py` | BatchNorm/LayerNorm/LayerNorm2d/GroupNorm GPU lowering helpers. |
 
 ## Files intentionally deprioritized
 
@@ -40,7 +45,8 @@ Large test modules are acceptable for now because they encode regression coverag
 
 ## Completed cleanup in this pass
 
-- Reduced `src/minicnn/cuda_native/gpu_training.py` from ~3.9k lines before cleanup to ~900 lines.
-- Reduced `src/minicnn/cuda_native/gpu_lowering.py` to below 1k lines.
+- Reduced `src/minicnn/cuda_native/gpu_training.py` from ~3.9k lines before cleanup to a thin compatibility facade, with depthwise-family helpers extracted to `gpu_training_depthwise.py`.
+- Reduced `src/minicnn/cuda_native/gpu_training_norm.py` to ~500 lines by extracting LayerNorm-family helpers into `gpu_training_layernorm.py`.
+- Reduced `src/minicnn/cuda_native/gpu_lowering.py` to ~800 lines by extracting normalization-family lowering into `gpu_lowering_norm.py`.
 - Reduced `src/minicnn/unified/_cuda_native_runtime.py` to a small prepare/finalize facade by extracting context, diagnostics, training-loop, and training-plan modules.
 - Kept public import surfaces compatible for existing callers.

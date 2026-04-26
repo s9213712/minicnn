@@ -37,7 +37,7 @@ MiniCNN currently has four relevant layers:
 | Torch/flex | Broadest practical user path; supports richer layers, losses, schedulers, augmentation, and custom dotted-path components. |
 | CPU/NumPy autograd | Stable educational path; supports multiple losses, optimizers, schedulers, and a compact layer stack. |
 | `cuda_legacy` | Stable handwritten CUDA path; intentionally narrow, CIFAR-10-centered, validator-driven. |
-| `cuda_native` | Beta-grade public backend surface; CLI-visible, NumPy-reference, and still not production-ready. |
+| `cuda_native` | Beta-grade public backend surface; CLI-visible, GPU-first for eligible `gpu_native` paths with explicit `reference_numpy` fallback, and still not production-ready. |
 
 Any comparison that ignores this split will overstate or understate MiniCNN's
 real status.

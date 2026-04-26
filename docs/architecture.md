@@ -84,7 +84,7 @@ A staged, modular beta-grade backend under `src/minicnn/cuda_native/`. This is t
 - `memory.py` — `BufferAllocator`, `BufferPool`, `memory_footprint()`
 - `debug.py` — `dump_graph()`, `dump_plan()`, `TracingForwardExecutor`, `ExecutionTrace`
 
-Capability descriptor marks it as: beta, NumPy-reference execution, not production-ready.
+Capability descriptor marks it as: beta-grade, GPU-first for eligible `gpu_native` subsets, with `reference_numpy` retained as explicit fallback/parity execution.
 
 See [backend_capabilities.md](backend_capabilities.md) for the full support matrix.
 
@@ -294,4 +294,4 @@ src/minicnn/
 
 ## CUDA Native source layout note
 
-`src/minicnn/cuda_native/gpu_training.py` remains the compatibility import surface for GPU training helpers. Result dataclasses, shared CUDA helpers, linear, pool, norm, and conv-family helpers now live in focused `gpu_training_*` modules. Runtime context, diagnostics, training-loop execution, and GPU-native plan selection also moved into focused `src/minicnn/unified/_cuda_native_*` modules, and lowering registry/tensor helpers moved into `gpu_lowering_registry.py` and `gpu_lowering_utils.py`.
+`src/minicnn/cuda_native/gpu_training.py` remains the compatibility import surface for GPU training helpers. Result dataclasses, shared CUDA helpers, linear, pool, norm, conv-family, and depthwise-bridge helpers now live in focused `gpu_training_*` modules. Runtime context, diagnostics, training-loop execution, and GPU-native plan selection also moved into focused `src/minicnn/unified/_cuda_native_*` modules, and lowering registry/tensor helpers moved into `gpu_lowering_registry.py` and `gpu_lowering_utils.py`.

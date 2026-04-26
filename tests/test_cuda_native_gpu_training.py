@@ -449,6 +449,32 @@ class _RawFakeCudaLib:
         self._float(d_grad_gamma)[:] = (grad_out * x_hat).sum(axis=(0, 2, 3)).astype(np.float32)
         self._float(d_grad_beta)[:] = grad_out.sum(axis=(0, 2, 3)).astype(np.float32)
 
+    def layernorm_nd_forward(self, d_input, d_gamma, d_beta, d_output, rows, features, eps):
+        x = self._float(d_input).reshape(int(rows), int(features))
+        gamma = self._float(d_gamma).reshape(int(features))
+        beta = self._float(d_beta).reshape(int(features))
+        mean = x.mean(axis=1, keepdims=True).astype(np.float32)
+        var = x.var(axis=1, keepdims=True).astype(np.float32)
+        x_hat = ((x - mean) / np.sqrt(var + float(eps))).astype(np.float32)
+        out = x_hat * gamma.reshape(1, int(features)) + beta.reshape(1, int(features))
+        self._float(d_output)[:] = out.reshape(-1)
+
+    def layernorm_nd_backward(self, d_grad_output, d_input, d_gamma, d_grad_input, d_grad_gamma, d_grad_beta, rows, features, eps):
+        grad_out = self._float(d_grad_output).reshape(int(rows), int(features))
+        x = self._float(d_input).reshape(int(rows), int(features))
+        gamma = self._float(d_gamma).reshape(1, int(features))
+        mean = x.mean(axis=1, keepdims=True).astype(np.float32)
+        var = x.var(axis=1, keepdims=True).astype(np.float32)
+        inv_std = (1.0 / np.sqrt(var + float(eps))).astype(np.float32)
+        x_hat = ((x - mean) * inv_std).astype(np.float32)
+        dxhat = (grad_out * gamma).astype(np.float32)
+        sum_dxhat = dxhat.sum(axis=1, keepdims=True).astype(np.float32)
+        sum_dxhat_xhat = (dxhat * x_hat).sum(axis=1, keepdims=True).astype(np.float32)
+        grad_input = (inv_std / float(int(features))) * (float(int(features)) * dxhat - sum_dxhat - x_hat * sum_dxhat_xhat)
+        self._float(d_grad_input)[:] = grad_input.astype(np.float32).reshape(-1)
+        self._float(d_grad_gamma)[:] = (grad_out * x_hat).sum(axis=0).astype(np.float32)
+        self._float(d_grad_beta)[:] = grad_out.sum(axis=0).astype(np.float32)
+
     def groupnorm_forward(self, d_input, d_gamma, d_beta, d_output, n, c, h, w, num_groups, eps):
         x = self._float(d_input).reshape(int(n), int(c), int(h), int(w))
         gamma = self._float(d_gamma).reshape(int(c))
@@ -1689,8 +1715,8 @@ def test_native_gpu_layernorm_linear_training_step_matches_reference_math():
     np.testing.assert_allclose(result.updated_norm_bias, norm_bias - lr * grad_norm_bias, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.updated_linear_weight, linear_weight - lr * grad_linear_weight, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.updated_linear_bias, linear_bias - lr * grad_linear_bias, rtol=1e-6, atol=1e-6)
-    assert result.runtime_summary['execution_kinds']['gpu_native_train:layernorm_forward_reference'] == 1
-    assert result.runtime_summary['execution_kinds']['gpu_native_train:layernorm_backward_reference'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:layernorm_forward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:layernorm_backward'] == 1
 
 
 def test_native_gpu_layernorm_silu_linear_training_step_matches_reference_math():
@@ -1776,6 +1802,8 @@ def test_native_gpu_layernorm_silu_linear_training_step_matches_reference_math()
     np.testing.assert_allclose(result.updated_norm_bias, norm_bias - lr * grad_norm_bias, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.updated_linear_weight, linear_weight - lr * grad_linear_weight, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.updated_linear_bias, linear_bias - lr * grad_linear_bias, rtol=1e-6, atol=1e-6)
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:layernorm_forward'] == 1
+    assert result.runtime_summary['execution_kinds']['gpu_native_train:layernorm_backward'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:silu_forward'] == 1
     assert result.runtime_summary['execution_kinds']['gpu_native_train:silu_backward'] == 1
 
