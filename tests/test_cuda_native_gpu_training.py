@@ -4579,3 +4579,98 @@ def test_native_gpu_two_conv_relu_pool_linear_training_step_can_skip_intermediat
     assert result.updated_linear_weight_velocity is None
     assert result.updated_linear_bias_velocity is None
     assert result.runtime_summary['device_to_host_transfer_events'] == 6
+
+
+def test_native_gpu_two_conv_relu_pool_linear_training_step_reuses_persistent_device_state():
+    x = (np.arange(72, dtype=np.float32).reshape(2, 1, 6, 6) - 30.0) / 20.0
+    labels = np.asarray([1, 0], dtype=np.int32)
+    conv1_weight = np.asarray(
+        [
+            [[[0.2, -0.1], [0.05, 0.3]]],
+            [[[-0.2, 0.1], [0.25, -0.05]]],
+        ],
+        dtype=np.float32,
+    )
+    conv2_weight = np.asarray(
+        [
+            [[[0.1, -0.2], [0.05, 0.15]], [[-0.05, 0.12], [0.2, -0.08]]],
+            [[[-0.15, 0.05], [0.18, -0.1]], [[0.22, -0.04], [-0.06, 0.11]]],
+        ],
+        dtype=np.float32,
+    )
+    linear_weight = np.asarray(
+        [
+            [0.1, -0.2, 0.3, 0.05, -0.1, 0.2, -0.05, 0.15],
+            [-0.05, 0.25, -0.15, 0.2, 0.05, -0.1, 0.3, -0.2],
+        ],
+        dtype=np.float32,
+    )
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.02
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    first = native_gpu_two_conv_relu_pool_linear_training_step(
+        x,
+        labels,
+        conv1_weight,
+        conv2_weight,
+        linear_weight,
+        linear_bias,
+        lr=lr,
+        device_runtime=runtime,
+        persistent_device_state=True,
+        persistent_cache_prefix='two_conv_relu_pool_linear_test',
+        return_intermediates=False,
+    )
+    first_h2d = first.runtime_summary['host_to_device_transfer_events']
+    first_allocs = first.runtime_summary['device_pointer_allocation_events']
+
+    second = native_gpu_two_conv_relu_pool_linear_training_step(
+        x,
+        labels,
+        first.updated_conv1_weight,
+        first.updated_conv2_weight,
+        first.updated_linear_weight,
+        first.updated_linear_bias,
+        lr=lr,
+        conv1_weight_velocity=first.updated_conv1_weight_velocity,
+        conv2_weight_velocity=first.updated_conv2_weight_velocity,
+        linear_weight_velocity=first.updated_linear_weight_velocity,
+        linear_bias_velocity=first.updated_linear_bias_velocity,
+        device_runtime=runtime,
+        persistent_device_state=True,
+        persistent_cache_prefix='two_conv_relu_pool_linear_test',
+        return_intermediates=False,
+    )
+    reference_second = native_gpu_two_conv_relu_pool_linear_training_step(
+        x,
+        labels,
+        first.updated_conv1_weight,
+        first.updated_conv2_weight,
+        first.updated_linear_weight,
+        first.updated_linear_bias,
+        lr=lr,
+        conv1_weight_velocity=first.updated_conv1_weight_velocity,
+        conv2_weight_velocity=first.updated_conv2_weight_velocity,
+        linear_weight_velocity=first.updated_linear_weight_velocity,
+        linear_bias_velocity=first.updated_linear_bias_velocity,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    np.testing.assert_allclose(second.updated_conv1_weight, reference_second.updated_conv1_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_conv2_weight, reference_second.updated_conv2_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_linear_weight, reference_second.updated_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_linear_bias, reference_second.updated_linear_bias, rtol=1e-6, atol=1e-6)
+    assert second.runtime_summary['persistent_device_cache_entries'] == 8
+    assert second.runtime_summary['persistent_device_cache_misses'] == 8
+    assert second.runtime_summary['persistent_device_cache_hits'] == 8
+    assert second.runtime_summary['host_to_device_transfer_events'] - first_h2d == 2
+    assert second.runtime_summary['device_pointer_allocation_events'] - first_allocs < first_allocs
+
+    runtime.clear_persistent_device_cache()
+    assert runtime.summary()['persistent_device_cache_entries'] == 0

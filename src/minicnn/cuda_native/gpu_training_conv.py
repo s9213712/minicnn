@@ -469,6 +469,9 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
     activation_kind: str | None = None,
     activation_alpha: float = 0.01,
     bound_lib: Any | None = None,
+    device_runtime: DeviceRuntime | None = None,
+    persistent_device_state: bool = False,
+    persistent_cache_prefix: str = 'two_conv_relu_pool_linear',
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
     return_intermediates: bool = True,
@@ -526,12 +529,13 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
     if np.any(labels_i32 < 0) or np.any(labels_i32 >= linear_w_f32.shape[0]):
         raise ValueError('native_gpu_two_conv_relu_pool_linear_training_step labels must be in [0, classes)')
 
-    lib = _load_bound_lib(bound_lib)
-    runtime = DeviceRuntime(
+    lib = _load_bound_lib(bound_lib if bound_lib is not None else (device_runtime.bound_lib if device_runtime is not None else None))
+    runtime = device_runtime if device_runtime is not None else DeviceRuntime(
         execution_mode='gpu_native',
         tensor_execution_device='gpu',
         bound_lib=lib,
     )
+    runtime.bound_lib = lib
     if reserve_bytes > 0 or reserve_buffers > 0:
         runtime.reserve_from_planner(total_bytes=int(reserve_bytes), num_buffers=int(reserve_buffers))
 
@@ -549,6 +553,19 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
         tensors.append(tensor)
         return tensor
 
+    def stage_state(array: np.ndarray, name: str):
+        if persistent_device_state:
+            tensor = runtime.stage_persistent_to_device(
+                array,
+                key=f'{persistent_cache_prefix}:{name}',
+                name=name,
+                update_on_reuse=False,
+            )
+        else:
+            tensor = runtime.stage_to_device(array, name=name)
+        tensors.append(tensor)
+        return tensor
+
     def alloc(shape: tuple[int, ...], name: str, dtype: str = 'float32'):
         tensor = runtime.allocate(shape, dtype=dtype, name=name)
         tensors.append(tensor)
@@ -556,14 +573,14 @@ def native_gpu_two_conv_relu_pool_linear_training_step(
 
     input_t = stage(x_f32, 'input')
     labels_t = stage(labels_i32, 'labels')
-    conv1_w_t = stage(conv1_w_f32, 'conv1_weight')
-    conv2_w_t = stage(conv2_w_f32, 'conv2_weight')
-    linear_w_t = stage(linear_w_f32, 'linear_weight')
-    linear_b_t = stage(linear_b_f32, 'linear_bias')
-    conv1_wv_t = stage(conv1_wv_f32, 'conv1_weight_velocity')
-    conv2_wv_t = stage(conv2_wv_f32, 'conv2_weight_velocity')
-    linear_wv_t = stage(linear_wv_f32, 'linear_weight_velocity')
-    linear_bv_t = stage(linear_bv_f32, 'linear_bias_velocity')
+    conv1_w_t = stage_state(conv1_w_f32, 'conv1_weight')
+    conv2_w_t = stage_state(conv2_w_f32, 'conv2_weight')
+    linear_w_t = stage_state(linear_w_f32, 'linear_weight')
+    linear_b_t = stage_state(linear_b_f32, 'linear_bias')
+    conv1_wv_t = stage_state(conv1_wv_f32, 'conv1_weight_velocity')
+    conv2_wv_t = stage_state(conv2_wv_f32, 'conv2_weight_velocity')
+    linear_wv_t = stage_state(linear_wv_f32, 'linear_weight_velocity')
+    linear_bv_t = stage_state(linear_bv_f32, 'linear_bias_velocity')
     conv1_col_t = alloc((conv1_patch, conv1_spatial), 'conv1_col')
     conv1_raw_t = alloc((conv1_out_c, n, conv1_h, conv1_w), 'conv1_raw_cnhw')
     conv1_t = alloc((n, conv1_out_c, conv1_h, conv1_w), 'conv1_output')
