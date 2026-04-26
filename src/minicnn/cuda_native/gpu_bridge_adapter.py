@@ -231,6 +231,8 @@ class GpuNativeLibraryBridgeAdapter:
             return ('global_avgpool2d_forward',)
         if request.op_name == 'BatchNorm2d':
             return ('bn_eval_forward',)
+        if request.op_name == 'LayerNorm':
+            return ('layernorm_nd_forward',)
         if request.op_name == 'LayerNorm2d':
             return ('layernorm2d_forward',)
         if request.op_name == 'GroupNorm':

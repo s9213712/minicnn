@@ -507,6 +507,7 @@ def test_gpu_native_library_bridge_adapter_declares_current_native_forward_symbo
         'gemm_forward',
         'cnhw_to_nchw',
         'depthwise_conv2d_forward',
+        'layernorm_nd_forward',
         'layernorm2d_forward',
         'groupnorm_forward',
     }
@@ -560,7 +561,7 @@ def test_gpu_native_library_bridge_adapter_declares_current_native_forward_symbo
         'Conv2d': ('conv2d_nchw', 'conv2d_im2col_gemm', ['im2col_forward', 'gemm_forward', 'cnhw_to_nchw']),
         'PointwiseConv2d': ('conv2d_nchw', 'conv2d_im2col_gemm', ['im2col_forward', 'gemm_forward', 'cnhw_to_nchw']),
         'DepthwiseConv2d': ('depthwise_conv2d_nchw', 'depthwise_conv2d_forward', ['depthwise_conv2d_forward']),
-        'LayerNorm': ('layernorm_nd', 'minicnn_gpu_layernorm_nd', []),
+        'LayerNorm': ('layernorm_nd', 'layernorm_nd_forward', ['layernorm_nd_forward']),
         'LayerNorm2d': ('layernorm2d_nchw', 'layernorm2d_forward', ['layernorm2d_forward']),
         'GroupNorm': ('groupnorm_nchw', 'groupnorm_forward', ['groupnorm_forward']),
     }
