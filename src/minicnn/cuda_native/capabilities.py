@@ -540,7 +540,7 @@ CUDA_NATIVE_CAPABILITIES: dict[str, object] = {
         'Identity plus Dropout/DropPath with p=0 are gpu_native no-op aliases; stochastic Dropout/DropPath training still requires native mask kernels.',
         'Explicit ordered DAG wiring is supported through named tensor outputs plus Add/Concat multi-input nodes.',
         'train-native supports SGD, Adam, AdamW, RMSprop, BCEWithLogitsLoss, label_smoothing for cross entropy, grad_accum_steps >= 1, and beta AMP with loss scaling / overflow backoff.',
-        'gpu_native forward dispatch now includes BatchNorm2d; train-native still restricts BatchNorm2d to reference_numpy until a training helper or graph-backward lowering lands.',
+        'gpu_native forward dispatch includes BatchNorm2d, and train-native now covers BatchNorm2d -> Flatten -> Linear through native batchnorm forward/backward C ABI shims.',
         'gpu_native train-native includes GlobalAvgPool2d/AdaptiveAvgPool2d(output_size=1)+Flatten+Linear through native global_avgpool2d forward/backward C ABI shims.',
         'gpu_native train-native includes AvgPool2d(2x2 stride-2)+Flatten+Linear through native avgpool2d forward/backward C ABI shims.',
         'gpu_native forward dispatch now includes LeakyReLU, GELU, SiLU, Sigmoid, and Tanh elementwise activation C ABI shims; two-linear train-native helper coverage is active for these activations.',
