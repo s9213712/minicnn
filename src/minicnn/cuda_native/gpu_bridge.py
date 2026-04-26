@@ -117,12 +117,15 @@ def _build_bridge_payload(packet: GpuLaunchPacket) -> dict[str, Any]:
         weight_arg = _param_args(packet)[0]
         n, c_in, h, w = [int(v) for v in input_arg['shape']]
         _, c_out, h_out, w_out = [int(v) for v in output_arg['shape']]
+        weight_shape = [int(v) for v in weight_arg.get('shape', ())]
+        kernel_hw = weight_shape[2:4] if len(weight_shape) >= 4 else [1, 1]
         payload.update({
             'batch_size': n,
             'in_channels': c_in,
             'out_channels': c_out,
             'input_hw': [h, w],
             'output_hw': [h_out, w_out],
+            'kernel_hw': kernel_hw,
             'stride': scalar_args.get('stride', 1),
             'padding': scalar_args.get('padding', 0),
             'dilation': scalar_args.get('dilation', 1),
@@ -244,6 +247,8 @@ class GpuFixedKernelCall:
     tensor_dtype: str
     input_shape: tuple[int, ...]
     output_shape: tuple[int, ...]
+    kernel_h: int
+    kernel_w: int
     stride_h: int
     stride_w: int
     padding_h: int
@@ -270,6 +275,8 @@ class GpuFixedKernelCall:
             'tensor_dtype': self.tensor_dtype,
             'input_shape': list(self.input_shape),
             'output_shape': list(self.output_shape),
+            'kernel_h': self.kernel_h,
+            'kernel_w': self.kernel_w,
             'stride_h': self.stride_h,
             'stride_w': self.stride_w,
             'padding_h': self.padding_h,
@@ -403,6 +410,11 @@ def build_fixed_kernel_call(request: GpuFlatKernelRequest) -> GpuFixedKernelCall
     param_bindings = list(request.param_bindings)
     weight_binding = param_bindings[0] if param_bindings else ''
     bias_binding = param_bindings[1] if len(param_bindings) > 1 else ''
+    kernel_hw = payload.get('kernel_hw', (1, 1))
+    if isinstance(kernel_hw, (list, tuple)):
+        kernel_h, kernel_w = int(kernel_hw[0]), int(kernel_hw[1])
+    else:
+        kernel_h = kernel_w = int(kernel_hw)
     stride = payload.get('stride', 0)
     if isinstance(stride, (list, tuple)):
         stride_h, stride_w = int(stride[0]), int(stride[1])
@@ -432,6 +444,8 @@ def build_fixed_kernel_call(request: GpuFlatKernelRequest) -> GpuFixedKernelCall
         tensor_dtype=str(payload.get('tensor_dtype', 'float32')),
         input_shape=tuple(int(v) for v in tensor_shape_map.get(input_binding, ())),
         output_shape=tuple(int(v) for v in tensor_shape_map.get(output_binding, ())),
+        kernel_h=kernel_h,
+        kernel_w=kernel_w,
         stride_h=stride_h,
         stride_w=stride_w,
         padding_h=padding_h,

@@ -408,6 +408,7 @@ def test_gpu_bridge_trace_includes_depthwise_conv_payload_geometry():
     assert requests[0].bridge_payload['out_channels'] == 3
     assert requests[0].bridge_payload['input_hw'] == [4, 4]
     assert requests[0].bridge_payload['output_hw'] == [4, 4]
+    assert requests[0].bridge_payload['kernel_hw'] == [3, 3]
     assert requests[0].bridge_payload['dilation'] == 1
     assert requests[0].bridge_payload['groups'] == 3
 
@@ -426,6 +427,7 @@ def test_gpu_bridge_trace_includes_conv_dilation_in_payload():
     requests = build_gpu_bridge_trace(packets)
 
     assert requests[0].op_name == 'Conv2d'
+    assert requests[0].bridge_payload['kernel_hw'] == [3, 3]
     assert requests[0].bridge_payload['dilation'] == 2
 
 
@@ -666,6 +668,8 @@ def test_conv_fixed_and_c_abi_bridge_trace_carry_dilation():
 
     assert fixed_calls[0].dilation_h == 2
     assert fixed_calls[0].dilation_w == 2
+    assert fixed_calls[0].kernel_h == 3
+    assert fixed_calls[0].kernel_w == 3
     assert c_abi_calls[0].int_args8 == (1, 1, 0, 0, 1, 2, 2, 0)
 
 
@@ -687,6 +691,7 @@ def test_depthwise_fixed_bridge_result_preserves_conv_geometry():
 
     assert result['dispatch_mode'] == 'gpu_backend_stub'
     assert result['kernel_symbol'] == 'minicnn_gpu_depthwise_conv2d_nchw_f32'
+    assert result['kernel_hw'] == [3, 3]
     assert result['stride'] == [1, 1]
     assert result['padding'] == [1, 1]
     assert result['dilation'] == [1, 1]

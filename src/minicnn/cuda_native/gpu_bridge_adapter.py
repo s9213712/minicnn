@@ -105,6 +105,7 @@ class GpuBackendStubAdapter:
             'bias_binding': request.bias_binding,
             'input_shape': list(request.input_shape),
             'output_shape': list(request.output_shape),
+            'kernel_hw': [request.kernel_h, request.kernel_w],
             'stride': [request.stride_h, request.stride_w],
             'padding': [request.padding_h, request.padding_w],
             'dilation': [request.dilation_h, request.dilation_w],
