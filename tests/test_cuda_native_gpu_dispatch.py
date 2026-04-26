@@ -363,6 +363,7 @@ def test_gpu_dispatch_plan_supports_pointwise_conv_forward_shim():
     assert summary['steps'][0]['op_name'] == 'PointwiseConv2d'
     assert summary['steps'][0]['launch_family'] == 'conv2d_nchw'
     assert summary['steps'][0]['param_keys'] == ['_w_pointwiseconv2d_0']
+    assert summary['steps'][0]['launch_descriptor']['attr_bindings']['dilation'] == 1
 
 
 def test_gpu_dispatch_plan_supports_depthwise_conv_forward_shim():
@@ -406,7 +407,25 @@ def test_gpu_bridge_trace_includes_depthwise_conv_payload_geometry():
     assert requests[0].bridge_payload['out_channels'] == 3
     assert requests[0].bridge_payload['input_hw'] == [4, 4]
     assert requests[0].bridge_payload['output_hw'] == [4, 4]
+    assert requests[0].bridge_payload['dilation'] == 1
     assert requests[0].bridge_payload['groups'] == 3
+
+
+def test_gpu_bridge_trace_includes_conv_dilation_in_payload():
+    graph = build_cuda_native_graph(
+        {
+            'layers': [
+                {'type': 'Conv2d', 'out_channels': 4, 'kernel_size': 3, 'dilation': 2, 'bias': False},
+            ],
+        },
+        (1, 3, 8, 8),
+    )
+
+    packets = build_gpu_launch_trace(build_gpu_dispatch_plan(graph))
+    requests = build_gpu_bridge_trace(packets)
+
+    assert requests[0].op_name == 'Conv2d'
+    assert requests[0].bridge_payload['dilation'] == 2
 
 
 def test_gpu_dispatch_plan_supports_layernorm2d_forward_shim():

@@ -125,6 +125,7 @@ def _build_bridge_payload(packet: GpuLaunchPacket) -> dict[str, Any]:
             'output_hw': [h_out, w_out],
             'stride': scalar_args.get('stride', 1),
             'padding': scalar_args.get('padding', 0),
+            'dilation': scalar_args.get('dilation', 1),
             'groups': int(scalar_args.get('groups', 1)),
             'weight_binding': weight_arg['binding'],
             'weight_layout': weight_arg['layout'],

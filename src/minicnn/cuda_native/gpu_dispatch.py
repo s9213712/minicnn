@@ -157,6 +157,7 @@ def _node_attr_bindings(node) -> dict[str, Any]:
         )
         bindings['stride'] = node.attrs.get('stride', 1)
         bindings['padding'] = node.attrs.get('padding', 0)
+        bindings['dilation'] = node.attrs.get('dilation', 1)
         bindings['groups'] = groups
     elif node.op_type in {'MaxPool2d', 'AvgPool2d'}:
         bindings['kernel_size'] = node.attrs.get('kernel_size', 2)
