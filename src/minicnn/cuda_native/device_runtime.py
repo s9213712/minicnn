@@ -15,6 +15,7 @@ class DeviceTensor:
     reservation_id: str | None = None
     device_ptr: Any | None = None
     owns_device_ptr: bool = False
+    persistent_key: str | None = None
 
     @property
     def nbytes(self) -> int:
@@ -46,6 +47,11 @@ class DeviceRuntime:
     device_pointer_live_bytes: int = 0
     device_sync_to_host_events: int = 0
     device_sync_to_device_events: int = 0
+    persistent_device_cache_entries: int = 0
+    persistent_device_cache_hits: int = 0
+    persistent_device_cache_misses: int = 0
+    persistent_device_cache_invalidations: int = 0
+    persistent_device_cache_bytes: int = 0
     execution_events: int = 0
     executed_node_count: int = 0
     execution_kinds: dict[str, int] = field(default_factory=dict)
@@ -54,6 +60,7 @@ class DeviceRuntime:
     last_output_name: str | None = None
     _reserved_pool: dict[str, int] = field(default_factory=dict)
     _available_reserved_ids: list[str] = field(default_factory=list)
+    _persistent_device_cache: dict[str, DeviceTensor] = field(default_factory=dict)
 
     @property
     def gpu_execution(self) -> bool:
@@ -123,6 +130,47 @@ class DeviceRuntime:
             owns_device_ptr=self.native_device_pointers_enabled,
         )
         self.sync_tensor_to_device(tensor)
+        return tensor
+
+    def stage_persistent_to_device(
+        self,
+        array: Any,
+        *,
+        key: str,
+        name: str | None = None,
+        update_on_reuse: bool = True,
+    ) -> DeviceTensor:
+        """Stage an array into a reusable device tensor keyed by training state.
+
+        Reuse is intentionally opt-in so callers must decide when a cached
+        device tensor is still authoritative. Shape or dtype changes invalidate
+        the old cached tensor before restaging.
+        """
+
+        host_array = np.asarray(array)
+        cache_key = str(key)
+        cached = self._persistent_device_cache.get(cache_key)
+        if cached is not None and (cached.data.shape != host_array.shape or cached.data.dtype != host_array.dtype):
+            self._free_device(cached)
+            self._persistent_device_cache.pop(cache_key, None)
+            self.persistent_device_cache_invalidations += 1
+            cached = None
+        if cached is not None:
+            self.persistent_device_cache_hits += 1
+            cached.name = name
+            if update_on_reuse:
+                host_contig = np.ascontiguousarray(host_array)
+                np.copyto(cached.data, host_contig)
+                self.host_to_device_transfer_events += 1
+                self.host_to_device_transfer_bytes += int(host_contig.nbytes)
+                self.sync_tensor_to_device(cached)
+            return cached
+        self.persistent_device_cache_misses += 1
+        tensor = self.stage_to_device(host_array, name=name)
+        tensor.persistent_key = cache_key
+        self._persistent_device_cache[cache_key] = tensor
+        self.persistent_device_cache_entries = len(self._persistent_device_cache)
+        self.persistent_device_cache_bytes = sum(int(t.nbytes) for t in self._persistent_device_cache.values())
         return tensor
 
     def stage_to_host(self, tensor: DeviceTensor, *, copy: bool = True) -> np.ndarray:
@@ -213,11 +261,22 @@ class DeviceRuntime:
         )
 
     def release_buffer(self, tensor: DeviceTensor) -> None:
+        if tensor.persistent_key is not None and self._persistent_device_cache.get(tensor.persistent_key) is tensor:
+            self.persistent_device_cache_entries = len(self._persistent_device_cache)
+            self.persistent_device_cache_bytes = sum(int(t.nbytes) for t in self._persistent_device_cache.values())
+            return
         self._free_device(tensor)
         if tensor.reservation_id is None:
             return
         self.reserved_buffer_release_events += 1
         self._available_reserved_ids.append(tensor.reservation_id)
+
+    def clear_persistent_device_cache(self) -> None:
+        for tensor in list(self._persistent_device_cache.values()):
+            self._free_device(tensor)
+        self._persistent_device_cache.clear()
+        self.persistent_device_cache_entries = 0
+        self.persistent_device_cache_bytes = 0
 
     def synchronize(self, reason: str = 'explicit') -> None:
         self.synchronization_events += 1
@@ -275,6 +334,11 @@ class DeviceRuntime:
             'device_pointer_live_bytes': self.device_pointer_live_bytes,
             'device_sync_to_device_events': self.device_sync_to_device_events,
             'device_sync_to_host_events': self.device_sync_to_host_events,
+            'persistent_device_cache_entries': len(self._persistent_device_cache),
+            'persistent_device_cache_hits': self.persistent_device_cache_hits,
+            'persistent_device_cache_misses': self.persistent_device_cache_misses,
+            'persistent_device_cache_invalidations': self.persistent_device_cache_invalidations,
+            'persistent_device_cache_bytes': sum(int(t.nbytes) for t in self._persistent_device_cache.values()),
             'execution_events': self.execution_events,
             'executed_node_count': self.executed_node_count,
             'execution_kinds': dict(self.execution_kinds),

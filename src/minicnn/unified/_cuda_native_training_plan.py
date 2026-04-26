@@ -8,6 +8,21 @@ from minicnn.unified._cuda_native_context import NativeTrainingContext
 _SINGLE_STAGE_ACTIVATIONS = {'GELU', 'LeakyReLU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'}
 
 
+def _is_generic_mlp_ops(ops: list[str]) -> bool:
+    remaining = ops[1:] if ops and ops[0] == 'Flatten' else list(ops)
+    if len(remaining) < 5 or remaining[0] != 'Linear' or remaining[-1] != 'Linear':
+        return False
+    expect_activation = True
+    for op in remaining[1:-1]:
+        if expect_activation:
+            if op not in _SINGLE_STAGE_ACTIVATIONS:
+                return False
+        elif op != 'Linear':
+            return False
+        expect_activation = not expect_activation
+    return not expect_activation
+
+
 def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
     nodes = list(graph.topological_order())
     ops = [node.op_type for node in nodes]
@@ -255,6 +270,12 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
             'apply_maxpool': has_pool,
             'conv_kind': 'depthwise' if conv_op == 'DepthwiseConv2d' else 'conv2d',
         }
+    if _is_generic_mlp_ops(ops):
+        return {
+            'kind': 'generic_mlp',
+            'linear_nodes': [node for node in nodes if node.op_type == 'Linear'],
+            'activation_nodes': [node for node in nodes if node.op_type in _SINGLE_STAGE_ACTIVATIONS],
+        }
     raise ValueError(
         'cuda_native gpu_native train-native currently supports only '
         'ops=[Linear], ops=[Flatten, Linear], ops=[Linear, ReLU, Linear], '
@@ -269,6 +290,7 @@ def _gpu_native_training_plan(graph: NativeGraph) -> dict[str, Any]:
         'ops=[Conv2d, MaxPool2d, Flatten, Linear], or '
         'ops=[Conv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, MaxPool2d, Flatten, Linear], or '
         'ops=[Conv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Conv2d, same activation, MaxPool2d, Flatten, Linear], '
+        'or generic sequential MLP ops=[Flatten?, Linear, activation, Linear, ..., Linear], '
         f'got {ops}.'
     )
 
@@ -301,11 +323,16 @@ def _merge_gpu_native_step_runtime(ctx: NativeTrainingContext, step_summary: dic
         'device_pointer_allocation_events',
         'device_pointer_free_events',
         'device_pointer_bytes',
+        'device_pointer_live_bytes',
         'device_sync_to_host_events',
         'device_sync_to_device_events',
+        'persistent_device_cache_hits',
+        'persistent_device_cache_misses',
+        'persistent_device_cache_invalidations',
     ):
         setattr(ctx.device_runtime, attr, int(getattr(ctx.device_runtime, attr)) + int(step_summary.get(attr, 0)))
-    ctx.device_runtime.device_pointer_live_bytes += int(step_summary.get('device_pointer_live_bytes', 0))
+    ctx.device_runtime.persistent_device_cache_entries = int(step_summary.get('persistent_device_cache_entries', getattr(ctx.device_runtime, 'persistent_device_cache_entries', 0)))
+    ctx.device_runtime.persistent_device_cache_bytes = int(step_summary.get('persistent_device_cache_bytes', getattr(ctx.device_runtime, 'persistent_device_cache_bytes', 0)))
     for kind, count in dict(step_summary.get('execution_kinds', {})).items():
         for _ in range(int(count)):
             ctx.device_runtime.record_execution(str(kind), node_count=0)

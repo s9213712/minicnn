@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
@@ -12,6 +13,10 @@ from minicnn.cuda_native.gpu_training import (
     native_gpu_two_conv_relu_pool_linear_training_step,
 )
 from minicnn.unified._cuda_native_context import NativeTrainingContext
+from minicnn.unified._cuda_native_gpu_train_dispatch_linear import (
+    _persistent_linear_runtime,
+    _runtime_summary_delta,
+)
 
 
 def run_gpu_native_conv_batch(
@@ -27,6 +32,8 @@ def run_gpu_native_conv_batch(
     velocity_state = optimizer_state.setdefault('velocity', {})
     kind = gpu_training_plan['kind']
     if kind == 'depthwise_layernorm2d_linear':
+        persistent_runtime = _persistent_linear_runtime(ctx, optimizer_state)
+        runtime_before = persistent_runtime.summary()
         conv_node = gpu_training_plan['conv_node']
         norm_node = gpu_training_plan['layernorm2d_node']
         gpu_linear_node = gpu_training_plan['linear_nodes'][0]
@@ -54,8 +61,12 @@ def run_gpu_native_conv_batch(
             norm_bias_velocity=velocity_state.get(norm_bias_key),
             linear_weight_velocity=velocity_state.get(linear_weight_key),
             linear_bias_velocity=velocity_state.get(linear_bias_key),
-            bound_lib=ctx.device_runtime.bound_lib,
+            device_runtime=persistent_runtime,
+            persistent_device_state=True,
+            persistent_cache_prefix=f'train:{conv_weight_key}:{norm_weight_key}:{norm_bias_key}:{linear_weight_key}:{linear_bias_key}',
+            return_intermediates=False,
         )
+        step = replace(step, runtime_summary=_runtime_summary_delta(runtime_before, step.runtime_summary))
         params = dict(params)
         params[conv_weight_key] = step.updated_conv_weight
         params[norm_weight_key] = step.updated_norm_weight
@@ -69,6 +80,8 @@ def run_gpu_native_conv_batch(
         velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
         return params, step
     if kind == 'depthwise_layernorm2d_pointwise_linear':
+        persistent_runtime = _persistent_linear_runtime(ctx, optimizer_state)
+        runtime_before = persistent_runtime.summary()
         depthwise_node = gpu_training_plan['depthwise_node']
         norm_node = gpu_training_plan['layernorm2d_node']
         pointwise_node = gpu_training_plan['pointwise_node']
@@ -100,8 +113,12 @@ def run_gpu_native_conv_batch(
             pointwise_weight_velocity=velocity_state.get(pointwise_weight_key),
             linear_weight_velocity=velocity_state.get(linear_weight_key),
             linear_bias_velocity=velocity_state.get(linear_bias_key),
-            bound_lib=ctx.device_runtime.bound_lib,
+            device_runtime=persistent_runtime,
+            persistent_device_state=True,
+            persistent_cache_prefix=f'train:{depthwise_weight_key}:{norm_weight_key}:{norm_bias_key}:{pointwise_weight_key}:{linear_weight_key}:{linear_bias_key}',
+            return_intermediates=False,
         )
+        step = replace(step, runtime_summary=_runtime_summary_delta(runtime_before, step.runtime_summary))
         params = dict(params)
         params[depthwise_weight_key] = step.updated_depthwise_weight
         params[norm_weight_key] = step.updated_norm_weight
@@ -117,6 +134,8 @@ def run_gpu_native_conv_batch(
         velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
         return params, step
     if kind == 'depthwise_layernorm2d_pointwise_gelu_pointwise_linear':
+        persistent_runtime = _persistent_linear_runtime(ctx, optimizer_state)
+        runtime_before = persistent_runtime.summary()
         depthwise_node = gpu_training_plan['depthwise_node']
         norm_node = gpu_training_plan['layernorm2d_node']
         pointwise1_node = gpu_training_plan['pointwise1_node']
@@ -154,8 +173,12 @@ def run_gpu_native_conv_batch(
             linear_bias_velocity=velocity_state.get(linear_bias_key),
             activation_kind=str(gpu_training_plan.get('activation_kind', 'GELU')),
             activation_alpha=float(gpu_training_plan.get('activation_alpha', 0.01)),
-            bound_lib=ctx.device_runtime.bound_lib,
+            device_runtime=persistent_runtime,
+            persistent_device_state=True,
+            persistent_cache_prefix=f'train:{depthwise_weight_key}:{norm_weight_key}:{norm_bias_key}:{pointwise1_weight_key}:{pointwise2_weight_key}:{linear_weight_key}:{linear_bias_key}',
+            return_intermediates=False,
         )
+        step = replace(step, runtime_summary=_runtime_summary_delta(runtime_before, step.runtime_summary))
         params = dict(params)
         params[depthwise_weight_key] = step.updated_depthwise_weight
         params[norm_weight_key] = step.updated_norm_weight
@@ -173,6 +196,8 @@ def run_gpu_native_conv_batch(
         velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
         return params, step
     if kind == 'conv_linear':
+        persistent_runtime = _persistent_linear_runtime(ctx, optimizer_state)
+        runtime_before = persistent_runtime.summary()
         conv_node = gpu_training_plan['conv_node']
         gpu_linear_node = gpu_training_plan['linear_nodes'][0]
         conv_weight_key = f'_w_{conv_node.name}'
@@ -197,8 +222,12 @@ def run_gpu_native_conv_batch(
             activation_alpha=float(gpu_training_plan.get('activation_alpha', 0.01)),
             apply_maxpool=bool(gpu_training_plan.get('apply_maxpool', False)),
             conv_kind=str(gpu_training_plan.get('conv_kind', 'conv2d')),
-            bound_lib=ctx.device_runtime.bound_lib,
+            device_runtime=persistent_runtime,
+            persistent_device_state=True,
+            persistent_cache_prefix=f'train:{conv_weight_key}:{linear_weight_key}:{linear_bias_key}',
+            return_intermediates=False,
         )
+        step = replace(step, runtime_summary=_runtime_summary_delta(runtime_before, step.runtime_summary))
         params = dict(params)
         params[conv_weight_key] = step.updated_conv_weight
         params[linear_weight_key] = step.updated_linear_weight
@@ -208,6 +237,8 @@ def run_gpu_native_conv_batch(
         velocity_state[linear_bias_key] = step.updated_linear_bias_velocity
         return params, step
     if kind == 'two_conv_relu_pool_linear':
+        persistent_runtime = _persistent_linear_runtime(ctx, optimizer_state)
+        runtime_before = persistent_runtime.summary()
         conv1_node, conv2_node = gpu_training_plan['conv_nodes']
         gpu_linear_node = gpu_training_plan['linear_nodes'][0]
         conv1_weight_key = f'_w_{conv1_node.name}'
@@ -232,9 +263,12 @@ def run_gpu_native_conv_batch(
             linear_bias_velocity=velocity_state.get(linear_bias_key),
             activation_kind=gpu_training_plan.get('activation_kind'),
             activation_alpha=float(gpu_training_plan.get('activation_alpha', 0.01)),
-            bound_lib=ctx.device_runtime.bound_lib,
+            device_runtime=persistent_runtime,
+            persistent_device_state=True,
+            persistent_cache_prefix=f'train:{conv1_weight_key}:{conv2_weight_key}:{linear_weight_key}:{linear_bias_key}',
             return_intermediates=False,
         )
+        step = replace(step, runtime_summary=_runtime_summary_delta(runtime_before, step.runtime_summary))
         params = dict(params)
         params[conv1_weight_key] = step.updated_conv1_weight
         params[conv2_weight_key] = step.updated_conv2_weight

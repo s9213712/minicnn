@@ -91,3 +91,46 @@ def test_device_runtime_can_stage_native_device_pointers():
     assert summary['device_pointer_live_bytes'] == 0
     assert summary['device_sync_to_device_events'] == 1
     assert summary['device_sync_to_host_events'] == 1
+
+
+def test_device_runtime_reuses_persistent_device_cache_entries():
+    class _FakeLib:
+        def __init__(self):
+            self.next_ptr = 100
+            self.h2d = []
+            self.freed = []
+
+        def gpu_malloc(self, nbytes):
+            ptr = self.next_ptr
+            self.next_ptr += int(nbytes) + 1
+            return ptr
+
+        def gpu_free(self, ptr):
+            self.freed.append(ptr)
+
+        def gpu_memcpy_h2d(self, ptr, host_ptr, nbytes):
+            self.h2d.append((ptr, int(nbytes)))
+
+        def gpu_memcpy_d2h(self, host_ptr, ptr, nbytes):
+            pass
+
+    lib = _FakeLib()
+    runtime = DeviceRuntime(execution_mode='gpu_native', tensor_execution_device='gpu', bound_lib=lib)
+    first = runtime.stage_persistent_to_device(np.ones((2, 3), dtype=np.float32), key='weight', name='w')
+    second = runtime.stage_persistent_to_device(np.full((2, 3), 2.0, dtype=np.float32), key='weight', name='w2')
+
+    assert first is second
+    assert second.name == 'w2'
+    assert len(lib.h2d) == 2
+    summary = runtime.summary()
+    assert summary['persistent_device_cache_entries'] == 1
+    assert summary['persistent_device_cache_misses'] == 1
+    assert summary['persistent_device_cache_hits'] == 1
+    assert summary['persistent_device_cache_bytes'] == 24
+
+    runtime.release_buffer(second)
+    assert runtime.summary()['persistent_device_cache_entries'] == 1
+    assert lib.freed == []
+    runtime.clear_persistent_device_cache()
+    assert runtime.summary()['persistent_device_cache_entries'] == 0
+    assert lib.freed == [100]
