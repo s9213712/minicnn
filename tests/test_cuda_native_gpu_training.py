@@ -2873,6 +2873,114 @@ def test_native_gpu_depthwise_layernorm2d_linear_training_step_can_skip_intermed
     assert result.runtime_summary['device_to_host_transfer_events'] == 7
 
 
+def test_native_gpu_depthwise_layernorm2d_linear_training_step_reuses_persistent_device_state():
+    x = np.asarray(
+        [
+            [
+                [[1.0, 2.0, -1.0], [0.0, 1.5, 2.5], [3.0, -0.5, 1.0]],
+                [[-1.0, 0.5, 2.0], [1.0, -1.5, 0.0], [2.5, 1.5, -0.5]],
+            ],
+            [
+                [[0.5, -1.0, 1.0], [2.0, 0.0, -0.5], [1.5, 2.5, -1.5]],
+                [[1.0, -0.5, 0.25], [-1.25, 1.5, 2.0], [0.75, -2.0, 1.25]],
+            ],
+        ],
+        dtype=np.float32,
+    )
+    labels = np.asarray([1, 0], dtype=np.int32)
+    conv_weight = np.asarray(
+        [
+            [[[0.2, -0.1], [0.05, 0.3]]],
+            [[[-0.2, 0.1], [0.25, -0.05]]],
+        ],
+        dtype=np.float32,
+    )
+    norm_weight = np.asarray([1.0, 1.25], dtype=np.float32)
+    norm_bias = np.asarray([0.0, -0.1], dtype=np.float32)
+    linear_weight = np.asarray(
+        [
+            [0.1, -0.2, 0.3, 0.05, -0.1, 0.2, -0.05, 0.15],
+            [-0.05, 0.25, -0.15, 0.2, 0.05, -0.1, 0.3, -0.2],
+        ],
+        dtype=np.float32,
+    )
+    linear_bias = np.asarray([0.02, -0.01], dtype=np.float32)
+    lr = 0.05
+    runtime = DeviceRuntime(
+        execution_mode='gpu_native',
+        tensor_execution_device='gpu',
+        bound_lib=_RawFakeCudaLib(),
+    )
+
+    first = native_gpu_depthwise_layernorm2d_linear_training_step(
+        x,
+        labels,
+        conv_weight,
+        norm_weight,
+        norm_bias,
+        linear_weight,
+        linear_bias,
+        lr=lr,
+        device_runtime=runtime,
+        persistent_device_state=True,
+        persistent_cache_prefix='depthwise_layernorm2d_linear_test',
+        return_intermediates=False,
+    )
+    first_h2d = first.runtime_summary['host_to_device_transfer_events']
+    first_allocs = first.runtime_summary['device_pointer_allocation_events']
+
+    second = native_gpu_depthwise_layernorm2d_linear_training_step(
+        x,
+        labels,
+        first.updated_conv_weight,
+        first.updated_norm_weight,
+        first.updated_norm_bias,
+        first.updated_linear_weight,
+        first.updated_linear_bias,
+        lr=lr,
+        conv_weight_velocity=first.updated_conv_weight_velocity,
+        norm_weight_velocity=first.updated_norm_weight_velocity,
+        norm_bias_velocity=first.updated_norm_bias_velocity,
+        linear_weight_velocity=first.updated_linear_weight_velocity,
+        linear_bias_velocity=first.updated_linear_bias_velocity,
+        device_runtime=runtime,
+        persistent_device_state=True,
+        persistent_cache_prefix='depthwise_layernorm2d_linear_test',
+        return_intermediates=False,
+    )
+    reference_second = native_gpu_depthwise_layernorm2d_linear_training_step(
+        x,
+        labels,
+        first.updated_conv_weight,
+        first.updated_norm_weight,
+        first.updated_norm_bias,
+        first.updated_linear_weight,
+        first.updated_linear_bias,
+        lr=lr,
+        conv_weight_velocity=first.updated_conv_weight_velocity,
+        norm_weight_velocity=first.updated_norm_weight_velocity,
+        norm_bias_velocity=first.updated_norm_bias_velocity,
+        linear_weight_velocity=first.updated_linear_weight_velocity,
+        linear_bias_velocity=first.updated_linear_bias_velocity,
+        bound_lib=_RawFakeCudaLib(),
+        return_intermediates=False,
+    )
+
+    np.testing.assert_allclose(second.updated_conv_weight, reference_second.updated_conv_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_norm_weight, reference_second.updated_norm_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_norm_bias, reference_second.updated_norm_bias, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_linear_weight, reference_second.updated_linear_weight, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(second.updated_linear_bias, reference_second.updated_linear_bias, rtol=1e-6, atol=1e-6)
+    assert second.runtime_summary['persistent_device_cache_entries'] == 10
+    assert second.runtime_summary['persistent_device_cache_misses'] == 10
+    assert second.runtime_summary['persistent_device_cache_hits'] == 10
+    assert second.runtime_summary['host_to_device_transfer_events'] - first_h2d == 3
+    assert second.runtime_summary['device_pointer_allocation_events'] - first_allocs < 21
+
+    runtime.clear_persistent_device_cache()
+    assert runtime.summary()['persistent_device_cache_entries'] == 0
+
+
 def test_native_gpu_depthwise_layernorm2d_pointwise_linear_training_step_matches_reference_math():
     x = (np.arange(36, dtype=np.float32).reshape(2, 2, 3, 3) - 12.0) / 10.0
     labels = np.asarray([1, 0], dtype=np.int32)
