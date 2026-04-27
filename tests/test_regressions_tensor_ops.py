@@ -12,50 +12,29 @@ from minicnn.ops.nn_ops import maxpool2d
 
 
 # ---------------------------------------------------------------------------
-# Fix 1: SGD emits RuntimeWarning instead of silently swallowing exceptions
+# Fix 1: SGD surfaces gradient shape bugs instead of silently skipping updates
 # ---------------------------------------------------------------------------
 
-def test_sgd_step_warns_on_shape_mismatch():
+def test_sgd_step_raises_on_shape_mismatch():
     w = Parameter([1.0, 2.0], name='w')
     opt = SGD([w], lr=0.1)
     w.grad = np.array([1.0, 2.0, 3.0], dtype=np.float32)  # wrong shape -> ValueError
 
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        result = opt.step()
-
-    assert any(issubclass(c.category, RuntimeWarning) for c in caught), \
-        "Expected RuntimeWarning for shape-mismatched grad"
-    assert result['updated'] == 0
-
-
-def test_sgd_step_warns_contains_param_info():
-    w = Parameter([1.0, 2.0], name='my_weight')
-    opt = SGD([w], lr=0.1)
-    w.grad = np.array([1.0, 2.0, 3.0], dtype=np.float32)  # (3,) vs (2,) -> ValueError
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with pytest.raises(ValueError, match='Gradient shape'):
         opt.step()
 
-    messages = [str(c.message) for c in caught if issubclass(c.category, RuntimeWarning)]
-    assert any('my_weight' in m for m in messages), \
-        "Warning should include parameter name"
 
-
-def test_sgd_step_continues_other_params_after_bad_one():
+def test_sgd_step_rejects_bad_grad_before_updating_other_params():
     bad = Parameter([1.0, 2.0], name='bad')
     good = Parameter([0.0], name='good')
     opt = SGD([bad, good], lr=0.1)
     bad.grad = np.array([1.0, 2.0, 3.0], dtype=np.float32)  # wrong shape
     good.grad = np.array([1.0], dtype=np.float32)
 
-    with warnings.catch_warnings(record=True):
-        warnings.simplefilter("always")
-        result = opt.step()
+    with pytest.raises(ValueError, match='Gradient shape'):
+        opt.step()
 
-    assert result['updated'] == 1
-    assert np.allclose(good.data, [-0.1])
+    assert np.allclose(good.data, [0.0])
 
 
 def test_sgd_momentum_two_steps_matches_expected_velocity():

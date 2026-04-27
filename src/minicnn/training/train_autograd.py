@@ -11,6 +11,7 @@ from minicnn.flex.runtime import create_run_dir
 from minicnn.models import build_model_from_config
 from minicnn.nn import Tensor, bce_with_logits_loss, cross_entropy, mse_loss, no_grad
 from minicnn.optim import Adam, AdamW, RMSprop, SGD
+from minicnn.random import set_global_seed
 from minicnn.schedulers.cosine import CosineAnnealingLR
 from minicnn.schedulers.plateau import ReduceLROnPlateau
 from minicnn.schedulers.step import StepLR
@@ -156,23 +157,29 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
         )
 
     x_train, y_train, x_val, y_val, x_test, y_test = _load_dataset(dataset_cfg)
-    train_rng = np.random.default_rng(int(train_cfg.get('seed', 0)))
-    init_seed = int(train_cfg.get('init_seed', dataset_cfg.get('seed', 42)))
+    train_seed = int(train_cfg.get('train_seed', train_cfg.get('seed', 0)))
+    train_rng = np.random.default_rng(train_seed)
+    init_seed = int(train_cfg.get('init_seed', dataset_cfg.get('dataset_seed', dataset_cfg.get('seed', 42))))
     init_rng = np.random.default_rng(init_seed)
+    set_global_seed(init_seed)
     model, final_shape = build_model_from_config(
         model_cfg,
         input_shape=dataset_cfg.get('input_shape', [1, 4, 4]),
         rng=init_rng,
     )
+    set_global_seed(train_seed)
     optim_cfg = cfg.get('optimizer', {'type': 'SGD', 'lr': 0.01})
     optimizer = _make_optimizer(model.parameters(), optim_cfg)
     loss_cfg = cfg.get('loss', {'type': 'CrossEntropyLoss'})
     loss_fn = _make_loss(loss_cfg)
     loss_type = str(loss_cfg.get('type', 'CrossEntropyLoss'))
     batch_size = int(train_cfg.get('batch_size', 8))
+    grad_accum_steps = int(train_cfg.get('grad_accum_steps', 1))
     epochs = int(train_cfg.get('epochs', 1))
     if epochs < 1:
         raise ValueError(f'train.epochs must be >= 1, got {epochs}')
+    if grad_accum_steps < 1:
+        raise ValueError(f'train.grad_accum_steps must be >= 1, got {grad_accum_steps}')
 
     scheduler = _make_scheduler(optimizer, sched_cfg)
 
@@ -186,20 +193,26 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
         for epoch in range(1, epochs + 1):
             epoch_start = time.perf_counter()
             indices = train_rng.permutation(x_train.shape[0])
+            num_batches = (indices.shape[0] + batch_size - 1) // batch_size
             total_loss = 0.0
             total = 0
             model.train(True)
-            for start in range(0, indices.shape[0], batch_size):
+            optimizer.zero_grad()
+            for batch_idx, start in enumerate(range(0, indices.shape[0], batch_size)):
+                if batch_idx % grad_accum_steps == 0:
+                    batches_left = num_batches - batch_idx
+                    accum_window = min(grad_accum_steps, batches_left)
                 idx = indices[start:start + batch_size]
                 xb = Tensor(x_train[idx], requires_grad=False)
                 yb = y_train[idx]
-                optimizer.zero_grad()
                 logits = model(xb)
                 loss = loss_fn(logits, yb)
-                loss.backward()
-                optimizer.step()
                 total_loss += float(loss.data) * len(idx)
                 total += len(idx)
+                (loss / float(accum_window)).backward()
+                if (batch_idx + 1) % grad_accum_steps == 0 or batch_idx + 1 == num_batches:
+                    optimizer.step()
+                    optimizer.zero_grad()
 
             last_epoch_time = time.perf_counter() - epoch_start
             model.train(False)

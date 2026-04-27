@@ -169,6 +169,19 @@ def test_sgd_grad_clip():
     assert np.allclose(np.linalg.norm(w.data), 1.0, atol=1e-5)
 
 
+def test_sgd_grad_clip_uses_global_norm_across_all_params():
+    w1 = Parameter([0.0])
+    w2 = Parameter([0.0])
+    opt = SGD([w1, w2], lr=1.0, grad_clip=1.0)
+    w1.grad = np.array([3.0], dtype=np.float32)
+    w2.grad = np.array([4.0], dtype=np.float32)
+
+    opt.step()
+
+    assert np.allclose(w1.data, [-0.6], atol=1e-6)
+    assert np.allclose(w2.data, [-0.8], atol=1e-6)
+
+
 def test_adam_grad_clip():
     from minicnn.optim.adam import Adam
     from minicnn.nn.tensor import Parameter
@@ -181,3 +194,78 @@ def test_adam_grad_clip():
     # After clipping, gradient norm is 0.5; Adam still updates but in clipped direction
     assert w.data[0] < 0.0  # should have decreased
     assert w.data[1] == 0.0  # no gradient, no update
+
+
+def test_adam_grad_clip_uses_global_norm_across_all_params():
+    from minicnn.optim.adam import Adam
+
+    w1 = Parameter([0.0])
+    w2 = Parameter([0.0])
+    opt = Adam([w1, w2], lr=0.1, grad_clip=1.0)
+    w1.grad = np.array([3.0], dtype=np.float32)
+    w2.grad = np.array([4.0], dtype=np.float32)
+
+    opt.step()
+
+    assert np.allclose(opt.m[0], [0.06], atol=1e-6)
+    assert np.allclose(opt.m[1], [0.08], atol=1e-6)
+
+
+def test_rmsprop_grad_clip_uses_global_norm_across_all_params():
+    from minicnn.optim.rmsprop import RMSprop
+
+    w1 = Parameter([0.0])
+    w2 = Parameter([0.0])
+    opt = RMSprop([w1, w2], lr=0.1, grad_clip=1.0)
+    w1.grad = np.array([3.0], dtype=np.float32)
+    w2.grad = np.array([4.0], dtype=np.float32)
+
+    opt.step()
+
+    assert np.allclose(opt.v[0], [0.0036], atol=1e-6)
+    assert np.allclose(opt.v[1], [0.0064], atol=1e-6)
+
+
+def test_adamw_weight_decay_uses_pre_update_weights():
+    from minicnn.optim.adamw import AdamW
+
+    w = Parameter([1.0])
+    opt = AdamW([w], lr=0.1, betas=(0.0, 0.0), eps=0.0, weight_decay=0.1)
+    w.grad = np.array([1.0], dtype=np.float32)
+
+    opt.step()
+
+    assert np.allclose(w.data, [0.89], atol=1e-6)
+
+
+def test_backward_releases_graph_after_propagation():
+    x = Tensor([2.0], requires_grad=True)
+    y = x * x
+    z = y.sum()
+
+    z.backward()
+
+    assert y._prev == set()
+    assert z._prev == set()
+
+
+def test_exp_clips_large_inputs_to_avoid_inf_and_nan_grads():
+    x = Tensor([0.0, 1_000.0], requires_grad=True)
+
+    y = x.exp()
+    y.sum().backward()
+
+    assert np.isfinite(y.data).all()
+    assert np.isfinite(x.grad).all()
+    assert x.grad[1] == 0.0
+
+
+def test_log_uses_clamp_semantics_not_additive_epsilon():
+    x = Tensor([1e-12, 1e-4, 1.0], requires_grad=True)
+
+    y = x.log()
+    y.sum().backward()
+
+    assert np.isfinite(y.data).all()
+    assert x.grad[0] == 0.0
+    assert np.allclose(x.grad[1:], [1e4, 1.0], rtol=1e-5, atol=1e-5)

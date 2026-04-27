@@ -17,6 +17,7 @@ except ImportError:  # pragma: no cover
 
 
 CUDA_LEGACY_OPTIMIZER_KEYS = {'lr_conv1', 'lr_conv', 'lr_fc', 'grad_clip_global'}
+OPTIMIZER_HELPER_KEYS = {'exclude_bias_norm_weight_decay'}
 
 # Block presets expand a single layer config into multiple layers.
 _BLOCK_PRESETS: dict[str, list[dict[str, Any]]] = {
@@ -242,6 +243,8 @@ def build_optimizer(params, optim_cfg: dict[str, Any]):
     cfg = deepcopy(optim_cfg)
     type_name = cfg.pop('type')
     for key in CUDA_LEGACY_OPTIMIZER_KEYS:
+        cfg.pop(key, None)
+    for key in OPTIMIZER_HELPER_KEYS:
         cfg.pop(key, None)
     factory = _resolve_factory('optimizers', type_name)
     return factory(params, **cfg)

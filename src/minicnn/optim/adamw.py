@@ -27,20 +27,18 @@ class AdamW(Optimizer):
     def step(self):
         self.t += 1
         updated = 0
-        for i, p in enumerate(self.params):
-            if p.grad is None:
-                continue
-            grad = p.grad.copy()
-            if self.grad_clip > 0.0:
-                norm = float(np.linalg.norm(grad))
-                if norm > self.grad_clip:
-                    grad = grad * (self.grad_clip / norm)
+        for i, p, grad in self._prepared_grads(
+            weight_decay=self.weight_decay,
+            grad_clip=self.grad_clip,
+            decoupled_weight_decay=True,
+        ):
+            original = p.data.copy() if self.weight_decay else p.data
             self.m[i] = self.beta1 * self.m[i] + (1.0 - self.beta1) * grad
             self.v[i] = self.beta2 * self.v[i] + (1.0 - self.beta2) * (grad * grad)
             m_hat = self.m[i] / (1.0 - self.beta1 ** self.t)
             v_hat = self.v[i] / (1.0 - self.beta2 ** self.t)
-            p.data = p.data - self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+            p.data = original - self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
             if self.weight_decay:
-                p.data = p.data - self.lr * self.weight_decay * p.data
+                p.data = p.data - self.lr * self.weight_decay * original
             updated += 1
         return {'updated': updated, 'lr': self.lr, 't': self.t}

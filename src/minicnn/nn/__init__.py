@@ -12,6 +12,7 @@ from minicnn.nn.tensor import (
     sigmoid,
     tanh,
 )
+from minicnn.random import set_global_seed
 
 __all__ = [
     'AvgPool2d',
@@ -37,6 +38,7 @@ __all__ = [
     'mse_loss',
     'no_grad',
     'relu',
+    'set_global_seed',
     'sigmoid',
     'tanh',
 ]

@@ -5,12 +5,13 @@ import numpy as np
 from minicnn.nn.modules import Module, Sequential
 from minicnn.nn.tensor import Parameter, Tensor
 from minicnn.ops.nn_ops import avgpool2d, batchnorm2d, conv2d, dropout, flatten, leaky_relu, linear, maxpool2d, relu, sigmoid, silu, tanh
+from minicnn.random import get_global_rng
 
 
 class Linear(Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True, rng: np.random.Generator | None = None):
         super().__init__()
-        rng = rng or np.random.default_rng()
+        rng = rng or get_global_rng()
         scale = np.sqrt(2.0 / max(in_features, 1))
         self.weight = self.add_parameter('weight', Parameter(rng.standard_normal((in_features, out_features)).astype(np.float32) * scale))
         self.bias = self.add_parameter('bias', Parameter(np.zeros(out_features, dtype=np.float32))) if bias else None
@@ -74,7 +75,7 @@ class Conv2d(Module):
         rng: np.random.Generator | None = None,
     ):
         super().__init__()
-        rng = rng or np.random.default_rng()
+        rng = rng or get_global_rng()
         scale = np.sqrt(2.0 / max(in_channels * kernel_size * kernel_size, 1))
         self.weight = self.add_parameter(
             'weight',
@@ -113,8 +114,8 @@ class BatchNorm2d(Module):
         super().__init__()
         self.weight = self.add_parameter('weight', Parameter(np.ones(num_features, dtype=np.float32)))
         self.bias = self.add_parameter('bias', Parameter(np.zeros(num_features, dtype=np.float32)))
-        self.running_mean = np.zeros(num_features, dtype=np.float32)
-        self.running_var = np.ones(num_features, dtype=np.float32)
+        self.running_mean = self.register_buffer('running_mean', np.zeros(num_features, dtype=np.float32))
+        self.running_var = self.register_buffer('running_var', np.ones(num_features, dtype=np.float32))
         self.eps = eps
         self.momentum = momentum
 

@@ -27,14 +27,7 @@ class RMSprop(Optimizer):
 
     def step(self):
         updated = 0
-        for i, p in enumerate(self.params):
-            if p.grad is None:
-                continue
-            grad = p.grad + self.weight_decay * p.data if self.weight_decay else p.grad
-            if self.grad_clip > 0.0:
-                norm = float(np.linalg.norm(grad))
-                if norm > self.grad_clip:
-                    grad = grad * (self.grad_clip / norm)
+        for i, p, grad in self._prepared_grads(weight_decay=self.weight_decay, grad_clip=self.grad_clip):
             self.v[i] = self.alpha * self.v[i] + (1.0 - self.alpha) * (grad * grad)
             step = grad / (np.sqrt(self.v[i]) + self.eps)
             if self.momentum and self.buf is not None:
