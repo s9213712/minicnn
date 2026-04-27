@@ -47,8 +47,11 @@ def build_model_from_config(
             cfg['in_channels'] = shape[0]
         if layer_type == 'BatchNorm2d' and 'num_features' not in cfg:
             cfg['num_features'] = shape[0]
-        if layer_type == 'ResidualBlock' and 'channels' not in cfg:
-            cfg['channels'] = shape[0]
+        if layer_type == 'ResidualBlock':
+            if 'in_channels' not in cfg:
+                cfg['in_channels'] = shape[0]
+            if 'channels' not in cfg and 'out_channels' not in cfg:
+                cfg['channels'] = shape[0]
         if layer_type == 'Linear' and 'in_features' not in cfg:
             cfg['in_features'] = shape[0]
         module = get_model_component(layer_type)(**cfg)

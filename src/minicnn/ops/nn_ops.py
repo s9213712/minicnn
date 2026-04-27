@@ -128,12 +128,18 @@ def conv2d(
     return out
 
 
-def maxpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None) -> Tensor:
+def maxpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None, padding: int = 0) -> Tensor:
     stride = kernel_size if stride is None else stride
     n, c, h, w = x.data.shape
-    out_h = (h - kernel_size) // stride + 1
-    out_w = (w - kernel_size) // stride + 1
-    windows = sliding_window_view(x.data, (kernel_size, kernel_size), axis=(2, 3))[:, :, ::stride, ::stride]
+    x_pad = np.pad(
+        x.data,
+        ((0, 0), (0, 0), (padding, padding), (padding, padding)),
+        mode='constant',
+        constant_values=np.float32(-np.inf),
+    )
+    out_h = (h + 2 * padding - kernel_size) // stride + 1
+    out_w = (w + 2 * padding - kernel_size) // stride + 1
+    windows = sliding_window_view(x_pad, (kernel_size, kernel_size), axis=(2, 3))[:, :, ::stride, ::stride]
     flat = windows.reshape(n, c, out_h, out_w, -1)
     argmax = flat.argmax(axis=-1)  # (n, c, out_h, out_w)
     out_data = flat.max(axis=-1).astype(np.float32)
@@ -144,7 +150,7 @@ def maxpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None) -> Ten
     def _backward() -> None:
         if out.grad is None:
             return
-        dx = np.zeros_like(x.data, dtype=np.float32)
+        dx_pad = np.zeros_like(x_pad, dtype=np.float32)
         krows = argmax // kernel_size
         kcols = argmax % kernel_size
         i_base = (np.arange(out_h) * stride).reshape(1, 1, out_h, 1)
@@ -153,19 +159,23 @@ def maxpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None) -> Ten
         src_c = (j_base + kcols).ravel()
         n_idx = np.broadcast_to(np.arange(n).reshape(n, 1, 1, 1), (n, c, out_h, out_w)).ravel()
         c_idx = np.broadcast_to(np.arange(c).reshape(1, c, 1, 1), (n, c, out_h, out_w)).ravel()
-        np.add.at(dx, (n_idx, c_idx, src_r, src_c), out.grad.ravel())
-        x._add_grad(dx)
+        np.add.at(dx_pad, (n_idx, c_idx, src_r, src_c), out.grad.ravel())
+        if padding > 0:
+            x._add_grad(dx_pad[:, :, padding:-padding, padding:-padding])
+        else:
+            x._add_grad(dx_pad)
 
     out._backward = _backward
     return out
 
 
-def avgpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None) -> Tensor:
+def avgpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None, padding: int = 0) -> Tensor:
     stride = kernel_size if stride is None else stride
     n, c, h, w = x.data.shape
-    out_h = (h - kernel_size) // stride + 1
-    out_w = (w - kernel_size) // stride + 1
-    windows = sliding_window_view(x.data, (kernel_size, kernel_size), axis=(2, 3))[:, :, ::stride, ::stride]
+    x_pad = np.pad(x.data, ((0, 0), (0, 0), (padding, padding), (padding, padding)), mode='constant')
+    out_h = (h + 2 * padding - kernel_size) // stride + 1
+    out_w = (w + 2 * padding - kernel_size) // stride + 1
+    windows = sliding_window_view(x_pad, (kernel_size, kernel_size), axis=(2, 3))[:, :, ::stride, ::stride]
     out_data = windows.mean(axis=(-2, -1)).astype(np.float32)
     out = Tensor(out_data, requires_grad=_requires_grad(x))
     out._prev = {x}
@@ -175,14 +185,17 @@ def avgpool2d(x: Tensor, kernel_size: int = 2, stride: int | None = None) -> Ten
     def _backward() -> None:
         if out.grad is None:
             return
-        dx = np.zeros_like(x.data, dtype=np.float32)
+        dx_pad = np.zeros_like(x_pad, dtype=np.float32)
         grad_distributed = out.grad / area
-        for i in range(out_h):
-            for j in range(out_w):
-                r0 = i * stride
-                c0 = j * stride
-                dx[:, :, r0:r0 + kernel_size, c0:c0 + kernel_size] += grad_distributed[:, :, i:i + 1, j:j + 1]
-        x._add_grad(dx)
+        for ki in range(kernel_size):
+            row_slice = slice(ki, ki + out_h * stride, stride)
+            for kj in range(kernel_size):
+                col_slice = slice(kj, kj + out_w * stride, stride)
+                dx_pad[:, :, row_slice, col_slice] += grad_distributed
+        if padding > 0:
+            x._add_grad(dx_pad[:, :, padding:-padding, padding:-padding])
+        else:
+            x._add_grad(dx_pad)
 
     out._backward = _backward
     return out

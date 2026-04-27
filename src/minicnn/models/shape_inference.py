@@ -17,7 +17,17 @@ def infer_layer_shape(layer_type: str, cfg: dict[str, Any], shape: tuple[int, ..
         c, h, w = shape
         kernel = int(cfg.get('kernel_size', 2))
         stride = int(cfg.get('stride', kernel))
-        return (c, math.floor((h - kernel) / stride + 1), math.floor((w - kernel) / stride + 1))
+        padding = int(cfg.get('padding', 0))
+        return (
+            c,
+            math.floor((h + 2 * padding - kernel) / stride + 1),
+            math.floor((w + 2 * padding - kernel) / stride + 1),
+        )
+    if layer_type == 'ResidualBlock':
+        c, h, w = shape
+        out_c = int(cfg.get('out_channels', cfg.get('channels', c)))
+        stride = int(cfg.get('stride', 1))
+        return (out_c, math.floor((h - 1) / stride + 1), math.floor((w - 1) / stride + 1))
     if layer_type in {'BatchNorm2d', 'Dropout', 'LeakyReLU', 'ReLU', 'ResidualBlock', 'Sigmoid', 'SiLU', 'Tanh'}:
         return shape
     if layer_type == 'Flatten':

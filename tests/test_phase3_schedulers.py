@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import numpy as np
 import pytest
+from minicnn.schedulers.plateau import ReduceLROnPlateau
 from minicnn.schedulers.step import StepLR
 from minicnn.schedulers.cosine import CosineAnnealingLR
 
@@ -53,6 +54,20 @@ def test_cosine_lr_at_T_max_is_lr_min():
     assert abs(opt.lr) < 1e-6
 
 
+def test_plateau_lr_supports_max_mode():
+    opt = _FakeOptimizer(0.1)
+    sched = ReduceLROnPlateau(opt, factor=0.5, patience=1, min_lr=0.01, mode='max')
+    sched.step(0.5)
+    sched.step(0.4)
+    assert opt.lr == pytest.approx(0.05, rel=1e-6)
+
+
+def test_plateau_lr_rejects_invalid_mode():
+    opt = _FakeOptimizer(0.1)
+    with pytest.raises(ValueError, match='mode'):
+        ReduceLROnPlateau(opt, mode='sideways')
+
+
 def test_train_autograd_factory_none():
     from minicnn.training.train_autograd import _make_scheduler
     from minicnn.optim.sgd import SGD
@@ -101,3 +116,15 @@ def test_train_autograd_factory_default_is_step():
     opt = SGD(params, lr=0.01)
     sched = _make_scheduler(opt, {'enabled': True})
     assert isinstance(sched, StepLR)
+
+
+def test_train_autograd_factory_plateau_mode():
+    from minicnn.training.train_autograd import _make_scheduler
+    from minicnn.optim.sgd import SGD
+    from minicnn.nn.tensor import Parameter
+
+    params = [Parameter(np.zeros(2, dtype=np.float32))]
+    opt = SGD(params, lr=0.01)
+    sched = _make_scheduler(opt, {'enabled': True, 'type': 'plateau', 'mode': 'max'})
+    assert isinstance(sched, ReduceLROnPlateau)
+    assert sched.mode == 'max'

@@ -34,6 +34,33 @@ def test_conv_pool_batchnorm_residual_backward_shapes():
     assert all(p.grad is not None for p in block.parameters())
 
 
+def test_residual_block_supports_downsample_shortcut():
+    block = ResidualBlock(in_channels=2, out_channels=4, stride=2)
+    x = Tensor(np.random.randn(2, 2, 8, 8).astype(np.float32), requires_grad=True)
+    y = block(x)
+    assert y.data.shape == (2, 4, 4, 4)
+    y.sum().backward()
+    assert x.grad is not None
+    assert x.grad.shape == x.data.shape
+    assert all(p.grad is not None for p in block.parameters())
+
+
+def test_autograd_builder_supports_residual_block_stride_and_channel_change():
+    from minicnn.models.builder import build_model_from_config
+
+    cfg = {
+        'input_shape': [2, 8, 8],
+        'layers': [
+            {'type': 'ResidualBlock', 'channels': 4, 'stride': 2},
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 3},
+        ],
+    }
+    model, final_shape = build_model_from_config(cfg)
+    assert model.inferred_shapes[1] == (4, 4, 4)
+    assert final_shape == (3,)
+
+
 def test_batchnorm2d_eval_uses_running_statistics():
     bn = BatchNorm2d(2)
     train_x = Tensor(np.array([[[[1.0, 3.0]], [[2.0, 6.0]]]], dtype=np.float32))

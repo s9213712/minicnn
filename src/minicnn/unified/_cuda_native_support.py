@@ -347,6 +347,7 @@ def make_scheduler(
             factor=float(scheduler_cfg.get('factor', 0.5)),
             patience=int(scheduler_cfg.get('patience', 3)),
             min_lr=float(scheduler_cfg.get('min_lr', 1e-5)),
+            mode=str(scheduler_cfg.get('mode', 'min')),
         )
         return scheduler, 'plateau'
     return None, None

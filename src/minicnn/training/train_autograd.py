@@ -87,7 +87,8 @@ def _make_scheduler(optimizer, cfg: dict[str, Any]):
         factor = float(cfg.get('factor', 0.5))
         patience = int(cfg.get('patience', 3))
         min_lr = float(cfg.get('min_lr', 1e-5))
-        return ReduceLROnPlateau(optimizer, factor=factor, patience=patience, min_lr=min_lr)
+        mode = str(cfg.get('mode', 'min'))
+        return ReduceLROnPlateau(optimizer, factor=factor, patience=patience, min_lr=min_lr, mode=mode)
     raise ValueError(f'train-autograd: unsupported scheduler.type={sched_type!r}; expected none, step, cosine, or plateau')
 
 
@@ -142,6 +143,29 @@ def _accuracy(model, x, y, batch_size: int, loss_type: str = 'CrossEntropyLoss')
             correct += int((pred == yb).sum())
             total += pred.shape[0]
     return correct / max(total, 1)
+
+
+def _eval_metrics(model, x, y, batch_size: int, loss_fn, loss_type: str = 'CrossEntropyLoss') -> dict[str, float]:
+    total_loss = 0.0
+    correct = 0
+    total = 0
+    with no_grad():
+        for start in range(0, x.shape[0], batch_size):
+            xb = Tensor(x[start:start + batch_size])
+            yb = y[start:start + batch_size]
+            logits = model(xb)
+            loss = loss_fn(logits, yb)
+            total_loss += float(loss.data) * yb.shape[0]
+            if loss_type == 'BCEWithLogitsLoss' and logits.data.shape[1] == 1:
+                pred = (logits.data[:, 0] >= 0.0).astype(np.int64)
+            else:
+                pred = logits.data.argmax(axis=1)
+            correct += int((pred == yb).sum())
+            total += pred.shape[0]
+    return {
+        'loss': total_loss / max(total, 1),
+        'acc': correct / max(total, 1),
+    }
 
 
 def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
@@ -217,19 +241,20 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
             last_epoch_time = time.perf_counter() - epoch_start
             model.train(False)
             last_train_acc = _accuracy(model, x_train, y_train, batch_size, loss_type)
-            val_acc = _accuracy(model, x_val, y_val, batch_size, loss_type)
+            val_metrics = _eval_metrics(model, x_val, y_val, batch_size, loss_fn, loss_type)
             row = build_epoch_row(
                 epoch=epoch,
                 train_loss=total_loss / max(total, 1),
                 train_acc=last_train_acc,
-                val_acc=val_acc,
+                val_loss=val_metrics['loss'],
+                val_acc=val_metrics['acc'],
                 lr=optimizer.lr,
                 epoch_time_s=last_epoch_time,
             )
 
             if scheduler is not None:
                 if isinstance(scheduler, ReduceLROnPlateau):
-                    scheduler.step(metric=row['train_loss'])
+                    scheduler.step(metric=val_metrics['loss'])
                 else:
                     scheduler.step()
 
@@ -240,14 +265,14 @@ def train_autograd_from_config(cfg: dict[str, Any]) -> Path:
                     'epoch': epoch,
                     'epochs': epochs,
                     'train_metrics': {'loss': row['train_loss'], 'acc': last_train_acc},
-                    'val_metrics': {'loss': row['train_loss'], 'acc': val_acc},
+                    'val_metrics': val_metrics,
                     'lr': optimizer.lr,
                     'epoch_time_s': last_epoch_time,
-                    'saved_best': val_acc > best_val,
+                    'saved_best': val_metrics['acc'] > best_val,
                 },
             )
-            if val_acc > best_val:
-                best_val = val_acc
+            if val_metrics['acc'] > best_val:
+                best_val = val_metrics['acc']
                 save_best_model(best_path, model)
 
     # Reload best checkpoint before final test evaluation so test_acc matches best_val_acc.

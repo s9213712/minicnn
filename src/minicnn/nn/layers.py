@@ -90,23 +90,25 @@ class Conv2d(Module):
 
 
 class MaxPool2d(Module):
-    def __init__(self, kernel_size: int = 2, stride: int | None = None):
+    def __init__(self, kernel_size: int = 2, stride: int | None = None, padding: int = 0):
         super().__init__()
         self.kernel_size = kernel_size
         self.stride = stride
+        self.padding = padding
 
     def forward(self, x: Tensor) -> Tensor:
-        return maxpool2d(x, self.kernel_size, self.stride)
+        return maxpool2d(x, self.kernel_size, self.stride, self.padding)
 
 
 class AvgPool2d(Module):
-    def __init__(self, kernel_size: int = 2, stride: int | None = None):
+    def __init__(self, kernel_size: int = 2, stride: int | None = None, padding: int = 0):
         super().__init__()
         self.kernel_size = kernel_size
         self.stride = stride
+        self.padding = padding
 
     def forward(self, x: Tensor) -> Tensor:
-        return avgpool2d(x, self.kernel_size, self.stride)
+        return avgpool2d(x, self.kernel_size, self.stride, self.padding)
 
 
 class BatchNorm2d(Module):
@@ -133,16 +135,38 @@ class BatchNorm2d(Module):
 
 
 class ResidualBlock(Module):
-    def __init__(self, channels: int):
+    def __init__(
+        self,
+        in_channels: int | None = None,
+        out_channels: int | None = None,
+        channels: int | None = None,
+        stride: int = 1,
+        kernel_size: int = 3,
+        padding: int | None = None,
+        bias: bool = False,
+    ):
         super().__init__()
+        out_channels = int(out_channels if out_channels is not None else channels if channels is not None else in_channels if in_channels is not None else 0)
+        in_channels = int(in_channels if in_channels is not None else channels if channels is not None else out_channels)
+        if in_channels <= 0 or out_channels <= 0:
+            raise ValueError('ResidualBlock requires positive in_channels/out_channels')
+        padding = kernel_size // 2 if padding is None else padding
         self.main = self.add_module('main', Sequential(
-            Conv2d(channels, channels, kernel_size=3, padding=1, bias=False),
-            BatchNorm2d(channels),
+            Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias),
+            BatchNorm2d(out_channels),
             ReLU(),
-            Conv2d(channels, channels, kernel_size=3, padding=1, bias=False),
-            BatchNorm2d(channels),
+            Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=padding, bias=bias),
+            BatchNorm2d(out_channels),
         ))
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = self.add_module('shortcut', Sequential(
+                Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, padding=0, bias=False),
+                BatchNorm2d(out_channels),
+            ))
+        else:
+            self.shortcut = self.add_module('shortcut', Sequential())
         self.activation = self.add_module('activation', ReLU())
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.activation(self.main(x) + x)
+        shortcut = self.shortcut(x) if len(self.shortcut) else x
+        return self.activation(self.main(x) + shortcut)
