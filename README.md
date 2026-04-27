@@ -113,10 +113,36 @@ The current repo state includes:
 - `cuda_native` training surface broadened to `SGD`, `Adam`, `AdamW`, `RMSprop`, `CrossEntropyLoss`, `BCEWithLogitsLoss`, `MSELoss`, `label_smoothing`, `grad_accum_steps`, and beta AMP
 - `cuda_native` strict `gpu_native` now has a real CIFAR-10 two-Conv training runbook using native CUDA helper execution
 - `summary.json` / `metrics.jsonl` now expose planner, AMP, and optimizer-state telemetry through stable reporting keys
+- `autograd` training now honors `train.grad_accum_steps`, frees graph references after each `backward()`, and applies global-norm clipping across the built-in optimizers
+- `minicnn.nn.set_global_seed()` plus `train.init_seed` / `train.train_seed` now give reproducible default layer initialization and dropout behavior across the Python API, `train-autograd`, and the flex entry points
+- `Module.state_dict()` / `load_state_dict()` now operate with snapshot semantics for parameters and registered buffers, including `BatchNorm2d.running_mean` and `running_var`
+- `Tensor.log()` / `Tensor.exp()` now handle extreme inputs more defensively to avoid silent `nan` / `inf` drift in custom autograd experiments
 
 The user-facing command surface is intentionally still small, but the internal
 module boundaries are now narrower, the output contracts are more explicit, and
 the backend role docs are aligned with the actual code.
+
+## Reproducibility And Checkpoints
+
+For config-driven runs:
+
+- use `train.init_seed` for model construction
+- use `train.train_seed` for runtime stochasticity such as dropout and shuffled autograd batch order
+- use `train.grad_accum_steps` when you want a larger effective batch on `autograd` or `cuda_native`
+
+For direct Python use:
+
+```python
+from minicnn.nn import Linear, set_global_seed
+
+set_global_seed(1234)
+layer = Linear(8, 16)
+```
+
+Checkpoint/state notes:
+
+- `Module.state_dict()` returns copied arrays, not live parameter references
+- registered buffers are included in checkpoints, so `BatchNorm2d` running stats survive save/load cycles
 
 ## What You Can Run Today
 

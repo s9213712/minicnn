@@ -102,9 +102,35 @@ shared YAML / CLI frontend -> torch [REFERENCE] | autograd [ORACLE]
 - `cuda_native` training surface 已擴到 `SGD`、`Adam`、`AdamW`、`RMSprop`、`CrossEntropyLoss`、`BCEWithLogitsLoss`、`MSELoss`、`label_smoothing`、`grad_accum_steps` 與 beta AMP
 - `cuda_native` strict `gpu_native` 已有 real CIFAR-10 two-Conv native CUDA helper training runbook
 - `summary.json` / `metrics.jsonl` 現在也會穩定輸出 planner、AMP 與 optimizer-state telemetry
+- `autograd` 訓練現在會真的套用 `train.grad_accum_steps`、在每次 `backward()` 後釋放計算圖引用，並把內建 optimizer 的 gradient clipping 統一成 global-norm 語義
+- `minicnn.nn.set_global_seed()` 搭配 `train.init_seed` / `train.train_seed`，現在能讓 Python API、`train-autograd` 與 flex 入口的預設 layer 初始化與 dropout 行為可重現
+- `Module.state_dict()` / `load_state_dict()` 現在對參數與 registered buffer 都採 snapshot 語義，包含 `BatchNorm2d.running_mean` 與 `running_var`
+- `Tensor.log()` / `Tensor.exp()` 也加強了極端輸入的數值保護，降低自訂 autograd 實驗中靜默漂出 `nan` / `inf` 的風險
 
 結果是：對使用者來說，主要命令集合仍維持精簡；對維護者來說，模組邊界更清楚、
 輸出契約更明確，backend 角色文件也和實際程式行為對齊。
+
+## 可重現性與 Checkpoint
+
+如果你走的是 config-driven 訓練：
+
+- `train.init_seed` 控制模型建構 / 參數初始化
+- `train.train_seed` 控制訓練期隨機性，例如 dropout 與 autograd 的 batch shuffle
+- `train.grad_accum_steps` 可用來在 `autograd` 或 `cuda_native` 上模擬較大的 effective batch
+
+如果你直接寫 Python：
+
+```python
+from minicnn.nn import Linear, set_global_seed
+
+set_global_seed(1234)
+layer = Linear(8, 16)
+```
+
+Checkpoint / state 重點：
+
+- `Module.state_dict()` 回傳的是複製後的陣列，不是 live parameter reference
+- registered buffer 也會一起進 checkpoint，所以 `BatchNorm2d` 的 running stats 在 save/load 後能被保留
 
 ## 目前可以直接跑的東西
 

@@ -82,6 +82,10 @@ python -u examples/inference/predict_image.py --config <yaml> --checkpoint <file
 ## Useful Config Notes
 
 - `train.init_seed` controls torch/flex model initialization.
+- `train.train_seed` controls runtime stochasticity such as dropout and shuffled autograd batches.
+- `minicnn.nn.set_global_seed(...)` is the direct Python-side equivalent when you build layers outside the CLI.
+- `train.grad_accum_steps` is honored by both `train-autograd` and `train-native` when you need a larger effective batch.
+- checkpoint/state payloads now include registered buffers such as `BatchNorm2d.running_mean` and `running_var`, and `state_dict()` returns snapshot copies rather than live aliases.
 - CLI overrides may address layer-list entries, for example `model.layers.1.out_features=7`.
 - String booleans such as `"false"` are parsed strictly for data, augmentation, AMP, and optimizer helper flags.
 
