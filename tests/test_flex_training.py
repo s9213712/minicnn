@@ -52,6 +52,7 @@ def test_optimizer_weight_decay_excludes_bias_and_norm_parameters():
         torch.nn.Linear(4, 2),
     )
     cfg = {'type': 'SGD', 'lr': 0.01, 'weight_decay': 0.1}
+    original_cfg = dict(cfg)
 
     groups = _optimizer_params(model, cfg)
 
@@ -60,7 +61,7 @@ def test_optimizer_weight_decay_excludes_bias_and_norm_parameters():
     assert groups[1]['weight_decay'] == 0.0
     assert len(groups[0]['params']) == 2
     assert len(groups[1]['params']) == 4
-    assert 'weight_decay' not in cfg
+    assert cfg == original_cfg
 
 
 def test_emit_training_event_formats_epoch_summary():

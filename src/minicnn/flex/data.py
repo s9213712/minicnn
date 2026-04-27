@@ -112,7 +112,7 @@ def create_dataloaders(dataset_cfg: dict, train_cfg: dict, augmentation_cfg: dic
     x_train, y_train, x_val, y_val, _x_test, _y_test = _load_dataset_arrays(dataset_cfg, train_cfg)
     batch_size = int(train_cfg.get('batch_size', 64))
     num_workers = int(train_cfg.get('num_workers', 0))
-    seed = int(train_cfg.get('seed', dataset_cfg.get('seed', 42)))
+    seed = int(train_cfg.get('train_seed', train_cfg.get('seed', dataset_cfg.get('seed', 42))))
     aug = augmentation_cfg or {}
     random_crop_padding = int(
         aug.get('random_crop_padding',
@@ -142,7 +142,7 @@ def create_test_dataloader(dataset_cfg: dict, train_cfg: dict):
     _require_torch_data_support()
     batch_size = int(train_cfg.get('batch_size', 64))
     num_workers = int(train_cfg.get('num_workers', 0))
-    seed = int(train_cfg.get('seed', dataset_cfg.get('seed', 42)))
+    seed = int(train_cfg.get('train_seed', train_cfg.get('seed', dataset_cfg.get('seed', 42))))
     x_test, y_test = load_test_arrays(dataset_cfg, train_cfg)
     if x_test is None or y_test is None:
         return None

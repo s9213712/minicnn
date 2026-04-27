@@ -2119,6 +2119,7 @@ def test_python_comment_tasks_are_reflected_in_source():
     assert 'self.epoch * 10_000_019' in flex_data
     assert 'def set_epoch' in flex_data
     assert 'generator=generator' in flex_data
-    assert 'Modifies `optimizer_cfg` in-place' in flex_trainer
+    assert 'Copies `optimizer_cfg` before consuming weight-decay helper keys.' in flex_trainer
+    assert 'optimizer_cfg = dict(optimizer_cfg)' in flex_trainer
     assert 'class EvalWorkspace' in evaluation
     assert 'count_correct_batch_with_workspace' in evaluation

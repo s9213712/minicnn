@@ -27,14 +27,7 @@ class Adam(Optimizer):
     def step(self):
         self.t += 1
         updated = 0
-        for i, p in enumerate(self.params):
-            if p.grad is None:
-                continue
-            grad = p.grad + self.weight_decay * p.data if self.weight_decay else p.grad
-            if self.grad_clip > 0.0:
-                norm = float(np.linalg.norm(grad))
-                if norm > self.grad_clip:
-                    grad = grad * (self.grad_clip / norm)
+        for i, p, grad in self._prepared_grads(weight_decay=self.weight_decay, grad_clip=self.grad_clip):
             self.m[i] = self.beta1 * self.m[i] + (1.0 - self.beta1) * grad
             self.v[i] = self.beta2 * self.v[i] + (1.0 - self.beta2) * (grad * grad)
             m_hat = self.m[i] / (1.0 - self.beta1 ** self.t)

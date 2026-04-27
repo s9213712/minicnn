@@ -40,6 +40,7 @@ def native_gpu_groupnorm_linear_training_step(
     linear_weight_velocity: np.ndarray | None = None,
     linear_bias_velocity: np.ndarray | None = None,
     bound_lib: Any | None = None,
+    return_intermediates: bool = True,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuGroupNormLinearTrainingStepResult:
@@ -157,25 +158,57 @@ def native_gpu_groupnorm_linear_training_step(
         loss_sum = float(runtime.stage_to_host(loss_sum_t)[0])
         correct_count = int(runtime.stage_to_host(correct_t)[0])
         runtime.synchronize('gpu-native-groupnorm-linear-training-step')
+        if return_intermediates:
+            logits = runtime.stage_to_host(logits_t)
+            probabilities = runtime.stage_to_host(probs_t)
+            norm_output = runtime.stage_to_host(norm_t)
+            grad_logits = runtime.stage_to_host(grad_logits_t)
+            grad_norm_output = runtime.stage_to_host(grad_norm_t)
+            grad_input = runtime.stage_to_host(grad_input_t)
+            grad_norm_weight = runtime.stage_to_host(grad_norm_weight_t)
+            grad_norm_bias = runtime.stage_to_host(grad_norm_bias_t)
+            grad_linear_weight = runtime.stage_to_host(grad_linear_w_t)
+            grad_linear_bias = runtime.stage_to_host(grad_linear_b_t)
+        else:
+            empty = np.empty((0,), dtype=np.float32)
+            logits = empty
+            probabilities = empty
+            norm_output = empty
+            grad_logits = empty
+            grad_norm_output = empty
+            grad_input = empty
+            grad_norm_weight = empty
+            grad_norm_bias = empty
+            grad_linear_weight = empty
+            grad_linear_bias = empty
+        updated_norm_weight = runtime.stage_to_host(norm_weight_t)
+        updated_norm_bias = runtime.stage_to_host(norm_bias_t)
+        updated_linear_weight = runtime.stage_to_host(linear_w_t)
+        updated_linear_bias = runtime.stage_to_host(linear_b_t)
+        copy_velocity = return_intermediates or float(momentum) != 0.0
+        updated_norm_weight_velocity = runtime.stage_to_host(norm_wv_t) if copy_velocity else None
+        updated_norm_bias_velocity = runtime.stage_to_host(norm_bv_t) if copy_velocity else None
+        updated_linear_weight_velocity = runtime.stage_to_host(linear_wv_t) if copy_velocity else None
+        updated_linear_bias_velocity = runtime.stage_to_host(linear_bv_t) if copy_velocity else None
         return NativeGpuGroupNormLinearTrainingStepResult(
-            logits=runtime.stage_to_host(logits_t),
-            probabilities=runtime.stage_to_host(probs_t),
-            norm_output=runtime.stage_to_host(norm_t),
-            grad_logits=runtime.stage_to_host(grad_logits_t),
-            grad_norm_output=runtime.stage_to_host(grad_norm_t),
-            grad_input=runtime.stage_to_host(grad_input_t),
-            grad_norm_weight=runtime.stage_to_host(grad_norm_weight_t),
-            grad_norm_bias=runtime.stage_to_host(grad_norm_bias_t),
-            grad_linear_weight=runtime.stage_to_host(grad_linear_w_t),
-            grad_linear_bias=runtime.stage_to_host(grad_linear_b_t),
-            updated_norm_weight=runtime.stage_to_host(norm_weight_t),
-            updated_norm_bias=runtime.stage_to_host(norm_bias_t),
-            updated_linear_weight=runtime.stage_to_host(linear_w_t),
-            updated_linear_bias=runtime.stage_to_host(linear_b_t),
-            updated_norm_weight_velocity=runtime.stage_to_host(norm_wv_t),
-            updated_norm_bias_velocity=runtime.stage_to_host(norm_bv_t),
-            updated_linear_weight_velocity=runtime.stage_to_host(linear_wv_t),
-            updated_linear_bias_velocity=runtime.stage_to_host(linear_bv_t),
+            logits=logits,
+            probabilities=probabilities,
+            norm_output=norm_output,
+            grad_logits=grad_logits,
+            grad_norm_output=grad_norm_output,
+            grad_input=grad_input,
+            grad_norm_weight=grad_norm_weight,
+            grad_norm_bias=grad_norm_bias,
+            grad_linear_weight=grad_linear_weight,
+            grad_linear_bias=grad_linear_bias,
+            updated_norm_weight=updated_norm_weight,
+            updated_norm_bias=updated_norm_bias,
+            updated_linear_weight=updated_linear_weight,
+            updated_linear_bias=updated_linear_bias,
+            updated_norm_weight_velocity=updated_norm_weight_velocity,
+            updated_norm_bias_velocity=updated_norm_bias_velocity,
+            updated_linear_weight_velocity=updated_linear_weight_velocity,
+            updated_linear_bias_velocity=updated_linear_bias_velocity,
             loss_sum=loss_sum,
             loss_mean=loss_sum / float(n),
             correct_count=correct_count,
@@ -208,6 +241,7 @@ def native_gpu_batchnorm_linear_training_step(
     linear_weight_velocity: np.ndarray | None = None,
     linear_bias_velocity: np.ndarray | None = None,
     bound_lib: Any | None = None,
+    return_intermediates: bool = True,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuBatchNormLinearTrainingStepResult:
@@ -434,29 +468,46 @@ def native_gpu_batchnorm_linear_training_step(
             update_kind = 'gpu_native_train:apply_sgd_update'
         runtime.record_execution(update_kind, input_name='grad_bn_weight', output_name='bn_weight', node_count=1)
 
-        logits = runtime.stage_to_host(logits_t)
-        probabilities = runtime.stage_to_host(probs_t)
-        grad_logits = runtime.stage_to_host(grad_logits_t)
-        bn_output = runtime.stage_to_host(bn_output_t)
-        x_hat = runtime.stage_to_host(x_hat_t)
-        batch_mean = runtime.stage_to_host(batch_mean_t)
-        batch_inv_std = runtime.stage_to_host(batch_inv_std_t)
-        grad_bn_output = runtime.stage_to_host(grad_bn_output_t)
-        grad_input = runtime.stage_to_host(grad_input_t)
-        grad_bn_weight = runtime.stage_to_host(grad_bn_weight_t)
-        grad_bn_bias = runtime.stage_to_host(grad_bn_bias_t)
-        grad_linear_weight = runtime.stage_to_host(grad_linear_weight_t)
-        grad_linear_bias = runtime.stage_to_host(grad_linear_bias_t)
+        if return_intermediates:
+            logits = runtime.stage_to_host(logits_t)
+            probabilities = runtime.stage_to_host(probs_t)
+            grad_logits = runtime.stage_to_host(grad_logits_t)
+            bn_output = runtime.stage_to_host(bn_output_t)
+            x_hat = runtime.stage_to_host(x_hat_t)
+            batch_mean = runtime.stage_to_host(batch_mean_t)
+            batch_inv_std = runtime.stage_to_host(batch_inv_std_t)
+            grad_bn_output = runtime.stage_to_host(grad_bn_output_t)
+            grad_input = runtime.stage_to_host(grad_input_t)
+            grad_bn_weight = runtime.stage_to_host(grad_bn_weight_t)
+            grad_bn_bias = runtime.stage_to_host(grad_bn_bias_t)
+            grad_linear_weight = runtime.stage_to_host(grad_linear_weight_t)
+            grad_linear_bias = runtime.stage_to_host(grad_linear_bias_t)
+        else:
+            empty = np.empty((0,), dtype=np.float32)
+            logits = empty
+            probabilities = empty
+            grad_logits = empty
+            bn_output = empty
+            x_hat = empty
+            batch_mean = empty
+            batch_inv_std = empty
+            grad_bn_output = empty
+            grad_input = empty
+            grad_bn_weight = empty
+            grad_bn_bias = empty
+            grad_linear_weight = empty
+            grad_linear_bias = empty
         updated_bn_weight = runtime.stage_to_host(bn_weight_t)
         updated_bn_bias = runtime.stage_to_host(bn_bias_t)
         updated_running_mean = runtime.stage_to_host(running_mean_t)
         updated_running_var = runtime.stage_to_host(running_var_t)
         updated_linear_weight = runtime.stage_to_host(linear_weight_t)
         updated_linear_bias = runtime.stage_to_host(linear_bias_t)
-        updated_bn_weight_velocity = runtime.stage_to_host(bn_weight_velocity_t)
-        updated_bn_bias_velocity = runtime.stage_to_host(bn_bias_velocity_t)
-        updated_linear_weight_velocity = runtime.stage_to_host(linear_weight_velocity_t)
-        updated_linear_bias_velocity = runtime.stage_to_host(linear_bias_velocity_t)
+        copy_velocity = return_intermediates or float(momentum) != 0.0
+        updated_bn_weight_velocity = runtime.stage_to_host(bn_weight_velocity_t) if copy_velocity else None
+        updated_bn_bias_velocity = runtime.stage_to_host(bn_bias_velocity_t) if copy_velocity else None
+        updated_linear_weight_velocity = runtime.stage_to_host(linear_weight_velocity_t) if copy_velocity else None
+        updated_linear_bias_velocity = runtime.stage_to_host(linear_bias_velocity_t) if copy_velocity else None
         loss_sum = float(runtime.stage_to_host(loss_sum_t)[0])
         correct_count = int(runtime.stage_to_host(correct_t)[0])
         runtime.synchronize('gpu-native-batchnorm-linear-training-step')

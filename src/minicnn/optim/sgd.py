@@ -22,27 +22,11 @@ class SGD(Optimizer):
 
     def step(self):
         updated = 0
-        for i, p in enumerate(self.params):
-            if p.grad is None:
-                continue
-            try:
-                grad = p.grad + self.weight_decay * p.data if self.weight_decay else p.grad
-                if self.grad_clip > 0.0:
-                    norm = float(np.linalg.norm(grad))
-                    if norm > self.grad_clip:
-                        grad = grad * (self.grad_clip / norm)
-                if self.momentum:
-                    self.velocities[i] = self.momentum * self.velocities[i] - self.lr * grad
-                    p.data = p.data + self.velocities[i]
-                else:
-                    p.data = p.data - self.lr * grad
-                updated += 1
-            except (ValueError, TypeError) as exc:
-                import warnings
-                warnings.warn(
-                    f"SGD.step(): skipped param {i} ({getattr(p, 'name', None)!r}): {exc}",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-                continue
+        for i, p, grad in self._prepared_grads(weight_decay=self.weight_decay, grad_clip=self.grad_clip):
+            if self.momentum:
+                self.velocities[i] = self.momentum * self.velocities[i] - self.lr * grad
+                p.data = p.data + self.velocities[i]
+            else:
+                p.data = p.data - self.lr * grad
+            updated += 1
         return {'updated': updated, 'lr': self.lr, 'momentum': self.momentum, 'weight_decay': self.weight_decay}

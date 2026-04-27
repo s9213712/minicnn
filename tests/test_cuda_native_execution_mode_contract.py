@@ -328,6 +328,45 @@ def test_train_native_runs_gpu_native_two_linear_relu_training_subset(tmp_path, 
     assert payload['execution_readiness_assessment']['bootstrap_supported_ops'] == ['Flatten', 'Linear', 'ReLU']
 
 
+def test_validate_cuda_native_config_accepts_gpu_native_generic_mlp_training_subset(tmp_path, capsys):
+    from minicnn.cli import main
+
+    config_path = tmp_path / 'cfg.yaml'
+    _write_cfg(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding='utf-8').replace(
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 2\n",
+            "  layers:\n    - type: Flatten\n    - type: Linear\n      out_features: 4\n    - type: ReLU\n    - type: Linear\n      out_features: 4\n    - type: GELU\n    - type: Linear\n      out_features: 2\n",
+        ),
+        encoding='utf-8',
+    )
+
+    rc = main([
+        'validate-cuda-native-config',
+        '--config',
+        str(config_path),
+        '--format',
+        'json',
+        'engine.execution_mode=gpu_native',
+    ])
+    payload = json.loads(capsys.readouterr().out)
+    plan = payload['execution_readiness_assessment']['training_lowering_plan']
+
+    assert rc == 0
+    assert payload['selected_execution_mode'] == 'gpu_native'
+    assert plan['ready'] is True
+    assert plan['subset_name'] == 'generic_mlp'
+    assert plan['helper'] is None
+    assert plan['per_op_lowering_shim']['runtime_executor_ready'] is True
+    assert plan['per_op_lowering_shim']['transition_policy'] == 'runtime_per_op_executor'
+    assert plan['required_symbols_by_phase']['backward'] == [
+        'apply_relu_backward',
+        'dense_backward_full',
+        'gelu_backward',
+    ]
+    assert payload['errors'] == []
+
+
 def test_train_native_runs_gpu_native_pool_linear_training_subset(tmp_path, capsys):
     config_path = tmp_path / 'cfg.yaml'
     _write_cfg(config_path)

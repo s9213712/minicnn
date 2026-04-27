@@ -13,6 +13,7 @@ from minicnn.cuda_native.gpu_training_linear import (
     native_gpu_linear_training_step,
     native_gpu_two_linear_relu_training_step,
 )
+from minicnn.cuda_native.gpu_training_mlp import native_gpu_mlp_training_step
 from minicnn.cuda_native.gpu_training_norm import (
     native_gpu_batchnorm_linear_training_step,
     native_gpu_groupnorm_linear_training_step,
@@ -34,6 +35,7 @@ from minicnn.cuda_native.gpu_training_types import (
     NativeGpuLayerNormLinearTrainingStepResult,
     NativeGpuLayerNorm2dLinearTrainingStepResult,
     NativeGpuLinearTrainingStepResult,
+    NativeGpuMlpTrainingStepResult,
     NativeGpuPoolLinearTrainingStepResult,
     NativeGpuTwoConvReluPoolLinearTrainingStepResult,
     NativeGpuTwoLinearReluTrainingStepResult,
@@ -49,6 +51,7 @@ __all__ = [
     'NativeGpuLayerNorm2dLinearTrainingStepResult',
     'NativeGpuLayerNormLinearTrainingStepResult',
     'NativeGpuLinearTrainingStepResult',
+    'NativeGpuMlpTrainingStepResult',
     'NativeGpuPoolLinearTrainingStepResult',
     'NativeGpuTwoConvReluPoolLinearTrainingStepResult',
     'NativeGpuTwoLinearReluTrainingStepResult',
@@ -63,6 +66,7 @@ __all__ = [
     'native_gpu_layernorm2d_linear_training_step',
     'native_gpu_layernorm_linear_training_step',
     'native_gpu_linear_training_step',
+    'native_gpu_mlp_training_step',
     'native_gpu_pool_linear_training_step',
     'native_gpu_two_conv_relu_pool_linear_training_step',
     'native_gpu_two_linear_relu_training_step',

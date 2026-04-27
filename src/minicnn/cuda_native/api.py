@@ -50,6 +50,21 @@ _SCHEDULER_ALIASES = {
 _SUPPORT_TIER_ORDER = ('stable', 'beta', 'experimental')
 
 
+def _is_generic_mlp_training_ops(ops: list[str]) -> bool:
+    remaining = ops[1:] if ops and ops[0] == 'Flatten' else list(ops)
+    if len(remaining) < 5 or remaining[0] != 'Linear' or remaining[-1] != 'Linear':
+        return False
+    expect_activation = True
+    for op in remaining[1:-1]:
+        if expect_activation:
+            if op not in _GPU_NATIVE_SINGLE_CONV_ACTIVATIONS:
+                return False
+        elif op != 'Linear':
+            return False
+        expect_activation = not expect_activation
+    return not expect_activation
+
+
 def _assert_execution_mode_invariants() -> None:
     overlap = _SUPPORTED_EXECUTION_MODES & _PLANNED_EXECUTION_MODES
     assert not overlap, f'cuda_native execution mode sets overlap: {sorted(overlap)}'
@@ -333,7 +348,7 @@ def _validate_gpu_native_training_subset(
         allowed_ops.add(('Flatten', 'LayerNorm', _activation, 'Linear'))
         allowed_ops.add(('Conv2d', _activation, 'Conv2d', _activation, 'MaxPool2d', 'Flatten', 'Linear'))
         allowed_ops.add(('DepthwiseConv2d', 'LayerNorm2d', 'PointwiseConv2d', _activation, 'PointwiseConv2d', 'Flatten', 'Linear'))
-    if tuple(ops) not in allowed_ops:
+    if tuple(ops) not in allowed_ops and not _is_generic_mlp_training_ops(ops):
         errors.append(
             'cuda_native gpu_native train-native currently supports only the narrow '
             'Linear training subset ops=[Linear], [Flatten, Linear], '
@@ -358,6 +373,7 @@ def _validate_gpu_native_training_subset(
             '[Conv2d, MaxPool2d, Flatten, Linear], '
             '[Conv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, MaxPool2d, Flatten, Linear], or '
             '[Conv2d, ReLU/LeakyReLU/GELU/SiLU/Sigmoid/Tanh, Conv2d, same activation, MaxPool2d, Flatten, Linear], '
+            'or generic sequential MLP ops=[Flatten?, Linear, activation, Linear, ..., Linear], '
             f'got {ops}.'
         )
     conv_constraint_ops = {

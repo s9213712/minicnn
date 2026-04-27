@@ -14,6 +14,8 @@ class GpuTrainingLoweringStep:
     lowering_kind: str
     launch_family: str
     node_name: str | None = None
+    input_names: tuple[str, ...] = tuple()
+    output_names: tuple[str, ...] = tuple()
     param_keys: tuple[str, ...] = tuple()
     required_symbols: tuple[str, ...] = tuple()
     supported: bool = True
@@ -33,6 +35,8 @@ class GpuTrainingLoweringStep:
             'lowering_kind': self.lowering_kind,
             'launch_family': self.launch_family,
             'node_name': self.node_name,
+            'input_names': list(self.input_names),
+            'output_names': list(self.output_names),
             'param_keys': list(self.param_keys),
             'required_symbols': list(self.required_symbols),
             'supported': self.supported,
@@ -113,12 +117,22 @@ class GpuTrainingLoweringPlan:
 
     def per_op_lowering_manifest(self) -> dict[str, Any]:
         packets = build_gpu_training_launch_trace(self)
-        ready = self.ready and all(packet.supported for packet in packets)
+        graph_wide_lowering_ready = all(packet.supported for packet in packets)
+        ready = self.ready and graph_wide_lowering_ready
+        runtime_executor_ready = self.helper is not None or self.subset_name == 'generic_mlp'
+        if self.helper is not None:
+            transition_policy = 'helper_backed_until_runtime_per_op_executor'
+        elif runtime_executor_ready:
+            transition_policy = 'runtime_per_op_executor'
+        else:
+            transition_policy = 'runtime_per_op_executor_pending'
         return {
             'schema_version': 1,
             'manifest_kind': 'cuda_native_gpu_training_per_op_lowering_shim',
             'execution_mode': self.execution_mode,
             'ready': ready,
+            'graph_wide_lowering_ready': graph_wide_lowering_ready,
+            'runtime_executor_ready': runtime_executor_ready,
             'subset_name': self.subset_name,
             'helper_backed': self.helper is not None,
             'helper': self.helper,
@@ -126,11 +140,7 @@ class GpuTrainingLoweringPlan:
             'launch_count': len(packets),
             'required_symbols': self.required_symbols(),
             'required_symbols_by_phase': self.required_symbols_by_phase(),
-            'transition_policy': (
-                'helper_backed_until_runtime_per_op_executor'
-                if self.helper is not None
-                else 'runtime_per_op_executor'
-            ),
+            'transition_policy': transition_policy,
             'packets': [
                 {
                     **packet.summary(),
@@ -149,6 +159,8 @@ class GpuTrainingLaunchPacket:
     lowering_kind: str
     launch_family: str
     node_name: str | None
+    input_names: tuple[str, ...]
+    output_names: tuple[str, ...]
     param_keys: tuple[str, ...]
     required_symbols: tuple[str, ...]
     supported: bool
@@ -161,6 +173,8 @@ class GpuTrainingLaunchPacket:
             'lowering_kind': self.lowering_kind,
             'launch_family': self.launch_family,
             'node_name': self.node_name,
+            'input_names': list(self.input_names),
+            'output_names': list(self.output_names),
             'param_keys': list(self.param_keys),
             'required_symbols': list(self.required_symbols),
             'supported': self.supported,
@@ -181,6 +195,8 @@ def build_gpu_training_launch_trace(plan: GpuTrainingLoweringPlan) -> tuple[GpuT
             lowering_kind=step.lowering_kind,
             launch_family=step.launch_family,
             node_name=step.node_name,
+            input_names=step.input_names,
+            output_names=step.output_names,
             param_keys=step.param_keys,
             required_symbols=step.required_symbols,
             supported=step.supported,
@@ -259,6 +275,13 @@ def _required_symbols_for_lowering(lowering_kind: str) -> tuple[str, ...]:
         'sgd_update_fused': ('sgd_update_fused',),
         'adam_update_fused': ('adam_update_fused',),
         'rmsprop_update_fused': ('rmsprop_update_fused',),
+        'shape_flatten_backward': tuple(),
+        'identity_alias_backward': tuple(),
+        'regularization_dropout_backward': tuple(),
+        'regularization_droppath_backward': tuple(),
+        'elementwise_add_backward': tuple(),
+        'concat_backward': tuple(),
+        'unsupported_backward': tuple(),
     }.get(str(lowering_kind), tuple())
 
 
@@ -362,6 +385,8 @@ def _forward_training_step(step: GpuDispatchStep, subset_name: str | None) -> Gp
         lowering_kind=lowering_kind,
         launch_family=step.launch_family,
         node_name=step.node_name,
+        input_names=step.input_names,
+        output_names=step.output_names,
         param_keys=step.param_keys,
         supported=step.supported,
     )
@@ -373,6 +398,32 @@ def _linear_nodes(graph: NativeGraph) -> list[Any]:
 
 def _conv_nodes(graph: NativeGraph) -> list[Any]:
     return [node for node in graph.topological_order() if node.op_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d'}]
+
+
+def _is_generic_mlp_ops(ops: tuple[str, ...]) -> bool:
+    remaining = ops[1:] if ops and ops[0] == 'Flatten' else ops
+    if len(remaining) < 5 or remaining[0] != 'Linear' or remaining[-1] != 'Linear':
+        return False
+    expect_activation = True
+    for op in remaining[1:-1]:
+        if expect_activation:
+            if op not in {'GELU', 'LeakyReLU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'}:
+                return False
+        elif op != 'Linear':
+            return False
+        expect_activation = not expect_activation
+    return not expect_activation
+
+
+def _trainable_param_keys_for_node(node: Any) -> tuple[str, ...]:
+    if node.op_type in {'Conv2d', 'DepthwiseConv2d', 'PointwiseConv2d', 'Linear'}:
+        keys = [f'_w_{node.name}']
+        if node.op_type == 'Linear' or bool(node.attrs.get('bias', True)):
+            keys.append(f'_b_{node.name}')
+        return tuple(keys)
+    if node.op_type in {'BatchNorm2d', 'GroupNorm', 'LayerNorm', 'LayerNorm2d'}:
+        return (f'_w_{node.name}', f'_b_{node.name}')
+    return tuple()
 
 
 def _pair(value: Any, default: int) -> tuple[int, int]:
@@ -482,6 +533,8 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
         node for node in graph.topological_order()
         if node.op_type in {'GELU', 'LeakyReLU', 'ReLU', 'SiLU', 'Sigmoid', 'Tanh'}
     ]
+    if subset_name is None or subset_name == 'generic_mlp':
+        return _generic_backward_steps(graph)
     if subset_name in {
         'linear_relu_linear',
         'flatten_linear_relu_linear',
@@ -809,6 +862,69 @@ def _backward_steps(graph: NativeGraph, subset_name: str | None) -> tuple[GpuTra
     return tuple(steps)
 
 
+_GENERIC_BACKWARD_LOWERINGS: dict[str, tuple[str, str]] = {
+    'Add': ('elementwise_add_backward', 'elementwise_backward'),
+    'Concat': ('concat_backward', 'concat_backward'),
+    'Identity': ('identity_alias_backward', 'identity_backward'),
+    'Dropout': ('regularization_dropout_backward', 'regularization_backward'),
+    'DropPath': ('regularization_droppath_backward', 'regularization_backward'),
+    'Flatten': ('shape_flatten_backward', 'shape_backward'),
+    'Linear': ('dense_backward_full', 'linear_backward'),
+    'ReLU': ('apply_relu_backward', 'activation_backward'),
+    'LeakyReLU': ('leaky_relu_backward', 'activation_backward'),
+    'GELU': ('gelu_backward', 'activation_backward'),
+    'SiLU': ('silu_backward', 'activation_backward'),
+    'Sigmoid': ('sigmoid_backward', 'activation_backward'),
+    'Tanh': ('tanh_backward', 'activation_backward'),
+    'MaxPool2d': ('maxpool_backward_nchw', 'pool_backward'),
+    'AvgPool2d': ('avgpool2d_backward', 'pool_backward'),
+    'AdaptiveAvgPool2d': ('global_avgpool2d_backward', 'pool_backward'),
+    'GlobalAvgPool2d': ('global_avgpool2d_backward', 'pool_backward'),
+    'BatchNorm2d': ('bn_backward', 'normalization_backward'),
+    'GroupNorm': ('groupnorm_backward', 'normalization_backward'),
+    'LayerNorm': ('layernorm_nd_backward', 'normalization_backward'),
+    'LayerNorm2d': ('layernorm2d_backward', 'normalization_backward'),
+    'Conv2d': ('conv_backward', 'conv2d_backward'),
+    'PointwiseConv2d': ('conv_backward', 'conv2d_backward'),
+    'DepthwiseConv2d': ('depthwise_conv2d_backward', 'depthwise_conv2d_backward'),
+}
+
+
+def _generic_backward_steps(graph: NativeGraph) -> tuple[GpuTrainingLoweringStep, ...]:
+    steps: list[GpuTrainingLoweringStep] = []
+    for node in reversed(graph.topological_order()):
+        lowering = _GENERIC_BACKWARD_LOWERINGS.get(str(node.op_type))
+        if lowering is None:
+            steps.append(
+                GpuTrainingLoweringStep(
+                    phase='backward',
+                    op_name=str(node.op_type),
+                    lowering_kind='unsupported_backward',
+                    launch_family='unsupported_backward',
+                    node_name=str(node.name),
+                    input_names=tuple(node.outputs),
+                    output_names=tuple(node.inputs),
+                    param_keys=_trainable_param_keys_for_node(node),
+                    supported=False,
+                )
+            )
+            continue
+        lowering_kind, launch_family = lowering
+        steps.append(
+            GpuTrainingLoweringStep(
+                phase='backward',
+                op_name=str(node.op_type),
+                lowering_kind=lowering_kind,
+                launch_family=launch_family,
+                node_name=str(node.name),
+                input_names=tuple(node.outputs),
+                output_names=tuple(node.inputs),
+                param_keys=_trainable_param_keys_for_node(node),
+            )
+        )
+    return tuple(steps)
+
+
 def _optimizer_step(
     graph: NativeGraph,
     subset_name: str | None,
@@ -821,10 +937,7 @@ def _optimizer_step(
     momentum = float(optim_cfg.get('momentum', 0.0))
     param_keys: list[str] = []
     for node in graph.topological_order():
-        if node.op_type in {'BatchNorm2d', 'Conv2d', 'DepthwiseConv2d', 'GroupNorm', 'LayerNorm2d', 'Linear', 'PointwiseConv2d'}:
-            param_keys.append(f'_w_{node.name}')
-            if node.op_type in {'BatchNorm2d', 'GroupNorm', 'LayerNorm2d', 'Linear'} or bool(node.attrs.get('bias', True)):
-                param_keys.append(f'_b_{node.name}')
+        param_keys.extend(_trainable_param_keys_for_node(node))
 
     if subset_name not in {'linear', 'flatten_linear'} and optimizer_key != 'sgd':
         reasons.append(f'unsupported gpu_native optimizer for non-Linear subset: {optimizer_type}')
@@ -891,8 +1004,13 @@ def build_gpu_training_lowering_plan(
     subset_name = None if subset is None else subset[0]
     helper = None if subset is None else subset[1]
     unsupported_reasons: list[str] = []
-    if subset is None:
+    if subset is None and _is_generic_mlp_ops(ops):
+        subset_name = 'generic_mlp'
+    if subset is None and subset_name is None:
         unsupported_reasons.append(f'unsupported gpu_native training subset: {list(ops)}')
+        unsupported_reasons.append(
+            f'gpu_native runtime per-op training executor pending for graph ops: {list(ops)}'
+        )
     if not dispatch_plan.ready:
         unsupported_reasons.append(f'unsupported gpu dispatch ops: {list(dispatch_plan.unsupported_ops)}')
     unsupported_reasons.extend(_training_subset_constraint_reasons(graph, subset_name))
@@ -911,7 +1029,14 @@ def build_gpu_training_lowering_plan(
     if bool(train_cfg.get('amp', False)):
         unsupported_reasons.append('gpu_native training lowering currently requires train.amp=false')
     forward_steps = tuple(_forward_training_step(step, subset_name) for step in dispatch_plan.steps)
-    backward_steps = _backward_steps(graph, subset_name) if subset_name is not None else tuple()
+    backward_steps = _backward_steps(graph, subset_name)
+    if any(not step.supported for step in backward_steps):
+        unsupported_backward = sorted({
+            step.op_name for step in backward_steps if not step.supported
+        })
+        unsupported_reasons.append(
+            f'unsupported gpu_native generic backward ops: {unsupported_backward}'
+        )
     ready = (
         dispatch_plan.ready
         and subset_name is not None

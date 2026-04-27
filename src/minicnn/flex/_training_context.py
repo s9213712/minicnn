@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from minicnn.config.parsing import parse_bool
+from minicnn.random import set_global_seed
 
 from .data import create_dataloaders, create_test_dataloader
 from .reporting import _best_model_path, _build_training_summary
@@ -57,11 +58,17 @@ def prepare_training_context(
     train_loader, val_loader = create_dataloaders(dataset_cfg, train_cfg, augmentation_cfg=augmentation_cfg)
     test_loader = create_test_dataloader(dataset_cfg, train_cfg)
     input_shape = tuple(dataset_cfg.get('input_shape', [3, 32, 32]))
-    init_seed = int(train_cfg.get('init_seed', dataset_cfg.get('seed', 42)))
+    init_seed = int(train_cfg.get('init_seed', dataset_cfg.get('dataset_seed', dataset_cfg.get('seed', 42))))
+    set_global_seed(init_seed)
     torch.manual_seed(init_seed)
     if device.type == 'cuda':
         torch.cuda.manual_seed_all(init_seed)
     model = build_model_fn(model_cfg, input_shape=input_shape).to(device)
+    train_seed = int(train_cfg.get('train_seed', train_cfg.get('seed', dataset_cfg.get('seed', 42))))
+    set_global_seed(train_seed)
+    torch.manual_seed(train_seed)
+    if device.type == 'cuda':
+        torch.cuda.manual_seed_all(train_seed)
     criterion = build_loss_fn(cfg.get('loss', {'type': 'CrossEntropyLoss'}))
     optimizer_cfg = dict(cfg.get('optimizer', {'type': 'SGD', 'lr': 0.01}))
     optimizer = build_optimizer_fn(optimizer_params_builder(model, optimizer_cfg), optimizer_cfg)

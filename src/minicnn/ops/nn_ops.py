@@ -6,6 +6,7 @@ import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
 from minicnn.nn.tensor import Parameter, Tensor, _requires_grad
+from minicnn.random import get_global_rng
 
 
 def relu(x: Tensor) -> Tensor:
@@ -54,7 +55,7 @@ def tanh(x: Tensor) -> Tensor:
 def dropout(x: Tensor, p: float = 0.5, training: bool = True) -> Tensor:
     if not training or p == 0.0:
         return x
-    mask = (np.random.random(x.data.shape) > p).astype(np.float32) / (1.0 - p)
+    mask = (get_global_rng().random(x.data.shape) > p).astype(np.float32) / (1.0 - p)
     out = Tensor(x.data * mask, requires_grad=_requires_grad(x))
     out._prev = {x}
     out._op = 'dropout'
@@ -109,18 +110,11 @@ def conv2d(
         dx_pad = np.zeros_like(x_pad, dtype=np.float32)
         dw = np.einsum('noij,ncijhw->ochw', grad, windows, optimize=True).astype(np.float32)
         dwindows = np.einsum('noij,ochw->ncijhw', grad, w_data, optimize=True).astype(np.float32)
-        _shape = (n, c_in, out_h, out_w, kh, kw)
-        _n = np.broadcast_to(np.arange(n)[:, None, None, None, None, None], _shape).ravel()
-        _c = np.broadcast_to(np.arange(c_in)[None, :, None, None, None, None], _shape).ravel()
-        _h = np.broadcast_to(
-            np.arange(out_h)[None, None, :, None, None, None] * stride + np.arange(kh)[None, None, None, None, :, None],
-            _shape,
-        ).ravel()
-        _w = np.broadcast_to(
-            np.arange(out_w)[None, None, None, :, None, None] * stride + np.arange(kw)[None, None, None, None, None, :],
-            _shape,
-        ).ravel()
-        np.add.at(dx_pad, (_n, _c, _h, _w), dwindows.ravel())
+        for ki in range(kh):
+            row_slice = slice(ki, ki + out_h * stride, stride)
+            for kj in range(kw):
+                col_slice = slice(kj, kj + out_w * stride, stride)
+                dx_pad[:, :, row_slice, col_slice] += dwindows[:, :, :, :, ki, kj]
         if padding > 0:
             dx = dx_pad[:, :, padding:-padding, padding:-padding]
         else:

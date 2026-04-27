@@ -49,6 +49,10 @@ def native_gpu_linear_training_step(
     bias_rmsprop_v: np.ndarray | None = None,
     bias_rmsprop_buf: np.ndarray | None = None,
     bound_lib: Any | None = None,
+    device_runtime: DeviceRuntime | None = None,
+    persistent_device_state: bool = False,
+    persistent_cache_prefix: str = 'linear',
+    return_intermediates: bool = True,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuLinearTrainingStepResult:
@@ -154,31 +158,43 @@ def native_gpu_linear_training_step(
     elif np.any(labels_i32 < 0) or np.any(labels_i32 >= weight_f32.shape[0]):
         raise ValueError('native_gpu_linear_training_step labels must be in [0, out_f)')
 
-    lib = _load_bound_lib(bound_lib)
-    runtime = DeviceRuntime(
+    lib = _load_bound_lib(bound_lib if bound_lib is not None else (device_runtime.bound_lib if device_runtime is not None else None))
+    runtime = device_runtime if device_runtime is not None else DeviceRuntime(
         execution_mode='gpu_native',
         tensor_execution_device='gpu',
         bound_lib=lib,
     )
+    runtime.bound_lib = lib
     if reserve_bytes > 0 or reserve_buffers > 0:
         runtime.reserve_from_planner(total_bytes=int(reserve_bytes), num_buffers=int(reserve_buffers))
 
     n, in_f = int(x_f32.shape[0]), int(x_f32.shape[1])
     out_f = int(weight_f32.shape[0])
+
+    def stage_state(array: np.ndarray, name: str):
+        if persistent_device_state:
+            return runtime.stage_persistent_to_device(
+                array,
+                key=f'{persistent_cache_prefix}:{name}',
+                name=name,
+                update_on_reuse=False,
+            )
+        return runtime.stage_to_device(array, name=name)
+
     input_t = runtime.stage_to_device(x_f32, name='input')
     labels_t = runtime.stage_to_device(labels_i32, name='labels')
-    weight_t = runtime.stage_to_device(weight_f32, name='weight')
-    bias_t = runtime.stage_to_device(bias_f32, name='bias')
-    weight_velocity_t = runtime.stage_to_device(weight_velocity_f32, name='weight_velocity')
-    bias_velocity_t = runtime.stage_to_device(bias_velocity_f32, name='bias_velocity')
-    weight_m_t = runtime.stage_to_device(weight_m_f32, name='weight_m')
-    weight_v_t = runtime.stage_to_device(weight_v_f32, name='weight_v')
-    bias_m_t = runtime.stage_to_device(bias_m_f32, name='bias_m')
-    bias_v_t = runtime.stage_to_device(bias_v_f32, name='bias_v')
-    weight_rmsprop_v_t = runtime.stage_to_device(weight_rmsprop_v_f32, name='weight_rmsprop_v')
-    weight_rmsprop_buf_t = runtime.stage_to_device(weight_rmsprop_buf_f32, name='weight_rmsprop_buf')
-    bias_rmsprop_v_t = runtime.stage_to_device(bias_rmsprop_v_f32, name='bias_rmsprop_v')
-    bias_rmsprop_buf_t = runtime.stage_to_device(bias_rmsprop_buf_f32, name='bias_rmsprop_buf')
+    weight_t = stage_state(weight_f32, 'weight')
+    bias_t = stage_state(bias_f32, 'bias')
+    weight_velocity_t = stage_state(weight_velocity_f32, 'weight_velocity')
+    bias_velocity_t = stage_state(bias_velocity_f32, 'bias_velocity')
+    weight_m_t = stage_state(weight_m_f32, 'weight_m')
+    weight_v_t = stage_state(weight_v_f32, 'weight_v')
+    bias_m_t = stage_state(bias_m_f32, 'bias_m')
+    bias_v_t = stage_state(bias_v_f32, 'bias_v')
+    weight_rmsprop_v_t = stage_state(weight_rmsprop_v_f32, 'weight_rmsprop_v')
+    weight_rmsprop_buf_t = stage_state(weight_rmsprop_buf_f32, 'weight_rmsprop_buf')
+    bias_rmsprop_v_t = stage_state(bias_rmsprop_v_f32, 'bias_rmsprop_v')
+    bias_rmsprop_buf_t = stage_state(bias_rmsprop_buf_f32, 'bias_rmsprop_buf')
     logits_t = runtime.allocate((n, out_f), dtype='float32', name='logits')
     probs_t = runtime.allocate((n, out_f), dtype='float32', name='probs')
     grad_logits_t = runtime.allocate((n, out_f), dtype='float32', name='grad_logits')
@@ -411,24 +427,38 @@ def native_gpu_linear_training_step(
             node_count=1,
         )
 
-        logits = runtime.stage_to_host(logits_t)
-        probabilities = runtime.stage_to_host(probs_t)
-        grad_logits = runtime.stage_to_host(grad_logits_t)
-        grad_input = runtime.stage_to_host(grad_input_t)
-        grad_weight = runtime.stage_to_host(grad_weight_t)
-        grad_bias = runtime.stage_to_host(grad_bias_t)
+        if return_intermediates:
+            logits = runtime.stage_to_host(logits_t)
+            probabilities = runtime.stage_to_host(probs_t)
+            grad_logits = runtime.stage_to_host(grad_logits_t)
+            grad_input = runtime.stage_to_host(grad_input_t)
+            grad_weight = runtime.stage_to_host(grad_weight_t)
+            grad_bias = runtime.stage_to_host(grad_bias_t)
+        else:
+            empty = np.empty((0,), dtype=np.float32)
+            logits = empty
+            probabilities = empty
+            grad_logits = empty
+            grad_input = empty
+            grad_weight = empty
+            grad_bias = empty
         updated_weight = runtime.stage_to_host(weight_t)
         updated_bias = runtime.stage_to_host(bias_t)
-        updated_weight_velocity = runtime.stage_to_host(weight_velocity_t)
-        updated_bias_velocity = runtime.stage_to_host(bias_velocity_t)
-        updated_weight_m = runtime.stage_to_host(weight_m_t)
-        updated_weight_v = runtime.stage_to_host(weight_v_t)
-        updated_bias_m = runtime.stage_to_host(bias_m_t)
-        updated_bias_v = runtime.stage_to_host(bias_v_t)
-        updated_weight_rmsprop_v = runtime.stage_to_host(weight_rmsprop_v_t)
-        updated_weight_rmsprop_buf = runtime.stage_to_host(weight_rmsprop_buf_t)
-        updated_bias_rmsprop_v = runtime.stage_to_host(bias_rmsprop_v_t)
-        updated_bias_rmsprop_buf = runtime.stage_to_host(bias_rmsprop_buf_t)
+        copy_sgd_velocity = return_intermediates or (
+            normalized_optimizer_type == 'sgd' and float(momentum) != 0.0
+        )
+        copy_adam_state = return_intermediates or normalized_optimizer_type in {'adam', 'adamw'}
+        copy_rmsprop_state = return_intermediates or normalized_optimizer_type == 'rmsprop'
+        updated_weight_velocity = runtime.stage_to_host(weight_velocity_t) if copy_sgd_velocity else None
+        updated_bias_velocity = runtime.stage_to_host(bias_velocity_t) if copy_sgd_velocity else None
+        updated_weight_m = runtime.stage_to_host(weight_m_t) if copy_adam_state else None
+        updated_weight_v = runtime.stage_to_host(weight_v_t) if copy_adam_state else None
+        updated_bias_m = runtime.stage_to_host(bias_m_t) if copy_adam_state else None
+        updated_bias_v = runtime.stage_to_host(bias_v_t) if copy_adam_state else None
+        updated_weight_rmsprop_v = runtime.stage_to_host(weight_rmsprop_v_t) if copy_rmsprop_state else None
+        updated_weight_rmsprop_buf = runtime.stage_to_host(weight_rmsprop_buf_t) if copy_rmsprop_state else None
+        updated_bias_rmsprop_v = runtime.stage_to_host(bias_rmsprop_v_t) if copy_rmsprop_state else None
+        updated_bias_rmsprop_buf = runtime.stage_to_host(bias_rmsprop_buf_t) if copy_rmsprop_state else None
         loss_sum = float(runtime.stage_to_host(loss_sum_t)[0])
         correct_count = int(runtime.stage_to_host(correct_t)[0])
         runtime.synchronize('gpu-native-linear-training-step')
@@ -505,6 +535,10 @@ def native_gpu_two_linear_relu_training_step(
     activation: str = 'ReLU',
     activation_alpha: float = 0.01,
     bound_lib: Any | None = None,
+    device_runtime: DeviceRuntime | None = None,
+    persistent_device_state: bool = False,
+    persistent_cache_prefix: str = 'two_linear',
+    return_intermediates: bool = True,
     reserve_bytes: int = 0,
     reserve_buffers: int = 0,
 ) -> NativeGpuTwoLinearReluTrainingStepResult:
@@ -570,12 +604,13 @@ def native_gpu_two_linear_relu_training_step(
     if activation_key not in activation_forward:
         raise ValueError(f'native_gpu_two_linear_relu_training_step does not support activation={activation_name!r}')
 
-    lib = _load_bound_lib(bound_lib)
-    runtime = DeviceRuntime(
+    lib = _load_bound_lib(bound_lib if bound_lib is not None else (device_runtime.bound_lib if device_runtime is not None else None))
+    runtime = device_runtime if device_runtime is not None else DeviceRuntime(
         execution_mode='gpu_native',
         tensor_execution_device='gpu',
         bound_lib=lib,
     )
+    runtime.bound_lib = lib
     if reserve_bytes > 0 or reserve_buffers > 0:
         runtime.reserve_from_planner(total_bytes=int(reserve_bytes), num_buffers=int(reserve_buffers))
 
@@ -589,6 +624,19 @@ def native_gpu_two_linear_relu_training_step(
         tensors.append(tensor)
         return tensor
 
+    def stage_state(array: np.ndarray, name: str):
+        if persistent_device_state:
+            tensor = runtime.stage_persistent_to_device(
+                array,
+                key=f'{persistent_cache_prefix}:{name}',
+                name=name,
+                update_on_reuse=False,
+            )
+        else:
+            tensor = runtime.stage_to_device(array, name=name)
+        tensors.append(tensor)
+        return tensor
+
     def alloc(shape: tuple[int, ...], name: str, dtype: str = 'float32'):
         tensor = runtime.allocate(shape, dtype=dtype, name=name)
         tensors.append(tensor)
@@ -596,14 +644,14 @@ def native_gpu_two_linear_relu_training_step(
 
     input_t = stage(x_f32, 'input')
     labels_t = stage(labels_i32, 'labels')
-    w1_t = stage(w1_f32, 'weight1')
-    b1_t = stage(b1_f32, 'bias1')
-    w2_t = stage(w2_f32, 'weight2')
-    b2_t = stage(b2_f32, 'bias2')
-    w1v_t = stage(w1v_f32, 'weight1_velocity')
-    b1v_t = stage(b1v_f32, 'bias1_velocity')
-    w2v_t = stage(w2v_f32, 'weight2_velocity')
-    b2v_t = stage(b2v_f32, 'bias2_velocity')
+    w1_t = stage_state(w1_f32, 'weight1')
+    b1_t = stage_state(b1_f32, 'bias1')
+    w2_t = stage_state(w2_f32, 'weight2')
+    b2_t = stage_state(b2_f32, 'bias2')
+    w1v_t = stage_state(w1v_f32, 'weight1_velocity')
+    b1v_t = stage_state(b1v_f32, 'bias1_velocity')
+    w2v_t = stage_state(w2v_f32, 'weight2_velocity')
+    b2v_t = stage_state(b2v_f32, 'bias2_velocity')
     hidden_pre_t = alloc((n, hidden_f), 'hidden_pre')
     hidden_t = alloc((n, hidden_f), 'hidden')
     logits_t = alloc((n, out_f), 'logits')
@@ -724,23 +772,36 @@ def native_gpu_two_linear_relu_training_step(
             update_kind = 'gpu_native_train:apply_sgd_update'
         runtime.record_execution(update_kind, input_name='grad_weight1', output_name='weight1', node_count=1)
 
-        logits = runtime.stage_to_host(logits_t)
-        probabilities = runtime.stage_to_host(probs_t)
-        grad_logits = runtime.stage_to_host(grad_logits_t)
-        grad_hidden = runtime.stage_to_host(grad_hidden_t)
-        grad_input = runtime.stage_to_host(grad_input_t)
-        grad_weight1 = runtime.stage_to_host(grad_w1_t)
-        grad_bias1 = runtime.stage_to_host(grad_b1_t)
-        grad_weight2 = runtime.stage_to_host(grad_w2_t)
-        grad_bias2 = runtime.stage_to_host(grad_b2_t)
+        if return_intermediates:
+            logits = runtime.stage_to_host(logits_t)
+            probabilities = runtime.stage_to_host(probs_t)
+            grad_logits = runtime.stage_to_host(grad_logits_t)
+            grad_hidden = runtime.stage_to_host(grad_hidden_t)
+            grad_input = runtime.stage_to_host(grad_input_t)
+            grad_weight1 = runtime.stage_to_host(grad_w1_t)
+            grad_bias1 = runtime.stage_to_host(grad_b1_t)
+            grad_weight2 = runtime.stage_to_host(grad_w2_t)
+            grad_bias2 = runtime.stage_to_host(grad_b2_t)
+        else:
+            empty = np.empty((0,), dtype=np.float32)
+            logits = empty
+            probabilities = empty
+            grad_logits = empty
+            grad_hidden = empty
+            grad_input = empty
+            grad_weight1 = empty
+            grad_bias1 = empty
+            grad_weight2 = empty
+            grad_bias2 = empty
         updated_weight1 = runtime.stage_to_host(w1_t)
         updated_bias1 = runtime.stage_to_host(b1_t)
         updated_weight2 = runtime.stage_to_host(w2_t)
         updated_bias2 = runtime.stage_to_host(b2_t)
-        updated_weight1_velocity = runtime.stage_to_host(w1v_t)
-        updated_bias1_velocity = runtime.stage_to_host(b1v_t)
-        updated_weight2_velocity = runtime.stage_to_host(w2v_t)
-        updated_bias2_velocity = runtime.stage_to_host(b2v_t)
+        copy_velocity = return_intermediates or float(momentum) != 0.0
+        updated_weight1_velocity = runtime.stage_to_host(w1v_t) if copy_velocity else None
+        updated_bias1_velocity = runtime.stage_to_host(b1v_t) if copy_velocity else None
+        updated_weight2_velocity = runtime.stage_to_host(w2v_t) if copy_velocity else None
+        updated_bias2_velocity = runtime.stage_to_host(b2v_t) if copy_velocity else None
         loss_sum = float(runtime.stage_to_host(loss_sum_t)[0])
         correct_count = int(runtime.stage_to_host(correct_t)[0])
         runtime.synchronize('gpu-native-two-linear-relu-training-step')

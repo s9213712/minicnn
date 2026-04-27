@@ -46,6 +46,10 @@ def _requires_grad(*tensors: 'Tensor') -> bool:
     return is_grad_enabled() and any(t.requires_grad for t in tensors)
 
 
+_EXP_MAX_INPUT = float(np.log(np.finfo(np.float32).max)) - 1.0
+_LOG_MIN_INPUT = 1e-10
+
+
 @dataclass(eq=False)
 class Tensor:
     data: Any
@@ -112,8 +116,13 @@ class Tensor:
                 for child in node._prev:
                     stack.append((child, False))
         self.grad = grad
-        for node in reversed(topo):
-            node._backward()
+        try:
+            for node in reversed(topo):
+                node._backward()
+        finally:
+            for node in topo:
+                node._backward = lambda: None
+                node._prev = set()
 
     def __add__(self, other: Any) -> 'Tensor':
         other = other if isinstance(other, Tensor) else Tensor(other)
@@ -270,26 +279,32 @@ class Tensor:
         return out
 
     def exp(self) -> 'Tensor':
-        out_data = np.exp(self.data)
+        clipped = np.minimum(self.data, _EXP_MAX_INPUT)
+        with np.errstate(over='ignore'):
+            out_data = np.exp(clipped)
         out = Tensor(out_data, requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'exp'
 
         def _backward() -> None:
             if out.grad is not None:
-                self._add_grad(out.grad * out_data)
+                self._add_grad(out.grad * out_data * (self.data <= _EXP_MAX_INPUT))
 
         out._backward = _backward
         return out
 
     def log(self) -> 'Tensor':
-        out = Tensor(np.log(self.data + 1e-10), requires_grad=_requires_grad(self))
+        clipped = np.maximum(self.data, _LOG_MIN_INPUT)
+        out = Tensor(np.log(clipped), requires_grad=_requires_grad(self))
         out._prev = {self}
         out._op = 'log'
 
         def _backward() -> None:
             if out.grad is not None:
-                self._add_grad(out.grad / (self.data + 1e-10))
+                mask = self.data > _LOG_MIN_INPUT
+                safe_grad = np.zeros_like(self.data, dtype=np.float32)
+                safe_grad[mask] = out.grad[mask] / self.data[mask]
+                self._add_grad(safe_grad)
 
         out._backward = _backward
         return out

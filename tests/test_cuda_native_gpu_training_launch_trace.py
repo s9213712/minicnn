@@ -81,3 +81,51 @@ def test_gpu_training_per_op_lowering_manifest_exposes_helper_transition_contrac
         ('backward', 'dense_backward_full'),
         ('optimizer', 'apply_sgd_update'),
     ]
+
+
+def test_gpu_training_lowering_plans_generic_per_op_trace_for_mlp_runtime_executor():
+    from minicnn.cuda_native.api import build_cuda_native_graph
+    from minicnn.cuda_native.gpu_training_lowering import build_gpu_training_lowering_plan
+
+    graph = build_cuda_native_graph({
+        'layers': [
+            {'type': 'Flatten'},
+            {'type': 'Linear', 'out_features': 4},
+            {'type': 'ReLU'},
+            {'type': 'Linear', 'out_features': 4},
+            {'type': 'GELU'},
+            {'type': 'Linear', 'out_features': 2},
+        ],
+    }, (1, 1, 4, 4))
+    plan = build_gpu_training_lowering_plan(
+        graph,
+        loss_cfg={'type': 'CrossEntropyLoss'},
+        optim_cfg={'type': 'SGD'},
+    )
+    manifest = plan.summary()['per_op_lowering_shim']
+
+    assert plan.ready is True
+    assert plan.subset_name == 'generic_mlp'
+    assert plan.helper is None
+    assert manifest['helper_backed'] is False
+    assert manifest['graph_wide_lowering_ready'] is True
+    assert manifest['runtime_executor_ready'] is True
+    assert manifest['transition_policy'] == 'runtime_per_op_executor'
+    assert plan.unsupported_reasons == ()
+    assert [(step.phase, step.lowering_kind) for step in plan.backward_steps] == [
+        ('backward', 'dense_backward_full'),
+        ('backward', 'gelu_backward'),
+        ('backward', 'dense_backward_full'),
+        ('backward', 'apply_relu_backward'),
+        ('backward', 'dense_backward_full'),
+        ('backward', 'shape_flatten_backward'),
+    ]
+    assert plan.optimizer_steps[-1].param_keys == (
+        '_w_linear_1',
+        '_b_linear_1',
+        '_w_linear_3',
+        '_b_linear_3',
+        '_w_linear_5',
+        '_b_linear_5',
+    )
+    assert manifest['fallback_policy']['fallback_active'] is False
